@@ -3,66 +3,139 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pledge Manager Starter v0.1.1</title>
+  <title>WNMU Pledge Program Library v0.4.0</title>
   <link rel="stylesheet" href="assets/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <script defer src="assets/app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <h1>Pledge Manager Starter</h1>
-      <p class="subtitle">GitHub Pages-ready shell for the WNMU pledge program and fundraiser scheduler</p>
-    </div>
-    <div class="version">v0.1.1</div>
-  </header>
+  <div class="app-shell">
+    <header class="site-header">
+      <div class="brand-block">
+        <div class="brand-kicker">WNMU Public TV</div>
+        <h1>Pledge Program Library</h1>
+        <p class="brand-subtitle">Imported pledge titles, versions, premiums, and break structure in one sane place.</p>
+      </div>
+      <div class="header-right">
+        <div class="role-chip" id="role-chip">Viewer</div>
+        <div class="version-flag" id="version-flag">v0.4.0</div>
+      </div>
+    </header>
 
-  <main class="layout">
-    <section class="card hero">
-      <h2>Starter shell is live</h2>
-      <p>
-        This bundle is a foundation, not the finished app. The point of this page is to make GitHub Pages stop throwing a 404,
-        give you a place to drop your Supabase settings, and keep the schema/spec docs attached to the same package.
-      </p>
-      <div id="config-status" class="status">Checking config…</div>
-      <div class="actions">
-        <a class="button" href="docs/ui_wireframe_v0.1.0.html">Open wireframe</a>
-        <a class="button secondary" href="docs/README_v0.1.0.md">Open starter README</a>
-      </div>
-    </section>
+    <main class="main-grid">
+      <section class="panel controls-panel">
+        <div class="panel-header">
+          <h2>Library</h2>
+          <div class="toolbar-actions">
+            <button type="button" class="button ghost" id="refresh-button">Refresh</button>
+            <button type="button" class="button accent hidden" id="admin-new-button">Add program</button>
+          </div>
+        </div>
 
-    <section class="card two-col">
-      <div>
-        <h2>What to do next</h2>
-        <ol>
-          <li>Run the SQL in <code>docs/supabase_schema_v0.1.0.sql</code>.</li>
-          <li>Edit <code>config.js</code> with your Supabase URL and anon key.</li>
-          <li>Push this folder to GitHub Pages.</li>
-          <li>Use the docs folder as the build spec for the first real app pass.</li>
-        </ol>
-      </div>
-      <div>
-        <h2>Config reminder</h2>
-        <p>This project expects a tiny client-side config file:</p>
-<pre><code>window.PLEDGE_MANAGER_CONFIG = {
-  SUPABASE_URL: 'https://YOUR_PROJECT.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR_PUBLIC_ANON_KEY'
-};</code></pre>
-        <p>The anon key is designed to be public in browser apps. The dangerous one is the service role key. Do not use that here.</p>
-      </div>
-    </section>
+        <div class="notice-strip" id="config-status">Checking configuration…</div>
 
-    <section class="card">
-      <h2>Included docs</h2>
-      <div class="docs-grid">
-        <a href="docs/supabase_schema_v0.1.0.sql">Schema SQL</a>
-        <a href="docs/build_spec_v0.1.0.md">Build spec</a>
-        <a href="docs/import_spec_v0.1.0.md">Import spec</a>
-        <a href="docs/report_probe_from_sample_v0.1.0.md">Sample report probe</a>
-        <a href="docs/ui_wireframe_v0.1.0.html">UI wireframe</a>
-        <a href="docs/README_v0.1.0.md">README</a>
-      </div>
-    </section>
-  </main>
+        <div class="controls-grid">
+          <label class="field span-2">
+            <span>Search</span>
+            <input id="search-input" type="search" placeholder="Title, NOLA, topic, distributor, premium…">
+          </label>
+          <label class="field">
+            <span>State of the library</span>
+            <select id="status-filter">
+              <option value="active" selected>Active titles</option>
+              <option value="all">Include archived</option>
+              <option value="archived">Archived only</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Sort</span>
+            <select id="sort-select">
+              <option value="title" selected>Title</option>
+              <option value="runtime">Board runtime</option>
+              <option value="money">Lifetime dollars</option>
+              <option value="airings">Times aired</option>
+              <option value="recent">Most recently aired</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="meta-row">
+          <div id="result-summary" class="muted">Waiting on data…</div>
+          <div class="pager">
+            <button type="button" class="button ghost small" id="prev-page">Prev</button>
+            <div id="page-label" class="page-label">Page 1</div>
+            <button type="button" class="button ghost small" id="next-page">Next</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="library-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>NOLA</th>
+                <th>Ver</th>
+                <th>Board</th>
+                <th>Breaks</th>
+                <th>Local</th>
+                <th>Topic</th>
+                <th>Distributor</th>
+                <th>Premiums</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="library-body">
+              <tr>
+                <td colspan="10" class="placeholder-row">Loading library…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside class="panel detail-panel">
+        <div class="panel-header sticky">
+          <div>
+            <h2 id="detail-title">Program detail</h2>
+            <p id="detail-subtitle" class="muted">Choose a title from the library.</p>
+          </div>
+          <button type="button" class="button ghost hidden" id="admin-edit-button">Edit</button>
+        </div>
+
+        <div id="detail-empty" class="detail-empty">
+          Click a title and this side will show the imported fields, version info, and full segment map.
+        </div>
+
+        <div id="detail-content" class="hidden">
+          <section class="detail-block">
+            <h3>Overview</h3>
+            <dl class="overview-grid" id="overview-grid"></dl>
+          </section>
+
+          <section class="detail-block">
+            <div class="section-head">
+              <h3>Versions</h3>
+              <div id="version-count-chip" class="mini-chip">0</div>
+            </div>
+            <div id="versions-list" class="version-stack"></div>
+          </section>
+
+          <section class="detail-block">
+            <div class="section-head">
+              <h3>Premiums</h3>
+              <div id="premium-count-chip" class="mini-chip">0</div>
+            </div>
+            <div id="premiums-list" class="simple-list"></div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="site-footer">
+      <div>WNMU Pledge Program Library</div>
+      <div id="footer-version">v0.4.0</div>
+    </footer>
+  </div>
 </body>
 </html>
