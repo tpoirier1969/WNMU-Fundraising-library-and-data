@@ -1,5 +1,0 @@
-v0.1.1
-- Added root index.html for GitHub Pages
-- Added config.js and config.example.js
-- Added minimal assets/app.js and assets/styles.css
-- Preserved docs/spec package under /docs
