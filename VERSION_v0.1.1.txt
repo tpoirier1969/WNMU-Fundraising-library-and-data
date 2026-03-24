@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pledge Manager Starter v0.1.1</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script defer src="config.js"></script>
+  <script defer src="assets/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Pledge Manager Starter</h1>
+      <p class="subtitle">GitHub Pages-ready shell for the WNMU pledge program and fundraiser scheduler</p>
+    </div>
+    <div class="version">v0.1.1</div>
+  </header>
+
+  <main class="layout">
+    <section class="card hero">
+      <h2>Starter shell is live</h2>
+      <p>
+        This bundle is a foundation, not the finished app. The point of this page is to make GitHub Pages stop throwing a 404,
+        give you a place to drop your Supabase settings, and keep the schema/spec docs attached to the same package.
+      </p>
+      <div id="config-status" class="status">Checking config…</div>
+      <div class="actions">
+        <a class="button" href="docs/ui_wireframe_v0.1.0.html">Open wireframe</a>
+        <a class="button secondary" href="docs/README_v0.1.0.md">Open starter README</a>
+      </div>
+    </section>
+
+    <section class="card two-col">
+      <div>
+        <h2>What to do next</h2>
+        <ol>
+          <li>Run the SQL in <code>docs/supabase_schema_v0.1.0.sql</code>.</li>
+          <li>Edit <code>config.js</code> with your Supabase URL and anon key.</li>
+          <li>Push this folder to GitHub Pages.</li>
+          <li>Use the docs folder as the build spec for the first real app pass.</li>
+        </ol>
+      </div>
+      <div>
+        <h2>Config reminder</h2>
+        <p>This project expects a tiny client-side config file:</p>
+<pre><code>window.PLEDGE_MANAGER_CONFIG = {
+  SUPABASE_URL: 'https://YOUR_PROJECT.supabase.co',
+  SUPABASE_ANON_KEY: 'YOUR_PUBLIC_ANON_KEY'
+};</code></pre>
+        <p>The anon key is designed to be public in browser apps. The dangerous one is the service role key. Do not use that here.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Included docs</h2>
+      <div class="docs-grid">
+        <a href="docs/supabase_schema_v0.1.0.sql">Schema SQL</a>
+        <a href="docs/build_spec_v0.1.0.md">Build spec</a>
+        <a href="docs/import_spec_v0.1.0.md">Import spec</a>
+        <a href="docs/report_probe_from_sample_v0.1.0.md">Sample report probe</a>
+        <a href="docs/ui_wireframe_v0.1.0.html">UI wireframe</a>
+        <a href="docs/README_v0.1.0.md">README</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

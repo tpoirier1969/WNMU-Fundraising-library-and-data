@@ -1,0 +1,4 @@
+window.PLEDGE_MANAGER_CONFIG = {
+  SUPABASE_URL: '',
+  SUPABASE_ANON_KEY: ''
+};

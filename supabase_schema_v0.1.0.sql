@@ -1,434 +1,254 @@
+# Import Spec for PBS / Break Reports v0.1.0
 
--- Pledge Manager Starter Schema v0.1.0
--- Target: Supabase / PostgreSQL
--- Notes:
--- - Designed to live in the SAME Supabase project as the WNMU Program Library
--- - Uses separate pledge_* tables
--- - Stores both exact runtime and rounded board runtime
--- - Models break structure via ordered segment rows
+## Goal
 
-create extension if not exists pgcrypto;
+Allow the user to upload an end-of-drive report workbook and automatically connect revenue/performance data to scheduled pledge airings.
 
--- -------------------------------------------------------------------
--- Lookup / helper enums
--- -------------------------------------------------------------------
+---
 
-do $$
-begin
-    if not exists (select 1 from pg_type where typname = 'pledge_segment_type') then
-        create type pledge_segment_type as enum (
-            'program',
-            'fundraising',
-            'local_cut_in',
-            'open',
-            'close',
-            'interstitial',
-            'other'
-        );
-    end if;
+## Import pipeline
 
-    if not exists (select 1 from pg_type where typname = 'pledge_break_style') then
-        create type pledge_break_style as enum (
-            'HDPL',
-            'HDPE',
-            'LIVE',
-            'OTHER'
-        );
-    end if;
+1. Upload workbook
+2. Detect workbook structure
+3. Parse supported sheets into raw import rows
+4. Match rows against scheduled airings
+5. Auto-post high-confidence matches
+6. Put ambiguous matches into review queue
+7. Recompute fundraiser/program summary values
 
-    if not exists (select 1 from pg_type where typname = 'pledge_record_status') then
-        create type pledge_record_status as enum (
-            'active',
-            'archived'
-        );
-    end if;
+---
 
-    if not exists (select 1 from pg_type where typname = 'pledge_fundraiser_status') then
-        create type pledge_fundraiser_status as enum (
-            'draft',
-            'planned',
-            'active',
-            'closed',
-            'archived'
-        );
-    end if;
+## Raw-first rule
 
-    if not exists (select 1 from pg_type where typname = 'pledge_import_status') then
-        create type pledge_import_status as enum (
-            'uploaded',
-            'parsed',
-            'matched',
-            'review_needed',
-            'completed',
-            'failed'
-        );
-    end if;
+Do not write directly from workbook rows into final airing results without preserving the source rows.
 
-    if not exists (select 1 from pg_type where typname = 'pledge_match_status') then
-        create type pledge_match_status as enum (
-            'unmatched',
-            'auto_matched',
-            'manual_matched',
-            'ignored'
-        );
-    end if;
-end $$;
+Instead:
+- create one `pledge_report_imports` record per workbook
+- create many `pledge_report_import_rows` records per parsed row
+- match those rows later
 
--- -------------------------------------------------------------------
--- Title master
--- -------------------------------------------------------------------
+This preserves auditability and allows parser improvements later.
 
-create table if not exists pledge_programs (
-    id uuid primary key default gen_random_uuid(),
-    title text not null,
-    title_normalized text generated always as (regexp_replace(lower(coalesce(title, '')), '[^a-z0-9]+', '', 'g')) stored,
-    short_title text,
-    alternate_titles text,
-    nola_code text,
-    distributor text,
-    producer text,
-    topic_primary text,
-    topic_secondary text,
-    board_runtime_minutes integer,
-    exact_runtime interval,
-    program_notes text,
-    rights_start date,
-    rights_end date,
-    rights_notes text,
-    premium_summary text,
-    source_format text,
-    pickup_type text,
-    storage_location text,
-    status pledge_record_status not null default 'active',
-    times_aired_count integer not null default 0,
-    lifetime_dollars numeric(12,2) not null default 0,
-    lifetime_pledges integer not null default 0,
-    last_aired_at timestamptz,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
+---
 
-create index if not exists idx_pledge_programs_title_norm on pledge_programs(title_normalized);
-create index if not exists idx_pledge_programs_status on pledge_programs(status);
-create index if not exists idx_pledge_programs_nola on pledge_programs(nola_code);
+## Sheets seen in the uploaded sample workbook
 
-create table if not exists pledge_program_aliases (
-    id uuid primary key default gen_random_uuid(),
-    pledge_program_id uuid not null references pledge_programs(id) on delete cascade,
-    alias_title text not null,
-    alias_normalized text generated always as (regexp_replace(lower(coalesce(alias_title, '')), '[^a-z0-9]+', '', 'g')) stored,
-    created_at timestamptz not null default now()
-);
+From the uploaded sample report, the workbook contained these tabs:
 
-create index if not exists idx_pledge_program_aliases_norm on pledge_program_aliases(alias_normalized);
+- On Air Break Summary by Type
+- On Air Break Summary by Date
+- On Air Break Tally Sheet
+- Pledge Break Report Summary
+- Pledge Detail Break Report
+- PBS Break Report
 
--- -------------------------------------------------------------------
--- Program versions
--- -------------------------------------------------------------------
+The most useful sheets for matching appear to be:
+- **PBS Break Report**
+- **Pledge Break Report Summary**
+- **Pledge Detail Break Report**
 
-create table if not exists pledge_program_versions (
-    id uuid primary key default gen_random_uuid(),
-    pledge_program_id uuid not null references pledge_programs(id) on delete cascade,
-    version_label text not null,
-    break_style pledge_break_style not null default 'OTHER',
-    board_runtime_minutes integer not null,
-    exact_runtime interval,
-    has_national_pledge_breaks boolean not null default false,
-    has_local_cut_in_opportunities boolean not null default false,
-    default_break_count integer,
-    default_local_cut_in_count integer,
-    version_notes text,
-    status pledge_record_status not null default 'active',
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-    unique (pledge_program_id, version_label)
-);
+---
 
-create index if not exists idx_pledge_program_versions_program on pledge_program_versions(pledge_program_id);
+## Recommended import priority
 
--- -------------------------------------------------------------------
--- Segment map (program section / fundraising section / local cut-in)
--- -------------------------------------------------------------------
+### 1. PBS Break Report
+Best candidate for first-pass airing matching.
 
-create table if not exists pledge_program_segments (
-    id uuid primary key default gen_random_uuid(),
-    pledge_program_version_id uuid not null references pledge_program_versions(id) on delete cascade,
-    segment_order integer not null,
-    segment_type pledge_segment_type not null,
-    label text not null,
-    duration interval,
-    duration_minutes numeric(8,2),
-    local_cut_in_available boolean not null default false,
-    is_optional boolean not null default false,
-    notes text,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-    unique (pledge_program_version_id, segment_order)
-);
+Observed columns:
+- Station
+- Air Date
+- Air Time
+- NOLA
+- Program Title
+- Dollars
+- Pledges
+- Program Minutes
+- Sustainers
 
-create index if not exists idx_pledge_program_segments_version on pledge_program_segments(pledge_program_version_id);
+Why it matters:
+- It already has date + time + title + dollars + pledges + runtime
+- It resembles a clean airing-level result table
 
--- -------------------------------------------------------------------
--- Premiums
--- -------------------------------------------------------------------
+### 2. Pledge Break Report Summary
+Useful as supporting data and fallback.
 
-create table if not exists pledge_premiums (
-    id uuid primary key default gen_random_uuid(),
-    pledge_program_id uuid not null references pledge_programs(id) on delete cascade,
-    premium_name text not null,
-    premium_type text,
-    ask_amount numeric(12,2),
-    description text,
-    fulfillment_notes text,
-    active boolean not null default true,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
+Observed columns include:
+- Call Letters
+- Date
+- Program Time
+- Program number
+- Program Name
+- Number of Breaks
+- Break Minutes
+- Pledges
+- Dollars
+- Number of Premiums
+- Avg $ Per Brk
+- $ Per Min
+- $ Per Pledge
+- % Prem Requested
 
--- -------------------------------------------------------------------
--- Fundraisers
--- -------------------------------------------------------------------
+Why it matters:
+- includes premium count and break metrics
+- appears summary-level per airing/program-time row
 
-create table if not exists pledge_fundraisers (
-    id uuid primary key default gen_random_uuid(),
-    fundraiser_name text not null,
-    season_label text,
-    calendar_year integer,
-    start_date date not null,
-    end_date date not null,
-    pbs_core_start_date date,
-    pbs_core_end_date date,
-    fundraising_overnight boolean not null default false,
-    fundraising_morning boolean not null default false,
-    fundraising_daytime boolean not null default true,
-    fundraising_evening boolean not null default true,
-    fundraising_late_night boolean not null default true,
-    notes text,
-    status pledge_fundraiser_status not null default 'draft',
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-    constraint chk_pledge_fundraiser_dates check (end_date >= start_date)
-);
+### 3. Pledge Detail Break Report
+Useful for finer break-level analysis or difficult matches.
 
-create index if not exists idx_pledge_fundraisers_dates on pledge_fundraisers(start_date, end_date);
+Observed columns include:
+- Call Letters
+- Date
+- Break Time
+- Program number
+- Program Name
+- Break Code
+- Break Minutes
+- Pledges
+- Dollars
+- Num of Premiums
 
-create table if not exists pledge_fundraiser_blackouts (
-    id uuid primary key default gen_random_uuid(),
-    pledge_fundraiser_id uuid not null references pledge_fundraisers(id) on delete cascade,
-    blackout_date date not null,
-    start_time time,
-    end_time time,
-    reason text,
-    created_at timestamptz not null default now()
-);
+---
 
--- -------------------------------------------------------------------
--- Scheduled airings
--- -------------------------------------------------------------------
+## Matching order
 
-create table if not exists pledge_scheduled_airings (
-    id uuid primary key default gen_random_uuid(),
-    pledge_fundraiser_id uuid not null references pledge_fundraisers(id) on delete cascade,
-    pledge_program_id uuid not null references pledge_programs(id) on delete restrict,
-    pledge_program_version_id uuid references pledge_program_versions(id) on delete set null,
-    air_date date not null,
-    start_time time not null,
-    end_time time not null,
-    board_runtime_minutes integer not null,
-    exact_runtime interval,
-    is_live boolean not null default false,
-    is_blackout_override boolean not null default false,
-    status text not null default 'scheduled',
-    placement_notes text,
-    imported_from_previous_fundraiser_id uuid references pledge_scheduled_airings(id) on delete set null,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
+### Primary match keys
+1. fundraiser id
+2. air date
+3. air time / program time
+4. NOLA
+5. normalized program title
 
-create index if not exists idx_pledge_scheduled_airings_fundraiser on pledge_scheduled_airings(pledge_fundraiser_id, air_date, start_time);
-create index if not exists idx_pledge_scheduled_airings_program on pledge_scheduled_airings(pledge_program_id);
+### Secondary match keys
+- rounded board runtime / program minutes
+- version label
+- same-day nearest scheduled slot
 
--- Optional override structure for a specific airing
-create table if not exists pledge_airing_segment_overrides (
-    id uuid primary key default gen_random_uuid(),
-    pledge_scheduled_airing_id uuid not null references pledge_scheduled_airings(id) on delete cascade,
-    segment_order integer not null,
-    segment_type pledge_segment_type not null,
-    label text not null,
-    duration interval,
-    duration_minutes numeric(8,2),
-    local_cut_in_available boolean not null default false,
-    is_optional boolean not null default false,
-    notes text,
-    created_at timestamptz not null default now(),
-    unique (pledge_scheduled_airing_id, segment_order)
-);
+### Do not trust
+- title alone
+- date alone
+- same runtime alone
 
--- -------------------------------------------------------------------
--- Results by airing
--- -------------------------------------------------------------------
+---
 
-create table if not exists pledge_airing_results (
-    id uuid primary key default gen_random_uuid(),
-    pledge_scheduled_airing_id uuid not null references pledge_scheduled_airings(id) on delete cascade,
-    on_air_dollars numeric(12,2) not null default 0,
-    online_dollars numeric(12,2) not null default 0,
-    mail_dollars numeric(12,2) not null default 0,
-    other_dollars numeric(12,2) not null default 0,
-    total_dollars numeric(12,2) generated always as (coalesce(on_air_dollars,0) + coalesce(online_dollars,0) + coalesce(mail_dollars,0) + coalesce(other_dollars,0)) stored,
-    on_air_pledges integer not null default 0,
-    online_pledges integer not null default 0,
-    mail_pledges integer not null default 0,
-    other_pledges integer not null default 0,
-    total_pledges integer generated always as (coalesce(on_air_pledges,0) + coalesce(online_pledges,0) + coalesce(mail_pledges,0) + coalesce(other_pledges,0)) stored,
-    premium_count integer not null default 0,
-    sustainer_count integer not null default 0,
-    needs_review boolean not null default false,
-    result_notes text,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-    unique (pledge_scheduled_airing_id)
-);
+## Title normalization rules
 
--- -------------------------------------------------------------------
--- Import tracking
--- -------------------------------------------------------------------
+Before matching:
+- lowercase
+- trim whitespace
+- collapse punctuation
+- remove repeated spaces
+- normalize `&` and `and`
+- strip non-alphanumeric comparison characters for a second-pass normalized form
 
-create table if not exists pledge_report_imports (
-    id uuid primary key default gen_random_uuid(),
-    pledge_fundraiser_id uuid not null references pledge_fundraisers(id) on delete cascade,
-    original_filename text not null,
-    workbook_format text,
-    parser_version text,
-    import_status pledge_import_status not null default 'uploaded',
-    import_notes text,
-    imported_at timestamptz not null default now()
-);
+Example:
+`BARRY MANILOW: LIVE BY REQUEST`
+and
+`Barry Manilow Live By Request`
+should normalize to the same comparison form.
 
-create table if not exists pledge_report_import_rows (
-    id uuid primary key default gen_random_uuid(),
-    pledge_report_import_id uuid not null references pledge_report_imports(id) on delete cascade,
-    source_sheet_name text,
-    raw_air_date date,
-    raw_air_time text,
-    raw_break_time text,
-    raw_nola_code text,
-    raw_program_title text,
-    raw_program_number text,
-    raw_break_code text,
-    raw_break_minutes text,
-    raw_program_minutes integer,
-    raw_dollars numeric(12,2),
-    raw_pledges integer,
-    raw_premium_count integer,
-    raw_sustainer_count integer,
-    matched_pledge_scheduled_airing_id uuid references pledge_scheduled_airings(id) on delete set null,
-    match_status pledge_match_status not null default 'unmatched',
-    match_confidence numeric(5,2),
-    review_notes text,
-    created_at timestamptz not null default now()
-);
+---
 
-create index if not exists idx_pledge_report_import_rows_import on pledge_report_import_rows(pledge_report_import_id);
-create index if not exists idx_pledge_report_import_rows_match on pledge_report_import_rows(match_status, match_confidence);
+## Recommended confidence model
 
--- -------------------------------------------------------------------
--- Helpful views
--- -------------------------------------------------------------------
+### 100
+Exact date + exact time + exact NOLA
 
-create or replace view pledge_program_library_summary as
-select
-    p.id,
-    p.title,
-    p.nola_code,
-    p.distributor,
-    p.topic_primary,
-    p.board_runtime_minutes,
-    p.exact_runtime,
-    p.premium_summary,
-    p.status,
-    count(distinct v.id) as version_count,
-    coalesce(sum(case when s.segment_type = 'fundraising' then 1 else 0 end), 0) as break_count,
-    coalesce(sum(case when s.local_cut_in_available then 1 else 0 end), 0) as local_cut_in_count,
-    p.times_aired_count,
-    p.lifetime_dollars,
-    p.lifetime_pledges,
-    p.last_aired_at
-from pledge_programs p
-left join pledge_program_versions v on v.pledge_program_id = p.id
-left join pledge_program_segments s on s.pledge_program_version_id = v.id
-group by
-    p.id, p.title, p.nola_code, p.distributor, p.topic_primary, p.board_runtime_minutes,
-    p.exact_runtime, p.premium_summary, p.status, p.times_aired_count,
-    p.lifetime_dollars, p.lifetime_pledges, p.last_aired_at;
+### 95
+Exact date + exact time + normalized title
 
-create or replace view pledge_fundraiser_schedule_summary as
-select
-    f.id as fundraiser_id,
-    f.fundraiser_name,
-    a.air_date,
-    a.start_time,
-    a.end_time,
-    a.board_runtime_minutes,
-    a.is_live,
-    p.title,
-    p.nola_code,
-    p.distributor,
-    p.premium_summary,
-    r.total_dollars,
-    r.total_pledges,
-    r.needs_review
-from pledge_fundraisers f
-join pledge_scheduled_airings a on a.pledge_fundraiser_id = f.id
-join pledge_programs p on p.id = a.pledge_program_id
-left join pledge_airing_results r on r.pledge_scheduled_airing_id = a.id;
+### 90
+Exact date + near time + exact NOLA
 
--- -------------------------------------------------------------------
--- Trigger helpers
--- -------------------------------------------------------------------
+### 85
+Exact date + near time + normalized title + matching runtime bucket
 
-create or replace function set_updated_at()
-returns trigger as $$
-begin
-    new.updated_at = now();
-    return new;
-end;
-$$ language plpgsql;
+### < 85
+Send to review queue
 
-do $$
-begin
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_programs_updated_at') then
-        create trigger trg_pledge_programs_updated_at before update on pledge_programs
-        for each row execute function set_updated_at();
-    end if;
+---
 
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_program_versions_updated_at') then
-        create trigger trg_pledge_program_versions_updated_at before update on pledge_program_versions
-        for each row execute function set_updated_at();
-    end if;
+## Review queue triggers
 
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_program_segments_updated_at') then
-        create trigger trg_pledge_program_segments_updated_at before update on pledge_program_segments
-        for each row execute function set_updated_at();
-    end if;
+Send a row to review if:
+- more than one possible airing matches
+- title is missing or malformed
+- time is missing
+- multiple same-title airings exist on the same date
+- NOLA conflicts with title
+- workbook line appears to be a total row instead of an airing row
+- row is `.NON-SPECIFIC PLEDGES`
+- row is clearly summary-only and not assignable to a specific airing
 
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_premiums_updated_at') then
-        create trigger trg_pledge_premiums_updated_at before update on pledge_premiums
-        for each row execute function set_updated_at();
-    end if;
+---
 
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_fundraisers_updated_at') then
-        create trigger trg_pledge_fundraisers_updated_at before update on pledge_fundraisers
-        for each row execute function set_updated_at();
-    end if;
+## Special handling
 
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_scheduled_airings_updated_at') then
-        create trigger trg_pledge_scheduled_airings_updated_at before update on pledge_scheduled_airings
-        for each row execute function set_updated_at();
-    end if;
+### NON-SPECIFIC PLEDGES
+These should not be auto-assigned to a title airing.
+Store them as import rows and either:
+- ignore in title-level analysis, or
+- assign to fundraiser-level unattributed totals
 
-    if not exists (select 1 from pg_trigger where tgname = 'trg_pledge_airing_results_updated_at') then
-        create trigger trg_pledge_airing_results_updated_at before update on pledge_airing_results
-        for each row execute function set_updated_at();
-    end if;
-end $$;
+### Totals rows
+Rows such as `Totals for Date` or `Totals for Prerecorded` should not be imported as airing results.
+They may be kept in a separate summary table later, but should not match to airings.
+
+### Online/mail
+If a workbook does not clearly assign online/mail to a specific airing, store them at fundraiser level or leave them manual for now.
+
+---
+
+## Result posting rules
+
+After a row is matched to a scheduled airing:
+- create or update `pledge_airing_results`
+- store dollars
+- store pledges
+- store premium count if present
+- store sustainer count if present
+- flag needs_review when confidence is not perfect
+
+### One-to-one default
+Assume one airing result row per scheduled airing unless proven otherwise.
+
+If duplicate rows appear for the same airing:
+- either merge them deliberately with notes
+- or place duplicates into review
+
+---
+
+## First-pass supported workbook fields from sample
+
+### PBS Break Report example
+- `2026-03-01`
+- `2000`
+- `ACSD`
+- `ALL CREATURES GREAT AND SMALL`
+- `1734`
+- `6`
+- `90`
+- `1 sustainer`
+
+This should match well against a scheduled airing of:
+- fundraiser = matching fundraiser
+- air_date = 2026-03-01
+- start_time = 20:00
+- title or NOLA match
+- board runtime = 90
+
+---
+
+## Suggested implementation order
+
+### Phase 1
+Support import from:
+- PBS Break Report
+- Pledge Break Report Summary
+
+### Phase 2
+Use Pledge Detail Break Report for deeper break analytics and overrides.
+
+### Phase 3
+Add alias-learning:
+- when manual matches are made repeatedly, suggest aliases for future imports
+

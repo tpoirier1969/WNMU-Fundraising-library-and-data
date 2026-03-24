@@ -1,79 +1,340 @@
-# Sample Report Probe Notes v0.1.0
+# Pledge Manager Build Spec v0.1.0
 
-This note summarizes what was actually observed from the uploaded workbook:
+## Goal
 
-`tv march pledge report 022826 to 031826.xls`
+Create a sister app to the WNMU Program Library for quarterly pledge/fundraiser planning, pledge title management, schedule building, and post-drive performance imports.
 
-The workbook was converted to `.xlsx` for inspection.
+---
 
-## Workbook metadata
-- Old Excel `.xls` format
-- Last saved by: Sarah Stanley
-- Last saved time/date: 2026-03-19 12:36:39
+## Guiding rules
 
-## Sheet names found
-1. On Air Break Summary by Type
-2. On Air Break Summary by Date
-3. On Air Break Tally Sheet
-4. Pledge Break Report Summary
-5. Pledge Detail Break Report
-6. PBS Break Report
+1. **Same Supabase project, separate pledge tables**
+2. **Type-ahead placement** is the main scheduling method
+3. **Rounded board runtime** controls the schedule block height
+4. **Exact runtime** is stored separately for detail/reporting
+5. **Break structure** is stored as reusable segment rows
+6. **Archive is default-hidden but still searchable**
+7. **Import rows are preserved raw before matching**
+8. **Ambiguous import matches go to review**
 
-## Most useful sheet for direct airing matching
-### PBS Break Report
-Observed columns:
-- Station
-- Air Date
-- Air Time
+---
+
+## Main app sections
+
+### 1. Fundraisers
+Create, edit, archive, duplicate, and manage fundraiser periods.
+
+### 2. Schedule
+Visual board for placing and moving titles inside a fundraiser.
+
+### 3. Pledge Program Library
+Master catalog of all pledge titles and versions.
+
+### 4. Results / Reports
+Totals, averages, comparisons, import status, review queue.
+
+### 5. Settings / Lookups
+Optional lookup maintenance later.
+
+---
+
+## Screen 1: Fundraisers list
+
+### Purpose
+Show all fundraiser periods, including variable-length drives.
+
+### Main controls
+- Create Fundraiser
+- Duplicate Fundraiser
+- Archive Fundraiser
+- Open Schedule
+- Import Results Report
+
+### Columns
+- Fundraiser name
+- Date range
+- Status
+- Scheduled airings
+- Total raised
+- Notes flag
+
+### Create Fundraiser modal fields
+- Fundraiser name
+- Season label
+- Year
+- Start date
+- End date
+- PBS core start date
+- PBS core end date
+- Fundraising overnight? yes/no
+- Fundraising morning? yes/no
+- Fundraising daytime? yes/no
+- Fundraising evening? yes/no
+- Fundraising late night? yes/no
+- Notes
+
+### Optional later
+- blackout date editor
+- duplicate prior fundraiser template
+
+---
+
+## Screen 2: Schedule board
+
+### Core behavior
+- Board columns are one day each
+- Rows are 30-minute blocks
+- Fundraiser date range controls board width
+- Empty slot click opens inline quick-add
+- Program block height uses board runtime bucket
+
+### Primary scheduling workflow
+1. Click empty slot at a specific day/time
+2. Type a title, alias, or NOLA
+3. Choose from autocomplete results
+4. Scheduled airing row is created automatically
+5. Board block appears automatically
+6. Lower run list updates automatically
+
+### Autocomplete result content
+Each result line should show:
+- Title
+- Version
+- Board runtime
+- Distributor
+- Avg dollars per airing (if available)
+- Archived badge if archived
+
+### Scheduler actions
+- Click empty slot to add
+- Drag block up/down by 30-minute increments
+- Drag block to another day
+- Duplicate block
+- Remove block
+- Replace title
+- Change version
+- Mark live
+- Add notes
+
+### Board color/label guidance
+- Standard programs: neutral but readable
+- Live blocks: stronger badge/label
+- Archived titles if scheduled: clearly tagged
+- Blackout windows: shaded or locked
+- Overlaps/conflicts: obvious warning state
+
+---
+
+## Screen 3: Lower run list beneath schedule
+
+### Purpose
+Auto-generated operations/fundraising handoff list for the current fundraiser.
+
+### Source
+Derived automatically from the scheduled airings on the board. No manual duplicate entry.
+
+### Default columns
+- Date
+- Start
+- End
+- Title
+- Version
 - NOLA
-- Program Title
-- Dollars
-- Pledges
-- Program Minutes
-- Sustainers
+- Distributor
+- Board runtime
+- Exact runtime
+- Break summary
+- Premium summary
+- Avg dollars
+- Lifetime dollars
+- Current fundraiser dollars
+- Notes / status
 
-Sample rows observed:
-- 2026-02-28 2100 CCLA COUNTRY CLASSICS 255 2 90
-- 2026-03-01 1800 LWPR LAWRENCE WELK : PRECIOUS MEMOR 200 1 120
-- 2026-03-01 2000 ACSD ALL CREATURES GREAT AND SMALL 1734 6 90
-- 2026-03-01 2130 BAML BARRY MANILOW: LIVE BY REQUEST 0 0 90
+### Expandable row
+When expanded, show:
+- full break map
+- local cut-in opportunities
+- rights notes
+- distributor notes
+- premium notes
+- revenue history
 
-## Helpful supporting sheet
-### Pledge Break Report Summary
-Observed columns:
-- Call Letters
-- Date
-- Program Time
-- Program
-- Program Name
-- # of Breaks
-- Break Minutes
-- Pledges
-- Dollars
-- # of Premiums
-- Avg $ Per Brk
-- $ Per Min
-- $ Per Pledge
-- % Prem Requested
+---
 
-## Fine-grained sheet
-### Pledge Detail Break Report
-Observed columns:
-- Call Letters
-- Date
-- Break Time
-- Program
-- Program Name
-- Break Code
-- Break Minutes
-- Pledges
-- Dollars
-- Num of Premiums
+## Screen 4: Pledge Program Library
 
-## Import implications
-1. The workbook structure is regular enough to parse.
-2. The PBS Break Report looks like the best first-pass matching source.
-3. The summary/detail break reports are strong supporting data.
-4. NON-SPECIFIC PLEDGES appears in the report and should not be blindly matched to a title.
-5. Date and start-time matching should work well if the fundraiser board stores scheduled airings cleanly.
+### Purpose
+Manage the large title catalog without cluttering the schedule screen.
+
+### Main controls
+- Add Program
+- Include Archived toggle
+- Search
+- Filter by topic
+- Filter by distributor
+- Filter by version
+- Filter by rights
+- Sort by title / last aired / lifetime dollars / average dollars
+
+### Default list columns
+- Title
+- Version count
+- Board runtime
+- Exact runtime
+- Break summary
+- Premium summary
+- Distributor
+- Last aired
+- Lifetime dollars
+- Avg dollars per airing
+- Status
+
+### Break summary in list
+This is compact, not the full segment map.
+Suggested display:
+- `5 breaks · 2 local`
+- optionally shorthand: `P26 F2[L] P21 F2 P19`
+
+### Program detail page / drawer
+Tabs or sections:
+- Overview
+- Versions
+- Break Map
+- Premiums
+- Revenue History
+
+---
+
+## Program detail: Versions + Break Map
+
+### Version record fields
+- Version label
+- Break style (HDPL / HDPE / LIVE / OTHER)
+- Board runtime minutes
+- Exact runtime
+- Break count
+- Local cut-in count
+- Notes
+
+### Break Map editor
+Use an ordered row editor, not fixed columns.
+
+Each row contains:
+- order
+- segment type
+- label
+- duration
+- local cut-in available?
+- optional?
+- notes
+
+Example:
+- Program Section 1 — 26:05
+- Fundraising Section 1 — 2:00 — local yes
+- Program Section 2 — 20:33
+- Fundraising Section 2 — 1:27 — local yes
+- Program Section 3 — 18:48
+
+---
+
+## Screen 5: Results / Reports
+
+### Default sections
+- Fundraiser totals
+- Program performance rankings
+- Version comparisons
+- Import history
+- Review queue
+
+### Useful report outputs
+- Lifetime by title
+- Avg dollars per airing
+- Avg dollars per fundraiser
+- Best/worst fundraiser by title
+- HDPL vs HDPE
+- Performance by daypart
+- Performance by weekday
+- Extension-day value
+- Overnight performance
+
+---
+
+## Import Review screen
+
+### Purpose
+Show rows from uploaded reports that could not be matched cleanly.
+
+### Columns
+- Raw date
+- Raw time
+- Raw NOLA
+- Raw title
+- Raw dollars
+- Raw pledges
+- Match confidence
+- Proposed airing
+- Action buttons
+
+### Actions
+- Accept suggested match
+- Search for correct airing
+- Ignore row
+- Add note
+
+---
+
+## Runtime rules
+
+### Board runtime
+Rounded planning bucket:
+- 1:26:05 => 90
+- 0:28:00 => 30
+- 2:03:20 => 120
+
+### Exact runtime
+Kept in the record for detail/reference.
+
+### UI display
+Show both when relevant:
+- Board: 90 min
+- Exact: 1:26:05
+
+---
+
+## Archive rules
+
+### Default behavior
+Only active titles are shown by default.
+
+### Include Archived
+A toggle adds archived titles into the same list/search results.
+
+### Scheduler search behavior
+- active titles rank first
+- archived titles remain available
+- archived badge shown clearly
+
+---
+
+## Phase order
+
+### Phase 1
+- schema
+- fundraisers list
+- schedule board
+- type-ahead placement
+- pledge program library
+- version/break map editor
+
+### Phase 2
+- results storage
+- report import
+- auto matching
+- review queue
+
+### Phase 3
+- richer analytics
+- duplicate-from-prior-fundraiser helpers
+- blackout/daypart locking
+- smarter suggestions
 
