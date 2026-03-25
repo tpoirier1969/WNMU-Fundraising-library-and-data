@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.6.1</title>
+  <title>WNMU Pledge Program Library v0.6.2</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.6.1">
+  <link rel="stylesheet" href="assets/styles.css?v=0.6.2">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/app.js?v=0.6.1"></script>
+  <script defer src="assets/app.js?v=0.6.2"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -21,7 +21,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.6.1</span>
+            <span class="version-pill" id="version-flag">v0.6.2</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
         </div>
@@ -34,68 +34,51 @@
       </div>
     </header>
 
-    <section class="controls">
-      <div class="controls-head">
-        <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
-      </div>
-      <div class="search-grid">
-        <div class="search-mode-wrap">
+    <section class="controls compact-controls">
+      <div class="filter-row">
+        <div class="filter-field narrow">
           <label class="filter-label" for="search-field-select">Search in</label>
           <select id="search-field-select">
             <option value="">All fields</option>
             <option value="title">Title</option>
             <option value="nola_code">NOLA</option>
             <option value="topic_primary">Topic</option>
-            <option value="distributor">Distributor</option>
             <option value="topic_secondary">Secondary topic</option>
-            <option value="exact_runtime">Length</option>
+            <option value="distributor">Distributor</option>
             <option value="premium_summary">Premiums</option>
           </select>
         </div>
-        <div class="search-block">
+        <div class="filter-field search-grow">
           <label class="filter-label" for="search-input">Search text</label>
-          <input id="search-input" type="search" placeholder="Search title, primary or secondary topic, distributor, premiums, length, or NOLA.">
+          <input id="search-input" type="search" placeholder="Search title, NOLA, topic, distributor, description, or premiums.">
         </div>
-      </div>
-      <div class="filters filters-grid">
-        <div class="filter-box wide">
-          <div class="filter-label-row">
-            <label class="filter-label" for="topic-filter">Topics</label>
-            <button type="button" id="clear-topic-filter" class="mini-clear">Clear</button>
-          </div>
-          <select id="topic-filter" multiple size="5"></select>
+        <div class="filter-field">
+          <label class="filter-label" for="topic-filter">Topic</label>
+          <select id="topic-filter"></select>
         </div>
-        <div class="filter-box wide">
-          <div class="filter-label-row">
-            <label class="filter-label" for="secondary-topic-filter">Secondary topics</label>
-            <button type="button" id="clear-secondary-topic-filter" class="mini-clear">Clear</button>
-          </div>
-          <select id="secondary-topic-filter" multiple size="5"></select>
+        <div class="filter-field">
+          <label class="filter-label" for="secondary-topic-filter">Secondary topic</label>
+          <select id="secondary-topic-filter"></select>
         </div>
-        <div class="filter-box">
-          <div class="filter-label-row">
-            <label class="filter-label" for="length-filter">Lengths</label>
-            <button type="button" id="clear-length-filter" class="mini-clear">Clear</button>
-          </div>
-          <select id="length-filter" multiple size="5"></select>
+        <div class="filter-field narrow">
+          <label class="filter-label" for="length-filter">Length</label>
+          <select id="length-filter"></select>
         </div>
-        <div class="filter-box">
+        <div class="filter-field">
           <label class="filter-label" for="distributor-filter">Distributor</label>
-          <select id="distributor-filter">
-            <option value="">All distributors</option>
-          </select>
+          <select id="distributor-filter"></select>
         </div>
-        <div class="filter-box">
-          <label class="filter-label" for="status-filter">State of the library</label>
+        <div class="filter-field narrow">
+          <label class="filter-label" for="status-filter">Library state</label>
           <select id="status-filter">
-            <option value="active" selected>Active titles</option>
-            <option value="all">Include archived</option>
+            <option value="all" selected>All titles</option>
+            <option value="active">Active only</option>
             <option value="archived">Archived only</option>
           </select>
         </div>
-      </div>
-      <div class="filter-foot">
-        <div class="filter-help">Tip: hold Ctrl/⌘ to choose multiple topics, secondary topics, or lengths.</div>
+        <div class="filter-actions">
+          <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
+        </div>
       </div>
     </section>
 
@@ -105,14 +88,9 @@
           <div class="list-title">Program list</div>
           <div class="list-summary" id="result-summary">Waiting on data…</div>
         </div>
-        <div class="pager">
-          <button type="button" class="ghost small" id="prev-page">Prev</button>
-          <div id="page-label" class="page-label">Page 1</div>
-          <button type="button" class="ghost small" id="next-page">Next</button>
-        </div>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap all-rows-wrap">
         <table class="programs-table">
           <thead>
             <tr>
@@ -189,7 +167,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.6.1</div>
+      <div id="footer-version">v0.6.2</div>
     </footer>
   </div>
 </body>
