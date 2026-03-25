@@ -3,120 +3,139 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.5.0</title>
+  <title>WNMU Pledge Program Library v0.6.0</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.5.0">
+  <link rel="stylesheet" href="assets/styles.css?v=0.6.0">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/app.js?v=0.5.0"></script>
+  <script defer src="assets/app.js?v=0.6.0"></script>
 </head>
 <body>
   <div class="app-shell">
-    <header class="site-header">
-      <div class="brand-block">
-        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS" class="brand-logo">
-        <div class="brand-copy">
-          <div class="brand-kicker">WNMU Public TV</div>
-          <h1>Pledge Program Library</h1>
-          <p class="brand-subtitle">Imported pledge titles, versions, premiums, and break structure in one sane place.</p>
+    <header class="topbar">
+      <div class="brand-wrap">
+        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo" class="brand-logo">
+        <div>
+          <div class="brand-name">WNMU-TV PBS</div>
+          <div class="title-row">
+            <h1 id="app-title">Pledge Program Library</h1>
+            <span class="version-pill" id="version-flag">v0.6.0</span>
+          </div>
+          <div class="status-line" id="config-status">Checking configuration…</div>
         </div>
       </div>
-      <div class="header-right">
+      <div class="topbar-actions">
         <div class="role-chip" id="role-chip">Viewer</div>
-        <div class="version-flag" id="version-flag">v0.5.0</div>
+        <button type="button" class="primary hidden" id="admin-new-button">Add program</button>
+        <button type="button" class="ghost hidden" id="admin-edit-button">Edit selected</button>
+        <button type="button" class="ghost" id="refresh-button">Refresh</button>
       </div>
     </header>
 
-    <main class="main-grid">
-      <section class="panel controls-panel">
-        <div class="panel-header">
-          <h2>Library</h2>
-          <div class="toolbar-actions">
-            <button type="button" class="button ghost" id="refresh-button">Refresh</button>
-            <button type="button" class="button accent hidden" id="admin-new-button">Add program</button>
+    <section class="controls">
+      <div class="controls-head">
+        <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
+      </div>
+      <div class="search-grid">
+        <div class="search-mode-wrap">
+          <label class="filter-label" for="search-field-select">Search in</label>
+          <select id="search-field-select">
+            <option value="">All fields</option>
+            <option value="title">Title</option>
+            <option value="nola_code">NOLA</option>
+            <option value="topic_primary">Topic</option>
+            <option value="distributor">Distributor</option>
+            <option value="premium_summary">Premiums</option>
+          </select>
+        </div>
+        <div class="search-block">
+          <label class="filter-label" for="search-input">Search text</label>
+          <input id="search-input" type="search" placeholder="Search title, topic, distributor, premiums, or NOLA.">
+        </div>
+      </div>
+      <div class="filters filters-grid">
+        <div class="filter-box wide">
+          <div class="filter-label-row">
+            <label class="filter-label" for="topic-filter">Topics</label>
+            <button type="button" id="clear-topic-filter" class="mini-clear">Clear</button>
           </div>
+          <select id="topic-filter" multiple size="5"></select>
         </div>
-
-        <div class="notice-strip" id="config-status">Checking configuration…</div>
-
-        <div class="controls-grid">
-          <label class="field span-2">
-            <span>Search</span>
-            <input id="search-input" type="search" placeholder="Title, NOLA, topic, distributor, premium…">
-          </label>
-          <label class="field">
-            <span>State of the library</span>
-            <select id="status-filter">
-              <option value="active" selected>Active titles</option>
-              <option value="all">Include archived</option>
-              <option value="archived">Archived only</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Sort</span>
-            <select id="sort-select">
-              <option value="title" selected>Title</option>
-              <option value="runtime">Board runtime</option>
-              <option value="money">Lifetime dollars</option>
-              <option value="airings">Times aired</option>
-              <option value="recent">Most recently aired</option>
-            </select>
-          </label>
+        <div class="filter-box">
+          <label class="filter-label" for="distributor-filter">Distributor</label>
+          <select id="distributor-filter">
+            <option value="">All distributors</option>
+          </select>
         </div>
-
-        <div class="meta-row">
-          <div id="result-summary" class="muted">Waiting on data…</div>
-          <div class="pager">
-            <button type="button" class="button ghost small" id="prev-page">Prev</button>
-            <div id="page-label" class="page-label">Page 1</div>
-            <button type="button" class="button ghost small" id="next-page">Next</button>
-          </div>
+        <div class="filter-box">
+          <label class="filter-label" for="status-filter">State of the library</label>
+          <select id="status-filter">
+            <option value="active" selected>Active titles</option>
+            <option value="all">Include archived</option>
+            <option value="archived">Archived only</option>
+          </select>
         </div>
+      </div>
+      <div class="filter-foot">
+        <div class="filter-help">Tip: hold Ctrl/⌘ to choose multiple topics.</div>
+      </div>
+    </section>
 
-        <div class="table-wrap">
-          <table class="library-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>NOLA</th>
-                <th>Ver</th>
-                <th>Board</th>
-                <th>Breaks</th>
-                <th>Local</th>
-                <th>Topic</th>
-                <th>Distributor</th>
-                <th>Premiums</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="library-body">
-              <tr>
-                <td colspan="10" class="placeholder-row">Loading library…</td>
-              </tr>
-            </tbody>
-          </table>
+    <section class="list-panel">
+      <div class="list-meta">
+        <div>
+          <div class="list-title">Program list</div>
+          <div class="list-summary" id="result-summary">Waiting on data…</div>
         </div>
-      </section>
-    </main>
+        <div class="pager">
+          <button type="button" class="ghost small" id="prev-page">Prev</button>
+          <div id="page-label" class="page-label">Page 1</div>
+          <button type="button" class="ghost small" id="next-page">Next</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="programs-table">
+          <thead>
+            <tr>
+              <th class="col-title">Title</th>
+              <th class="col-length">Length</th>
+              <th class="col-topic">Topic</th>
+              <th class="col-distributor">Distributor</th>
+              <th class="col-premiums">Premiums</th>
+              <th class="col-rights">Rights Begin</th>
+              <th class="col-rights">Rights End</th>
+              <th class="col-airing">Last Aired</th>
+            </tr>
+          </thead>
+          <tbody id="library-body">
+            <tr><td colspan="8" class="placeholder-row">Loading library…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <div id="detail-backdrop" class="detail-backdrop hidden"></div>
     <section id="detail-modal" class="detail-modal hidden" aria-modal="true" role="dialog" aria-labelledby="detail-title">
       <div class="detail-modal-card">
-        <div class="panel-header detail-header sticky">
+        <div class="detail-header sticky">
           <div>
+            <div class="detail-kicker">Pledge program detail</div>
             <h2 id="detail-title">Program detail</h2>
             <p id="detail-subtitle" class="muted">Choose a title from the library.</p>
           </div>
           <div class="toolbar-actions">
-            <button type="button" class="button ghost hidden" id="admin-edit-button">Edit</button>
-            <button type="button" class="button ghost" id="detail-close-button">Close</button>
+            <button type="button" class="ghost hidden" id="detail-edit-button">Edit</button>
+            <button type="button" class="ghost" id="detail-close-button">Close</button>
           </div>
         </div>
 
+        <div id="detail-notice" class="notice-strip hidden"></div>
+
         <div id="detail-empty" class="detail-empty hidden">
-          Choose a title from the library to inspect the imported fields, version info, and segment map.
+          Choose a title from the library to inspect imported fields, versions, premium notes, and segment structure.
         </div>
 
         <div id="detail-content" class="detail-scroll hidden">
@@ -145,8 +164,8 @@
     </section>
 
     <footer class="site-footer">
-      <div>WNMU Pledge Program Library</div>
-      <div id="footer-version">v0.5.0</div>
+      <div>WNMU-TV PBS · Pledge Program Library</div>
+      <div id="footer-version">v0.6.0</div>
     </footer>
   </div>
 </body>
