@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.6.0</title>
+  <title>WNMU Pledge Program Library v0.6.1</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.6.0">
+  <link rel="stylesheet" href="assets/styles.css?v=0.6.1">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/app.js?v=0.6.0"></script>
+  <script defer src="assets/app.js?v=0.6.1"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -21,7 +21,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.6.0</span>
+            <span class="version-pill" id="version-flag">v0.6.1</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
         </div>
@@ -47,12 +47,14 @@
             <option value="nola_code">NOLA</option>
             <option value="topic_primary">Topic</option>
             <option value="distributor">Distributor</option>
+            <option value="topic_secondary">Secondary topic</option>
+            <option value="exact_runtime">Length</option>
             <option value="premium_summary">Premiums</option>
           </select>
         </div>
         <div class="search-block">
           <label class="filter-label" for="search-input">Search text</label>
-          <input id="search-input" type="search" placeholder="Search title, topic, distributor, premiums, or NOLA.">
+          <input id="search-input" type="search" placeholder="Search title, primary or secondary topic, distributor, premiums, length, or NOLA.">
         </div>
       </div>
       <div class="filters filters-grid">
@@ -62,6 +64,20 @@
             <button type="button" id="clear-topic-filter" class="mini-clear">Clear</button>
           </div>
           <select id="topic-filter" multiple size="5"></select>
+        </div>
+        <div class="filter-box wide">
+          <div class="filter-label-row">
+            <label class="filter-label" for="secondary-topic-filter">Secondary topics</label>
+            <button type="button" id="clear-secondary-topic-filter" class="mini-clear">Clear</button>
+          </div>
+          <select id="secondary-topic-filter" multiple size="5"></select>
+        </div>
+        <div class="filter-box">
+          <div class="filter-label-row">
+            <label class="filter-label" for="length-filter">Lengths</label>
+            <button type="button" id="clear-length-filter" class="mini-clear">Clear</button>
+          </div>
+          <select id="length-filter" multiple size="5"></select>
         </div>
         <div class="filter-box">
           <label class="filter-label" for="distributor-filter">Distributor</label>
@@ -79,7 +95,7 @@
         </div>
       </div>
       <div class="filter-foot">
-        <div class="filter-help">Tip: hold Ctrl/⌘ to choose multiple topics.</div>
+        <div class="filter-help">Tip: hold Ctrl/⌘ to choose multiple topics, secondary topics, or lengths.</div>
       </div>
     </section>
 
@@ -135,7 +151,7 @@
         <div id="detail-notice" class="notice-strip hidden"></div>
 
         <div id="detail-empty" class="detail-empty hidden">
-          Choose a title from the library to inspect imported fields, versions, premium notes, and segment structure.
+          Choose a title from the library to inspect timing, air history, premium notes, and segment structure.
         </div>
 
         <div id="detail-content" class="detail-scroll hidden">
@@ -146,10 +162,18 @@
 
           <section class="detail-block">
             <div class="section-head">
-              <h3>Versions</h3>
-              <div id="version-count-chip" class="mini-chip">0</div>
+              <h3>Timing &amp; segment structure</h3>
+              <div id="timing-count-chip" class="mini-chip">0</div>
             </div>
-            <div id="versions-list" class="version-stack"></div>
+            <div id="timing-list" class="version-stack"></div>
+          </section>
+
+          <section class="detail-block">
+            <div class="section-head">
+              <h3>Air dates &amp; contributions</h3>
+              <div id="airing-count-chip" class="mini-chip">0</div>
+            </div>
+            <div id="airing-list" class="simple-list"></div>
           </section>
 
           <section class="detail-block">
@@ -165,7 +189,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.6.0</div>
+      <div id="footer-version">v0.6.1</div>
     </footer>
   </div>
 </body>

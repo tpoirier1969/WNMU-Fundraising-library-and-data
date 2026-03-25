@@ -1,9 +1,10 @@
-
 (() => {
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-  const APP_VERSION = 'v0.6.0';
+  const APP_VERSION = 'v0.6.1';
   const PAGE_SIZE = Number(cfg.DEFAULT_PAGE_SIZE || 100);
-  const ADMIN_EMAILS = Array.isArray(cfg.ADMIN_EMAILS) ? cfg.ADMIN_EMAILS.map((e) => String(e).trim().toLowerCase()) : [];
+  const ADMIN_EMAILS = Array.isArray(cfg.ADMIN_EMAILS)
+    ? cfg.ADMIN_EMAILS.map((e) => String(e).trim().toLowerCase())
+    : [];
 
   const els = {
     configStatus: document.getElementById('config-status'),
@@ -13,9 +14,13 @@
     searchFieldSelect: document.getElementById('search-field-select'),
     searchInput: document.getElementById('search-input'),
     topicFilter: document.getElementById('topic-filter'),
+    secondaryTopicFilter: document.getElementById('secondary-topic-filter'),
+    lengthFilter: document.getElementById('length-filter'),
     distributorFilter: document.getElementById('distributor-filter'),
     statusFilter: document.getElementById('status-filter'),
     clearTopicFilter: document.getElementById('clear-topic-filter'),
+    clearSecondaryTopicFilter: document.getElementById('clear-secondary-topic-filter'),
+    clearLengthFilter: document.getElementById('clear-length-filter'),
     resetFiltersButton: document.getElementById('reset-filters-button'),
     refreshButton: document.getElementById('refresh-button'),
     adminNewButton: document.getElementById('admin-new-button'),
@@ -35,11 +40,24 @@
     detailEmpty: document.getElementById('detail-empty'),
     detailContent: document.getElementById('detail-content'),
     overviewGrid: document.getElementById('overview-grid'),
-    versionsList: document.getElementById('versions-list'),
+    timingList: document.getElementById('timing-list'),
+    airingList: document.getElementById('airing-list'),
     premiumsList: document.getElementById('premiums-list'),
-    versionCountChip: document.getElementById('version-count-chip'),
+    timingCountChip: document.getElementById('timing-count-chip'),
+    airingCountChip: document.getElementById('airing-count-chip'),
     premiumCountChip: document.getElementById('premium-count-chip')
   };
+
+  const READ_VIEW = 'pledge_program_library_summary';
+  const SEARCHABLE_FIELDS = new Set([
+    'title',
+    'nola_code',
+    'topic_primary',
+    'topic_secondary',
+    'distributor',
+    'premium_summary',
+    'exact_runtime'
+  ]);
 
   const state = {
     client: null,
@@ -53,13 +71,14 @@
     searchField: '',
     statusFilter: 'active',
     topicFilters: [],
+    secondaryTopicFilters: [],
+    lengthFilters: [],
     distributorFilter: '',
     topicOptions: [],
+    secondaryTopicOptions: [],
+    lengthOptions: [],
     distributorOptions: []
   };
-
-  const READ_VIEW = 'pledge_program_library_summary';
-  const SEARCHABLE_FIELDS = new Set(['title', 'nola_code', 'topic_primary', 'distributor', 'premium_summary']);
 
   const setNotice = (text, type = '') => {
     els.configStatus.textContent = text;
@@ -76,10 +95,20 @@
 
   const normalizeText = (value) => String(value ?? '').trim();
 
+  const selectedValues = (select) => [...(select?.selectedOptions || [])]
+    .map((option) => option.value)
+    .filter(Boolean);
+
+  const escapeLike = (value) => normalizeText(value).replace(/,/g, ' ').replace(/%/g, '').replace(/_/g, '');
+
   const formatMoney = (value) => {
-    const num = Number(value || 0);
+    const num = Number(value);
     if (!Number.isFinite(num)) return normalizeText(value) || '—';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0
+    }).format(num);
   };
 
   const formatDate = (value) => {
@@ -89,6 +118,17 @@
     return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
+  const formatDateTime = (value) => {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return escapeHtml(value);
+    return date.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
+  };
+
+  const formatLastAired = (value) => value ? formatDate(value) : 'N/A';
+
   const formatInterval = (value) => normalizeText(value) || '—';
 
   const runtimeLabel = (program) => {
@@ -97,14 +137,39 @@
     return formatInterval(program.exact_runtime);
   };
 
+  const runtimeKey = (program) => {
+    const minutes = Number(program.board_runtime_minutes);
+    if (Number.isFinite(minutes) && minutes > 0) return `min:${minutes}`;
+    const exact = normalizeText(program.exact_runtime);
+    if (exact) return `exact:${exact}`;
+    return 'unknown';
+  };
+
+  const runtimeOptionLabel = (key) => {
+    if (key.startsWith('min:')) return `${key.slice(4)} min`;
+    if (key.startsWith('exact:')) return key.slice(6);
+    return 'Unknown';
+  };
+
   const labelValue = (label, value) => `
     <div>
       <dt>${escapeHtml(label)}</dt>
-      <dd>${escapeHtml(value ?? '—')}</dd>
+      <dd>${value}</dd>
     </div>
   `;
 
-  const selectedValues = (select) => [...(select?.selectedOptions || [])].map((option) => option.value).filter(Boolean);
+  const premiumSummaryHtml = (value) => {
+    const text = normalizeText(value);
+    if (!text) return '<div class="premium-line">—</div>';
+    const lines = text
+      .replace(/\s*;\s*/g, '\n')
+      .replace(/\s+(?=\$)/g, '\n')
+      .split(/\n+/)
+      .map((part) => normalizeText(part))
+      .filter(Boolean);
+    const finalLines = lines.length ? lines : [text];
+    return finalLines.map((line) => `<div class="premium-line">${escapeHtml(line)}</div>`).join('');
+  };
 
   const setRoleUi = () => {
     els.versionFlag.textContent = APP_VERSION;
@@ -124,17 +189,14 @@
     }
   };
 
-  const escapeLike = (value) => normalizeText(value).replace(/,/g, ' ').replace(/%/g, '').replace(/_/g, '');
-
-  const fetchAllRows = async (table, columns) => {
+  const fetchAllRows = async (table, columns, mutate) => {
     const pageSize = 1000;
     let from = 0;
     const rows = [];
     while (true) {
-      const { data, error } = await state.client
-        .from(table)
-        .select(columns)
-        .range(from, from + pageSize - 1);
+      let query = state.client.from(table).select(columns).range(from, from + pageSize - 1);
+      if (mutate) query = mutate(query);
+      const { data, error } = await query;
       if (error) throw error;
       const chunk = data || [];
       rows.push(...chunk);
@@ -144,9 +206,9 @@
     return rows;
   };
 
-  const renderTopicOptions = () => {
-    const current = new Set(state.topicFilters);
-    els.topicFilter.innerHTML = state.topicOptions.map((value) => `
+  const renderMultiSelect = (select, values, selected) => {
+    const current = new Set(selected);
+    select.innerHTML = values.map((value) => `
       <option value="${escapeHtml(value)}" ${current.has(value) ? 'selected' : ''}>${escapeHtml(value)}</option>
     `).join('');
   };
@@ -159,11 +221,40 @@
     els.distributorFilter.innerHTML = options.join('');
   };
 
+  const renderLengthOptions = () => {
+    const current = new Set(state.lengthFilters);
+    els.lengthFilter.innerHTML = state.lengthOptions.map((option) => `
+      <option value="${escapeHtml(option.value)}" ${current.has(option.value) ? 'selected' : ''}>${escapeHtml(option.label)}</option>
+    `).join('');
+  };
+
   const loadFilterOptions = async () => {
-    const rows = await fetchAllRows(READ_VIEW, 'topic_primary, distributor');
-    state.topicOptions = Array.from(new Set(rows.map((row) => normalizeText(row.topic_primary)).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    state.distributorOptions = Array.from(new Set(rows.map((row) => normalizeText(row.distributor)).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-    renderTopicOptions();
+    const rows = await fetchAllRows(READ_VIEW, '*', (query) => query
+      .order('topic_primary', { ascending: true, nullsFirst: false })
+      .order('title', { ascending: true, nullsFirst: false })
+    );
+
+    state.topicOptions = Array.from(new Set(rows.map((row) => normalizeText(row.topic_primary)).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    state.secondaryTopicOptions = Array.from(new Set(rows.map((row) => normalizeText(row.topic_secondary)).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    state.distributorOptions = Array.from(new Set(rows.map((row) => normalizeText(row.distributor)).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+    const lengthMap = new Map();
+    rows.forEach((row) => {
+      const key = runtimeKey(row);
+      if (!lengthMap.has(key)) {
+        lengthMap.set(key, { value: key, label: runtimeOptionLabel(key) });
+      }
+    });
+    state.lengthOptions = [...lengthMap.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }));
+
+    renderMultiSelect(els.topicFilter, state.topicOptions, state.topicFilters);
+    renderMultiSelect(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilters);
+    renderLengthOptions();
     renderDistributorOptions();
   };
 
@@ -173,54 +264,21 @@
     });
   };
 
-  const premiumSummaryHtml = (value) => {
-    const text = normalizeText(value);
-    if (!text) return '<div class="premium-line">—</div>';
-    const lines = text
-      .replace(/\s*;\s*/g, '\n')
-      .replace(/\s+(?=\$)/g, '\n')
-      .split(/\n+/)
-      .map((part) => normalizeText(part))
-      .filter(Boolean);
-    const finalLines = lines.length ? lines : [text];
-    return finalLines.map((line) => `<div class="premium-line">${escapeHtml(line)}</div>`).join('');
-  };
-
-  const renderRows = () => {
-    if (!state.rows.length) {
-      els.libraryBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No matching pledge titles found.</td></tr>';
-      return;
+  const mergePageBaseFields = async (rows) => {
+    const ids = rows.map((row) => row.id).filter(Boolean);
+    if (!ids.length) return rows;
+    try {
+      const { data, error } = await state.client
+        .from('pledge_programs')
+        .select('id, rights_start, rights_end, last_aired_at, topic_secondary, board_runtime_minutes, exact_runtime, title, distributor, nola_code, premium_summary, program_notes, lifetime_dollars')
+        .in('id', ids);
+      if (error) throw error;
+      const byId = new Map((data || []).map((row) => [String(row.id), row]));
+      return rows.map((row) => ({ ...row, ...(byId.get(String(row.id)) || {}) }));
+    } catch (error) {
+      console.warn('Base pledge row enrichment failed for list display.', error);
+      return rows;
     }
-
-    els.libraryBody.innerHTML = state.rows.map((row) => {
-      const statusClass = normalizeText(row.status).toLowerCase() || 'other';
-      return `
-        <tr data-id="${escapeHtml(row.id)}" class="${row.id === state.selectedProgramId ? 'selected' : ''}">
-          <td class="title-cell">
-            <button type="button" class="title-open-button" data-open-id="${escapeHtml(row.id)}" aria-label="Open details for ${escapeHtml(row.title)}">
-              <strong>${escapeHtml(row.title || 'Untitled')}</strong>
-            </button>
-          </td>
-          <td>${escapeHtml(runtimeLabel(row))}</td>
-          <td>${escapeHtml(row.topic_primary || '—')}</td>
-          <td>${escapeHtml(row.distributor || '—')}</td>
-          <td class="premiums-cell">${premiumSummaryHtml(row.premium_summary)}</td>
-          <td>${escapeHtml(formatDate(row.rights_start))}</td>
-          <td>${escapeHtml(formatDate(row.rights_end))}</td>
-          <td>${escapeHtml(formatDate(row.last_aired_at))}</td>
-        </tr>
-      `;
-    }).join('');
-  };
-
-  const updateSummary = () => {
-    const first = state.totalRows === 0 ? 0 : ((state.page - 1) * PAGE_SIZE) + 1;
-    const last = Math.min(state.totalRows, state.page * PAGE_SIZE);
-    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles · showing ${first.toLocaleString()}–${last.toLocaleString()} · sorted by topic then title`;
-    const pageCount = Math.max(1, Math.ceil(state.totalRows / PAGE_SIZE));
-    els.pageLabel.textContent = `Page ${state.page} of ${pageCount}`;
-    els.prevPage.disabled = state.page <= 1;
-    els.nextPage.disabled = state.page >= pageCount;
   };
 
   const applySearchFilter = (query) => {
@@ -232,48 +290,111 @@
       `title.ilike.${like}`,
       `nola_code.ilike.${like}`,
       `topic_primary.ilike.${like}`,
+      `topic_secondary.ilike.${like}`,
       `distributor.ilike.${like}`,
-      `premium_summary.ilike.${like}`
+      `premium_summary.ilike.${like}`,
+      `exact_runtime.ilike.${like}`
     ].join(','));
+  };
+
+  const applyCommonFilters = (query) => {
+    if (state.statusFilter === 'active') {
+      query = query.eq('status', 'active');
+    } else if (state.statusFilter === 'archived') {
+      query = query.eq('status', 'archived');
+    }
+    if (state.topicFilters.length) query = query.in('topic_primary', state.topicFilters);
+    if (state.secondaryTopicFilters.length) query = query.in('topic_secondary', state.secondaryTopicFilters);
+    if (state.distributorFilter) query = query.eq('distributor', state.distributorFilter);
+    query = applySearchFilter(query);
+    return query;
+  };
+
+  const filterRowsByLength = (rows) => {
+    if (!state.lengthFilters.length) return rows;
+    const wanted = new Set(state.lengthFilters);
+    return rows.filter((row) => wanted.has(runtimeKey(row)));
+  };
+
+  const renderRows = () => {
+    if (!state.rows.length) {
+      els.libraryBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No matching pledge titles found.</td></tr>';
+      return;
+    }
+
+    els.libraryBody.innerHTML = state.rows.map((row) => `
+      <tr data-id="${escapeHtml(row.id)}" class="${row.id === state.selectedProgramId ? 'selected' : ''}">
+        <td class="title-cell">
+          <button type="button" class="title-open-button" data-open-id="${escapeHtml(row.id)}" aria-label="Open details for ${escapeHtml(row.title)}">
+            <strong>${escapeHtml(row.title || 'Untitled')}</strong>
+            <div class="sub">${escapeHtml(row.nola_code || 'No NOLA')} · ${escapeHtml(row.distributor || 'No distributor')}</div>
+          </button>
+        </td>
+        <td>${escapeHtml(runtimeLabel(row))}</td>
+        <td>${escapeHtml(row.topic_primary || '—')}</td>
+        <td>${escapeHtml(row.distributor || '—')}</td>
+        <td class="premiums-cell">${premiumSummaryHtml(row.premium_summary)}</td>
+        <td>${escapeHtml(formatDate(row.rights_start))}</td>
+        <td>${escapeHtml(formatDate(row.rights_end))}</td>
+        <td>${escapeHtml(formatLastAired(row.last_aired_at))}</td>
+      </tr>
+    `).join('');
+  };
+
+  const updateSummary = () => {
+    const first = state.totalRows === 0 ? 0 : ((state.page - 1) * PAGE_SIZE) + 1;
+    const last = Math.min(state.totalRows, state.page * PAGE_SIZE);
+    const filters = [];
+    if (state.topicFilters.length) filters.push(`${state.topicFilters.length} primary topic${state.topicFilters.length === 1 ? '' : 's'}`);
+    if (state.secondaryTopicFilters.length) filters.push(`${state.secondaryTopicFilters.length} secondary topic${state.secondaryTopicFilters.length === 1 ? '' : 's'}`);
+    if (state.lengthFilters.length) filters.push(`${state.lengthFilters.length} length${state.lengthFilters.length === 1 ? '' : 's'}`);
+    if (state.distributorFilter) filters.push('1 distributor');
+    const filterText = filters.length ? ` · filters: ${filters.join(', ')}` : '';
+    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles · showing ${first.toLocaleString()}–${last.toLocaleString()} · sorted by topic then title${filterText}`;
+    const pageCount = Math.max(1, Math.ceil(state.totalRows / PAGE_SIZE));
+    els.pageLabel.textContent = `Page ${state.page} of ${pageCount}`;
+    els.prevPage.disabled = state.page <= 1;
+    els.nextPage.disabled = state.page >= pageCount;
   };
 
   const loadLibrary = async () => {
     if (!state.client) return;
     els.libraryBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">Loading library…</td></tr>';
 
-    const from = (state.page - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let query = state.client
-      .from(READ_VIEW)
-      .select('*', { count: 'exact' })
-      .order('topic_primary', { ascending: true, nullsFirst: false })
-      .order('title', { ascending: true, nullsFirst: false })
-      .range(from, to);
-
-    if (state.statusFilter === 'active') {
-      query = query.eq('status', 'active');
-    } else if (state.statusFilter === 'archived') {
-      query = query.eq('status', 'archived');
-    }
-
-    if (state.topicFilters.length) query = query.in('topic_primary', state.topicFilters);
-    if (state.distributorFilter) query = query.eq('distributor', state.distributorFilter);
-    query = applySearchFilter(query);
-
-    const { data, error, count } = await query;
-    if (error) {
+    try {
+      if (state.lengthFilters.length) {
+        const allRows = await fetchAllRows(READ_VIEW, '*', (query) => applyCommonFilters(query)
+          .order('topic_primary', { ascending: true, nullsFirst: false })
+          .order('title', { ascending: true, nullsFirst: false })
+        );
+        const filteredRows = filterRowsByLength(allRows);
+        state.totalRows = filteredRows.length;
+        const from = (state.page - 1) * PAGE_SIZE;
+        const to = from + PAGE_SIZE;
+        state.rows = await mergePageBaseFields(filteredRows.slice(from, to));
+      } else {
+        const from = (state.page - 1) * PAGE_SIZE;
+        const to = from + PAGE_SIZE - 1;
+        let query = state.client
+          .from(READ_VIEW)
+          .select('*', { count: 'exact' })
+          .order('topic_primary', { ascending: true, nullsFirst: false })
+          .order('title', { ascending: true, nullsFirst: false })
+          .range(from, to);
+        query = applyCommonFilters(query);
+        const { data, error, count } = await query;
+        if (error) throw error;
+        state.totalRows = count || 0;
+        state.rows = await mergePageBaseFields(data || []);
+      }
+      renderRows();
+      updateSummary();
+      syncSelectedRows();
+    } catch (error) {
       console.error(error);
-      els.libraryBody.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escapeHtml(error.message)}</td></tr>`;
+      els.libraryBody.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escapeHtml(error.message || 'Load failed.')}</td></tr>`;
       els.resultSummary.textContent = 'Load failed.';
-      return;
     }
-
-    state.rows = data || [];
-    state.totalRows = count || 0;
-    renderRows();
-    updateSummary();
-    syncSelectedRows();
   };
 
   const openDetailModal = () => {
@@ -301,61 +422,61 @@
     if (type) els.detailNotice.classList.add(type);
   };
 
-  const renderDetail = (program, versions, premiums) => {
-    els.detailEmpty.classList.add('hidden');
-    els.detailContent.classList.remove('hidden');
-    els.detailTitle.textContent = program.title || 'Program detail';
-    els.detailSubtitle.textContent = `${program.nola_code || 'No NOLA'} · ${program.distributor || 'No distributor listed'}`;
+  const detailSubtitleHtml = (program) => {
+    const parts = [
+      `<span class="detail-chip">Length ${escapeHtml(runtimeLabel(program))}</span>`,
+      `<span class="detail-chip">NOLA ${escapeHtml(program.nola_code || 'No NOLA')}</span>`,
+      `<span class="detail-chip">${escapeHtml(program.distributor || 'No distributor listed')}</span>`
+    ];
+    return parts.join('');
+  };
 
+  const renderOverview = (program) => {
     const topicValue = [normalizeText(program.topic_primary), normalizeText(program.topic_secondary)].filter(Boolean).join(' / ') || '—';
+    const rightsWindow = `${formatDate(program.rights_start)} → ${formatDate(program.rights_end)}`;
+    const premiumSummary = normalizeText(program.premium_summary) ? premiumSummaryHtml(program.premium_summary) : '—';
     els.overviewGrid.innerHTML = [
-      labelValue('Title', program.title || '—'),
-      labelValue('Short title', program.short_title || '—'),
-      labelValue('NOLA', program.nola_code || '—'),
-      labelValue('Distributor', program.distributor || '—'),
-      labelValue('Topic', topicValue),
-      labelValue('Length', runtimeLabel(program)),
-      labelValue('Exact runtime', formatInterval(program.exact_runtime)),
-      labelValue('Break count', program.break_count ?? program.default_break_count ?? '—'),
-      labelValue('Local cut-ins', program.local_cut_in_count ?? program.default_local_cut_in_count ?? '—'),
-      labelValue('Rights begin', formatDate(program.rights_start)),
-      labelValue('Rights end', formatDate(program.rights_end)),
-      labelValue('Last aired', formatDate(program.last_aired_at)),
-      labelValue('Times aired', program.times_aired_count ?? 0),
-      labelValue('Lifetime dollars', formatMoney(program.lifetime_dollars || 0)),
-      labelValue('Pickup type', program.pickup_type || '—'),
-      labelValue('Source format', program.source_format || '—'),
-      labelValue('Storage', program.storage_location || '—'),
-      labelValue('Premium summary', program.premium_summary || '—'),
-      labelValue('Status', program.status || '—'),
-      labelValue('Notes', program.program_notes || '—')
+      labelValue('Topic', escapeHtml(topicValue)),
+      labelValue('Rights window', escapeHtml(rightsWindow)),
+      labelValue('Last aired', escapeHtml(formatLastAired(program.last_aired_at))),
+      labelValue('Lifetime dollars', escapeHtml(formatMoney(program.lifetime_dollars || 0))),
+      labelValue('Premium summary', premiumSummary),
+      labelValue('Notes', escapeHtml(program.program_notes || '—'))
     ].join('');
+  };
 
-    els.versionCountChip.textContent = `${versions.length}`;
-    els.versionsList.innerHTML = versions.length ? versions.map((version) => {
-      const segments = (version.segments || []).map((segment) => `
-        <tr>
-          <td>${escapeHtml(segment.segment_order)}</td>
-          <td>${escapeHtml(segment.segment_type || '—')}</td>
-          <td>${escapeHtml(segment.label || '—')}</td>
-          <td>${escapeHtml(formatInterval(segment.duration))}</td>
-          <td>${escapeHtml(segment.duration_minutes ?? '—')}</td>
-          <td>${segment.local_cut_in_available ? 'Yes' : '—'}</td>
-          <td>${escapeHtml(segment.notes || '—')}</td>
-        </tr>
-      `).join('');
+  const segmentTypeLabel = (segment) => {
+    const raw = normalizeText(segment.segment_type).toLowerCase();
+    if (!raw) return 'Segment';
+    if (raw.includes('break')) return 'Break segment';
+    if (raw.includes('cut')) return 'Local cut-in window';
+    if (raw.includes('local')) return 'Local cut-in window';
+    return raw.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+  };
+
+  const renderTiming = (versions, segments) => {
+    const grouped = new Map();
+    versions.forEach((version) => {
+      grouped.set(String(version.id), []);
+    });
+    segments.forEach((segment) => {
+      const key = String(segment.pledge_program_version_id || 'ungrouped');
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(segment);
+    });
+
+    const blocks = versions.map((version) => {
+      const versionSegments = (grouped.get(String(version.id)) || []).sort((a, b) => Number(a.segment_order || 0) - Number(b.segment_order || 0));
       return `
-        <article class="version-card">
-          <div class="version-card-head">
-            <h4>${escapeHtml(version.version_label || 'Version')}</h4>
-            <span class="status-pill ${escapeHtml(normalizeText(version.status).toLowerCase() || 'other')}">${escapeHtml(version.break_style || version.status || 'Version')}</span>
+        <article class="timing-card">
+          <div class="timing-card-head">
+            <h4>${escapeHtml(version.version_label || 'Program structure')}</h4>
+            <div class="timing-meta">
+              <span class="mini-chip">Length ${escapeHtml(runtimeLabel(version))}</span>
+              <span class="mini-chip">Breaks ${escapeHtml(version.default_break_count ?? '—')}</span>
+              <span class="mini-chip">Local ${escapeHtml(version.default_local_cut_in_count ?? '—')}</span>
+            </div>
           </div>
-          <div class="version-meta">
-            <span class="mini-chip">Length ${escapeHtml(runtimeLabel(version))}</span>
-            <span class="mini-chip">Breaks ${escapeHtml(version.default_break_count ?? '—')}</span>
-            <span class="mini-chip">Local ${escapeHtml(version.default_local_cut_in_count ?? '—')}</span>
-          </div>
-          <div class="muted">${escapeHtml(version.version_notes || 'No version notes.')}</div>
           <div class="segment-table-wrap">
             <table class="segment-table">
               <thead>
@@ -369,13 +490,103 @@
                   <th>Notes</th>
                 </tr>
               </thead>
-              <tbody>${segments || '<tr><td colspan="7">No segment rows.</td></tr>'}</tbody>
+              <tbody>
+                ${versionSegments.length ? versionSegments.map((segment) => `
+                  <tr>
+                    <td>${escapeHtml(segment.segment_order ?? '—')}</td>
+                    <td>${escapeHtml(segmentTypeLabel(segment))}</td>
+                    <td>${escapeHtml(segment.label || '—')}</td>
+                    <td>${escapeHtml(formatInterval(segment.duration))}</td>
+                    <td>${escapeHtml(segment.duration_minutes ?? '—')}</td>
+                    <td>${segment.local_cut_in_available ? 'Yes' : '—'}</td>
+                    <td>${escapeHtml(segment.notes || '—')}</td>
+                  </tr>
+                `).join('') : '<tr><td colspan="7">No structured timing rows for this entry.</td></tr>'}
+              </tbody>
             </table>
           </div>
         </article>
       `;
-    }).join('') : '<div class="premium-card">No structured version rows available for this title.</div>';
+    });
 
+    if (!blocks.length && segments.length) {
+      blocks.push(`
+        <article class="timing-card">
+          <div class="timing-card-head">
+            <h4>Program structure</h4>
+          </div>
+          <div class="segment-table-wrap">
+            <table class="segment-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Type</th>
+                  <th>Label</th>
+                  <th>Duration</th>
+                  <th>Min</th>
+                  <th>Local</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${segments.map((segment) => `
+                  <tr>
+                    <td>${escapeHtml(segment.segment_order ?? '—')}</td>
+                    <td>${escapeHtml(segmentTypeLabel(segment))}</td>
+                    <td>${escapeHtml(segment.label || '—')}</td>
+                    <td>${escapeHtml(formatInterval(segment.duration))}</td>
+                    <td>${escapeHtml(segment.duration_minutes ?? '—')}</td>
+                    <td>${segment.local_cut_in_available ? 'Yes' : '—'}</td>
+                    <td>${escapeHtml(segment.notes || '—')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      `);
+    }
+
+    els.timingCountChip.textContent = `${segments.length}`;
+    els.timingList.innerHTML = blocks.length
+      ? blocks.join('')
+      : '<div class="timing-card">No structured segment timing rows are available for this title.</div>';
+  };
+
+  const deriveAiringDateTime = (row) => row.aired_at || row.air_datetime || row.air_date_time || row.air_timestamp || row.airing_at || row.air_date || row.last_aired_at || null;
+  const deriveAiringAmount = (row) => row.amount_contributed ?? row.contributed_amount ?? row.contribution_amount ?? row.total_pledged ?? row.total_contributed ?? row.dollars_raised ?? row.amount_raised ?? row.pledged_amount ?? null;
+
+  const renderAirings = (airings) => {
+    els.airingCountChip.textContent = `${airings.length}`;
+    if (!airings.length) {
+      els.airingList.innerHTML = '<div class="premium-card">No readable air history is available for this title.</div>';
+      return;
+    }
+    els.airingList.innerHTML = `
+      <div class="airing-table-wrap">
+        <table class="segment-table">
+          <thead>
+            <tr>
+              <th>Aired</th>
+              <th>Contributed</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${airings.map((row) => `
+              <tr>
+                <td>${escapeHtml(formatDateTime(deriveAiringDateTime(row)))}</td>
+                <td>${escapeHtml(deriveAiringAmount(row) == null || deriveAiringAmount(row) === '' ? '—' : formatMoney(deriveAiringAmount(row)))}</td>
+                <td>${escapeHtml(row.notes || row.comments || row.description || '—')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  const renderPremiums = (premiums) => {
     els.premiumCountChip.textContent = `${premiums.length}`;
     els.premiumsList.innerHTML = premiums.length ? premiums.map((premium) => `
       <article class="premium-card">
@@ -386,12 +597,40 @@
     `).join('') : '<div class="premium-card">No structured premium rows available for this title.</div>';
   };
 
+  const renderDetail = (program, versions, segments, premiums, airings) => {
+    els.detailEmpty.classList.add('hidden');
+    els.detailContent.classList.remove('hidden');
+    els.detailTitle.textContent = program.title || 'Program detail';
+    els.detailSubtitle.innerHTML = detailSubtitleHtml(program);
+    renderOverview(program);
+    renderTiming(versions, segments);
+    renderAirings(airings);
+    renderPremiums(premiums);
+  };
+
   const showDetailFailure = (message) => {
     els.detailTitle.textContent = 'Detail load failed';
     els.detailSubtitle.textContent = message || 'Something went sideways while loading this title.';
     els.detailContent.classList.add('hidden');
     els.detailEmpty.classList.remove('hidden');
     els.detailEmpty.textContent = message || 'Something went sideways while loading this title.';
+  };
+
+  const queryFirstReadable = async (candidates) => {
+    for (const candidate of candidates) {
+      try {
+        let query = state.client.from(candidate.table).select(candidate.select || '*');
+        if (candidate.eqField && candidate.eqValue !== undefined) query = query.eq(candidate.eqField, candidate.eqValue);
+        if (candidate.inField && Array.isArray(candidate.inValues) && candidate.inValues.length) query = query.in(candidate.inField, candidate.inValues);
+        if (candidate.orderField) query = query.order(candidate.orderField, { ascending: candidate.ascending ?? true });
+        const { data, error } = await query;
+        if (error) continue;
+        return { data: data || [], source: candidate.table };
+      } catch (error) {
+        // try next candidate
+      }
+    }
+    return { data: [], source: null };
   };
 
   const loadProgramDetail = async (programId) => {
@@ -406,13 +645,17 @@
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.remove('hidden');
     els.overviewGrid.innerHTML = '';
-    els.versionsList.innerHTML = '<div class="premium-card">Loading versions…</div>';
+    els.timingList.innerHTML = '<div class="timing-card">Loading timing rows…</div>';
+    els.airingList.innerHTML = '<div class="premium-card">Loading air history…</div>';
     els.premiumsList.innerHTML = '<div class="premium-card">Loading premiums…</div>';
 
     const rowSummary = state.rows.find((row) => String(row.id) === String(programId)) || null;
+    if (rowSummary) {
+      renderDetail(rowSummary, [], [], [], []);
+    }
 
     const [summaryResult, programResult, versionsResult, premiumsResult] = await Promise.allSettled([
-      rowSummary ? Promise.resolve({ data: rowSummary }) : state.client.from(READ_VIEW).select('*').eq('id', programId).maybeSingle(),
+      rowSummary ? Promise.resolve({ data: rowSummary, error: null }) : state.client.from(READ_VIEW).select('*').eq('id', programId).maybeSingle(),
       state.client.from('pledge_programs').select('*').eq('id', programId).maybeSingle(),
       state.client.from('pledge_program_versions').select('*').eq('pledge_program_id', programId).order('version_label', { ascending: true }),
       state.client.from('pledge_premiums').select('*').eq('pledge_program_id', programId).order('premium_name', { ascending: true })
@@ -435,9 +678,9 @@
       return;
     }
 
-    let detailWarnings = [];
-    if (programResult.status === 'rejected' || basePayload?.error) detailWarnings.push('Base program row could not be read; showing summary-view data instead.');
-    if (versionsResult.status === 'rejected' || versionsPayload?.error) detailWarnings.push('Version rows are unavailable for this role or this title.');
+    const detailWarnings = [];
+    if (programResult.status === 'rejected' || basePayload?.error) detailWarnings.push('Base pledge row could not be read; showing summary-view data instead.');
+    if (versionsResult.status === 'rejected' || versionsPayload?.error) detailWarnings.push('Timing rows are unavailable for this role or this title.');
     if (premiumsResult.status === 'rejected' || premiumsPayload?.error) detailWarnings.push('Premium rows are unavailable for this role or this title.');
 
     let segments = [];
@@ -461,15 +704,33 @@
       }
     }
 
-    const groupedSegments = new Map();
-    segments.forEach((segment) => {
-      if (!groupedSegments.has(segment.pledge_program_version_id)) groupedSegments.set(segment.pledge_program_version_id, []);
-      groupedSegments.get(segment.pledge_program_version_id).push(segment);
-    });
-    const versionsWithSegments = versions.map((version) => ({ ...version, segments: groupedSegments.get(version.id) || [] }));
+    const { data: airings, source: airingSource } = await queryFirstReadable([
+      {
+        table: 'pledge_program_airings',
+        eqField: 'pledge_program_id',
+        eqValue: programId,
+        orderField: 'aired_at',
+        ascending: false
+      },
+      {
+        table: 'pledge_program_air_dates',
+        eqField: 'pledge_program_id',
+        eqValue: programId,
+        orderField: 'air_date',
+        ascending: false
+      },
+      {
+        table: 'pledge_airings',
+        eqField: 'pledge_program_id',
+        eqValue: programId,
+        orderField: 'aired_at',
+        ascending: false
+      }
+    ]);
+    if (!airingSource) detailWarnings.push('Air-date contribution history is unavailable for this role or this title.');
 
     setDetailNotice(detailWarnings.length ? detailWarnings.join(' ') : '', detailWarnings.length ? 'warn' : '');
-    renderDetail(mergedProgram, versionsWithSegments, premiums);
+    renderDetail(mergedProgram, versions, segments, premiums, airings);
     els.detailCloseButton.focus();
   };
 
@@ -481,12 +742,30 @@
       state.userEmail = data?.user?.email ? String(data.user.email).toLowerCase() : null;
       state.isAdmin = !!(state.userEmail && ADMIN_EMAILS.includes(state.userEmail));
       setRoleUi();
-    } catch (err) {
-      console.warn('Auth user check failed; staying viewer-only.', err);
+    } catch (error) {
+      console.warn('Auth user check failed; staying viewer-only.', error);
       state.userEmail = null;
       state.isAdmin = false;
       setRoleUi();
     }
+  };
+
+  const resetFilters = () => {
+    state.searchText = '';
+    state.searchField = '';
+    state.statusFilter = 'active';
+    state.topicFilters = [];
+    state.secondaryTopicFilters = [];
+    state.lengthFilters = [];
+    state.distributorFilter = '';
+    state.page = 1;
+    els.searchInput.value = '';
+    els.searchFieldSelect.value = '';
+    els.statusFilter.value = 'active';
+    renderMultiSelect(els.topicFilter, state.topicOptions, state.topicFilters);
+    renderMultiSelect(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilters);
+    renderLengthOptions();
+    renderDistributorOptions();
   };
 
   const init = async () => {
@@ -528,6 +807,18 @@
     void loadLibrary();
   });
 
+  els.secondaryTopicFilter.addEventListener('change', () => {
+    state.secondaryTopicFilters = selectedValues(els.secondaryTopicFilter);
+    state.page = 1;
+    void loadLibrary();
+  });
+
+  els.lengthFilter.addEventListener('change', () => {
+    state.lengthFilters = selectedValues(els.lengthFilter);
+    state.page = 1;
+    void loadLibrary();
+  });
+
   els.distributorFilter.addEventListener('change', (event) => {
     state.distributorFilter = event.target.value || '';
     state.page = 1;
@@ -547,18 +838,22 @@
     void loadLibrary();
   });
 
-  els.resetFiltersButton.addEventListener('click', () => {
-    state.searchText = '';
-    state.searchField = '';
-    state.statusFilter = 'active';
-    state.topicFilters = [];
-    state.distributorFilter = '';
+  els.clearSecondaryTopicFilter.addEventListener('click', () => {
+    [...els.secondaryTopicFilter.options].forEach((option) => { option.selected = false; });
+    state.secondaryTopicFilters = [];
     state.page = 1;
-    els.searchInput.value = '';
-    els.searchFieldSelect.value = '';
-    els.statusFilter.value = 'active';
-    renderTopicOptions();
-    renderDistributorOptions();
+    void loadLibrary();
+  });
+
+  els.clearLengthFilter.addEventListener('click', () => {
+    [...els.lengthFilter.options].forEach((option) => { option.selected = false; });
+    state.lengthFilters = [];
+    state.page = 1;
+    void loadLibrary();
+  });
+
+  els.resetFiltersButton.addEventListener('click', () => {
+    resetFilters();
     void loadLibrary();
   });
 
