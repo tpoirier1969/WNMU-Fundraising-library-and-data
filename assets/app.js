@@ -1,6 +1,6 @@
 (() => {
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-  const APP_VERSION = cfg.APP_VERSION || 'v0.4.0';
+  const APP_VERSION = cfg.APP_VERSION || 'v0.5.0';
   const PAGE_SIZE = Number(cfg.DEFAULT_PAGE_SIZE || 100);
   const ADMIN_EMAILS = Array.isArray(cfg.ADMIN_EMAILS) ? cfg.ADMIN_EMAILS.map((e) => String(e).trim().toLowerCase()) : [];
 
@@ -18,6 +18,9 @@
     nextPage: document.getElementById('next-page'),
     refreshButton: document.getElementById('refresh-button'),
     libraryBody: document.getElementById('library-body'),
+    detailModal: document.getElementById('detail-modal'),
+    detailBackdrop: document.getElementById('detail-backdrop'),
+    detailCloseButton: document.getElementById('detail-close-button'),
     detailTitle: document.getElementById('detail-title'),
     detailSubtitle: document.getElementById('detail-subtitle'),
     detailEmpty: document.getElementById('detail-empty'),
@@ -107,6 +110,26 @@
     }
   };
 
+  const syncSelectedRows = () => {
+    [...els.libraryBody.querySelectorAll('tr[data-id]')].forEach((tr) => {
+      tr.classList.toggle('selected', tr.dataset.id === state.selectedProgramId);
+    });
+  };
+
+  const openDetailModal = () => {
+    els.detailModal.classList.remove('hidden');
+    els.detailBackdrop.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  };
+
+  const closeDetailModal = () => {
+    els.detailModal.classList.add('hidden');
+    els.detailBackdrop.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+    state.selectedProgramId = null;
+    syncSelectedRows();
+  };
+
   const renderRows = () => {
     if (!state.rows.length) {
       els.libraryBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">No matching pledge titles found.</td></tr>';
@@ -117,8 +140,10 @@
       return `
         <tr data-id="${escapeHtml(row.id)}" class="${row.id === state.selectedProgramId ? 'selected' : ''}">
           <td class="title-cell">
-            <strong>${escapeHtml(row.title)}</strong>
-            <div class="sub">${escapeHtml(row.exact_runtime || '')}</div>
+            <button type="button" class="title-open-button" data-open-id="${escapeHtml(row.id)}" aria-label="Open details for ${escapeHtml(row.title)}">
+              <strong>${escapeHtml(row.title)}</strong>
+              <div class="sub">${escapeHtml(row.exact_runtime || '')}</div>
+            </button>
           </td>
           <td>${escapeHtml(row.nola_code || '—')}</td>
           <td>${escapeHtml(row.version_count || 0)}</td>
@@ -132,14 +157,6 @@
         </tr>
       `;
     }).join('');
-
-    [...els.libraryBody.querySelectorAll('tr[data-id]')].forEach((tr) => {
-      tr.addEventListener('click', () => {
-        state.selectedProgramId = tr.dataset.id;
-        renderRows();
-        void loadProgramDetail(tr.dataset.id);
-      });
-    });
   };
 
   const updateSummary = () => {
@@ -196,6 +213,7 @@
     state.totalRows = count || 0;
     renderRows();
     updateSummary();
+    syncSelectedRows();
   };
 
   const renderDetail = (program, versions, premiums) => {
@@ -278,9 +296,20 @@
     `).join('') : '<div class="premium-card">No structured premium rows yet. The main premium summary is still visible above.</div>';
   };
 
+  const showDetailFailure = (message) => {
+    els.detailTitle.textContent = 'Detail load failed';
+    els.detailSubtitle.textContent = message || 'Something went sideways while loading this title.';
+    els.detailContent.classList.add('hidden');
+    els.detailEmpty.classList.remove('hidden');
+    els.detailEmpty.textContent = message || 'Something went sideways while loading this title.';
+  };
+
   const loadProgramDetail = async (programId) => {
     if (!programId || !state.client) return;
 
+    state.selectedProgramId = String(programId);
+    syncSelectedRows();
+    openDetailModal();
     els.detailTitle.textContent = 'Loading…';
     els.detailSubtitle.textContent = 'Pulling imported data.';
     els.detailEmpty.classList.add('hidden');
@@ -297,10 +326,7 @@
 
     if (programError || versionsError || premiumsError) {
       console.error(programError || versionsError || premiumsError);
-      els.detailTitle.textContent = 'Detail load failed';
-      els.detailSubtitle.textContent = (programError || versionsError || premiumsError).message;
-      els.detailContent.classList.add('hidden');
-      els.detailEmpty.classList.remove('hidden');
+      showDetailFailure((programError || versionsError || premiumsError).message);
       return;
     }
 
@@ -331,6 +357,7 @@
     }));
 
     renderDetail(program || {}, versionsWithSegments, premiums || []);
+    els.detailCloseButton.focus();
   };
 
   const initAuthRole = async () => {
@@ -404,15 +431,30 @@
 
   els.refreshButton.addEventListener('click', () => {
     void loadLibrary();
-    if (state.selectedProgramId) void loadProgramDetail(state.selectedProgramId);
+    if (state.selectedProgramId && !els.detailModal.classList.contains('hidden')) void loadProgramDetail(state.selectedProgramId);
+  });
+
+  els.libraryBody.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-open-id]');
+    if (!trigger) return;
+    event.preventDefault();
+    void loadProgramDetail(trigger.dataset.openId);
+  });
+
+  els.detailCloseButton.addEventListener('click', closeDetailModal);
+  els.detailBackdrop.addEventListener('click', closeDetailModal);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !els.detailModal.classList.contains('hidden')) {
+      closeDetailModal();
+    }
   });
 
   els.adminNewButton.addEventListener('click', () => {
-    window.alert('Add/edit tools are intentionally held for the next build. This pass is for validating the imported library data first.');
+    window.alert('Add/edit tools are intentionally held for the next build. This pass is still for validating the imported pledge library data first.');
   });
 
   els.adminEditButton.addEventListener('click', () => {
-    window.alert('Edit mode is not in this build yet. I left the admin gate visible so the app already knows who should get those controls later.');
+    window.alert('Edit mode is not in this build yet. I only moved the details workflow into a popup so it matches the Program Library pattern more closely.');
   });
 
   window.addEventListener('DOMContentLoaded', () => {
