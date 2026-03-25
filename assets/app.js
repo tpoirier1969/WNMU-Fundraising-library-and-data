@@ -1,11 +1,16 @@
 (() => {
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-  const APP_VERSION = 'v0.6.2';
+  const APP_VERSION = 'v0.6.4';
   const ADMIN_EMAILS = Array.isArray(cfg.ADMIN_EMAILS)
     ? cfg.ADMIN_EMAILS.map((e) => String(e).trim().toLowerCase())
     : [];
 
   const els = {
+    authShell: document.getElementById('auth-shell'),
+    authTitle: document.getElementById('auth-title'),
+    authMessage: document.getElementById('auth-message'),
+    loginGitHubButton: document.getElementById('login-github-button'),
+    cancelLoginButton: document.getElementById('cancel-login-button'),
     configStatus: document.getElementById('config-status'),
     roleChip: document.getElementById('role-chip'),
     versionFlag: document.getElementById('version-flag'),
@@ -19,8 +24,8 @@
     statusFilter: document.getElementById('status-filter'),
     resetFiltersButton: document.getElementById('reset-filters-button'),
     refreshButton: document.getElementById('refresh-button'),
-    adminNewButton: document.getElementById('admin-new-button'),
-    adminEditButton: document.getElementById('admin-edit-button'),
+    adminButton: document.getElementById('admin-button'),
+    logoutButton: document.getElementById('logout-button'),
     libraryBody: document.getElementById('library-body'),
     resultSummary: document.getElementById('result-summary'),
     detailBackdrop: document.getElementById('detail-backdrop'),
@@ -32,6 +37,9 @@
     detailNotice: document.getElementById('detail-notice'),
     detailEmpty: document.getElementById('detail-empty'),
     detailContent: document.getElementById('detail-content'),
+    detailEditForm: document.getElementById('detail-edit-form'),
+    detailSaveButton: document.getElementById('detail-save-button'),
+    detailCancelEditButton: document.getElementById('detail-cancel-edit-button'),
     overviewGrid: document.getElementById('overview-grid'),
     timingList: document.getElementById('timing-list'),
     airingList: document.getElementById('airing-list'),
@@ -50,9 +58,25 @@
     'distributor',
     'premium_summary'
   ]);
+  const EDITABLE_FIELD_META = [
+    { name: 'title', candidates: ['title', 'program_title'], required: true, kind: 'text' },
+    { name: 'nola_code', candidates: ['nola_code', 'nola', 'program_nola'], kind: 'text' },
+    { name: 'distributor', candidates: ['distributor', 'distributor_name'], kind: 'text' },
+    { name: 'exact_runtime', candidates: ['exact_runtime', 'runtime', 'actual_runtime'], kind: 'text' },
+    { name: 'board_runtime_minutes', candidates: ['board_runtime_minutes', 'runtime_minutes', 'length_minutes', 'board_length_minutes'], kind: 'number' },
+    { name: 'topic_primary', candidates: ['topic_primary', 'primary_topic', 'topic'], kind: 'text' },
+    { name: 'topic_secondary', candidates: ['topic_secondary', 'secondary_topic', 'topic_secondary_name'], kind: 'text' },
+    { name: 'rights_start', candidates: ['rights_start', 'rights_begin', 'rights_start_date', 'rights_begin_date', 'rights_date_start', 'begin_rights', 'start_rights'], kind: 'date' },
+    { name: 'rights_end', candidates: ['rights_end', 'rights_stop', 'rights_end_date', 'rights_expire_date', 'rights_date_end', 'end_rights', 'expiration_date'], kind: 'date' },
+    { name: 'status', candidates: ['status'], kind: 'text' },
+    { name: 'premium_summary', candidates: ['premium_summary', 'premiums', 'premium_text'], kind: 'textarea' },
+    { name: 'description', candidates: ['description', 'program_description', 'synopsis', 'short_description'], kind: 'textarea' },
+    { name: 'program_notes', candidates: ['program_notes', 'notes'], kind: 'textarea' }
+  ];
 
   const state = {
     client: null,
+    session: null,
     isAdmin: false,
     userEmail: null,
     totalRows: 0,
@@ -60,7 +84,7 @@
     selectedProgramId: null,
     searchText: '',
     searchField: '',
-    statusFilter: 'all',
+    statusFilter: 'active',
     topicFilter: '',
     secondaryTopicFilter: '',
     lengthFilter: '',
@@ -68,13 +92,50 @@
     topicOptions: [],
     secondaryTopicOptions: [],
     lengthOptions: [],
-    distributorOptions: []
+    distributorOptions: [],
+    detailEditMode: false,
+    currentDetailProgram: null,
+    currentDetailBaseProgram: null,
+    currentDetailVersions: [],
+    currentDetailSegments: [],
+    currentDetailPremiums: [],
+    currentDetailAirings: []
   };
 
   const setNotice = (text, type = '') => {
     els.configStatus.textContent = text;
     els.configStatus.className = 'status-line';
     if (type) els.configStatus.classList.add(type);
+  };
+
+  const canEdit = () => Boolean(state.session && state.isAdmin);
+
+  const getAdminRedirectUrl = () => {
+    const configured = normalizeText(cfg.ADMIN_REDIRECT_URL);
+    if (configured) return configured;
+    const url = new URL(window.location.href);
+    url.hash = '';
+    return url.toString();
+  };
+
+  const parseAuthErrorFromHash = () => {
+    const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+    if (!hash) return '';
+    const params = new URLSearchParams(hash);
+    const errorCode = params.get('error_code') || '';
+    const description = params.get('error_description') || params.get('error') || '';
+    if (!errorCode && !description) return '';
+    return decodeURIComponent(description.replace(/\+/g, ' ')) || errorCode;
+  };
+
+  const openAuthShell = (message = '') => {
+    if (els.authMessage) els.authMessage.textContent = message;
+    els.authShell?.classList.remove('hidden');
+  };
+
+  const closeAuthShell = () => {
+    els.authShell?.classList.add('hidden');
+    if (els.authMessage) els.authMessage.textContent = '';
   };
 
   const escapeHtml = (value) => String(value ?? '')
@@ -112,8 +173,8 @@
   const deriveTopicSecondary = (row) => firstNonEmpty(row.topic_secondary, row.secondary_topic, row.topic_secondary_name) || '';
   const derivePremiumSummary = (row) => firstNonEmpty(row.premium_summary, row.premiums, row.premium_text) || '';
   const deriveDescription = (row) => firstNonEmpty(row.description, row.program_description, row.synopsis, row.short_description, row.program_notes) || '';
-  const deriveRightsBegin = (row) => asDateLike(firstNonEmpty(row.rights_start, row.rights_begin, row.rights_start_date, row.rights_begin_date));
-  const deriveRightsEnd = (row) => asDateLike(firstNonEmpty(row.rights_end, row.rights_stop, row.rights_end_date, row.rights_expire_date));
+  const deriveRightsBegin = (row) => asDateLike(firstNonEmpty(row.rights_start, row.rights_begin, row.rights_start_date, row.rights_begin_date, row.rights_date_start, row.begin_rights, row.start_rights));
+  const deriveRightsEnd = (row) => asDateLike(firstNonEmpty(row.rights_end, row.rights_stop, row.rights_end_date, row.rights_expire_date, row.rights_date_end, row.end_rights, row.expiration_date));
   const deriveLastAiredRaw = (row) => asDateLike(firstNonEmpty(row.last_aired_at, row.last_aired, row.last_air_date, row.last_air_datetime, row.most_recent_air_date));
 
   const parseRuntimeMinutes = (row) => {
@@ -198,18 +259,22 @@
   const setRoleUi = () => {
     els.versionFlag.textContent = APP_VERSION;
     els.footerVersion.textContent = APP_VERSION;
-    if (state.isAdmin) {
+    els.detailEditButton.classList.toggle('hidden', !canEdit());
+    if (canEdit()) {
       els.roleChip.textContent = state.userEmail ? `Admin · ${state.userEmail}` : 'Admin';
       els.roleChip.classList.add('admin');
-      els.adminNewButton.classList.remove('hidden');
-      els.adminEditButton.classList.remove('hidden');
-      els.detailEditButton.classList.remove('hidden');
-    } else {
+      els.adminButton.classList.add('hidden');
+      els.logoutButton.classList.remove('hidden');
+    } else if (state.session) {
       els.roleChip.textContent = state.userEmail ? `Viewer · ${state.userEmail}` : 'Viewer';
       els.roleChip.classList.remove('admin');
-      els.adminNewButton.classList.add('hidden');
-      els.adminEditButton.classList.add('hidden');
-      els.detailEditButton.classList.add('hidden');
+      els.adminButton.classList.add('hidden');
+      els.logoutButton.classList.remove('hidden');
+    } else {
+      els.roleChip.textContent = 'Viewer';
+      els.roleChip.classList.remove('admin');
+      els.adminButton.classList.remove('hidden');
+      els.logoutButton.classList.add('hidden');
     }
   };
 
@@ -250,6 +315,20 @@
     select.innerHTML = options.join('');
   };
 
+  const mergePreferExisting = (summaryRow, baseRow) => {
+    if (!baseRow) return summaryRow;
+    const merged = { ...summaryRow };
+    Object.entries(baseRow).forEach(([key, value]) => {
+      if (value == null) return;
+      if (typeof value === 'string' && !value.trim()) return;
+      const existing = merged[key];
+      if (existing == null || (typeof existing === 'string' && !existing.trim())) {
+        merged[key] = value;
+      }
+    });
+    return merged;
+  };
+
   const enrichRowsFromBase = async (rows) => {
     const ids = rows.map((row) => row.id).filter(Boolean);
     if (!ids.length) return rows;
@@ -260,7 +339,7 @@
         ids
       );
       const byId = new Map((data || []).map((row) => [String(row.id), row]));
-      return rows.map((row) => ({ ...row, ...(byId.get(String(row.id)) || {}) }));
+      return rows.map((row) => mergePreferExisting(row, byId.get(String(row.id)) || null));
     } catch (error) {
       console.warn('Optional base pledge enrichment failed; staying with summary rows.', error);
       return rows;
@@ -397,6 +476,85 @@
     }
   };
 
+  const pickExistingKey = (baseProgram, candidates) => {
+    const keys = Object.keys(baseProgram || {});
+    return candidates.find((key) => keys.includes(key)) || candidates[0];
+  };
+
+  const setDetailMode = (mode = 'view') => {
+    state.detailEditMode = mode === 'edit' && canEdit();
+    els.detailEditForm.classList.toggle('hidden', !state.detailEditMode);
+    [...els.detailContent.querySelectorAll('.detail-block')].forEach((block) => {
+      if (block.closest('#detail-edit-form')) return;
+      block.classList.toggle('hidden', state.detailEditMode);
+    });
+    if (!state.detailEditMode) return;
+    const source = state.currentDetailBaseProgram || state.currentDetailProgram || {};
+    EDITABLE_FIELD_META.forEach((fieldMeta) => {
+      const field = els.detailEditForm.elements[fieldMeta.name];
+      if (!field) return;
+      let value = '';
+      if (fieldMeta.name === 'title') value = deriveTitle(source);
+      else if (fieldMeta.name === 'nola_code') value = deriveNola(source);
+      else if (fieldMeta.name === 'distributor') value = deriveDistributor(source);
+      else if (fieldMeta.name === 'topic_primary') value = deriveTopicPrimary(source);
+      else if (fieldMeta.name === 'topic_secondary') value = deriveTopicSecondary(source);
+      else if (fieldMeta.name === 'premium_summary') value = derivePremiumSummary(source);
+      else if (fieldMeta.name === 'description') value = deriveDescription(source);
+      else if (fieldMeta.name === 'rights_start') value = deriveRightsBegin(source);
+      else if (fieldMeta.name === 'rights_end') value = deriveRightsEnd(source);
+      else if (fieldMeta.name === 'exact_runtime') value = normalizeText(firstNonEmpty(source.exact_runtime, source.runtime, source.actual_runtime));
+      else if (fieldMeta.name === 'board_runtime_minutes') value = parseRuntimeMinutes(source) ?? '';
+      else if (fieldMeta.name === 'status') value = normalizeText(firstNonEmpty(source.status)).toLowerCase() || 'active';
+      else if (fieldMeta.name === 'program_notes') value = normalizeText(firstNonEmpty(source.program_notes, source.notes));
+      field.value = value ?? '';
+    });
+    requestAnimationFrame(() => els.detailEditForm.elements.title?.focus());
+  };
+
+  const refreshDetailView = () => {
+    if (!state.currentDetailProgram) return;
+    renderDetail(state.currentDetailProgram, state.currentDetailVersions, state.currentDetailSegments, state.currentDetailPremiums, state.currentDetailAirings);
+    if (state.detailEditMode) setDetailMode('edit');
+  };
+
+  const saveDetailEdit = async (event) => {
+    event.preventDefault();
+    if (!canEdit()) return;
+    const id = state.selectedProgramId;
+    if (!id) return;
+    const baseProgram = state.currentDetailBaseProgram || {};
+    const payload = {};
+    EDITABLE_FIELD_META.forEach((fieldMeta) => {
+      const field = els.detailEditForm.elements[fieldMeta.name];
+      if (!field) return;
+      const rawValue = field.value;
+      const key = pickExistingKey(baseProgram, fieldMeta.candidates);
+      let nextValue = rawValue;
+      if (fieldMeta.kind === 'number') {
+        nextValue = rawValue === '' ? null : Number(rawValue);
+        if (!Number.isFinite(nextValue)) nextValue = null;
+      } else {
+        nextValue = normalizeText(rawValue) || null;
+      }
+      if (fieldMeta.required && !nextValue) {
+        field.focus();
+        throw new Error('Title is required.');
+      }
+      payload[key] = nextValue;
+    });
+
+    setDetailNotice('Saving changes…');
+    const { error } = await state.client.from('pledge_programs').update(payload).eq('id', id);
+    if (error) throw error;
+    await loadFilterOptions();
+    await loadLibrary();
+    await loadProgramDetail(id, { preserveMode: false });
+    setDetailNotice('Changes saved.');
+    setDetailMode('view');
+    setNotice('Program updated.');
+  };
+
   const openDetailModal = () => {
     els.detailModal.classList.remove('hidden');
     els.detailBackdrop.classList.remove('hidden');
@@ -408,6 +566,9 @@
     els.detailBackdrop.classList.add('hidden');
     document.body.classList.remove('modal-open');
     state.selectedProgramId = null;
+    state.detailEditMode = false;
+    state.currentDetailProgram = null;
+    state.currentDetailBaseProgram = null;
     syncSelectedRows();
   };
 
@@ -628,7 +789,7 @@
     return { data: [], source: null };
   };
 
-  const loadProgramDetail = async (programId) => {
+  const loadProgramDetail = async (programId, options = {}) => {
     if (!programId || !state.client) return;
 
     state.selectedProgramId = String(programId);
@@ -645,6 +806,13 @@
     els.premiumsList.innerHTML = '<div class="premium-card">Loading premiums…</div>';
 
     const rowSummary = state.rows.find((row) => String(row.id) === String(programId)) || null;
+    state.currentDetailProgram = rowSummary;
+    state.currentDetailBaseProgram = null;
+    state.currentDetailVersions = [];
+    state.currentDetailSegments = [];
+    state.currentDetailPremiums = [];
+    state.currentDetailAirings = [];
+    setDetailMode('view');
     if (rowSummary) renderDetail(rowSummary, [], [], [], []);
 
     const [summaryResult, programResult, versionsResult, premiumsResult] = await Promise.allSettled([
@@ -703,21 +871,30 @@
     ]);
     if (!airingSource) detailWarnings.push('Air-date contribution history is unavailable for this role or this title.');
 
+    state.currentDetailProgram = mergedProgram;
+    state.currentDetailBaseProgram = baseProgram;
+    state.currentDetailVersions = versions;
+    state.currentDetailSegments = segments;
+    state.currentDetailPremiums = premiums;
+    state.currentDetailAirings = airings;
     setDetailNotice(detailWarnings.length ? detailWarnings.join(' ') : '', detailWarnings.length ? 'warn' : '');
     renderDetail(mergedProgram, versions, segments, premiums, airings);
+    if (options.preserveMode && canEdit()) setDetailMode('edit');
     els.detailCloseButton.focus();
   };
 
   const initAuthRole = async () => {
     if (!state.client) return;
     try {
-      const { data, error } = await state.client.auth.getUser();
+      const { data, error } = await state.client.auth.getSession();
       if (error) throw error;
-      state.userEmail = data?.user?.email ? String(data.user.email).toLowerCase() : null;
+      state.session = data?.session || null;
+      state.userEmail = state.session?.user?.email ? String(state.session.user.email).toLowerCase() : null;
       state.isAdmin = !!(state.userEmail && ADMIN_EMAILS.includes(state.userEmail));
       setRoleUi();
     } catch (error) {
-      console.warn('Auth user check failed; staying viewer-only.', error);
+      console.warn('Auth session check failed; staying viewer-only.', error);
+      state.session = null;
       state.userEmail = null;
       state.isAdmin = false;
       setRoleUi();
@@ -727,14 +904,14 @@
   const resetFilters = () => {
     state.searchText = '';
     state.searchField = '';
-    state.statusFilter = 'all';
+    state.statusFilter = 'active';
     state.topicFilter = '';
     state.secondaryTopicFilter = '';
     state.lengthFilter = '';
     state.distributorFilter = '';
     els.searchInput.value = '';
     els.searchFieldSelect.value = '';
-    els.statusFilter.value = 'all';
+    els.statusFilter.value = 'active';
     renderSelectOptions(els.topicFilter, state.topicOptions, state.topicFilter, 'All topics');
     renderSelectOptions(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
     renderSelectOptions(els.lengthFilter, state.lengthOptions, state.lengthFilter, 'All lengths');
@@ -751,9 +928,26 @@
       return;
     }
 
-    state.client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const noStoreFetch = (input, init = {}) => fetch(input, { ...init, cache: 'no-store' });
+    state.client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, { global: { fetch: noStoreFetch } });
+    const authHashError = parseAuthErrorFromHash();
+    if (authHashError) {
+      openAuthShell(authHashError);
+      setNotice(authHashError, 'warn');
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
     setNotice('Config found. Connecting to Supabase and loading pledge titles.');
     await initAuthRole();
+    state.client.auth.onAuthStateChange(async (_event, session) => {
+      state.session = session;
+      state.userEmail = session?.user?.email ? String(session.user.email).toLowerCase() : null;
+      state.isAdmin = !!(state.userEmail && ADMIN_EMAILS.includes(state.userEmail));
+      setRoleUi();
+      if (els.detailModal && !els.detailModal.classList.contains('hidden')) {
+        if (!canEdit()) setDetailMode('view');
+        refreshDetailView();
+      }
+    });
     await loadFilterOptions();
     await loadLibrary();
   };
@@ -821,10 +1015,55 @@
     if (event.key === 'Escape' && !els.detailModal.classList.contains('hidden')) closeDetailModal();
   });
 
-  const adminMessage = 'Add/edit tools are intentionally held for the next build. This pass focuses on validating the pledge library and getting the detail modal right.';
-  els.adminNewButton.addEventListener('click', () => window.alert(adminMessage));
-  els.adminEditButton.addEventListener('click', () => window.alert(adminMessage));
-  els.detailEditButton.addEventListener('click', () => window.alert(adminMessage));
+  els.adminButton.addEventListener('click', () => {
+    openAuthShell('');
+  });
+
+  els.cancelLoginButton?.addEventListener('click', closeAuthShell);
+
+  els.loginGitHubButton?.addEventListener('click', async () => {
+    if (!state.client) return;
+    if (els.authMessage) els.authMessage.textContent = 'Sending you to GitHub…';
+    const { error } = await state.client.auth.signInWithOAuth({
+      provider: 'github',
+      options: { redirectTo: getAdminRedirectUrl() }
+    });
+    if (error && els.authMessage) {
+      els.authMessage.textContent = error.message;
+      setNotice(error.message, 'warn');
+    }
+  });
+
+  els.logoutButton?.addEventListener('click', async () => {
+    if (!state.client) return;
+    await state.client.auth.signOut();
+    state.session = null;
+    state.userEmail = null;
+    state.isAdmin = false;
+    setRoleUi();
+    setDetailMode('view');
+    setNotice('Signed out.');
+  });
+
+  els.detailEditButton.addEventListener('click', () => {
+    if (!canEdit()) return;
+    setDetailMode('edit');
+  });
+
+  els.detailCancelEditButton?.addEventListener('click', () => {
+    setDetailNotice('');
+    setDetailMode('view');
+  });
+
+  els.detailEditForm?.addEventListener('submit', async (event) => {
+    try {
+      await saveDetailEdit(event);
+    } catch (error) {
+      console.error(error);
+      setDetailNotice(error.message || 'Save failed.', 'bad');
+      setNotice(error.message || 'Save failed.', 'warn');
+    }
+  });
 
   window.addEventListener('DOMContentLoaded', () => {
     void init();

@@ -3,16 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.6.2</title>
+  <title>WNMU Pledge Program Library v0.6.4</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.6.2">
+  <link rel="stylesheet" href="assets/styles.css?v=0.6.3">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/app.js?v=0.6.2"></script>
+  <script defer src="assets/app.js?v=0.6.3"></script>
 </head>
 <body>
+
+  <div id="auth-shell" class="auth-shell hidden">
+    <div class="auth-card">
+      <div class="brand-wrap auth-brand">
+        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo" class="brand-logo auth-logo">
+        <div>
+          <div class="brand-name">WNMU-TV PBS</div>
+          <h2 id="auth-title" class="auth-title">Pledge Program Library</h2>
+          <div class="muted">Sign in with GitHub for admin editing access.</div>
+        </div>
+      </div>
+      <div id="auth-message" class="auth-message"></div>
+      <div class="auth-actions-row">
+        <button type="button" id="login-github-button" class="primary">Sign in with GitHub</button>
+        <button type="button" id="cancel-login-button" class="ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div class="app-shell">
     <header class="topbar">
       <div class="brand-wrap">
@@ -21,15 +40,15 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.6.2</span>
+            <span class="version-pill" id="version-flag">v0.6.4</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
         </div>
       </div>
       <div class="topbar-actions">
         <div class="role-chip" id="role-chip">Viewer</div>
-        <button type="button" class="primary hidden" id="admin-new-button">Add program</button>
-        <button type="button" class="ghost hidden" id="admin-edit-button">Edit selected</button>
+        <button type="button" class="ghost" id="admin-button">Admin sign in</button>
+        <button type="button" class="ghost hidden" id="logout-button">Sign out</button>
         <button type="button" class="ghost" id="refresh-button">Refresh</button>
       </div>
     </header>
@@ -71,8 +90,8 @@
         <div class="filter-field narrow">
           <label class="filter-label" for="status-filter">Library state</label>
           <select id="status-filter">
-            <option value="all" selected>All titles</option>
-            <option value="active">Active only</option>
+            <option value="all">All titles</option>
+            <option value="active" selected>Active only</option>
             <option value="archived">Archived only</option>
           </select>
         </div>
@@ -133,6 +152,35 @@
         </div>
 
         <div id="detail-content" class="detail-scroll hidden">
+          <form id="detail-edit-form" class="detail-edit-form hidden">
+            <div class="detail-block">
+              <div class="section-head"><h3>Edit program</h3><div class="mini-chip">Admin</div></div>
+              <div class="detail-form-grid">
+                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Title</span><input type="text" name="title" required></label>
+                <label class="detail-form-field"><span class="filter-label">NOLA</span><input type="text" name="nola_code"></label>
+                <label class="detail-form-field"><span class="filter-label">Distributor</span><input type="text" name="distributor"></label>
+                <label class="detail-form-field"><span class="filter-label">Actual runtime</span><input type="text" name="exact_runtime" placeholder="00:56:46"></label>
+                <label class="detail-form-field"><span class="filter-label">Length bucket minutes</span><input type="number" name="board_runtime_minutes" min="0" step="1"></label>
+                <label class="detail-form-field"><span class="filter-label">Primary topic</span><input type="text" name="topic_primary"></label>
+                <label class="detail-form-field"><span class="filter-label">Secondary topic</span><input type="text" name="topic_secondary"></label>
+                <label class="detail-form-field"><span class="filter-label">Rights begin</span><input type="date" name="rights_start"></label>
+                <label class="detail-form-field"><span class="filter-label">Rights end</span><input type="date" name="rights_end"></label>
+                <label class="detail-form-field"><span class="filter-label">Status</span>
+                  <select name="status">
+                    <option value="active">active</option>
+                    <option value="archived">archived</option>
+                  </select>
+                </label>
+                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Premium summary</span><textarea name="premium_summary" rows="3"></textarea></label>
+                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Description</span><textarea name="description" rows="5"></textarea></label>
+                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Notes</span><textarea name="program_notes" rows="4"></textarea></label>
+              </div>
+              <div class="toolbar-actions detail-form-actions">
+                <button type="submit" class="primary" id="detail-save-button">Save</button>
+                <button type="button" class="ghost" id="detail-cancel-edit-button">Cancel</button>
+              </div>
+            </div>
+          </form>
           <section class="detail-block">
             <h3>Overview</h3>
             <dl class="overview-grid" id="overview-grid"></dl>
@@ -167,7 +215,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.6.2</div>
+      <div id="footer-version">v0.6.4</div>
     </footer>
   </div>
 </body>

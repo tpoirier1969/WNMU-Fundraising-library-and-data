@@ -1,8 +1,8 @@
-# WNMU Pledge Program Library v0.6.1
+# WNMU Pledge Program Library v0.6.4
 
 This revision fixes the list data path, expands filters to the fields you actually need, and cleans the detail modal up so it focuses on pledge-specific information instead of generic ballast.
 
-## What changed in v0.6.1
+## What changed in v0.6.4
 
 - Rights Begin, Rights End, and Last Aired are now enriched from the base pledge program rows for the visible list page.
 - Last Aired now shows **N/A** when a title has never aired.
