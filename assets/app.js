@@ -1,6 +1,6 @@
 (() => {
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-  const APP_VERSION = 'v0.6.5';
+  const APP_VERSION = 'v0.6.6';
   const READ_VIEW = 'pledge_program_library_summary_v2';
   const BASE_TABLE = 'pledge_programs_v2';
   const TIMING_TABLE = 'pledge_program_timings_v2';
@@ -364,7 +364,11 @@
       syncSelectedRows();
     } catch (error) {
       console.error(error);
-      els.libraryBody.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escapeHtml(error.message || 'Load failed.')}</td></tr>`;
+      const rawMessage = error?.message || 'Load failed.';
+      const message = /permission denied|row-level security|schema cache/i.test(rawMessage)
+        ? `${rawMessage} Run the v2 access SQL patch, then reload.`
+        : rawMessage;
+      els.libraryBody.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escapeHtml(message)}</td></tr>`;
       els.resultSummary.textContent = 'Load failed.';
     }
   };
