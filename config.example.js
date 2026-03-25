@@ -1,10 +1,7 @@
-window.PLEDGE_MANAGER_CONFIG = {
-  APP_NAME: 'WNMU Pledge Program Library',
-  APP_VERSION: 'v0.4.0',
-  SUPABASE_URL: 'https://YOUR_PROJECT.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR_PUBLIC_ANON_KEY',
-  ADMIN_EMAILS: [
-    'you@example.com'
-  ],
-  DEFAULT_PAGE_SIZE: 100
+window.APP_CONFIG = {
+  SUPABASE_URL: "https://YOUR-PROJECT.supabase.co",
+  SUPABASE_ANON_KEY: "YOUR-ANON-KEY",
+  REQUIRE_AUTH: false,
+  AUTO_ARCHIVE_DAYS: 90,
+  ADMIN_REDIRECT_URL: "https://YOUR-SITE.example.com/"
 };

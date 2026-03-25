@@ -1,141 +1,345 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.4.0</title>
-  <link rel="stylesheet" href="assets/styles.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WNMU TV Programming Library</title>
+  <link rel="icon" type="image/png" href="WNMU-TV-logo-head2019.png" />
+  <link rel="shortcut icon" href="WNMU-TV-logo-head2019.png" />
+  <link rel="apple-touch-icon" href="WNMU-TV-logo-head2019.png" />
+  <link rel="stylesheet" href="styles.css?v=1.6.12" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script defer src="config.js"></script>
-  <script defer src="assets/app.js"></script>
+  <script src="config.js"></script>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="site-header">
-      <div class="brand-block">
-        <div class="brand-kicker">WNMU Public TV</div>
-        <h1>Pledge Program Library</h1>
-        <p class="brand-subtitle">Imported pledge titles, versions, premiums, and break structure in one sane place.</p>
+  <div id="setupNotice" class="setup-notice hidden">
+    <div class="setup-card">
+      <h1>WNMU TV Programming Library</h1>
+      <p>Create <code>config.js</code> from <code>config.example.js</code>, then add your Supabase URL and anon key.</p>
+      <p>The app will wake up after that.</p>
+    </div>
+  </div>
+
+  <div id="authShell" class="auth-shell hidden">
+    <div class="auth-card">
+      <div class="brand-auth">
+        <img src="WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo" class="brand-logo auth-logo" />
+        <div>
+          <h1 id="authTitle">WNMU TV Programming Library</h1>
+          <div class="brand-subtitle">PROGRAMMING</div>
+        </div>
       </div>
-      <div class="header-right">
-        <div class="role-chip" id="role-chip">Viewer</div>
-        <div class="version-flag" id="version-flag">v0.4.0</div>
+      <p class="muted">Sign in with GitHub for admin access. Everyone else can keep using the library in read-only mode.</p>
+      <div class="auth-form">
+        <button type="button" id="loginGitHubBtn" class="primary auth-provider-btn">Sign in with GitHub</button>
+      </div>
+      <div id="authMessage" class="auth-message"></div>
+      <div class="auth-actions">
+        <button type="button" id="cancelLoginBtn" class="ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="appShell" class="app-shell hidden">
+    <header class="topbar">
+      <div class="brand-wrap">
+        <img src="WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo" class="brand-logo" />
+        <div>
+          <div class="brand-name">WNMU-TV PBS</div>
+          <div class="brand-tagline">Public television for the Upper Peninsula of Michigan and Northern Wisconsin</div>
+          <div class="title-row">
+            <h1 id="appTitle">WNMU TV Programming Library</h1>
+            <span id="appVersion" class="version-pill">v1.6.12</span>
+          </div>
+          <div id="statusLine" class="status-line">Loading…</div>
+        </div>
+      </div>
+      <div class="topbar-actions mobile-filters-only">
+        <button id="adminBtn" class="primary">Admin sign in</button>
+        <button id="undoViewBtn" class="hidden">Undo view</button>
+        <button id="newProgramBtn" class="primary hidden">New program</button>
+        <button id="exportBtn">Export current view</button>
+        <button id="refreshBtn">Refresh</button>
+        <button id="logoutBtn" class="hidden">Sign out</button>
       </div>
     </header>
 
-    <main class="main-grid">
-      <section class="panel controls-panel">
-        <div class="panel-header">
-          <h2>Library</h2>
-          <div class="toolbar-actions">
-            <button type="button" class="button ghost" id="refresh-button">Refresh</button>
-            <button type="button" class="button accent hidden" id="admin-new-button">Add program</button>
-          </div>
+    <section class="mobile-view-tabs" id="mobileViewTabs" aria-label="Mobile sections" role="tablist">
+      <button type="button" class="mobile-view-tab active" data-mobile-panel="filters" role="tab" aria-selected="true">Filters &amp; settings</button>
+      <button type="button" class="mobile-view-tab" data-mobile-panel="list" role="tab" aria-selected="false">Program list</button>
+    </section>
+
+    <section class="quick-strip" id="quickStrip" data-mobile-section="filters">
+      <button type="button" class="stat-card quick-card quick-view" data-view="active">
+        <div class="stat-label">Quick filter</div>
+        <div class="stat-value small">Active Programs</div>
+      </button>
+      <button type="button" class="stat-card quick-card quick-view" data-view="new_to_13_1">
+        <div class="stat-label">Quick filter</div>
+        <div class="stat-value small">New to 13.1</div>
+      </button>
+      <button type="button" class="stat-card quick-card quick-view" data-view="new_to_13_3_music_or_use">
+        <div class="stat-label">Quick filter</div>
+        <div class="stat-value small">New to 13.3</div>
+      </button>
+      <button type="button" class="stat-card quick-card quick-view" data-view="michigan">
+        <div class="stat-label">Quick filter</div>
+        <div class="stat-value small">Michigan programming</div>
+      </button>
+      <button type="button" class="stat-card quick-card quick-view" data-view="evergreens">
+        <div class="stat-label">Quick filter</div>
+        <div class="stat-value small">Evergreens</div>
+      </button>
+      <button type="button" class="stat-card quick-card quick-view" data-view="missing_info">
+        <div class="stat-label">Quick filter</div>
+        <div class="stat-value small">Missing info</div>
+      </button>
+      <button type="button" class="stat-card quick-card" data-view="needs_apt_check">
+        <div class="stat-label">APT check</div>
+        <div id="statApt" class="stat-value">0</div>
+      </button>
+      <button type="button" class="stat-card quick-card" data-view="ending_soon">
+        <div class="stat-label">Ending in 90 days</div>
+        <div id="statEnding" class="stat-value">0</div>
+      </button>
+      <button type="button" class="stat-card quick-card" data-view="expired">
+        <div class="stat-label">Expired</div>
+        <div id="statExpired" class="stat-value">0</div>
+      </button>
+      <button type="button" class="stat-card quick-card" data-view="missing_rights">
+        <div class="stat-label">Missing rights</div>
+        <div id="statMissingRights" class="stat-value">0</div>
+      </button>
+      <button type="button" class="stat-card quick-card" data-view="archived">
+        <div class="stat-label">Archived</div>
+        <div id="statArchived" class="stat-value">0</div>
+      </button>
+    </section>
+
+    <section class="controls compact-controls" data-mobile-section="filters">
+      <div class="controls-head">
+        <button type="button" id="resetFiltersBtn" class="mini-clear reset-all top-reset">Clear all filters</button>
+      </div>
+      <div class="search-grid">
+        <div class="search-mode-wrap">
+          <label class="filter-label" for="searchFieldSelect">Search in</label>
+          <select id="searchFieldSelect">
+            <option value="">All fields</option>
+            <option value="title">Title</option>
+            <option value="notes">Description</option>
+            <option value="legacy_code">Code / bucket</option>
+            <option value="nola_eidr">NOLA</option>
+            <option value="topic">Topic</option>
+            <option value="secondary_topic">Secondary topic</option>
+            <option value="aired_13_1">Aired on 13.1</option>
+            <option value="aired_13_3">Aired on 13.3</option>
+            <option value="distributor">Distributor</option>
+            <option value="rights_notes">Rights notes</option>
+          </select>
         </div>
+        <div class="search-block">
+          <label class="filter-label" for="searchInput">Search text</label>
+          <input id="searchInput" type="search" placeholder="Leave search-in on All fields to search everything." />
+        </div>
+      </div>
+      <div class="filters filters-grid">
+        <div class="filter-box wide">
+          <div class="filter-label-row"><label class="filter-label" for="topicFilter">Topics</label><button type="button" id="clearTopicFilter" class="mini-clear">Clear</button></div>
+          <select id="topicFilter" multiple size="5"></select>
+        </div>
+        <div class="filter-box wide">
+          <div class="filter-label-row"><label class="filter-label" for="secondaryTopicFilter">Secondary topics</label><button type="button" id="clearSecondaryTopicFilter" class="mini-clear">Clear</button></div>
+          <select id="secondaryTopicFilter" multiple size="5"></select>
+        </div>
+        <div class="filter-box">
+          <div class="filter-label-row"><label class="filter-label" for="lengthFilter">Lengths</label><button type="button" id="clearLengthFilter" class="mini-clear">Clear</button></div>
+          <select id="lengthFilter" multiple size="5"></select>
+        </div>
+        <div class="filter-box">
+          <div class="filter-label-row"><label class="filter-label" for="codeFilter">Code / bucket</label><button type="button" id="clearCodeFilter" class="mini-clear">Clear</button></div>
+          <select id="codeFilter" multiple size="5"></select>
+        </div>
+        <div class="filter-box">
+          <label class="filter-label" for="distributorFilter">Distributor</label>
+          <select id="distributorFilter"><option value="">All distributors</option></select>
+        </div>
+        <div class="filter-box">
+          <label class="filter-label" for="programTypeFilter">Type</label>
+          <select id="programTypeFilter"><option value="">All types</option></select>
+        </div>
+        <div class="filter-box">
+          <label class="filter-label" for="statusFilter">Status</label>
+          <select id="statusFilter">
+            <option value="">All statuses</option>
+            <option value="needs_apt_check">Needs APT check</option>
+            <option value="ending_soon">Ending within 90 days</option>
+            <option value="expired">Expired</option>
+            <option value="new_to_13_1">New to 13.1</option>
+            <option value="new_to_13_3">New to 13.3</option>
+            <option value="archive_candidate">Archive candidate</option>
+            <option value="missing_rights">Missing rights begin or end</option>
+            <option value="missing_info">Missing info</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-foot">
+        <label id="includeHolidayWrap" class="checkbox-box inline-filter-check">
+          <input id="includeHolidayPrograms" type="checkbox" />
+          <span id="includeHolidayLabel">Holiday programming</span>
+        </label>
+        <div class="filter-help">Tip: hold Ctrl/⌘ to choose multiple topics, secondary topics, lengths, or code values.</div>
+      </div>
+    </section>
 
-        <div class="notice-strip" id="config-status">Checking configuration…</div>
-
-        <div class="controls-grid">
-          <label class="field span-2">
-            <span>Search</span>
-            <input id="search-input" type="search" placeholder="Title, NOLA, topic, distributor, premium…">
-          </label>
-          <label class="field">
-            <span>State of the library</span>
-            <select id="status-filter">
-              <option value="active" selected>Active titles</option>
-              <option value="all">Include archived</option>
-              <option value="archived">Archived only</option>
+    <section class="list-panel" data-mobile-section="list">
+      <div class="list-meta">
+        <div>
+          <div class="list-title">Program list</div>
+          <div id="listSummary" class="list-summary">Showing 0 programs.</div>
+        </div>
+        <div class="mobile-sort-tools">
+          <label class="mobile-sort-label" for="mobileSortSelect">Sort</label>
+          <div class="mobile-sort-row">
+            <select id="mobileSortSelect">
+              <option value="title">Title</option>
+              <option value="rights_end">Rights End</option>
+              <option value="aired_recent">Aired On</option>
             </select>
-          </label>
-          <label class="field">
-            <span>Sort</span>
-            <select id="sort-select">
-              <option value="title" selected>Title</option>
-              <option value="runtime">Board runtime</option>
-              <option value="money">Lifetime dollars</option>
-              <option value="airings">Times aired</option>
-              <option value="recent">Most recently aired</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="meta-row">
-          <div id="result-summary" class="muted">Waiting on data…</div>
-          <div class="pager">
-            <button type="button" class="button ghost small" id="prev-page">Prev</button>
-            <div id="page-label" class="page-label">Page 1</div>
-            <button type="button" class="button ghost small" id="next-page">Next</button>
+            <button type="button" id="mobileSortDirectionBtn" class="sort-direction-btn" aria-label="Toggle sort direction">↑</button>
           </div>
         </div>
-
-        <div class="table-wrap">
-          <table class="library-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>NOLA</th>
-                <th>Ver</th>
-                <th>Board</th>
-                <th>Breaks</th>
-                <th>Local</th>
-                <th>Topic</th>
-                <th>Distributor</th>
-                <th>Premiums</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="library-body">
-              <tr>
-                <td colspan="10" class="placeholder-row">Loading library…</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <aside class="panel detail-panel">
-        <div class="panel-header sticky">
-          <div>
-            <h2 id="detail-title">Program detail</h2>
-            <p id="detail-subtitle" class="muted">Choose a title from the library.</p>
-          </div>
-          <button type="button" class="button ghost hidden" id="admin-edit-button">Edit</button>
-        </div>
-
-        <div id="detail-empty" class="detail-empty">
-          Click a title and this side will show the imported fields, version info, and full segment map.
-        </div>
-
-        <div id="detail-content" class="hidden">
-          <section class="detail-block">
-            <h3>Overview</h3>
-            <dl class="overview-grid" id="overview-grid"></dl>
-          </section>
-
-          <section class="detail-block">
-            <div class="section-head">
-              <h3>Versions</h3>
-              <div id="version-count-chip" class="mini-chip">0</div>
-            </div>
-            <div id="versions-list" class="version-stack"></div>
-          </section>
-
-          <section class="detail-block">
-            <div class="section-head">
-              <h3>Premiums</h3>
-              <div id="premium-count-chip" class="mini-chip">0</div>
-            </div>
-            <div id="premiums-list" class="simple-list"></div>
-          </section>
-        </div>
-      </aside>
-    </main>
-
-    <footer class="site-footer">
-      <div>WNMU Pledge Program Library</div>
-      <div id="footer-version">v0.4.0</div>
-    </footer>
+      </div>
+      <div class="table-wrap">
+        <table class="programs-table compact-table">
+          <thead>
+            <tr>
+              <th class="col-title"><button type="button" class="sort-head" data-sort="title">Title <span class="sort-arrow" aria-hidden="true"></span></button></th>
+              <th class="col-notes">Description</th>
+              <th class="col-details">Details</th>
+              <th class="col-airing"><button type="button" class="sort-head" data-sort="aired_recent">Aired on 13.1 <span class="sort-arrow" aria-hidden="true"></span></button></th>
+              <th class="col-airing"><button type="button" class="sort-head" data-sort="aired_recent">Aired on 13.3 <span class="sort-arrow" aria-hidden="true"></span></button></th>
+              <th class="col-type">Package type</th>
+              <th class="col-rights"><button type="button" class="sort-head" data-sort="rights_end">Rights window <span class="sort-arrow" aria-hidden="true"></span></button></th>
+              <th class="col-distributor">Distributor</th>
+              <th class="col-flags">Flags</th>
+            </tr>
+          </thead>
+          <tbody id="programTableBody"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
+
+  <div id="loadingOverlay" class="loading-overlay hidden" aria-live="polite">
+    <div class="loading-card">
+      <div class="loading-spinner" aria-hidden="true"></div>
+      <div class="loading-title">Loading library</div>
+      <div id="loadingDetail" class="loading-detail">Loading data…</div>
+    </div>
+  </div>
+
+  <div id="drawerBackdrop" class="drawer-backdrop hidden"></div>
+  <aside id="editorDrawer" class="drawer hidden" aria-modal="true" role="dialog">
+    <div class="drawer-header">
+      <div class="drawer-title-wrap"><h2 id="drawerTitle">Program</h2><span id="drawerModeBadge" class="drawer-mode-badge">Read only</span></div>
+      <button id="closeDrawerBtn" class="ghost">Close</button>
+    </div>
+
+    <form id="programForm" class="program-form">
+      <div class="template-tools span-2" id="templateTools">
+        <label class="template-field">Copy details from existing
+          <input id="templateSourceInput" type="text" list="templateSourceList" placeholder="Start typing a title, then choose one and click Load" />
+          <datalist id="templateSourceList"></datalist>
+        </label>
+        <button type="button" id="loadTemplateBtn">Load</button>
+      </div>
+
+      <div id="duplicateCheck" class="duplicate-check span-2 hidden"></div>
+
+      <div class="form-grid">
+        <label class="row-title">Title
+          <input name="title" type="text" required />
+        </label>
+        <label class="row-nola">NOLA
+          <input name="nola_eidr" type="text" />
+        </label>
+        <label class="row-length">Length
+          <input name="length_minutes" type="text" />
+        </label>
+        <label class="row-use">Use?
+          <input name="legacy_code" type="text" placeholder="AM250 / Y / N / M" />
+        </label>
+
+        <label class="span-full">Description
+          <textarea name="notes" rows="4"></textarea>
+        </label>
+
+        <label>Program or series
+          <select name="program_type"></select>
+        </label>
+        <label>Episode / Season
+          <input name="episode_season" type="text" />
+        </label>
+        <label>Topic
+          <select name="topic"></select>
+        </label>
+        <label class="secondary-topic-field">Secondary topic
+          <input name="secondary_topic" type="text" list="secondaryTopicList" placeholder="Select or type one or more topics, separated by commas" />
+          <datalist id="secondaryTopicList"></datalist>
+        </label>
+
+        <label>Rights begin
+          <input name="rights_begin" type="date" />
+        </label>
+        <label>Rights end
+          <input name="rights_end" type="date" />
+        </label>
+        <label>Aired on 13.1
+          <input name="aired_13_1" type="text" placeholder="3/20/26 20:00; 3/22/26 13:00" />
+        </label>
+        <label>Aired on 13.3
+          <input name="aired_13_3" type="text" placeholder="3/20/26 20:00; 3/22/26 13:00" />
+        </label>
+
+        <label class="distributor-field">Distributor
+          <input name="distributor" type="text" list="distributorList" placeholder="Choose or type a new distributor" />
+          <datalist id="distributorList"></datalist>
+        </label>
+        <label id="voteFieldWrap">Vote
+          <select name="vote">
+            <option value=""></option>
+            <option value="Y">Y</option>
+            <option value="N">N</option>
+            <option value="M">M</option>
+          </select>
+        </label>
+        <label>Package type
+          <select name="package_type"></select>
+        </label>
+        <label>sIX/Server/Tape/FTP
+          <select name="server_tape"></select>
+        </label>
+
+        <label class="span-full">Rights notes
+          <textarea name="rights_notes" rows="2"></textarea>
+        </label>
+      </div>
+
+      <div id="formFlags" class="form-flags"></div>
+
+      <section id="readOnlyDetails" class="read-only-details hidden" aria-live="polite"></section>
+
+      <div id="readOnlyNote" class="read-only-note hidden">Read-only mode. Use Admin sign in with GitHub to add, edit, duplicate, or delete programs.</div>
+      <div class="drawer-actions">
+        <button type="submit" id="saveBtn" class="primary">Save</button>
+        <label id="evergreenOverrideWrap" class="checkbox drawer-inline-flag"><input name="can_be_used_as_evergreen" type="checkbox" /><span id="evergreenOverrideLabel">Can be used as evergreen</span></label>
+        <button type="button" id="duplicateBtn">Duplicate</button>
+        <button type="button" id="deleteBtn" class="danger">Delete permanently</button>
+        <button type="button" id="unarchiveBtn" class="secondary hidden">Unarchive</button>
+      </div>
+    </form>
+  </aside>
+
+  <script src="app.js?v=1.6.12"></script>
 </body>
 </html>
