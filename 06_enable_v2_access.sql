@@ -1,4 +1,4 @@
--- Pledge Library v2 access patch
+-- Pledge Library v2 access patch for v0.6.7
 -- Run this after the v2 migration if the app loads no data.
 
 begin;

@@ -1,6 +1,6 @@
 (() => {
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-  const APP_VERSION = 'v0.6.6';
+  const APP_VERSION = 'v0.6.7';
   const READ_VIEW = 'pledge_program_library_summary_v2';
   const BASE_TABLE = 'pledge_programs_v2';
   const TIMING_TABLE = 'pledge_program_timings_v2';
@@ -121,6 +121,8 @@
     els.configStatus.className = 'status-line';
     if (type) els.configStatus.classList.add(type);
   };
+
+  const formatCount = (value) => Number(value || 0).toLocaleString();
 
   const setDetailNotice = (text, type = '') => {
     if (!text) {
@@ -274,8 +276,6 @@
   };
 
   const applyCommonFilters = (query) => {
-    if (state.statusFilter === 'active') query = query.eq('is_active', true);
-    else if (state.statusFilter === 'archived') query = query.eq('is_active', false);
     if (state.topicFilter) query = query.eq('topic_primary', state.topicFilter);
     if (state.secondaryTopicFilter) query = query.eq('topic_secondary', state.secondaryTopicFilter);
     if (state.distributorFilter) query = query.eq('distributor', state.distributorFilter);
@@ -288,6 +288,12 @@
     return rows.filter((row) => deriveLengthLabel(row) === state.lengthFilter);
   };
 
+  const filterRowsByStatus = (rows) => {
+    if (state.statusFilter === 'active') return rows.filter((row) => deriveIsActive(row));
+    if (state.statusFilter === 'archived') return rows.filter((row) => !deriveIsActive(row));
+    return rows;
+  };
+
   const sortRows = (rows) => [...rows].sort((a, b) => {
     const topicCompare = compareText(deriveTopicPrimary(a), deriveTopicPrimary(b));
     if (topicCompare !== 0) return topicCompare;
@@ -295,7 +301,7 @@
   });
 
   const buildFilterOptions = async () => {
-    const rows = await fetchAllRows(READ_VIEW, 'id, title, topic_primary, topic_secondary, distributor, length_bucket_minutes, board_runtime_minutes, is_active', (query) => query.order('topic_primary', { ascending: true }).order('title', { ascending: true }));
+    const rows = await fetchAllRows(READ_VIEW, 'id, title, topic_primary, topic_secondary, distributor, length_bucket_minutes, board_runtime_minutes, rights_end', (query) => query.order('topic_primary', { ascending: true }).order('title', { ascending: true }));
     state.topicOptions = Array.from(new Set(rows.map((row) => deriveTopicPrimary(row)).filter(Boolean))).sort(compareText);
     state.secondaryTopicOptions = Array.from(new Set(rows.map((row) => deriveTopicSecondary(row)).filter(Boolean))).sort(compareText);
     state.distributorOptions = Array.from(new Set(rows.map((row) => deriveDistributor(row)).filter(Boolean))).sort(compareText);
@@ -356,12 +362,22 @@
       const rows = await fetchAllRows(READ_VIEW, '*', (query) => applyCommonFilters(query)
         .order('topic_primary', { ascending: true, nullsFirst: false })
         .order('title', { ascending: true, nullsFirst: false }));
-      const filteredRows = filterRowsByLength(rows);
+      const statusRows = filterRowsByStatus(rows);
+      const filteredRows = filterRowsByLength(statusRows);
       state.rows = sortRows(filteredRows);
       state.totalRows = state.rows.length;
       renderRows();
       updateSummary();
       syncSelectedRows();
+
+      if (!rows.length) {
+        setNotice(`Connected, but ${READ_VIEW} returned 0 rows. Check the v2 view, grants, and whether the migration loaded data.`, 'warn');
+      } else if (!statusRows.length && state.statusFilter !== 'all') {
+        setNotice(`Connected. ${READ_VIEW} returned ${formatCount(rows.length)} rows, but 0 match the ${state.statusFilter} filter. Switch Library state to All titles if needed.`, 'warn');
+      } else {
+        const statusLabel = state.statusFilter === 'active' ? 'active ' : state.statusFilter === 'archived' ? 'archived ' : '';
+        setNotice(`Loaded ${formatCount(state.totalRows)} ${statusLabel}titles from ${READ_VIEW}.`);
+      }
     } catch (error) {
       console.error(error);
       const rawMessage = error?.message || 'Load failed.';
@@ -370,6 +386,7 @@
         : rawMessage;
       els.libraryBody.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escapeHtml(message)}</td></tr>`;
       els.resultSummary.textContent = 'Load failed.';
+      setNotice(message, 'warn');
     }
   };
 
@@ -774,7 +791,7 @@
       setNotice(authHashError, 'warn');
       history.replaceState(null, '', window.location.pathname + window.location.search);
     }
-    setNotice('Connected. Loading pledge titles from the rebuilt v2 library.');
+    setNotice(`Connected. Probing ${READ_VIEW} and loading pledge titles from the rebuilt v2 library.`);
     await initAuthRole();
     state.client.auth.onAuthStateChange(async (_event, session) => {
       state.session = session;
