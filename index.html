@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.6.4</title>
+  <title>WNMU Pledge Program Library v0.6.5</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.6.3">
+  <link rel="stylesheet" href="assets/styles.css?v=0.6.5">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/app.js?v=0.6.3"></script>
+  <script defer src="assets/app.js?v=0.6.5"></script>
 </head>
 <body>
 
@@ -40,7 +40,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.6.4</span>
+            <span class="version-pill" id="version-flag">v0.6.5</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
         </div>
@@ -159,21 +159,17 @@
                 <label class="detail-form-field detail-form-span-2"><span class="filter-label">Title</span><input type="text" name="title" required></label>
                 <label class="detail-form-field"><span class="filter-label">NOLA</span><input type="text" name="nola_code"></label>
                 <label class="detail-form-field"><span class="filter-label">Distributor</span><input type="text" name="distributor"></label>
-                <label class="detail-form-field"><span class="filter-label">Actual runtime</span><input type="text" name="exact_runtime" placeholder="00:56:46"></label>
-                <label class="detail-form-field"><span class="filter-label">Length bucket minutes</span><input type="number" name="board_runtime_minutes" min="0" step="1"></label>
+                <label class="detail-form-field"><span class="filter-label">Length bucket minutes</span><input type="number" name="length_bucket_minutes" min="0" step="30"></label>
+                <label class="detail-form-field"><span class="filter-label">Actual runtime</span><input type="text" name="actual_runtime_input" placeholder="00:56:46 or 57"></label>
                 <label class="detail-form-field"><span class="filter-label">Primary topic</span><input type="text" name="topic_primary"></label>
                 <label class="detail-form-field"><span class="filter-label">Secondary topic</span><input type="text" name="topic_secondary"></label>
                 <label class="detail-form-field"><span class="filter-label">Rights begin</span><input type="date" name="rights_start"></label>
                 <label class="detail-form-field"><span class="filter-label">Rights end</span><input type="date" name="rights_end"></label>
-                <label class="detail-form-field"><span class="filter-label">Status</span>
-                  <select name="status">
-                    <option value="active">active</option>
-                    <option value="archived">archived</option>
-                  </select>
-                </label>
+                <label class="detail-form-field"><span class="filter-label">Package type</span><input type="text" name="package_type"></label>
+                <label class="detail-form-field"><span class="filter-label">Source</span><input type="text" name="source_format"></label>
+                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Rights notes</span><textarea name="rights_notes" rows="3"></textarea></label>
                 <label class="detail-form-field detail-form-span-2"><span class="filter-label">Premium summary</span><textarea name="premium_summary" rows="3"></textarea></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Description</span><textarea name="description" rows="5"></textarea></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Notes</span><textarea name="program_notes" rows="4"></textarea></label>
+                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Description / notes</span><textarea name="program_notes" rows="6"></textarea></label>
               </div>
               <div class="toolbar-actions detail-form-actions">
                 <button type="submit" class="primary" id="detail-save-button">Save</button>
@@ -215,7 +211,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.6.4</div>
+      <div id="footer-version">v0.6.5</div>
     </footer>
   </div>
 </body>
