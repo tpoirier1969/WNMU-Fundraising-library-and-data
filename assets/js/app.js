@@ -19,6 +19,7 @@
     els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">Loading library…</td></tr>';
     try {
       await App.data.refreshRawRows();
+      await App.schedulingUi?.loadSchedules();
       App.listUi.buildFilterOptions();
       App.listUi.applyLibraryView();
       App.workspaceUi?.refreshScaffoldSummary();
@@ -129,7 +130,6 @@
   async function init() {
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
-    App.schedulingUi?.loadSchedules();
     App.schedulingUi?.renderAll();
     setBuildMeta(state.configVersionMismatch || '');
     if (!App.data.validateConfig()) {
@@ -155,6 +155,8 @@
     setNotice(`Connected. Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
     await App.auth.initAuthRole();
     App.auth.bindAuthListener();
+    await App.schedulingUi?.loadSchedules();
+    App.schedulingUi?.renderAll();
     await refreshAll();
   }
 

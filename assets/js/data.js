@@ -283,6 +283,69 @@
     return state.client.from(constants.BASE_TABLE).update(payload).eq('id', programId);
   }
 
+
+
+  async function probeScheduleStore() {
+    try {
+      const { error } = await state.client
+        .from(constants.SCHEDULES_TABLE)
+        .select('id', { head: true, count: 'exact' });
+      if (error) throw error;
+      state.scheduleStoreMode = 'remote';
+      state.scheduleStoreReady = true;
+      state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
+      return true;
+    } catch (error) {
+      state.scheduleStoreMode = 'local';
+      state.scheduleStoreReady = false;
+      state.scheduleSyncMessage = `Fundraisers are local only until ${constants.SCHEDULES_TABLE} exists.`;
+      return false;
+    }
+  }
+
+  async function fetchSchedulesRemote() {
+    const { data, error } = await state.client
+      .from(constants.SCHEDULES_TABLE)
+      .select('*')
+      .order('start_date', { ascending: true })
+      .order('title', { ascending: true });
+    if (error) throw error;
+    return (data || []).map((row) => ({
+      id: row.id,
+      title: row.title || '',
+      startDate: row.start_date || '',
+      endDate: row.end_date || '',
+      dayStartHour: Number(row.day_start_hour ?? constants.DEFAULT_DAY_START_HOUR),
+      dayEndHour: Number(row.day_end_hour ?? constants.DEFAULT_DAY_END_HOUR),
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || '',
+      placements: Array.isArray(row.schedule_data?.placements) ? row.schedule_data.placements : [],
+      slotNotes: row.schedule_data?.slotNotes || {}
+    }));
+  }
+
+  async function upsertScheduleRemote(schedule) {
+    const payload = {
+      id: schedule.id,
+      title: schedule.title,
+      start_date: schedule.startDate,
+      end_date: schedule.endDate,
+      day_start_hour: schedule.dayStartHour,
+      day_end_hour: schedule.dayEndHour,
+      schedule_data: { placements: schedule.placements || [], slotNotes: schedule.slotNotes || {} },
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await state.client.from(constants.SCHEDULES_TABLE).upsert(payload);
+    if (error) throw error;
+    return true;
+  }
+
+  async function deleteScheduleRemote(scheduleId) {
+    const { error } = await state.client.from(constants.SCHEDULES_TABLE).delete().eq('id', scheduleId);
+    if (error) throw error;
+    return true;
+  }
+
   App.data = {
     createClient,
     validateConfig,
@@ -295,6 +358,10 @@
     mergeLibraryRows,
     buildFieldAudit,
     buildBaseIndexes,
-    matchBaseRow
+    matchBaseRow,
+    probeScheduleStore,
+    fetchSchedulesRemote,
+    upsertScheduleRemote,
+    deleteScheduleRemote
   };
 })();

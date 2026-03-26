@@ -67,8 +67,11 @@
     scheduleGenerateButton: document.getElementById('schedule-generate-button'),
     scheduleZoomOutButton: document.getElementById('schedule-zoom-out-button'),
     scheduleZoomInButton: document.getElementById('schedule-zoom-in-button'),
-    scheduleEarlierButton: document.getElementById('schedule-earlier-button'),
-    scheduleLaterButton: document.getElementById('schedule-later-button'),
+    scheduleZoomValue: document.getElementById('schedule-zoom-value'),
+    scheduleStartEarlierButton: document.getElementById('schedule-start-earlier-button'),
+    scheduleStartLaterButton: document.getElementById('schedule-start-later-button'),
+    scheduleEndEarlierButton: document.getElementById('schedule-end-earlier-button'),
+    scheduleEndLaterButton: document.getElementById('schedule-end-later-button'),
     scheduleWindowLabel: document.getElementById('schedule-window-label'),
     scheduleGrid: document.getElementById('schedule-grid'),
     scheduleProgramPicker: document.getElementById('schedule-program-picker'),
@@ -80,7 +83,10 @@
     scheduleClearPlacementButton: document.getElementById('schedule-clear-placement-button'),
     scheduleAssignmentNote: document.getElementById('schedule-assignment-note'),
     scheduleProgramDetails: document.getElementById('schedule-program-details'),
-    scheduleExportButton: document.getElementById('schedule-export-button')
+    scheduleExportButton: document.getElementById('schedule-export-button'),
+    scheduleProgramBackdrop: document.getElementById('schedule-program-backdrop'),
+    scheduleProgramModal: document.getElementById('schedule-program-modal'),
+    scheduleProgramCloseButton: document.getElementById('schedule-program-close-button')
   };
 
   function setNotice(text, type = '') {

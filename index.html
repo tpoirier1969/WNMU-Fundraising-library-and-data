@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.9.0</title>
+  <title>WNMU Pledge Program Library v0.10.0</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
@@ -48,7 +48,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.9.0</span>
+            <span class="version-pill" id="version-flag">v0.10.0</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -185,7 +185,7 @@
           <div class="schedule-sidebar-head">
             <div>
               <div class="list-title">Scheduled fundraisers</div>
-              <div class="list-summary" id="schedule-summary">0 fundraiser calendars saved in this browser.</div>
+              <div class="list-summary" id="schedule-summary">Checking fundraiser sync…</div>
             </div>
             <button type="button" class="ghost" id="new-schedule-button">New fundraiser</button>
           </div>
@@ -224,39 +224,26 @@
           <section id="schedule-editor" class="schedule-editor hidden">
             <div class="schedule-toolbar">
               <div class="schedule-toolbar-group">
-                <button type="button" class="ghost" id="schedule-earlier-button">Earlier</button>
+                <span class="schedule-sub-label">Start</span>
+                <button type="button" class="ghost" id="schedule-start-earlier-button">−1 hr</button>
+                <button type="button" class="ghost" id="schedule-start-later-button">+1 hr</button>
+              </div>
+              <div class="schedule-toolbar-group schedule-toolbar-center">
                 <span id="schedule-window-label" class="schedule-window-label">6:00 AM – 12:00 AM</span>
-                <button type="button" class="ghost" id="schedule-later-button">Later</button>
+              </div>
+              <div class="schedule-toolbar-group">
+                <span class="schedule-sub-label">End</span>
+                <button type="button" class="ghost" id="schedule-end-earlier-button">−1 hr</button>
+                <button type="button" class="ghost" id="schedule-end-later-button">+1 hr</button>
               </div>
               <div class="schedule-toolbar-group">
                 <button type="button" class="ghost" id="schedule-zoom-out-button">−</button>
-                <span class="schedule-zoom-label">Zoom</span>
+                <span class="schedule-zoom-label">Zoom <span id="schedule-zoom-value">100%</span></span>
                 <button type="button" class="ghost" id="schedule-zoom-in-button">+</button>
                 <button type="button" class="ghost" id="schedule-export-button">Export day list</button>
               </div>
             </div>
             <div id="schedule-grid" class="schedule-grid"></div>
-
-            <section id="schedule-program-picker" class="schedule-program-picker hidden">
-              <div class="schedule-picker-head">
-                <h3>Schedule this slot</h3>
-                <div id="schedule-slot-label" class="schedule-slot-label"></div>
-              </div>
-              <label class="filter-field search-grow">
-                <span class="filter-label">Program title match</span>
-                <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
-              </label>
-              <div id="schedule-program-results" class="schedule-program-results"></div>
-              <div id="schedule-selected-preview" class="schedule-selected-preview"></div>
-              <label class="filter-field search-grow">
-                <span class="filter-label">Live break note</span>
-                <textarea id="schedule-live-break-notes" rows="2" placeholder="Optional note only. Break details stay out of the calendar."></textarea>
-              </label>
-              <div class="schedule-picker-actions">
-                <button type="button" class="ghost" id="schedule-clear-placement-button">Clear this slot</button>
-                <div id="schedule-assignment-note" class="muted">Selecting a program will place a block sized to that title’s runtime.</div>
-              </div>
-            </section>
 
             <section class="schedule-program-details-wrap">
               <div class="list-title">Scheduled program details</div>
@@ -265,6 +252,38 @@
           </section>
         </div>
       </section>
+    </section>
+
+    <div id="schedule-program-backdrop" class="detail-backdrop hidden"></div>
+    <section id="schedule-program-modal" class="detail-modal hidden" aria-modal="true" role="dialog" aria-labelledby="schedule-modal-title">
+      <div class="detail-modal-card schedule-modal-card">
+        <div class="detail-header sticky">
+          <div>
+            <div class="detail-kicker">Scheduling</div>
+            <h2 id="schedule-modal-title">Schedule this slot</h2>
+            <div id="schedule-slot-label" class="schedule-slot-label"></div>
+          </div>
+          <div class="toolbar-actions">
+            <button type="button" class="ghost" id="schedule-clear-placement-button">Remove program</button>
+            <button type="button" class="ghost" id="schedule-program-close-button">Close</button>
+          </div>
+        </div>
+        <div class="schedule-program-picker" id="schedule-program-picker">
+          <label class="filter-field search-grow">
+            <span class="filter-label">Program title match</span>
+            <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
+          </label>
+          <div id="schedule-program-results" class="schedule-program-results"></div>
+          <div id="schedule-selected-preview" class="schedule-selected-preview"></div>
+          <label class="filter-field search-grow">
+            <span class="filter-label">Live break note</span>
+            <textarea id="schedule-live-break-notes" rows="2" placeholder="Optional note only. Break details stay out of the calendar."></textarea>
+          </label>
+          <div class="schedule-picker-actions">
+            <div id="schedule-assignment-note" class="muted">Selecting a program will place a block sized to that title’s actual runtime when available.</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="workspace-pane hidden" data-workspace-pane="performance">
@@ -383,7 +402,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.9.0</div>
+      <div id="footer-version">v0.10.0</div>
     </footer>
   </div>
 </body>

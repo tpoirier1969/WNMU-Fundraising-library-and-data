@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.9.0',
+    APP_VERSION: 'v0.10.0',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -55,7 +55,8 @@ window.PledgeLib = window.PledgeLib || {};
       { id: 'scheduling', label: 'Scheduling', live: true },
       { id: 'performance', label: 'Performance', live: false }
     ],
-    SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV1',
+    SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV2',
+    SCHEDULES_TABLE: 'pledge_fundraiser_schedules',
     DEFAULT_DAY_START_HOUR: 6,
     DEFAULT_DAY_END_HOUR: 24,
     MIN_VISIBLE_HOUR: 0,
@@ -134,7 +135,11 @@ window.PledgeLib = window.PledgeLib || {};
     },
     selectedScheduleSlot: null,
     selectedScheduleProgram: null,
-    scheduleProgramQuery: ''
+    scheduleProgramQuery: '',
+    scheduleStoreMode: 'local',
+    scheduleStoreReady: false,
+    scheduleDetailCache: {},
+    scheduleSyncMessage: ''
   };
 
   const utils = {
@@ -427,6 +432,19 @@ window.PledgeLib = window.PledgeLib || {};
 
     avgPerFundraiser(row) {
       return utils.firstNonEmpty(row?.avg_contribution_per_drive, row?.average_per_fundraiser, row?.avg_per_fundraiser, row?.avg_contribution) || null;
+    },
+
+    totalRaised(row) {
+      return utils.firstNonEmpty(row?.total_contributions, row?.total_raised, row?.sum_contributions, row?.gross_contributions) || null;
+    },
+
+    runtimeMinutes(row) {
+      const seconds = Number(utils.firstNonEmpty(row?.actual_runtime_seconds, row?.runtime_seconds, row?.actual_runtime));
+      if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds / 60);
+      const direct = Number(utils.firstNonEmpty(row?.actual_runtime_minutes, row?.runtime_minutes, row?.length_minutes));
+      if (Number.isFinite(direct) && direct > 0) return Math.round(direct);
+      const bucket = derive.lengthBucket(row);
+      return Number.isFinite(bucket) && bucket > 0 ? bucket : null;
     },
 
     lastAiredDisplay(row) {
