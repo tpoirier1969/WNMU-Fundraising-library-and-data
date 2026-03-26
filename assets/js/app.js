@@ -26,6 +26,7 @@
       App.schedulingUi?.renderAll();
       if (state.performance?.ready) {
         await App.performanceUi?.refreshData({ silent: true });
+        App.performanceUi?.populateControls();
         App.performanceUi?.renderAll();
       } else {
         App.performanceUi?.reset();

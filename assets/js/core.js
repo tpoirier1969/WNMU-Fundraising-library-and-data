@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.11.0',
+    APP_VERSION: 'v0.11.1',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -51,9 +51,9 @@ window.PledgeLib = window.PledgeLib || {};
       avg_per_fundraiser: 'Average $ / fundraiser'
     },
     WORKSPACES: [
-      { id: 'library', label: 'Library', live: true },
-      { id: 'scheduling', label: 'Scheduling', live: true },
-      { id: 'performance', label: 'Performance', live: true }
+      { id: 'library', label: 'Program Library', live: true },
+      { id: 'scheduling', label: 'Pledge Scheduling', live: true },
+      { id: 'performance', label: 'Pledge Performance', live: true }
     ],
     SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV2',
     SCHEDULES_TABLE: 'pledge_fundraiser_schedules',
@@ -140,27 +140,35 @@ window.PledgeLib = window.PledgeLib || {};
     scheduleStoreReady: false,
     scheduleDetailCache: {},
     scheduleSyncMessage: '',
-    performance: {
-      ready: false,
-      loading: false,
-      criterion: 'day',
-      metric: 'avg_dollars',
-      topN: 12,
-      labelFilter: '',
-      records: [],
-      groups: [],
-      dataShape: {
-        driveRows: 0,
-        airingRows: 0,
-        recordsWithMoney: 0,
-        recordsWithDateTime: 0
-      },
-      warnings: [],
-      notes: [],
-      lastLoadedAt: '',
-      error: ''
-    }
-  };
+    
+  performance: {
+    ready: false,
+    loading: false,
+    criterion: 'day',
+    metric: 'avg_dollars',
+    chartType: 'auto',
+    topN: 12,
+    labelFilter: '',
+    startDate: '',
+    endDate: '',
+    monthFilter: '',
+    topicFilter: '',
+    records: [],
+    filteredRecords: [],
+    groups: [],
+    dataShape: {
+      driveRows: 0,
+      airingRows: 0,
+      recordsWithMoney: 0,
+      recordsWithDateTime: 0
+    },
+    criteriaSummary: [],
+    warnings: [],
+    notes: [],
+    lastLoadedAt: '',
+    error: ''
+  }
+};
 
   const utils = {
     escapeHtml(value) {
