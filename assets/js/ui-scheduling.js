@@ -1,4 +1,3 @@
-
 (() => {
   const App = window.PledgeLib;
   const { state, constants, utils, derive } = App;
@@ -104,7 +103,7 @@
   }
 
   function allOccurrences(schedule) {
-    return (schedule?.placements || []).slice().sort((a,b) => {
+    return (schedule?.placements || []).slice().sort((a, b) => {
       if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
       return Number(a.startMinutes || 0) - Number(b.startMinutes || 0);
     });
@@ -123,9 +122,9 @@
   function findPlacementForSlot(schedule, slotKey) {
     const [dateKey, minutesRaw] = String(slotKey).split('|');
     const minutes = Number(minutesRaw || 0);
-    return (schedule?.placements || []).find((placement) => {
-      return placement.dateKey === dateKey && minutes >= Number(placement.startMinutes) && minutes < Number(placement.endMinutes);
-    }) || null;
+    return (schedule?.placements || []).find((placement) => (
+      placement.dateKey === dateKey && minutes >= Number(placement.startMinutes) && minutes < Number(placement.endMinutes)
+    )) || null;
   }
 
   function findPlacementById(schedule, placementId) {
@@ -151,7 +150,7 @@
         return title.includes(text) || nola.includes(text);
       })
       .sort((a, b) => utils.compareText(derive.title(a), derive.title(b)))
-      .slice(0, 12);
+      .slice(0, 14);
   }
 
   function ensureScheduleModalState(slot) {
@@ -207,9 +206,72 @@
     els.fundraiserEndInput.value = state.scheduleDraft.endDate || '';
   }
 
-  function placementHeight(lengthMinutes) {
+  function placementHeight(lengthMinutes, slotHeight) {
     const slots = Math.max(1, Math.ceil((Number(lengthMinutes) || 30) / constants.DEFAULT_SLOT_MINUTES));
-    return `calc(${slots} * var(--schedule-slot-height) - 4px)`;
+    const px = Math.max(slotHeight, (slots * slotHeight) + Math.max(0, slots - 1) - 2);
+    return `${px}px`;
+  }
+
+  function rightsCheckForDate(row, dateKey) {
+    const start = derive.rightsBegin(row);
+    const end = derive.rightsEnd(row);
+    if (!dateKey) return { ok: true, reason: '' };
+    if (start && `${dateKey}` < `${start}`) {
+      return { ok: false, reason: `Rights begin ${utils.formatDate(start)}. Cannot schedule on ${utils.formatDate(dateKey)}.` };
+    }
+    if (end && `${dateKey}` > `${end}`) {
+      return { ok: false, reason: `Rights expired ${utils.formatDate(end)}. Cannot schedule on ${utils.formatDate(dateKey)}.` };
+    }
+    return { ok: true, reason: '' };
+  }
+
+  function timingValue(row, keys = []) {
+    for (const key of keys) {
+      const value = row?.[key];
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return numeric;
+      if (value === 0) return 0;
+    }
+    return null;
+  }
+
+  function timingRowSummary(row = {}) {
+    const segment = utils.firstNonEmpty(row.segment_number, row.slot_number);
+    const actSeconds = timingValue(row, ['act_seconds', 'program_segment_length_seconds', 'segment_seconds']);
+    const breakSeconds = timingValue(row, ['break_seconds', 'pledge_break_seconds', 'break_length_seconds']);
+    const localCutinSeconds = timingValue(row, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
+    const segmentStart = timingValue(row, ['act_offset_seconds', 'segment_start_seconds']);
+    let breakAt = timingValue(row, ['break_offset_seconds', 'break_time_seconds']);
+    if (!Number.isFinite(breakAt) && Number.isFinite(segmentStart) && Number.isFinite(actSeconds)) {
+      breakAt = segmentStart + actSeconds;
+    }
+    const parts = [];
+    if (segment != null && segment !== '') parts.push(`Seg ${segment}`);
+    if (Number.isFinite(segmentStart)) parts.push(`Start ${utils.formatSeconds(segmentStart)}`);
+    if (Number.isFinite(actSeconds)) parts.push(`Program ${utils.formatSeconds(actSeconds)}`);
+    if (Number.isFinite(breakSeconds)) parts.push(`Break ${utils.formatSeconds(breakSeconds)}`);
+    if (Number.isFinite(breakAt)) parts.push(`At ${utils.formatSeconds(breakAt)}`);
+    if (Number.isFinite(localCutinSeconds) && localCutinSeconds > 0) parts.push(`Local cutin ${utils.formatSeconds(localCutinSeconds)}`);
+    const note = utils.normalizeText(row.notes || row.description || row.segment_title || row.segment_name);
+    if (note) parts.push(note);
+    return parts;
+  }
+
+  function premiumLines(value) {
+    const text = utils.normalizeText(value);
+    if (!text) return ['—'];
+    const lines = text
+      .replace(/\r/g, '')
+      .replace(/\s*;\s*/g, '\n')
+      .replace(/\s+(?=\$)/g, '\n')
+      .split(/\n+/)
+      .map((part) => utils.normalizeText(part))
+      .filter(Boolean);
+    return lines.length ? lines : [text];
+  }
+
+  function premiumLinesHtml(value) {
+    return `<div class="scheduled-premium-lines">${premiumLines(value).map((line) => `<div class="scheduled-premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
   }
 
   function renderScheduleGrid() {
@@ -231,15 +293,14 @@
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const placements = annotatePlacements(schedule);
 
-    const zoom = Math.min(2.4, Math.max(0.35, Number(state.scheduleView.zoom || 1)));
-    const columnWidth = Math.max(114, Math.round(136 * Math.min(1.35, 0.75 + (zoom * 0.45))));
-    const slotHeight = Math.max(13, Math.round(26 * zoom));
+    const zoom = Math.min(2.8, Math.max(0.16, Number(state.scheduleView.zoom || 1)));
+    const columnWidth = Math.max(70, Math.round(122 * Math.min(1.28, 0.52 + (zoom * 0.42))));
+    const slotHeight = Math.max(8, Math.round(24 * zoom));
     els.scheduleGrid.style.setProperty('--schedule-day-width', `${columnWidth}px`);
     els.scheduleGrid.style.setProperty('--schedule-slot-height', `${slotHeight}px`);
     els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin === 1440 ? 1439 : visibleEndMin)}`;
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
-    const headCols = 1 + dayKeys.length;
     const header = ['<div class="schedule-corner sticky"></div>'];
     dayKeys.forEach((dateKey) => {
       header.push(`<div class="schedule-day-head sticky">${utils.escapeHtml(formatScheduleDay(dateKey))}</div>`);
@@ -252,11 +313,11 @@
         const slotKey = `${dateKey}|${minutes}`;
         const placement = placements.find((item) => item.dateKey === dateKey && Number(item.startMinutes) <= minutes && Number(item.endMinutes) > minutes) || null;
         const isStart = placement && Number(placement.startMinutes) === minutes;
-        const style = isStart ? `height:${placementHeight(placement.lengthMinutes)};` : '';
+        const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const klass = placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '';
         body.push(`
           <button type="button" class="schedule-slot ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
-            ${isStart ? `<span class="schedule-placement ${klass}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${utils.escapeHtml(utils.minutesToLabel(placement.startMinutes))} · ${utils.escapeHtml(String(placement.lengthMinutes))} min</span></span>` : ''}
+            ${isStart ? `<span draggable="true" class="schedule-placement ${klass}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${utils.escapeHtml(utils.minutesToLabel(placement.startMinutes))} · ${utils.escapeHtml(String(placement.lengthMinutes))} min</span></span>` : ''}
           </button>
         `);
       });
@@ -272,7 +333,7 @@
   function timingSummaryHtml(cacheEntry) {
     const timings = cacheEntry?.timings || [];
     if (!timings.length) return '<div class="scheduled-program-note">Detailed break information not loaded yet.</div>';
-    return `<ul class="scheduled-break-list">${timings.slice(0, 8).map((row) => `<li>${utils.escapeHtml([row.slot_number ? `#${row.slot_number}` : '', row.break_length_seconds ? utils.formatSeconds(row.break_length_seconds) : utils.normalizeText(row.break_length) || '', utils.normalizeText(row.notes || row.description)].filter(Boolean).join(' · '))}</li>`).join('')}</ul>`;
+    return `<div class="scheduled-break-inline">${timings.slice(0, 12).map((row) => `<div class="scheduled-break-chip">${utils.escapeHtml(timingRowSummary(row).join(' · ') || 'Timing row')}</div>`).join('')}</div>`;
   }
 
   function loadScheduledDetail(programId) {
@@ -304,30 +365,35 @@
       const row = getProgramRowById(programId) || {};
       loadScheduledDetail(programId);
       const cache = state.scheduleDetailCache[programId];
-      const runtime = derive.runtimeMinutes(row) || occurrences[0]?.lengthMinutes || '—';
-      const scheduledRows = occurrences.map((item) => `
-        <label class="scheduled-occurrence-row">
-          <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
-          <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}</span>
-        </label>
-      `).join('');
+      const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
+      const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
+      const scheduledRows = occurrences
+        .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
+        .map((item) => `
+          <label class="scheduled-occurrence-row">
+            <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
+            <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}</span>
+          </label>
+        `).join('');
       let breakHtml = '<div class="scheduled-program-note">Loading break detail…</div>';
       if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
       else if (cache?.loaded) breakHtml = timingSummaryHtml(cache.detail);
       return `
-        <article class="scheduled-program-card">
-          <div class="scheduled-program-head"><strong>${utils.escapeHtml(derive.title(row) || occurrences[0].programTitle)}</strong></div>
-          <div class="scheduled-program-meta"><span>${utils.escapeHtml(String(runtime))} min</span><span>${utils.escapeHtml(derive.nola(row) || 'No NOLA')}</span><span>${utils.escapeHtml(derive.topicPrimary(row) || 'No topic')}</span></div>
-          <div class="scheduled-program-grid">
-            <div><div class="mini-label">Distributor</div><div>${utils.escapeHtml(derive.distributor(row) || '—')}</div></div>
-            <div><div class="mini-label">Total monies raised</div><div>${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</div></div>
-            <div><div class="mini-label">Average per fundraiser</div><div>${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</div></div>
-            <div><div class="mini-label">Premiums</div><div>${utils.escapeHtml(derive.premiumSummary(row) || '—')}</div></div>
+        <article class="scheduled-program-card compact-program-card">
+          <div class="scheduled-program-line scheduled-program-line-top">
+            <div class="scheduled-program-title-wrap">
+              <strong>${utils.escapeHtml(derive.title(row) || occurrences[0].programTitle)}</strong>
+              <div class="scheduled-program-meta-inline">${metaBits.map((bit) => `<span>${utils.escapeHtml(bit)}</span>`).join('<span class="meta-dot">•</span>')}</div>
+            </div>
           </div>
-          <div class="mini-label">Detailed break information</div>
-          ${breakHtml}
-          <div class="mini-label">Scheduled day and time for this fundraiser</div>
-          <div class="scheduled-occurrence-list">${scheduledRows}</div>
+          <div class="scheduled-program-line scheduled-program-line-bottom">
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Avg / fundraiser</span><span>${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</span></div>
+            <div class="scheduled-data-chunk scheduled-break-chunk"><span class="mini-label inline">Break detail</span>${breakHtml}</div>
+            <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(row) || '—')}</div>
+            <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Scheduled in this fundraiser</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
+          </div>
         </article>
       `;
     }).join('');
@@ -336,8 +402,7 @@
   function renderProgramPicker() {
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
-    const canUse = Boolean(schedule && slot);
-    if (!canUse) return;
+    if (!(schedule && slot)) return;
     els.scheduleSlotLabel.textContent = slotLabel(slot.dateKey, slot.minutes);
     els.scheduleProgramSearch.value = state.scheduleProgramQuery || '';
     const matches = scheduleProgramMatches(state.scheduleProgramQuery || '');
@@ -349,7 +414,7 @@
       els.scheduleProgramResults.innerHTML = matches.map((row) => `
         <button type="button" class="schedule-program-match" data-program-id="${utils.escapeHtml(derive.programId(row))}">
           <strong>${utils.escapeHtml(derive.title(row))}</strong>
-          <span>${utils.escapeHtml(String(derive.runtimeMinutes(row) || derive.lengthLabel(row) || '—'))} min · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')}</span>
+          <span>${utils.escapeHtml(derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${String(derive.runtimeMinutes(row) || derive.lengthLabel(row) || '—')} min`)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')}</span>
         </button>
       `).join('');
     }
@@ -364,6 +429,7 @@
       els.scheduleLiveBreakNotes.value = '';
       els.scheduleClearPlacementButton.disabled = true;
     }
+    if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.';
   }
 
   async function createOrUpdateScheduleFromDraft() {
@@ -406,6 +472,12 @@
     const slot = state.selectedScheduleSlot;
     const row = getProgramRowById(programId);
     if (!schedule || !slot || !row) return;
+    const rightsCheck = rightsCheckForDate(row, slot.dateKey);
+    if (!rightsCheck.ok) {
+      setNotice(rightsCheck.reason, 'warn');
+      if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = rightsCheck.reason;
+      return;
+    }
     const lengthMinutes = derive.runtimeMinutes(row) || derive.lengthBucket(row) || 30;
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const existing = findPlacementForSlot(schedule, slot.key);
@@ -422,11 +494,8 @@
       liveBreakNotes: (els.scheduleLiveBreakNotes.value || '').trim(),
       transferredToStation: existing?.transferredToStation || false
     };
-    if (existing) {
-      Object.assign(existing, base);
-    } else {
-      schedule.placements.push(base);
-    }
+    if (existing) Object.assign(existing, base);
+    else schedule.placements.push(base);
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
@@ -445,7 +514,7 @@
     renderScheduleGrid();
     renderProgramPicker();
     closeScheduleModal();
-    setNotice(`Removed ${target.programTitle} from ${slotLabel(slot.dateKey, slot.startMinutes || slot.minutes)}.`);
+    setNotice(`Removed ${target.programTitle} from ${slotLabel(target.dateKey, target.startMinutes)}.`);
   }
 
   async function updateLiveBreakNote() {
@@ -460,7 +529,7 @@
   }
 
   function adjustZoom(delta) {
-    state.scheduleView.zoom = Math.min(2.4, Math.max(0.35, Number((state.scheduleView.zoom + delta).toFixed(2))));
+    state.scheduleView.zoom = Math.min(2.8, Math.max(0.16, Number((state.scheduleView.zoom + delta).toFixed(2))));
     renderScheduleGrid();
   }
 
@@ -476,6 +545,26 @@
     renderScheduleGrid();
   }
 
+  async function movePlacement(placementId, targetDateKey, targetMinutes) {
+    const schedule = getActiveSchedule();
+    const placement = findPlacementById(schedule, placementId);
+    const row = getProgramRowById(placement?.programId);
+    if (!schedule || !placement || !row) return;
+    const rightsCheck = rightsCheckForDate(row, targetDateKey);
+    if (!rightsCheck.ok) {
+      setNotice(rightsCheck.reason, 'warn');
+      return;
+    }
+    const slotCount = Math.max(1, Math.ceil(Number(placement.lengthMinutes || 30) / constants.DEFAULT_SLOT_MINUTES));
+    placement.dateKey = targetDateKey;
+    placement.startMinutes = targetMinutes;
+    placement.endMinutes = Math.min(targetMinutes + (slotCount * constants.DEFAULT_SLOT_MINUTES), 1440);
+    placement.startSlotKey = `${targetDateKey}|${targetMinutes}`;
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    setNotice(`Moved ${placement.programTitle} to ${slotLabel(targetDateKey, targetMinutes)}. ${state.scheduleSyncMessage}`);
+  }
+
   function exportScheduleView() {
     const schedule = getActiveSchedule();
     if (!schedule) return;
@@ -485,10 +574,10 @@
       if (!byDay.has(item.dateKey)) byDay.set(item.dateKey, []);
       byDay.get(item.dateKey).push(item);
     });
-    const lines = [`${schedule.title}`,''];
+    const lines = [`${schedule.title}`, ''];
     [...byDay.entries()].forEach(([dateKey, items]) => {
       lines.push(formatScheduleDay(dateKey));
-      items.sort((a,b) => a.startMinutes - b.startMinutes).forEach((item) => {
+      items.sort((a, b) => a.startMinutes - b.startMinutes).forEach((item) => {
         lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${item.liveBreakNotes ? ` | Note: ${item.liveBreakNotes}` : ''}`);
       });
       lines.push('');
@@ -497,8 +586,10 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${schedule.title.replace(/[^a-z0-9]+/gi,'-').toLowerCase() || 'fundraiser'}-schedule.txt`;
-    document.body.appendChild(a); a.click(); a.remove();
+    a.download = `${schedule.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'fundraiser'}-schedule.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     URL.revokeObjectURL(url);
   }
 
@@ -533,6 +624,38 @@
       const slot = event.target.closest('[data-slot-key]');
       if (!slot) return;
       openScheduleModal({ key: slot.dataset.slotKey, dateKey: slot.dataset.dateKey, minutes: Number(slot.dataset.minutes || 0) });
+    });
+    els.scheduleGrid?.addEventListener('dragstart', (event) => {
+      const block = event.target.closest('[data-placement-id]');
+      if (!block) return;
+      state.draggedPlacementId = block.dataset.placementId;
+      if (event.dataTransfer) {
+        event.dataTransfer.setData('text/plain', block.dataset.placementId);
+        event.dataTransfer.effectAllowed = 'move';
+      }
+    });
+    els.scheduleGrid?.addEventListener('dragend', () => {
+      state.draggedPlacementId = '';
+      els.scheduleGrid.querySelectorAll('.schedule-slot.drag-target').forEach((node) => node.classList.remove('drag-target'));
+    });
+    els.scheduleGrid?.addEventListener('dragover', (event) => {
+      const slot = event.target.closest('[data-slot-key]');
+      if (!slot || !state.draggedPlacementId) return;
+      event.preventDefault();
+      slot.classList.add('drag-target');
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    });
+    els.scheduleGrid?.addEventListener('dragleave', (event) => {
+      const slot = event.target.closest('[data-slot-key]');
+      if (slot) slot.classList.remove('drag-target');
+    });
+    els.scheduleGrid?.addEventListener('drop', (event) => {
+      const slot = event.target.closest('[data-slot-key]');
+      const placementId = state.draggedPlacementId || event.dataTransfer?.getData('text/plain');
+      if (!slot || !placementId) return;
+      event.preventDefault();
+      slot.classList.remove('drag-target');
+      void movePlacement(placementId, slot.dataset.dateKey, Number(slot.dataset.minutes || 0));
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {

@@ -21,14 +21,6 @@
       pane.classList.toggle('hidden', pane.dataset.workspacePane !== workspace.id);
     });
 
-    if (els.workspaceTitle) els.workspaceTitle.textContent = workspace.label;
-    if (els.workspaceStatus) {
-      els.workspaceStatus.textContent = workspace.live
-        ? 'Live workspace'
-        : 'Framework only — buttons and layout are in place, full logic comes later.';
-      els.workspaceStatus.classList.toggle('scaffold', !workspace.live);
-    }
-
     if (workspace.id === 'scheduling') App.schedulingUi?.renderAll();
   }
 

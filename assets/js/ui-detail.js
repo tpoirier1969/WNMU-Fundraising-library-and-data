@@ -88,9 +88,8 @@
 
   function candidateColumns(rows) {
     const preferred = [
-      'slot_number', 'segment_number', 'act_seconds', 'break_seconds', 'local_cutin_seconds',
-      'break_offset_seconds', 'act_offset_seconds', 'segment_title', 'segment_name', 'notes',
-      'title', 'nola_code', 'program_title'
+      'segment_number', 'slot_number', 'act_offset_seconds', 'act_seconds', 'break_offset_seconds', 'break_seconds', 'local_cutin_seconds',
+      'segment_title', 'segment_name', 'notes', 'title', 'nola_code', 'program_title'
     ];
     const seen = new Set();
     const keys = [];
@@ -117,15 +116,15 @@
       els.timingList.innerHTML = '<div class="timing-card">No detailed timing rows are available for this title.</div>';
       return;
     }
-    const rows = [...timings].sort((a, b) => Number(a.slot_number || a.segment_number || 0) - Number(b.slot_number || b.segment_number || 0));
-    const columns = candidateColumns(rows);
+    const rows = [...timings].sort((a, b) => Number(a.segment_number || a.slot_number || 0) - Number(b.segment_number || b.slot_number || 0));
+    const columns = candidateColumns(rows).filter((key) => !/^(id|program_id|source_row_number)$/i.test(key));
     els.timingList.innerHTML = `
       <article class="timing-card">
         <div class="segment-table-wrap">
           <table class="segment-table">
             <thead>
               <tr>
-                ${columns.map((key) => `<th>${utils.escapeHtml(key.replace(/_/g, ' '))}</th>`).join('')}
+                ${columns.map((key) => `<th>${utils.escapeHtml(displayKeyLabel(key))}</th>`).join('')}
               </tr>
             </thead>
             <tbody>
@@ -210,7 +209,7 @@
         return true;
       })
       .map((key) => [key, program?.[key]])
-      .filter(([key, value]) => !utils.isBlank(value) && !/^__supplement_match_method$/i.test(key));
+      .filter(([key, value]) => !utils.isBlank(value) && !/^(?:__supplement_match_method|id|program_id|source_row_number)$/i.test(key));
   }
 
   function renderAllFields(program) {

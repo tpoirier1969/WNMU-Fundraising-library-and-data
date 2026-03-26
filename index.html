@@ -3,22 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.10.1</title>
+  <title>WNMU Pledge Program Library v0.10.2</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.10.1">
+  <link rel="stylesheet" href="assets/styles.css?v=0.10.2">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.10.1"></script>
-  <script defer src="assets/js/dom.js?v=0.10.1"></script>
-  <script defer src="assets/js/data.js?v=0.10.1"></script>
-  <script defer src="assets/js/ui-list.js?v=0.10.1"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.10.1"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.10.1"></script>
-  <script defer src="assets/js/auth.js?v=0.10.1"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.10.1"></script>
-  <script defer src="assets/js/app.js?v=0.10.1"></script>
+  <script defer src="assets/js/core.js?v=0.10.2"></script>
+  <script defer src="assets/js/dom.js?v=0.10.2"></script>
+  <script defer src="assets/js/data.js?v=0.10.2"></script>
+  <script defer src="assets/js/ui-list.js?v=0.10.2"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.10.2"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.10.2"></script>
+  <script defer src="assets/js/auth.js?v=0.10.2"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.10.2"></script>
+  <script defer src="assets/js/app.js?v=0.10.2"></script>
 </head>
 <body>
 
@@ -48,7 +48,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.10.1</span>
+            <span class="version-pill" id="version-flag">v0.10.2</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -68,24 +68,14 @@
     </div>
 
     <section class="workspace-switcher">
-      <div class="workspace-switcher-head">
-        <div>
-          <div class="workspace-kicker">Workspaces</div>
-          <div class="workspace-current-row">
-            <h2 id="workspace-title">Library</h2>
-            <span id="workspace-status" class="workspace-status-pill">Live workspace</span>
-          </div>
-        </div>
-        <div class="workspace-button-row">
-          <button type="button" class="workspace-tab active" data-workspace-button="library" aria-pressed="true">Library</button>
-          <button type="button" class="workspace-tab" data-workspace-button="scheduling" aria-pressed="false">Scheduling</button>
-          <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Performance</button>
-        </div>
+      <div class="workspace-button-row workspace-button-row-main">
+        <button type="button" class="workspace-tab active" data-workspace-button="library" aria-pressed="true">Library</button>
+        <button type="button" class="workspace-tab" data-workspace-button="scheduling" aria-pressed="false">Scheduling</button>
+        <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Performance</button>
       </div>
     </section>
 
     <section class="workspace-pane" data-workspace-pane="library">
-      <div class="workspace-inline-note">Timing details, break structure, and similar program-specific data stay with each title. Open a program to see or edit them.</div>
       <section class="controls compact-controls">
         <div class="filter-row">
           <div class="filter-field narrow">
@@ -103,6 +93,9 @@
           <div class="filter-field search-grow">
             <label class="filter-label" for="search-input">Search text</label>
             <input id="search-input" type="search" placeholder="Search title, NOLA, topic, distributor, description, or premiums.">
+          </div>
+          <div class="filter-actions filter-actions-inline">
+            <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
           </div>
           <div class="filter-field">
             <label class="filter-label" for="topic-filter">Topic</label>
@@ -127,9 +120,6 @@
               <option value="active" selected>Active only</option>
               <option value="archived">Archived only</option>
             </select>
-          </div>
-          <div class="filter-actions">
-            <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
           </div>
         </div>
       </section>
@@ -410,7 +400,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.10.1</div>
+      <div id="footer-version">v0.10.2</div>
     </footer>
   </div>
 </body>

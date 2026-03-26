@@ -15,8 +15,6 @@
     loadingDetail: document.getElementById('loading-detail'),
     workspaceButtons: [...document.querySelectorAll('[data-workspace-button]')],
     workspacePanes: [...document.querySelectorAll('[data-workspace-pane]')],
-    workspaceTitle: document.getElementById('workspace-title'),
-    workspaceStatus: document.getElementById('workspace-status'),
     scaffoldLibraryCount: document.getElementById('scaffold-library-count'),
     scaffoldTopicGapCount: document.getElementById('scaffold-topic-gap-count'),
     scaffoldDistributorGapCount: document.getElementById('scaffold-distributor-gap-count'),

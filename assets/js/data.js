@@ -240,8 +240,8 @@
     return { data: null, error: new Error(`Unable to match ${tableName} rows to a program id.`) };
   }
 
-  async function fetchManyByContext(tableName, context = {}, orderField, ascending = true) {
-    const attempts = [
+  async function fetchManyByContext(tableName, context = {}, orderFields = [], ascending = true) {
+    const fieldAttempts = [
       ['program_id', context.programId],
       ['pledge_program_id', context.programId],
       ['id', context.programId],
@@ -249,22 +249,29 @@
       ['nola', context.nola],
       ['program_nola', context.nola],
       ['title', context.title],
-      ['program_title', context.title],
-      ['name', context.title]
+      ['program_title', context.title]
     ].filter((entry) => !utils.isBlank(entry[1]));
 
+    const normalizedOrderFields = Array.isArray(orderFields)
+      ? orderFields.filter(Boolean)
+      : [orderFields].filter(Boolean);
+    const orderAttempts = [...normalizedOrderFields, null];
+
     let lastError = null;
-    for (const [field, value] of attempts) {
-      let query = state.client.from(tableName).select('*').eq(field, value);
-      if (orderField) query = query.order(orderField, { ascending });
-      const response = await query;
-      if (!response.error && Array.isArray(response.data) && response.data.length) return response;
-      if (!response.error) {
-        lastError = null;
-        continue;
+    for (const [field, value] of fieldAttempts) {
+      for (const orderField of orderAttempts) {
+        let query = state.client.from(tableName).select('*').eq(field, value);
+        if (orderField) query = query.order(orderField, { ascending });
+        const response = await query;
+        if (!response.error && Array.isArray(response.data) && response.data.length) return response;
+        if (!response.error) {
+          lastError = null;
+          continue;
+        }
+        lastError = response.error;
+        if (/column .* does not exist|schema cache/i.test(response.error.message || '')) continue;
+        break;
       }
-      lastError = response.error;
-      if (!/column .* does not exist|schema cache/i.test(response.error.message || '')) break;
     }
     return { data: [], error: lastError };
   }
@@ -279,9 +286,9 @@
       title: derive.title(contextRow)
     };
     const [timingResp, driveResp, airingsResp] = await Promise.all([
-      fetchManyByContext(constants.TIMING_TABLE, context, 'slot_number', true),
-      fetchManyByContext(constants.DRIVE_RESULTS_TABLE, context, 'drive_order', false),
-      fetchManyByContext(constants.AIRINGS_TABLE, context, 'aired_at', false)
+      fetchManyByContext(constants.TIMING_TABLE, context, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true),
+      fetchManyByContext(constants.DRIVE_RESULTS_TABLE, context, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false),
+      fetchManyByContext(constants.AIRINGS_TABLE, context, ['aired_at', 'air_date', 'drive_date', 'created_at'], false)
     ]);
 
     const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseResp.data || {}), baseResp.data || summaryRow || {});
