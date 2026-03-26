@@ -240,7 +240,11 @@
     return { data: null, error: new Error(`Unable to match ${tableName} rows to a program id.`) };
   }
 
-  async function fetchManyByContext(tableName, context = {}, orderFields = [], ascending = true) {
+  function isSchemaOnlyError(message) {
+    return /column .* does not exist|schema cache/i.test(message || '');
+  }
+
+  async function fetchManyByContext(tableName, context = {}, orderFields = [], ascending = true, options = {}) {
     const fieldAttempts = [
       ['program_id', context.programId],
       ['pledge_program_id', context.programId],
@@ -248,8 +252,11 @@
       ['nola_code', context.nola],
       ['nola', context.nola],
       ['program_nola', context.nola],
-      ['title', context.title],
-      ['program_title', context.title]
+      ...(options.allowTitleFields === false ? [] : [
+        ['title', context.title],
+        ['program_title', context.title],
+        ['name', context.title]
+      ])
     ].filter((entry) => !utils.isBlank(entry[1]));
 
     const normalizedOrderFields = Array.isArray(orderFields)
@@ -258,6 +265,7 @@
     const orderAttempts = [...normalizedOrderFields, null];
 
     let lastError = null;
+    let sawSchemaOnlyError = false;
     for (const [field, value] of fieldAttempts) {
       for (const orderField of orderAttempts) {
         let query = state.client.from(tableName).select('*').eq(field, value);
@@ -269,9 +277,15 @@
           continue;
         }
         lastError = response.error;
-        if (/column .* does not exist|schema cache/i.test(response.error.message || '')) continue;
+        if (isSchemaOnlyError(response.error.message || '')) {
+          sawSchemaOnlyError = true;
+          continue;
+        }
         break;
       }
+    }
+    if (lastError && sawSchemaOnlyError && isSchemaOnlyError(lastError.message || '')) {
+      return { data: [], error: null };
     }
     return { data: [], error: lastError };
   }
@@ -288,7 +302,7 @@
     const [timingResp, driveResp, airingsResp] = await Promise.all([
       fetchManyByContext(constants.TIMING_TABLE, context, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true),
       fetchManyByContext(constants.DRIVE_RESULTS_TABLE, context, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false),
-      fetchManyByContext(constants.AIRINGS_TABLE, context, ['aired_at', 'air_date', 'drive_date', 'created_at'], false)
+      fetchManyByContext(constants.AIRINGS_TABLE, context, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false })
     ]);
 
     const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseResp.data || {}), baseResp.data || summaryRow || {});

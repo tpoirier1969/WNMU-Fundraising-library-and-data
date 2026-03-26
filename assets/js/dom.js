@@ -47,6 +47,8 @@
     detailSaveButton: document.getElementById('detail-save-button'),
     detailCancelEditButton: document.getElementById('detail-cancel-edit-button'),
     overviewGrid: document.getElementById('overview-grid'),
+    detailProgramMeta: document.getElementById('detail-program-meta'),
+    detailProgramDescription: document.getElementById('detail-program-description'),
     timingList: document.getElementById('timing-list'),
     airingList: document.getElementById('airing-list'),
     premiumsList: document.getElementById('premiums-list'),

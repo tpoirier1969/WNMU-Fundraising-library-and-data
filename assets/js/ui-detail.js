@@ -14,22 +14,31 @@
     return App.auth.canEdit();
   }
 
-  function labelValue(label, value) {
+  function labelValue(label, value, extraClass = '') {
     return `
-      <div>
+      <div class="${utils.escapeHtml(extraClass)}">
         <dt>${utils.escapeHtml(label)}</dt>
         <dd>${value}</dd>
       </div>
     `;
   }
 
-  function detailSubtitleHtml(program) {
-    return `
-      <span class="detail-chip">Length ${utils.escapeHtml(derive.lengthLabel(program))}</span>
-      <span class="detail-chip">Actual ${utils.escapeHtml(derive.actualRuntimeLabel(program))}</span>
-      <span class="detail-chip">NOLA ${utils.escapeHtml(derive.nola(program) || 'No NOLA')}</span>
-      <span class="detail-chip">${utils.escapeHtml(derive.distributor(program) || 'No distributor listed')}</span>
-    `;
+  function detailSubtitleHtml(_program) {
+    return 'Everything we know about this program.';
+  }
+
+  function renderLead(program) {
+    const topicValue = [derive.topicPrimary(program), derive.topicSecondary(program)].filter(Boolean).join(' / ') || '—';
+    const rightsWindow = [utils.formatDate(derive.rightsBegin(program), '—'), utils.formatDate(derive.rightsEnd(program), '—')].join(' → ');
+    const description = derive.description(program) || 'No description or program notes are available.';
+
+    els.detailProgramMeta.innerHTML = [
+      `<div class="detail-lead-chip"><span class="detail-lead-label">NOLA</span><strong>${utils.escapeHtml(derive.nola(program) || '—')}</strong></div>`,
+      `<div class="detail-lead-chip"><span class="detail-lead-label">Topic</span><strong>${utils.escapeHtml(topicValue)}</strong></div>`,
+      `<div class="detail-lead-chip"><span class="detail-lead-label">Distributor</span><strong>${utils.escapeHtml(derive.distributor(program) || '—')}</strong></div>`,
+      `<div class="detail-lead-chip"><span class="detail-lead-label">Rights window</span><strong>${utils.escapeHtml(rightsWindow)}</strong></div>`
+    ].join('');
+    els.detailProgramDescription.innerHTML = `<div class="detail-long-text">${utils.escapeHtml(description)}</div>`;
   }
 
   function premiumSummaryHtml(value) {
@@ -53,26 +62,22 @@
       : driveResults.length
         ? utils.formatDate(utils.firstNonEmpty(driveResults[0].drive_date, driveResults[0].aired_at), 'N/A')
         : derive.lastAiredDisplay(program);
-    const description = derive.description(program) || '—';
 
     els.overviewGrid.innerHTML = [
-      labelValue('Title', utils.escapeHtml(derive.title(program))),
-      labelValue('NOLA', utils.escapeHtml(derive.nola(program) || '—')),
-      labelValue('Topic', utils.escapeHtml(topicValue)),
-      labelValue('Distributor', utils.escapeHtml(derive.distributor(program) || '—')),
-      labelValue('Length bucket', utils.escapeHtml(derive.lengthLabel(program))),
-      labelValue('Actual runtime', utils.escapeHtml(derive.actualRuntimeLabel(program))),
+      labelValue('Actual runtime', utils.escapeHtml(derive.actualRuntimeLabel(program)), 'overview-spotlight'),
+      labelValue('Length bucket', utils.escapeHtml(derive.lengthLabel(program)), 'overview-spotlight'),
+      labelValue('Topic', utils.escapeHtml(topicValue), 'overview-spotlight'),
+      labelValue('Distributor', utils.escapeHtml(derive.distributor(program) || '—'), 'overview-spotlight'),
       labelValue('Rights begin', utils.escapeHtml(utils.formatDate(derive.rightsBegin(program)))),
       labelValue('Rights end', utils.escapeHtml(utils.formatDate(derive.rightsEnd(program)))),
-      labelValue('Package type', utils.escapeHtml(utils.normalizeText(program.package_type) || '—')),
-      labelValue('Source format', utils.escapeHtml(utils.normalizeText(program.source_format) || '—')),
       labelValue('Last aired', utils.escapeHtml(lastAired || 'N/A')),
       labelValue('Status', utils.escapeHtml(utils.normalizeText(utils.firstNonEmpty(program.status, program.library_state, derive.isActive(program) ? 'Active' : 'Archived')) || '—')),
       labelValue('Total contributions', utils.escapeHtml(utils.formatMoney(derive.totalRaised(program)))),
       labelValue('Average per fundraiser', utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(program)))),
-      labelValue('Rights notes', utils.escapeHtml(utils.normalizeText(program.rights_notes) || '—')),
-      labelValue('Premium summary', premiumSummaryHtml(derive.premiumSummary(program) || '—')),
-      labelValue('Description / notes', `<div class="detail-long-text">${utils.escapeHtml(description)}</div>`)
+      labelValue('Package type', utils.escapeHtml(utils.normalizeText(program.package_type) || '—')),
+      labelValue('Source format', utils.escapeHtml(utils.normalizeText(program.source_format) || '—')),
+      labelValue('Rights notes', utils.escapeHtml(utils.normalizeText(program.rights_notes) || '—'), 'overview-wide'),
+      labelValue('Premium summary', premiumSummaryHtml(derive.premiumSummary(program) || '—'), 'overview-wide')
     ].join('');
   }
 
@@ -223,7 +228,8 @@
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.remove('hidden');
     els.detailTitle.textContent = derive.title(program);
-    els.detailSubtitle.innerHTML = detailSubtitleHtml(program);
+    els.detailSubtitle.textContent = detailSubtitleHtml(program);
+    renderLead(program);
     renderOverview(program, driveResults, exactAirings);
     renderTiming(timings);
     renderDriveResults(driveResults, exactAirings);
@@ -284,6 +290,8 @@
     openDetailModal();
     els.detailTitle.textContent = 'Loading detail…';
     els.detailSubtitle.textContent = 'Checking the program row, timing rows, and drive history.';
+    if (els.detailProgramMeta) els.detailProgramMeta.innerHTML = '';
+    if (els.detailProgramDescription) els.detailProgramDescription.innerHTML = '';
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.add('hidden');
     setDetailMode('view');
