@@ -388,6 +388,23 @@
     return true;
   }
 
+  async function fetchPerformanceInputs() {
+    const warnings = [];
+    let driveRows = [];
+    let airingRows = [];
+    try {
+      driveRows = await fetchAllRows(constants.DRIVE_RESULTS_TABLE);
+    } catch (error) {
+      warnings.push(`Drive results read warning: ${error.message || error}`);
+    }
+    try {
+      airingRows = await fetchAllRows(constants.AIRINGS_TABLE);
+    } catch (error) {
+      warnings.push(`Airings read warning: ${error.message || error}`);
+    }
+    return { driveRows, airingRows, warnings };
+  }
+
   App.data = {
     createClient,
     validateConfig,
@@ -404,6 +421,7 @@
     probeScheduleStore,
     fetchSchedulesRemote,
     upsertScheduleRemote,
-    deleteScheduleRemote
+    deleteScheduleRemote,
+    fetchPerformanceInputs
   };
 })();

@@ -1016,7 +1016,7 @@ button.primary {
 }
 
 
-/* v0.10.3 detail modal cleanup and airings query repair */
+/* v0.11.0 performance workspace styling */
 .filter-actions-inline { align-self: end; }
 .compact-controls .filter-row { align-items: end; }
 .schedule-program-details { gap: 10px; }
@@ -1039,4 +1039,163 @@ button.primary {
 }
 @media (max-width: 760px) {
   .scheduled-program-line-bottom { grid-template-columns: 1fr; }
+}
+
+.performance-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.performance-toolbar-card,
+.performance-card {
+  background: #fff;
+  border: 1px solid #c9d6e6;
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 8px 24px rgba(8, 33, 67, 0.06);
+}
+
+.performance-toolbar-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+  margin-top: 0.85rem;
+}
+
+.performance-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.performance-stat-card {
+  background: linear-gradient(180deg, #163a63 0%, #244f82 100%);
+  color: #fff;
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+}
+
+.performance-stat-label {
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.performance-stat-value {
+  margin-top: 0.3rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.performance-main-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.25fr) minmax(340px, 1fr);
+  gap: 1rem;
+}
+
+.performance-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.performance-chart {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.performance-chart-empty {
+  min-height: 200px;
+  display: grid;
+  place-items: center;
+  color: #5b6980;
+  border: 1px dashed #c9d6e6;
+  border-radius: 12px;
+}
+
+.performance-bar-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.performance-bar-head,
+.performance-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+}
+
+.performance-bar-label {
+  font-weight: 700;
+  color: #173a5e;
+}
+
+.performance-bar-value {
+  font-weight: 700;
+  color: #102845;
+}
+
+.performance-bar-meta {
+  font-size: 0.8rem;
+  color: #5a687d;
+}
+
+.performance-bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #dce8f6;
+  overflow: hidden;
+}
+
+.performance-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #123e6b 0%, #346ba3 100%);
+}
+
+.performance-table-wrap {
+  max-height: 520px;
+}
+
+.performance-table td:first-child,
+.performance-table th:first-child {
+  min-width: 220px;
+}
+
+.performance-source-notes {
+  color: #2a3748;
+}
+
+.performance-note-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.performance-footnote {
+  margin-top: 0.85rem;
+  color: #59667a;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 1120px) {
+  .performance-toolbar-grid,
+  .performance-stat-grid,
+  .performance-main-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .performance-toolbar-grid,
+  .performance-stat-grid,
+  .performance-main-grid {
+    grid-template-columns: 1fr;
+  }
 }

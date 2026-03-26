@@ -87,7 +87,21 @@
     scheduleExportButton: document.getElementById('schedule-export-button'),
     scheduleProgramBackdrop: document.getElementById('schedule-program-backdrop'),
     scheduleProgramModal: document.getElementById('schedule-program-modal'),
-    scheduleProgramCloseButton: document.getElementById('schedule-program-close-button')
+    scheduleProgramCloseButton: document.getElementById('schedule-program-close-button'),
+    performanceStatus: document.getElementById('performance-status'),
+    performanceCriterionSelect: document.getElementById('performance-criterion-select'),
+    performanceMetricSelect: document.getElementById('performance-metric-select'),
+    performanceTopnSelect: document.getElementById('performance-topn-select'),
+    performanceFilterInput: document.getElementById('performance-filter-input'),
+    performanceRefreshButton: document.getElementById('performance-refresh-button'),
+    performanceStatGrid: document.getElementById('performance-stat-grid'),
+    performanceChartTitle: document.getElementById('performance-chart-title'),
+    performanceChartPill: document.getElementById('performance-chart-pill'),
+    performanceChart: document.getElementById('performance-chart'),
+    performanceTablePill: document.getElementById('performance-table-pill'),
+    performanceTableBody: document.getElementById('performance-table-body'),
+    performanceNotesPill: document.getElementById('performance-notes-pill'),
+    performanceSourceNotes: document.getElementById('performance-source-notes')
   };
 
   function setNotice(text, type = '') {

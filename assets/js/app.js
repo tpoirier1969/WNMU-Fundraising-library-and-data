@@ -24,6 +24,12 @@
       App.listUi.applyLibraryView();
       App.workspaceUi?.refreshScaffoldSummary();
       App.schedulingUi?.renderAll();
+      if (state.performance?.ready) {
+        await App.performanceUi?.refreshData({ silent: true });
+        App.performanceUi?.renderAll();
+      } else {
+        App.performanceUi?.reset();
+      }
       const probeStatus = App.data.getProbeStatusMessage();
       if (state.configVersionMismatch) {
         setBuildMeta(`${state.configVersionMismatch} ${probeStatus}`);
@@ -125,6 +131,7 @@
 
     App.workspaceUi?.bindEvents();
     App.schedulingUi?.bindEvents();
+    App.performanceUi?.bindEvents();
   }
 
   async function init() {
