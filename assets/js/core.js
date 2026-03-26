@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.8.0',
+    APP_VERSION: 'v0.8.1',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -52,11 +52,8 @@ window.PledgeLib = window.PledgeLib || {};
     },
     WORKSPACES: [
       { id: 'library', label: 'Library', live: true },
-      { id: 'versions', label: 'Versions & Timing', live: false },
-      { id: 'performance', label: 'Performance', live: false },
-      { id: 'imports', label: 'Import Tools', live: false },
-      { id: 'reports', label: 'Reports', live: false },
-      { id: 'admin', label: 'Admin', live: false }
+      { id: 'scheduling', label: 'Scheduling', live: false },
+      { id: 'performance', label: 'Performance', live: false }
     ]
   };
 

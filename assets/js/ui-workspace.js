@@ -25,7 +25,7 @@
     if (els.workspaceStatus) {
       els.workspaceStatus.textContent = workspace.live
         ? 'Live workspace'
-        : 'Scaffold in place — launch points are present, live logic comes later.';
+        : 'Framework only — buttons and layout are in place, full logic comes later.';
       els.workspaceStatus.classList.toggle('scaffold', !workspace.live);
     }
   }

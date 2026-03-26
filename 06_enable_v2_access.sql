@@ -1,4 +1,4 @@
--- Pledge Library v2 access patch for v0.8.0
+-- Pledge Library v2 access patch for v0.8.1
 -- Run this after the v2 migration if the app loads no data.
 
 begin;
@@ -53,6 +53,6 @@ create policy pledge_program_airings_v2_read_all on public.pledge_program_airing
 commit;
 
 
--- v0.8.0 note: the app can fall back to pledge_programs_v2 for the main list if the
+-- v0.8.1 note: the app can fall back to pledge_programs_v2 for the main list if the
 -- summary view is unavailable, but granting the view is still recommended so the richer
 -- summary data remains available when the view is healthy.

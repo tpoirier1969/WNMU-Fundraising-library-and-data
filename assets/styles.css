@@ -585,6 +585,17 @@ button.small { padding: 7px 10px; }
   border-color: transparent;
 }
 .workspace-pane { margin-top: 12px; }
+.workspace-inline-note {
+  margin-top: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 8px 11px;
+  color: var(--muted);
+  font-size: .85rem;
+}
+.scaffold-grid-scheduling { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
 
 .scaffold-grid {
   display: grid;
