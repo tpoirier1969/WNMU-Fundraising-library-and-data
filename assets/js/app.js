@@ -1,16 +1,28 @@
 (() => {
   const App = window.PledgeLib;
   const { state, constants, utils } = App;
-  const { els, setNotice, setBuildMeta, setDetailNotice } = App.dom;
+  const { els, setNotice, setBuildMeta, setDetailNotice, setLoading } = App.dom;
+
+  function beginLoading(label, detail = '') {
+    state.loadingState = { active: true, label, detail };
+    setLoading(true, label, detail);
+  }
+
+  function endLoading() {
+    state.loadingState = { active: false, label: '', detail: '' };
+    setLoading(false, '', '');
+  }
 
   async function refreshAll(options = {}) {
     if (!state.client) return;
+    beginLoading('Loading pledge program data…', `Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
     els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">Loading library…</td></tr>';
     try {
       await App.data.refreshRawRows();
       App.listUi.buildFilterOptions();
       App.listUi.applyLibraryView();
       App.workspaceUi?.refreshScaffoldSummary();
+      App.schedulingUi?.renderAll();
       const probeStatus = App.data.getProbeStatusMessage();
       if (state.configVersionMismatch) {
         setBuildMeta(`${state.configVersionMismatch} ${probeStatus}`);
@@ -20,6 +32,7 @@
       if (options.preserveDetail && state.selectedProgramId && !els.detailModal.classList.contains('hidden')) {
         await App.detailUi.loadProgramDetail(state.selectedProgramId, { preserveMode: state.detailEditMode });
       }
+      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} titles. Scheduling title match is ready after 4 letters.`);
     } catch (error) {
       console.error(error);
       const rawMessage = error?.message || 'Load failed.';
@@ -30,6 +43,8 @@
       els.resultSummary.textContent = 'Load failed.';
       setNotice(message, 'warn');
       if (state.configVersionMismatch) setBuildMeta(state.configVersionMismatch);
+    } finally {
+      endLoading();
     }
   }
 
@@ -54,6 +69,9 @@
       state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
       App.listUi.buildFilterOptions();
       App.listUi.applyLibraryView();
+    });
+    els.sortHeaderButtons?.forEach((button) => {
+      button.addEventListener('click', () => App.listUi.setSort(button.dataset.sortField));
     });
     els.resetFiltersButton.addEventListener('click', () => { App.listUi.resetFilters(); App.listUi.applyLibraryView(); });
     els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true }); });
@@ -105,11 +123,14 @@
     });
 
     App.workspaceUi?.bindEvents();
+    App.schedulingUi?.bindEvents();
   }
 
   async function init() {
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
+    App.schedulingUi?.loadSchedules();
+    App.schedulingUi?.renderAll();
     setBuildMeta(state.configVersionMismatch || '');
     if (!App.data.validateConfig()) {
       setNotice('Fill in config.js with your Supabase URL and anon key. Until then this page is decorative.', 'warn');

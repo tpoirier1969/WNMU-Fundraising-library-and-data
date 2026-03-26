@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.8.1',
+    APP_VERSION: 'v0.9.0',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -52,9 +52,15 @@ window.PledgeLib = window.PledgeLib || {};
     },
     WORKSPACES: [
       { id: 'library', label: 'Library', live: true },
-      { id: 'scheduling', label: 'Scheduling', live: false },
+      { id: 'scheduling', label: 'Scheduling', live: true },
       { id: 'performance', label: 'Performance', live: false }
-    ]
+    ],
+    SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV1',
+    DEFAULT_DAY_START_HOUR: 6,
+    DEFAULT_DAY_END_HOUR: 24,
+    MIN_VISIBLE_HOUR: 0,
+    MAX_VISIBLE_HOUR: 24,
+    DEFAULT_SLOT_MINUTES: 30
   };
 
   const adminEmails = Array.isArray(cfg.ADMIN_EMAILS)
@@ -106,7 +112,29 @@ window.PledgeLib = window.PledgeLib || {};
       unmatchedSupplementCount: 0,
       topicCandidateKeys: [],
       distributorCandidateKeys: []
-    }
+    },
+    loadingState: {
+      active: false,
+      label: '',
+      detail: ''
+    },
+    schedules: [],
+    activeScheduleId: '',
+    scheduleDraft: {
+      title: '',
+      startDate: '',
+      endDate: '',
+      dayStartHour: 6,
+      dayEndHour: 24
+    },
+    scheduleView: {
+      zoom: 1,
+      dayStartHour: 6,
+      dayEndHour: 24
+    },
+    selectedScheduleSlot: null,
+    selectedScheduleProgram: null,
+    scheduleProgramQuery: ''
   };
 
   const utils = {
@@ -262,137 +290,159 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     compareNumber(a, b) {
-      const av = Number(a);
-      const bv = Number(b);
-      const aFinite = Number.isFinite(av);
-      const bFinite = Number.isFinite(bv);
-      if (!aFinite && !bFinite) return 0;
-      if (!aFinite) return 1;
-      if (!bFinite) return -1;
-      return av - bv;
+      const aNum = Number(a);
+      const bNum = Number(b);
+      if (!Number.isFinite(aNum) && !Number.isFinite(bNum)) return 0;
+      if (!Number.isFinite(aNum)) return 1;
+      if (!Number.isFinite(bNum)) return -1;
+      return aNum - bNum;
     },
 
     compareDate(a, b) {
-      const at = a ? new Date(a).getTime() : Number.NaN;
-      const bt = b ? new Date(b).getTime() : Number.NaN;
-      const aFinite = Number.isFinite(at);
-      const bFinite = Number.isFinite(bt);
-      if (!aFinite && !bFinite) return 0;
-      if (!aFinite) return 1;
-      if (!bFinite) return -1;
-      return at - bt;
+      const aDate = a ? new Date(a).getTime() : Number.POSITIVE_INFINITY;
+      const bDate = b ? new Date(b).getTime() : Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(aDate) && !Number.isFinite(bDate)) return 0;
+      return aDate - bDate;
     },
 
-    sortLabel(sortField) {
-      return App.constants.SORT_FIELDS[sortField] || sortField;
+    sortLabel(field) {
+      return App.constants.SORT_FIELDS[field] || field;
     },
 
     buildMismatchNotice() {
-      const configuredVersion = utils.normalizeText(cfg.APP_VERSION);
-      if (!configuredVersion || configuredVersion === App.constants.APP_VERSION) return '';
-      return `Build ${App.constants.APP_VERSION} is running, but config.js still says ${configuredVersion}.`;
+      if (!cfg.APP_VERSION) return '';
+      if (cfg.APP_VERSION === App.constants.APP_VERSION) return '';
+      return `Config version ${cfg.APP_VERSION} does not match build ${App.constants.APP_VERSION}.`;
+    },
+
+    minutesToLabel(minutes) {
+      const total = Number(minutes) || 0;
+      const hour = Math.floor(total / 60);
+      const min = total % 60;
+      const suffix = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = ((hour + 11) % 12) + 1;
+      return `${displayHour}:${String(min).padStart(2, '0')} ${suffix}`;
+    },
+
+    dateKeyFromDate(value) {
+      const date = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      const offset = date.getTimezoneOffset();
+      const local = new Date(date.getTime() - (offset * 60000));
+      return local.toISOString().slice(0, 10);
+    },
+
+    datesBetween(startKey, endKey) {
+      const results = [];
+      if (!startKey || !endKey) return results;
+      const start = new Date(`${startKey}T00:00:00`);
+      const end = new Date(`${endKey}T00:00:00`);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return results;
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        results.push(utils.dateKeyFromDate(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return results;
+    },
+
+    plusDays(dateKey, delta) {
+      const date = new Date(`${dateKey}T00:00:00`);
+      if (Number.isNaN(date.getTime())) return dateKey;
+      date.setDate(date.getDate() + delta);
+      return utils.dateKeyFromDate(date);
+    },
+
+    storageGet(key, fallback) {
+      try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (_error) {
+        return fallback;
+      }
+    },
+
+    storageSet(key, value) {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      } catch (_error) {
+        // ignore localStorage failures
+      }
+    },
+
+    makeId(prefix = 'id') {
+      return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
     }
   };
 
   const derive = {
     programId(row) {
-      return utils.firstNonEmpty(
-        row?.id,
-        row?.program_id,
-        row?.pledge_program_id,
-        row?.program_uuid,
-        row?.source_program_id,
-        row?.program_pk
-      );
+      return utils.firstNonEmpty(row?.id, row?.program_id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '';
     },
+
     title(row) {
-      return utils.firstNonEmpty(row?.title, row?.program_title, row?.program_name, row?.display_title) || 'Untitled';
+      return utils.firstNonEmpty(row?.title, row?.program_title, row?.name) || 'Untitled program';
     },
+
     nola(row) {
-      return utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola, row?.nola_id) || '';
+      return utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola) || '';
     },
-    distributor(row) {
-      return utils.firstNonEmpty(
-        row?.__resolved_distributor,
-        utils.valueFromExactKeys(row, [
-          'distributor',
-          'distributor_name',
-          'distributor_label',
-          'program_distributor',
-          'program_distributor_name',
-          'distributor_clean',
-          'source_distributor',
-          'syndicator'
-        ]),
-        utils.valueFromKeyScan(row, /(distributor|syndicator|supplier|source_distributor)/i, /(id|code|count|amount)/i)
-      ) || '';
-    },
+
     topicPrimary(row) {
-      return utils.firstNonEmpty(
-        row?.__resolved_topic_primary,
-        utils.valueFromExactKeys(row, [
-          'topic_primary',
-          'primary_topic',
-          'topic',
-          'topic_name',
-          'subject_primary',
-          'category_primary',
-          'genre',
-          'genre_primary',
-          'topic_primary_clean'
-        ]),
-        utils.valueFromKeyScan(row, /(topic|subject|category|genre)/i, /(secondary|sub|id|code|count)/i)
-      ) || '';
+      return utils.firstNonEmpty(row?.__resolved_topic_primary, row?.topic_primary, row?.primary_topic, row?.topic, row?.category) || '';
     },
+
     topicSecondary(row) {
-      return utils.firstNonEmpty(
-        row?.__resolved_topic_secondary,
-        utils.valueFromExactKeys(row, [
-          'topic_secondary',
-          'secondary_topic',
-          'subtopic',
-          'subject_secondary',
-          'category_secondary',
-          'topic_secondary_clean'
-        ]),
-        utils.valueFromKeyScan(row, /(secondary|subtopic|topic_secondary|subject_secondary|category_secondary)/i, /(id|code|count)/i)
-      ) || '';
+      return utils.firstNonEmpty(row?.__resolved_topic_secondary, row?.topic_secondary, row?.secondary_topic, row?.subcategory) || '';
     },
-    description(row) { return utils.firstNonEmpty(row?.program_notes, row?.description, row?.notes) || ''; },
-    premiumSummary(row) { return utils.firstNonEmpty(row?.premium_summary, row?.premium_notes, row?.premiums) || ''; },
-    rightsBegin(row) { return utils.firstNonEmpty(row?.rights_start, row?.rights_begin, row?.rights_start_date) || ''; },
-    rightsEnd(row) { return utils.firstNonEmpty(row?.rights_end, row?.rights_end_date) || ''; },
+
+    distributor(row) {
+      return utils.firstNonEmpty(row?.__resolved_distributor, row?.distributor, row?.distributor_name, row?.supplier, row?.syndicator) || '';
+    },
+
+    description(row) {
+      return utils.firstNonEmpty(row?.program_notes, row?.description, row?.summary, row?.notes) || '';
+    },
+
+    premiumSummary(row) {
+      return utils.firstNonEmpty(row?.premium_summary, row?.premiums, row?.premium_notes) || '';
+    },
+
+    rightsBegin(row) {
+      return utils.firstNonEmpty(row?.rights_start, row?.rights_begin, row?.rights_start_date) || '';
+    },
+
+    rightsEnd(row) {
+      return utils.firstNonEmpty(row?.rights_end, row?.rights_end_date) || '';
+    },
+
     lengthBucket(row) {
-      const value = Number(utils.firstNonEmpty(row?.length_bucket_minutes, row?.board_runtime_minutes, row?.length_minutes));
-      return Number.isFinite(value) && value > 0 ? value : null;
+      return Number(utils.firstNonEmpty(row?.length_bucket_minutes, row?.runtime_minutes, row?.length_minutes)) || null;
     },
+
     lengthLabel(row) {
-      const value = derive.lengthBucket(row);
-      return value ? String(value) : '—';
+      const length = derive.lengthBucket(row);
+      return Number.isFinite(length) && length > 0 ? String(length) : '—';
     },
-    actualRuntimeLabel(row) {
-      return utils.formatSeconds(utils.firstNonEmpty(row?.actual_runtime_seconds));
-    },
+
     avgPerFundraiser(row) {
-      const value = Number(utils.firstNonEmpty(
-        row?.avg_contribution_per_fundraiser,
-        row?.avg_contribution_per_drive,
-        row?.average_contribution_per_drive,
-        row?.average_dollars_per_fundraiser,
-        row?.avg_contribution
-      ));
-      return Number.isFinite(value) ? value : null;
+      return utils.firstNonEmpty(row?.avg_contribution_per_drive, row?.average_per_fundraiser, row?.avg_per_fundraiser, row?.avg_contribution) || null;
     },
+
     lastAiredDisplay(row) {
-      return utils.firstNonEmpty(row?.last_aired_display, row?.last_aired_text) || utils.formatDate(row?.last_aired_at, 'N/A');
+      return utils.formatDate(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at), '—');
     },
+
     isActive(row) {
-      if (typeof row?.is_active === 'boolean') return row.is_active;
-      const rightsEnd = derive.rightsEnd(row);
-      if (!rightsEnd) return true;
-      const date = new Date(rightsEnd);
-      if (Number.isNaN(date.getTime())) return true;
-      return date >= new Date(new Date().toDateString());
+      const archived = utils.firstNonEmpty(row?.is_archived, row?.archived, row?.inactive_flag);
+      if (typeof archived === 'boolean') return !archived;
+      const raw = utils.normalizeText(utils.firstNonEmpty(row?.status, row?.library_state)).toLowerCase();
+      if (raw === 'archived' || raw === 'inactive') return false;
+      return true;
+    },
+
+    scheduleById(id) {
+      return App.state.schedules.find((item) => item.id === id) || null;
     }
   };
 

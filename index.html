@@ -3,21 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.8.1</title>
+  <title>WNMU Pledge Program Library v0.9.0</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.8.1">
+  <link rel="stylesheet" href="assets/styles.css?v=0.9.0">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.8.1"></script>
-  <script defer src="assets/js/dom.js?v=0.8.1"></script>
-  <script defer src="assets/js/data.js?v=0.8.1"></script>
-  <script defer src="assets/js/ui-list.js?v=0.8.1"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.8.1"></script>
-  <script defer src="assets/js/auth.js?v=0.8.1"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.8.1"></script>
-  <script defer src="assets/js/app.js?v=0.8.1"></script>
+  <script defer src="assets/js/core.js?v=0.9.0"></script>
+  <script defer src="assets/js/dom.js?v=0.9.0"></script>
+  <script defer src="assets/js/data.js?v=0.9.0"></script>
+  <script defer src="assets/js/ui-list.js?v=0.9.0"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.9.0"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.9.0"></script>
+  <script defer src="assets/js/auth.js?v=0.9.0"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.9.0"></script>
+  <script defer src="assets/js/app.js?v=0.9.0"></script>
 </head>
 <body>
 
@@ -47,7 +48,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.8.1</span>
+            <span class="version-pill" id="version-flag">v0.9.0</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -60,6 +61,11 @@
         <button type="button" class="ghost" id="refresh-button">Refresh</button>
       </div>
     </header>
+
+    <div id="loading-banner" class="loading-banner hidden">
+      <div class="loading-title" id="loading-title">Loading…</div>
+      <div class="loading-detail" id="loading-detail"></div>
+    </div>
 
     <section class="workspace-switcher">
       <div class="workspace-switcher-head">
@@ -134,9 +140,10 @@
             <div class="list-title">Program list</div>
             <div class="list-summary" id="result-summary">Waiting on data…</div>
           </div>
-          <div class="list-sort-tools">
-            <label class="filter-label sort-label" for="sort-field-select">Sort list by</label>
-            <div class="sort-controls">
+          <div class="list-sort-tools compact-sort-tools">
+            <span class="sort-inline-note">Click a column heading to sort.</span>
+            <label class="filter-label sort-label hidden" for="sort-field-select">Sort list by</label>
+            <div class="sort-controls hidden">
               <select id="sort-field-select">
                 <option value="title">Title</option>
                 <option value="length">Length</option>
@@ -153,14 +160,14 @@
           <table class="programs-table">
             <thead>
               <tr>
-                <th class="col-title">Title</th>
-                <th class="col-length">Length</th>
-                <th class="col-topic">Topic</th>
+                <th class="col-title"><button type="button" class="sort-header-button" data-sort-field="title" data-sort-label="Title">Title</button></th>
+                <th class="col-length"><button type="button" class="sort-header-button" data-sort-field="length" data-sort-label="Length">Length</button></th>
+                <th class="col-topic"><button type="button" class="sort-header-button" data-sort-field="topic" data-sort-label="Topic">Topic</button></th>
                 <th class="col-distributor">Distributor</th>
-                <th class="col-avg">Avg $ / fundraiser</th>
+                <th class="col-avg"><button type="button" class="sort-header-button" data-sort-field="avg_per_fundraiser" data-sort-label="Avg $ / fundraiser">Avg $ / fundraiser</button></th>
                 <th class="col-premiums">Premiums</th>
                 <th class="col-rights">Rights Begin</th>
-                <th class="col-rights">Rights End</th>
+                <th class="col-rights"><button type="button" class="sort-header-button" data-sort-field="rights_end" data-sort-label="Rights End">Rights End</button></th>
                 <th class="col-airing">Last Aired</th>
               </tr>
             </thead>
@@ -173,48 +180,90 @@
     </section>
 
     <section class="workspace-pane hidden" data-workspace-pane="scheduling">
-      <section class="scaffold-grid scaffold-grid-scheduling">
-        <article class="scaffold-card">
-          <div class="scaffold-card-head">
-            <h3>Schedule builder</h3>
-            <span class="scaffold-pill">Scaffold</span>
+      <section class="scheduling-shell">
+        <aside class="schedule-sidebar">
+          <div class="schedule-sidebar-head">
+            <div>
+              <div class="list-title">Scheduled fundraisers</div>
+              <div class="list-summary" id="schedule-summary">0 fundraiser calendars saved in this browser.</div>
+            </div>
+            <button type="button" class="ghost" id="new-schedule-button">New fundraiser</button>
           </div>
-          <p>Reserved for building pledge schedules by date and time slot, choosing titles, and arranging the actual on-air plan.</p>
-          <div class="scaffold-actions">
-            <button type="button" class="ghost" data-workspace-launch="scheduling" data-workspace-feature="Schedule builder">Open schedule builder</button>
-          </div>
-        </article>
-        <article class="scaffold-card">
-          <div class="scaffold-card-head">
-            <h3>Slot &amp; rights checker</h3>
-            <span class="scaffold-pill">Scaffold</span>
-          </div>
-          <p>Future home for checking whether a title fits a slot, whether rights are still valid, and whether the planned runtime and breaks behave.</p>
-          <div class="scaffold-actions">
-            <button type="button" class="ghost" data-workspace-launch="scheduling" data-workspace-feature="Slot and rights checker">Open slot checker</button>
-            <button type="button" class="ghost" data-workspace-launch="library" data-workspace-feature="Program detail">Open program detail</button>
-          </div>
-        </article>
-        <article class="scaffold-card">
-          <div class="scaffold-card-head">
-            <h3>Campaign calendar</h3>
-            <span class="scaffold-pill">Scaffold</span>
-          </div>
-          <p>Placeholder for mapping pledge periods, recurring drives, seasonal specials, and the bigger planning view instead of one-slot-at-a-time work.</p>
-          <div class="scaffold-actions">
-            <button type="button" class="ghost" data-workspace-launch="scheduling" data-workspace-feature="Campaign calendar">Open campaign calendar</button>
-          </div>
-        </article>
-        <article class="scaffold-card">
-          <div class="scaffold-card-head">
-            <h3>Run sheet / export handoff</h3>
-            <span class="scaffold-pill">Scaffold</span>
-          </div>
-          <p>Reserved for turning a finished pledge plan into a clean printable or exportable schedule handoff for actual station use.</p>
-          <div class="scaffold-actions">
-            <button type="button" class="ghost" data-workspace-launch="scheduling" data-workspace-feature="Run sheet export">Open run sheet export</button>
-          </div>
-        </article>
+          <div id="schedule-list" class="schedule-list"></div>
+        </aside>
+
+        <div class="schedule-main">
+          <section class="schedule-builder-card">
+            <div class="schedule-builder-head">
+              <div>
+                <h3>Schedule a fundraiser</h3>
+                <p class="muted">Start with the fundraiser date range. The calendar below uses 30-minute increments only.</p>
+              </div>
+            </div>
+            <div class="schedule-form" id="schedule-form">
+              <label class="filter-field">
+                <span class="filter-label">Fundraiser title</span>
+                <input id="fundraiser-title-input" type="text" placeholder="Spring pledge drive">
+              </label>
+              <label class="filter-field narrow">
+                <span class="filter-label">Start date</span>
+                <input id="fundraiser-start-input" type="date">
+              </label>
+              <label class="filter-field narrow">
+                <span class="filter-label">End date</span>
+                <input id="fundraiser-end-input" type="date">
+              </label>
+              <div class="filter-actions">
+                <button type="button" class="primary" id="schedule-generate-button">Build calendar</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="schedule-empty" class="schedule-empty-state">Pick an existing fundraiser or build a new one to open the calendar.</section>
+
+          <section id="schedule-editor" class="schedule-editor hidden">
+            <div class="schedule-toolbar">
+              <div class="schedule-toolbar-group">
+                <button type="button" class="ghost" id="schedule-earlier-button">Earlier</button>
+                <span id="schedule-window-label" class="schedule-window-label">6:00 AM – 12:00 AM</span>
+                <button type="button" class="ghost" id="schedule-later-button">Later</button>
+              </div>
+              <div class="schedule-toolbar-group">
+                <button type="button" class="ghost" id="schedule-zoom-out-button">−</button>
+                <span class="schedule-zoom-label">Zoom</span>
+                <button type="button" class="ghost" id="schedule-zoom-in-button">+</button>
+                <button type="button" class="ghost" id="schedule-export-button">Export day list</button>
+              </div>
+            </div>
+            <div id="schedule-grid" class="schedule-grid"></div>
+
+            <section id="schedule-program-picker" class="schedule-program-picker hidden">
+              <div class="schedule-picker-head">
+                <h3>Schedule this slot</h3>
+                <div id="schedule-slot-label" class="schedule-slot-label"></div>
+              </div>
+              <label class="filter-field search-grow">
+                <span class="filter-label">Program title match</span>
+                <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
+              </label>
+              <div id="schedule-program-results" class="schedule-program-results"></div>
+              <div id="schedule-selected-preview" class="schedule-selected-preview"></div>
+              <label class="filter-field search-grow">
+                <span class="filter-label">Live break note</span>
+                <textarea id="schedule-live-break-notes" rows="2" placeholder="Optional note only. Break details stay out of the calendar."></textarea>
+              </label>
+              <div class="schedule-picker-actions">
+                <button type="button" class="ghost" id="schedule-clear-placement-button">Clear this slot</button>
+                <div id="schedule-assignment-note" class="muted">Selecting a program will place a block sized to that title’s runtime.</div>
+              </div>
+            </section>
+
+            <section class="schedule-program-details-wrap">
+              <div class="list-title">Scheduled program details</div>
+              <div id="schedule-program-details" class="schedule-program-details"></div>
+            </section>
+          </section>
+        </div>
       </section>
     </section>
 
@@ -334,7 +383,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.8.1</div>
+      <div id="footer-version">v0.9.0</div>
     </footer>
   </div>
 </body>

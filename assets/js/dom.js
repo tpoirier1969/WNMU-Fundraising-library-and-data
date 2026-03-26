@@ -10,6 +10,9 @@
     roleChip: document.getElementById('role-chip'),
     versionFlag: document.getElementById('version-flag'),
     footerVersion: document.getElementById('footer-version'),
+    loadingBanner: document.getElementById('loading-banner'),
+    loadingTitle: document.getElementById('loading-title'),
+    loadingDetail: document.getElementById('loading-detail'),
     workspaceButtons: [...document.querySelectorAll('[data-workspace-button]')],
     workspacePanes: [...document.querySelectorAll('[data-workspace-pane]')],
     workspaceTitle: document.getElementById('workspace-title'),
@@ -26,6 +29,7 @@
     statusFilter: document.getElementById('status-filter'),
     sortFieldSelect: document.getElementById('sort-field-select'),
     sortDirectionButton: document.getElementById('sort-direction-button'),
+    sortHeaderButtons: [...document.querySelectorAll('[data-sort-field]')],
     resetFiltersButton: document.getElementById('reset-filters-button'),
     refreshButton: document.getElementById('refresh-button'),
     adminButton: document.getElementById('admin-button'),
@@ -50,7 +54,33 @@
     premiumsList: document.getElementById('premiums-list'),
     timingCountChip: document.getElementById('timing-count-chip'),
     airingCountChip: document.getElementById('airing-count-chip'),
-    premiumCountChip: document.getElementById('premium-count-chip')
+    premiumCountChip: document.getElementById('premium-count-chip'),
+    scheduleList: document.getElementById('schedule-list'),
+    scheduleSummary: document.getElementById('schedule-summary'),
+    newScheduleButton: document.getElementById('new-schedule-button'),
+    scheduleEditor: document.getElementById('schedule-editor'),
+    scheduleEmpty: document.getElementById('schedule-empty'),
+    scheduleForm: document.getElementById('schedule-form'),
+    fundraiserTitleInput: document.getElementById('fundraiser-title-input'),
+    fundraiserStartInput: document.getElementById('fundraiser-start-input'),
+    fundraiserEndInput: document.getElementById('fundraiser-end-input'),
+    scheduleGenerateButton: document.getElementById('schedule-generate-button'),
+    scheduleZoomOutButton: document.getElementById('schedule-zoom-out-button'),
+    scheduleZoomInButton: document.getElementById('schedule-zoom-in-button'),
+    scheduleEarlierButton: document.getElementById('schedule-earlier-button'),
+    scheduleLaterButton: document.getElementById('schedule-later-button'),
+    scheduleWindowLabel: document.getElementById('schedule-window-label'),
+    scheduleGrid: document.getElementById('schedule-grid'),
+    scheduleProgramPicker: document.getElementById('schedule-program-picker'),
+    scheduleSlotLabel: document.getElementById('schedule-slot-label'),
+    scheduleProgramSearch: document.getElementById('schedule-program-search'),
+    scheduleProgramResults: document.getElementById('schedule-program-results'),
+    scheduleSelectedPreview: document.getElementById('schedule-selected-preview'),
+    scheduleLiveBreakNotes: document.getElementById('schedule-live-break-notes'),
+    scheduleClearPlacementButton: document.getElementById('schedule-clear-placement-button'),
+    scheduleAssignmentNote: document.getElementById('schedule-assignment-note'),
+    scheduleProgramDetails: document.getElementById('schedule-program-details'),
+    scheduleExportButton: document.getElementById('schedule-export-button')
   };
 
   function setNotice(text, type = '') {
@@ -77,6 +107,13 @@
     if (type) els.detailNotice.classList.add(type);
   }
 
+  function setLoading(active, title = '', detail = '') {
+    if (!els.loadingBanner) return;
+    els.loadingBanner.classList.toggle('hidden', !active);
+    if (els.loadingTitle) els.loadingTitle.textContent = title || 'Loading…';
+    if (els.loadingDetail) els.loadingDetail.textContent = detail || '';
+  }
+
   function renderSelectOptions(select, values, currentValue, placeholder) {
     if (!select) return;
     const escapeHtml = App.utils.escapeHtml;
@@ -93,6 +130,7 @@
     setNotice,
     setBuildMeta,
     setDetailNotice,
+    setLoading,
     renderSelectOptions
   };
 })();

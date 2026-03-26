@@ -28,6 +28,8 @@
         : 'Framework only — buttons and layout are in place, full logic comes later.';
       els.workspaceStatus.classList.toggle('scaffold', !workspace.live);
     }
+
+    if (workspace.id === 'scheduling') App.schedulingUi?.renderAll();
   }
 
   function refreshScaffoldSummary() {
@@ -44,7 +46,7 @@
       setNotice(`${feature} is live in the Library workspace.`);
       return;
     }
-    setNotice(`${feature} has a scaffolded home in ${workspaceById(workspaceId).label}. The button is wired; the underlying workflow is not live yet.`);
+    setNotice(`${feature} has a scaffolded home in ${workspaceById(workspaceId).label}.`);
   }
 
   function bindEvents() {

@@ -94,6 +94,19 @@
     renderSelectOptions(els.distributorFilter, state.distributorOptions, state.distributorFilter, 'All distributors');
     if (els.sortFieldSelect) els.sortFieldSelect.value = state.sortField;
     if (els.sortDirectionButton) els.sortDirectionButton.textContent = state.sortDirection === 'desc' ? '↓ Desc' : '↑ Asc';
+    syncSortHeaders();
+  }
+
+  function syncSortHeaders() {
+    if (!els.sortHeaderButtons?.length) return;
+    els.sortHeaderButtons.forEach((button) => {
+      const field = button.dataset.sortField;
+      const label = button.dataset.sortLabel || button.textContent.trim();
+      const active = state.sortField === field;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      button.innerHTML = `<span>${utils.escapeHtml(label)}</span><span class="sort-arrow">${active ? (state.sortDirection === 'desc' ? '↓' : '↑') : '↕'}</span>`;
+    });
   }
 
   function renderRows() {
@@ -151,6 +164,7 @@
     renderRows();
     updateSummary();
     syncSelectedRows();
+    syncSortHeaders();
 
     if (!sourceRows.length) {
       setNotice(`Connected, but ${state.librarySource?.name || 'the selected data source'} returned 0 rows.`, 'warn');
@@ -177,11 +191,25 @@
     buildFilterOptions();
   }
 
+  function setSort(field) {
+    if (state.sortField === field) {
+      state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      state.sortField = field;
+      state.sortDirection = 'asc';
+    }
+    if (els.sortFieldSelect) els.sortFieldSelect.value = state.sortField;
+    if (els.sortDirectionButton) els.sortDirectionButton.textContent = state.sortDirection === 'desc' ? '↓ Desc' : '↑ Asc';
+    applyLibraryView();
+  }
+
   App.listUi = {
     buildFilterOptions,
     applyLibraryView,
     resetFilters,
     syncSelectedRows,
-    premiumLines
+    premiumLines,
+    setSort,
+    syncSortHeaders
   };
 })();
