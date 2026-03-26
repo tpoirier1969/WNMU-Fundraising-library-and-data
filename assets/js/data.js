@@ -240,14 +240,29 @@
     return { data: null, error: new Error(`Unable to match ${tableName} rows to a program id.`) };
   }
 
-  async function fetchManyByProgramId(tableName, programId, orderField, ascending = true) {
-    const attempts = ['program_id', 'pledge_program_id'];
+  async function fetchManyByContext(tableName, context = {}, orderField, ascending = true) {
+    const attempts = [
+      ['program_id', context.programId],
+      ['pledge_program_id', context.programId],
+      ['id', context.programId],
+      ['nola_code', context.nola],
+      ['nola', context.nola],
+      ['program_nola', context.nola],
+      ['title', context.title],
+      ['program_title', context.title],
+      ['name', context.title]
+    ].filter((entry) => !utils.isBlank(entry[1]));
+
     let lastError = null;
-    for (const field of attempts) {
-      let query = state.client.from(tableName).select('*').eq(field, programId);
+    for (const [field, value] of attempts) {
+      let query = state.client.from(tableName).select('*').eq(field, value);
       if (orderField) query = query.order(orderField, { ascending });
       const response = await query;
-      if (!response.error) return response;
+      if (!response.error && Array.isArray(response.data) && response.data.length) return response;
+      if (!response.error) {
+        lastError = null;
+        continue;
+      }
       lastError = response.error;
       if (!/column .* does not exist|schema cache/i.test(response.error.message || '')) break;
     }
@@ -256,11 +271,17 @@
 
   async function fetchProgramDetail(programId) {
     const summaryRow = state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
-    const [baseResp, timingResp, driveResp, airingsResp] = await Promise.all([
-      fetchOneById(constants.BASE_TABLE, programId),
-      fetchManyByProgramId(constants.TIMING_TABLE, programId, 'slot_number', true),
-      fetchManyByProgramId(constants.DRIVE_RESULTS_TABLE, programId, 'drive_order', false),
-      fetchManyByProgramId(constants.AIRINGS_TABLE, programId, 'aired_at', false)
+    const baseResp = await fetchOneById(constants.BASE_TABLE, programId);
+    const contextRow = utils.mergeRows(summaryRow || {}, baseResp.data || {});
+    const context = {
+      programId,
+      nola: derive.nola(contextRow),
+      title: derive.title(contextRow)
+    };
+    const [timingResp, driveResp, airingsResp] = await Promise.all([
+      fetchManyByContext(constants.TIMING_TABLE, context, 'slot_number', true),
+      fetchManyByContext(constants.DRIVE_RESULTS_TABLE, context, 'drive_order', false),
+      fetchManyByContext(constants.AIRINGS_TABLE, context, 'aired_at', false)
     ]);
 
     const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseResp.data || {}), baseResp.data || summaryRow || {});

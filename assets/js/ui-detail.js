@@ -1,7 +1,14 @@
 (() => {
   const App = window.PledgeLib;
-  const { state, constants, utils, derive } = App;
-  const { els, setNotice, setDetailNotice } = App.dom;
+  const { state, utils, derive } = App;
+  const { els, setDetailNotice } = App.dom;
+
+  const PROGRAM_FIELD_ORDER = [
+    'title', 'nola_code', 'program_id', 'id', 'topic_primary', 'topic_secondary', 'distributor', 'package_type',
+    'source_format', 'length_bucket_minutes', 'actual_runtime_seconds', 'actual_runtime_minutes', 'runtime_minutes',
+    'rights_start', 'rights_end', 'rights_notes', 'premium_summary', 'program_notes', 'status', 'library_state',
+    'aired_on_13_1', 'aired_on_13_3', 'last_aired_at', 'last_aired', 'total_contributions', 'avg_contribution_per_drive'
+  ];
 
   function canEdit() {
     return App.auth.canEdit();
@@ -17,39 +24,19 @@
   }
 
   function detailSubtitleHtml(program) {
-    return [
-      `<span class="detail-chip">Length ${utils.escapeHtml(derive.lengthLabel(program))}</span>`,
-      `<span class="detail-chip">Actual ${utils.escapeHtml(derive.actualRuntimeLabel(program))}</span>`,
-      `<span class="detail-chip">NOLA ${utils.escapeHtml(derive.nola(program) || 'No NOLA')}</span>`,
-      `<span class="detail-chip">${utils.escapeHtml(derive.distributor(program) || 'No distributor listed')}</span>`
-    ].join('');
-  }
-
-  function renderOverview(program, driveResults) {
-    const topicValue = [derive.topicPrimary(program), derive.topicSecondary(program)].filter(Boolean).join(' / ') || '—';
-    const rightsNotes = utils.normalizeText(program.rights_notes) || '—';
-    const lastAired = driveResults.length
-      ? utils.formatDate(utils.firstNonEmpty(driveResults[0].drive_date, driveResults[0].aired_at), 'N/A')
-      : derive.lastAiredDisplay(program);
-    els.overviewGrid.innerHTML = [
-      labelValue('Topic', utils.escapeHtml(topicValue)),
-      labelValue('Rights begin', utils.escapeHtml(utils.formatDate(derive.rightsBegin(program)))),
-      labelValue('Rights end', utils.escapeHtml(utils.formatDate(derive.rightsEnd(program)))),
-      labelValue('Last aired', utils.escapeHtml(lastAired || 'N/A')),
-      labelValue('Package type', utils.escapeHtml(utils.normalizeText(program.package_type) || '—')),
-      labelValue('Source', utils.escapeHtml(utils.normalizeText(program.source_format) || '—')),
-      labelValue('Total contributions', utils.escapeHtml(utils.formatMoney(program.total_contributions))),
-      labelValue('Average per drive', utils.escapeHtml(utils.formatMoney(program.avg_contribution_per_drive))),
-      labelValue('Description', utils.escapeHtml(derive.description(program) || '—')),
-      labelValue('Rights notes', utils.escapeHtml(rightsNotes)),
-      labelValue('Premium summary', premiumSummaryHtml(derive.premiumSummary(program) || '—'))
-    ].join('');
+    return `
+      <span class="detail-chip">Length ${utils.escapeHtml(derive.lengthLabel(program))}</span>
+      <span class="detail-chip">Actual ${utils.escapeHtml(derive.actualRuntimeLabel(program))}</span>
+      <span class="detail-chip">NOLA ${utils.escapeHtml(derive.nola(program) || 'No NOLA')}</span>
+      <span class="detail-chip">${utils.escapeHtml(derive.distributor(program) || 'No distributor listed')}</span>
+    `;
   }
 
   function premiumSummaryHtml(value) {
     const text = utils.normalizeText(value);
     if (!text) return '<div class="premium-line">—</div>';
     const lines = text
+      .replace(/\r/g, '')
       .replace(/\s*;\s*/g, '\n')
       .replace(/\s+(?=\$)/g, '\n')
       .split(/\n+/)
@@ -59,32 +46,92 @@
     return finalLines.map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('');
   }
 
+  function renderOverview(program, driveResults = [], exactAirings = []) {
+    const topicValue = [derive.topicPrimary(program), derive.topicSecondary(program)].filter(Boolean).join(' / ') || '—';
+    const lastAired = exactAirings.length
+      ? utils.formatDate(utils.firstNonEmpty(exactAirings[0].aired_at, exactAirings[0].air_date), 'N/A')
+      : driveResults.length
+        ? utils.formatDate(utils.firstNonEmpty(driveResults[0].drive_date, driveResults[0].aired_at), 'N/A')
+        : derive.lastAiredDisplay(program);
+    const description = derive.description(program) || '—';
+
+    els.overviewGrid.innerHTML = [
+      labelValue('Title', utils.escapeHtml(derive.title(program))),
+      labelValue('NOLA', utils.escapeHtml(derive.nola(program) || '—')),
+      labelValue('Topic', utils.escapeHtml(topicValue)),
+      labelValue('Distributor', utils.escapeHtml(derive.distributor(program) || '—')),
+      labelValue('Length bucket', utils.escapeHtml(derive.lengthLabel(program))),
+      labelValue('Actual runtime', utils.escapeHtml(derive.actualRuntimeLabel(program))),
+      labelValue('Rights begin', utils.escapeHtml(utils.formatDate(derive.rightsBegin(program)))),
+      labelValue('Rights end', utils.escapeHtml(utils.formatDate(derive.rightsEnd(program)))),
+      labelValue('Package type', utils.escapeHtml(utils.normalizeText(program.package_type) || '—')),
+      labelValue('Source format', utils.escapeHtml(utils.normalizeText(program.source_format) || '—')),
+      labelValue('Last aired', utils.escapeHtml(lastAired || 'N/A')),
+      labelValue('Status', utils.escapeHtml(utils.normalizeText(utils.firstNonEmpty(program.status, program.library_state, derive.isActive(program) ? 'Active' : 'Archived')) || '—')),
+      labelValue('Total contributions', utils.escapeHtml(utils.formatMoney(derive.totalRaised(program)))),
+      labelValue('Average per fundraiser', utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(program)))),
+      labelValue('Rights notes', utils.escapeHtml(utils.normalizeText(program.rights_notes) || '—')),
+      labelValue('Premium summary', premiumSummaryHtml(derive.premiumSummary(program) || '—')),
+      labelValue('Description / notes', `<div class="detail-long-text">${utils.escapeHtml(description)}</div>`)
+    ].join('');
+  }
+
+  function formatMaybeSeconds(key, value) {
+    if (value == null || value === '') return '—';
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && /(seconds|offset|duration|runtime|cutin|break|act)_?seconds$/i.test(key)) {
+      return utils.formatSeconds(numeric);
+    }
+    if (typeof value === 'object') return utils.escapeHtml(JSON.stringify(value));
+    return utils.escapeHtml(utils.normalizeText(value) || String(value));
+  }
+
+  function candidateColumns(rows) {
+    const preferred = [
+      'slot_number', 'segment_number', 'act_seconds', 'break_seconds', 'local_cutin_seconds',
+      'break_offset_seconds', 'act_offset_seconds', 'segment_title', 'segment_name', 'notes',
+      'title', 'nola_code', 'program_title'
+    ];
+    const seen = new Set();
+    const keys = [];
+    preferred.forEach((key) => {
+      if (rows.some((row) => Object.prototype.hasOwnProperty.call(row || {}, key))) {
+        seen.add(key);
+        keys.push(key);
+      }
+    });
+    rows.forEach((row) => {
+      Object.keys(row || {}).forEach((key) => {
+        if (!seen.has(key) && !/^created_at|updated_at$/i.test(key)) {
+          seen.add(key);
+          keys.push(key);
+        }
+      });
+    });
+    return keys;
+  }
+
   function renderTiming(timings) {
     els.timingCountChip.textContent = `${timings.length}`;
     if (!timings.length) {
       els.timingList.innerHTML = '<div class="timing-card">No detailed timing rows are available for this title.</div>';
       return;
     }
-    const rows = [...timings].sort((a, b) => Number(a.slot_number || 0) - Number(b.slot_number || 0));
+    const rows = [...timings].sort((a, b) => Number(a.slot_number || a.segment_number || 0) - Number(b.slot_number || b.segment_number || 0));
+    const columns = candidateColumns(rows);
     els.timingList.innerHTML = `
       <article class="timing-card">
         <div class="segment-table-wrap">
           <table class="segment-table">
             <thead>
               <tr>
-                <th>Slot</th>
-                <th>Program segment</th>
-                <th>Pledge break</th>
-                <th>Local cut-in</th>
+                ${columns.map((key) => `<th>${utils.escapeHtml(key.replace(/_/g, ' '))}</th>`).join('')}
               </tr>
             </thead>
             <tbody>
               ${rows.map((row) => `
                 <tr>
-                  <td>${utils.escapeHtml(row.slot_number ?? '—')}</td>
-                  <td>${utils.escapeHtml(utils.formatSeconds(row.act_seconds))}</td>
-                  <td>${utils.escapeHtml(utils.formatSeconds(row.break_seconds))}</td>
-                  <td>${utils.escapeHtml(utils.formatSeconds(row.local_cutin_seconds))}</td>
+                  ${columns.map((key) => `<td>${formatMaybeSeconds(key, row[key])}</td>`).join('')}
                 </tr>
               `).join('')}
             </tbody>
@@ -98,15 +145,15 @@
     const combined = [];
     exactAirings.forEach((row) => {
       combined.push({
-        when: utils.formatDateTime(row.aired_at, 'N/A'),
-        contributed: row.contribution_amount,
-        note: utils.normalizeText(utils.firstNonEmpty(row.fundraiser_label, row.notes)) || '—'
+        when: utils.formatDateTime(utils.firstNonEmpty(row.aired_at, row.air_date), 'N/A'),
+        contributed: utils.firstNonEmpty(row.contribution_amount, row.total_contributions, row.contributed),
+        note: utils.normalizeText(utils.firstNonEmpty(row.fundraiser_label, row.drive_label, row.notes)) || '—'
       });
     });
     driveResults.forEach((row) => {
-      const label = utils.normalizeText(row.drive_label) || utils.normalizeText(row.drive_column) || 'Drive';
+      const label = utils.normalizeText(utils.firstNonEmpty(row.drive_label, row.drive_column, row.fundraiser_label)) || 'Drive';
       const when = row.drive_date ? `${utils.formatDate(row.drive_date)}${row.drive_window_text ? ` · ${row.drive_window_text}` : ''}` : label;
-      combined.push({ when, contributed: row.contribution_amount, note: label });
+      combined.push({ when, contributed: utils.firstNonEmpty(row.contribution_amount, row.total_contributions, row.contributed), note: label });
     });
     els.airingCountChip.textContent = `${combined.length}`;
     if (!combined.length) {
@@ -138,11 +185,39 @@
   }
 
   function renderPremiums(program) {
-    const lines = App.listUi.premiumLines(derive.premiumSummary(program)).filter((line) => line !== '—');
+    const lines = (App.listUi?.premiumLines ? App.listUi.premiumLines(derive.premiumSummary(program)) : [derive.premiumSummary(program)])
+      .filter((line) => line && line !== '—');
     els.premiumCountChip.textContent = `${lines.length || 0}`;
     els.premiumsList.innerHTML = lines.length
       ? lines.map((line) => `<article class="premium-card">${utils.escapeHtml(line)}</article>`).join('')
       : '<div class="premium-card">No premium summary is available for this title.</div>';
+  }
+
+  function displayKeyLabel(key) {
+    return key
+      .replace(/^__resolved_/, '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  function sortedProgramEntries(program) {
+    const seen = new Set();
+    const orderedKeys = [...PROGRAM_FIELD_ORDER, ...Object.keys(program || {}).sort(utils.compareText)];
+    return orderedKeys
+      .filter((key) => {
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((key) => [key, program?.[key]])
+      .filter(([key, value]) => !utils.isBlank(value) && !/^__supplement_match_method$/i.test(key));
+  }
+
+  function renderAllFields(program) {
+    const entries = sortedProgramEntries(program);
+    els.allFieldsList.innerHTML = entries.length
+      ? `<dl class="raw-grid">${entries.map(([key, value]) => labelValue(displayKeyLabel(key), formatMaybeSeconds(key, value))).join('')}</dl>`
+      : '<div class="premium-card">No readable program-row fields were available.</div>';
   }
 
   function renderDetail(program, timings, driveResults, exactAirings) {
@@ -150,10 +225,11 @@
     els.detailContent.classList.remove('hidden');
     els.detailTitle.textContent = derive.title(program);
     els.detailSubtitle.innerHTML = detailSubtitleHtml(program);
-    renderOverview(program, driveResults);
+    renderOverview(program, driveResults, exactAirings);
     renderTiming(timings);
     renderDriveResults(driveResults, exactAirings);
     renderPremiums(program);
+    renderAllFields(program);
   }
 
   function showDetailFailure(message) {
@@ -176,7 +252,7 @@
     form.elements.nola_code.value = derive.nola(source);
     form.elements.distributor.value = derive.distributor(source);
     form.elements.length_bucket_minutes.value = derive.lengthBucket(source) || '';
-    form.elements.actual_runtime_input.value = source.actual_runtime_seconds ? utils.formatSeconds(source.actual_runtime_seconds) : '';
+    form.elements.actual_runtime_input.value = derive.actualRuntimeLabel(source) === '—' ? '' : derive.actualRuntimeLabel(source);
     form.elements.topic_primary.value = derive.topicPrimary(source);
     form.elements.topic_secondary.value = derive.topicSecondary(source);
     form.elements.rights_start.value = derive.rightsBegin(source);
@@ -214,20 +290,32 @@
     setDetailMode('view');
     setDetailNotice('');
 
-    const detail = await App.data.fetchProgramDetail(programId);
-    if (!detail.program) {
-      showDetailFailure('No readable detail data came back for this title.');
-      return;
-    }
+    try {
+      const detail = await App.data.fetchProgramDetail(programId);
+      if (!detail.program) {
+        showDetailFailure('No readable detail data came back for this title.');
+        return;
+      }
 
-    state.currentDetailProgram = detail.program;
-    state.currentDetailTimings = detail.timings;
-    state.currentDetailDriveResults = detail.driveResults;
-    state.currentDetailAirings = detail.airings;
-    setDetailNotice(detail.warnings.join(' '), detail.warnings.length ? 'warn' : '');
-    renderDetail(detail.program, detail.timings, detail.driveResults, detail.airings);
-    if (options.preserveMode && canEdit()) setDetailMode('edit');
-    els.detailCloseButton.focus();
+      state.currentDetailProgram = detail.program;
+      state.currentDetailTimings = detail.timings;
+      state.currentDetailDriveResults = detail.driveResults;
+      state.currentDetailAirings = detail.airings;
+      setDetailNotice(detail.warnings.join(' '), detail.warnings.length ? 'warn' : '');
+      renderDetail(detail.program, detail.timings, detail.driveResults, detail.airings);
+      if (options.preserveMode && canEdit()) setDetailMode('edit');
+      els.detailCloseButton.focus();
+    } catch (error) {
+      console.error('Detail render failed.', error);
+      setDetailNotice(`Detail render warning: ${error.message || error}`, 'bad');
+      const fallbackProgram = state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
+      if (fallbackProgram) {
+        state.currentDetailProgram = fallbackProgram;
+        renderDetail(fallbackProgram, [], [], []);
+      } else {
+        showDetailFailure('Something went sideways while loading this title.');
+      }
+    }
   }
 
   async function saveDetailEdit(event) {
@@ -238,14 +326,16 @@
     const form = els.detailEditForm;
     const title = utils.normalizeText(form.elements.title.value);
     if (!title) {
+      setDetailNotice('Title is required.', 'bad');
       form.elements.title.focus();
-      throw new Error('Title is required.');
+      return;
     }
+
     const payload = {
       title,
       nola_code: utils.normalizeText(form.elements.nola_code.value) || null,
       distributor: utils.normalizeText(form.elements.distributor.value) || null,
-      length_bucket_minutes: utils.normalizeText(form.elements.length_bucket_minutes.value) ? Number(form.elements.length_bucket_minutes.value) : null,
+      length_bucket_minutes: form.elements.length_bucket_minutes.value ? Number(form.elements.length_bucket_minutes.value) : null,
       actual_runtime_seconds: utils.parseRuntimeInput(form.elements.actual_runtime_input.value),
       topic_primary: utils.normalizeText(form.elements.topic_primary.value) || null,
       topic_secondary: utils.normalizeText(form.elements.topic_secondary.value) || null,
@@ -265,7 +355,7 @@
     await App.app.refreshAll({ preserveDetail: true });
     await loadProgramDetail(programId, { preserveMode: false });
     setDetailNotice('Changes saved.');
-    setNotice('Program updated.');
+    App.dom.setNotice('Program updated.');
     setDetailMode('view');
   }
 

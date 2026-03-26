@@ -52,6 +52,7 @@
     timingList: document.getElementById('timing-list'),
     airingList: document.getElementById('airing-list'),
     premiumsList: document.getElementById('premiums-list'),
+    allFieldsList: document.getElementById('all-fields-list'),
     timingCountChip: document.getElementById('timing-count-chip'),
     airingCountChip: document.getElementById('airing-count-chip'),
     premiumCountChip: document.getElementById('premium-count-chip'),

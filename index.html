@@ -3,22 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.10.0</title>
+  <title>WNMU Pledge Program Library v0.10.1</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.9.0">
+  <link rel="stylesheet" href="assets/styles.css?v=0.10.1">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.9.0"></script>
-  <script defer src="assets/js/dom.js?v=0.9.0"></script>
-  <script defer src="assets/js/data.js?v=0.9.0"></script>
-  <script defer src="assets/js/ui-list.js?v=0.9.0"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.9.0"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.9.0"></script>
-  <script defer src="assets/js/auth.js?v=0.9.0"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.9.0"></script>
-  <script defer src="assets/js/app.js?v=0.9.0"></script>
+  <script defer src="assets/js/core.js?v=0.10.1"></script>
+  <script defer src="assets/js/dom.js?v=0.10.1"></script>
+  <script defer src="assets/js/data.js?v=0.10.1"></script>
+  <script defer src="assets/js/ui-list.js?v=0.10.1"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.10.1"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.10.1"></script>
+  <script defer src="assets/js/auth.js?v=0.10.1"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.10.1"></script>
+  <script defer src="assets/js/app.js?v=0.10.1"></script>
 </head>
 <body>
 
@@ -48,7 +48,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.10.0</span>
+            <span class="version-pill" id="version-flag">v0.10.1</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -396,13 +396,21 @@
             </div>
             <div id="premiums-list" class="simple-list"></div>
           </section>
+
+          <section class="detail-block">
+            <div class="section-head">
+              <h3>All known program fields</h3>
+              <div class="mini-chip">Full row</div>
+            </div>
+            <div id="all-fields-list" class="simple-list"></div>
+          </section>
         </div>
       </div>
     </section>
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.10.0</div>
+      <div id="footer-version">v0.10.1</div>
     </footer>
   </div>
 </body>

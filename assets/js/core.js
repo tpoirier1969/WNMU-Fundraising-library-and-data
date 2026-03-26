@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.10.0',
+    APP_VERSION: 'v0.10.1',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -445,6 +445,15 @@ window.PledgeLib = window.PledgeLib || {};
       if (Number.isFinite(direct) && direct > 0) return Math.round(direct);
       const bucket = derive.lengthBucket(row);
       return Number.isFinite(bucket) && bucket > 0 ? bucket : null;
+    },
+
+    actualRuntimeLabel(row) {
+      const seconds = Number(utils.firstNonEmpty(row?.actual_runtime_seconds, row?.runtime_seconds, row?.actual_runtime));
+      if (Number.isFinite(seconds) && seconds > 0) return utils.formatSeconds(seconds);
+      const directMinutes = Number(utils.firstNonEmpty(row?.actual_runtime_minutes, row?.runtime_minutes, row?.length_minutes));
+      if (Number.isFinite(directMinutes) && directMinutes > 0) return utils.formatSeconds(directMinutes * 60);
+      const bucket = derive.lengthBucket(row);
+      return Number.isFinite(bucket) && bucket > 0 ? utils.formatSeconds(bucket * 60) : '—';
     },
 
     lastAiredDisplay(row) {

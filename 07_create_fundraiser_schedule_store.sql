@@ -1,5 +1,5 @@
 
--- v0.10.0 fundraiser schedule store
+-- v0.10.1 fundraiser schedule store
 create table if not exists public.pledge_fundraiser_schedules (
   id text primary key,
   title text not null,
