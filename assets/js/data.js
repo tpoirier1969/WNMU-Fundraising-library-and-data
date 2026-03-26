@@ -58,9 +58,7 @@
 
   async function chooseLibrarySource() {
     const probes = [];
-    for (const candidate of constants.SOURCE_CANDIDATES) {
-      probes.push(await probeSource(candidate));
-    }
+    for (const candidate of constants.SOURCE_CANDIDATES) probes.push(await probeSource(candidate));
     state.lastProbeSummary = probes;
 
     const summaryProbe = probes.find((probe) => probe.name === constants.LIBRARY_VIEW);
@@ -89,11 +87,124 @@
     throw new Error(message || 'Neither the summary view nor the base table could be read.');
   }
 
+  function buildBaseIndexes(baseRows = []) {
+    const byId = new Map();
+    const byNola = new Map();
+    const byTitle = new Map();
+
+    baseRows.forEach((row) => {
+      const id = utils.normalizeLookupKey(derive.programId(row));
+      const nola = utils.normalizeLookupKey(derive.nola(row));
+      const title = utils.normalizeLookupKey(derive.title(row));
+      if (id && !byId.has(id)) byId.set(id, row);
+      if (nola && !byNola.has(nola)) byNola.set(nola, row);
+      if (title && !byTitle.has(title)) byTitle.set(title, row);
+    });
+
+    return { byId, byNola, byTitle };
+  }
+
+  function matchBaseRow(sourceRow, indexes) {
+    const idKey = utils.normalizeLookupKey(derive.programId(sourceRow));
+    if (idKey && indexes.byId.has(idKey)) return { row: indexes.byId.get(idKey), method: 'id' };
+
+    const nolaKey = utils.normalizeLookupKey(derive.nola(sourceRow));
+    if (nolaKey && indexes.byNola.has(nolaKey)) return { row: indexes.byNola.get(nolaKey), method: 'nola' };
+
+    const titleKey = utils.normalizeLookupKey(derive.title(sourceRow));
+    if (titleKey && indexes.byTitle.has(titleKey)) return { row: indexes.byTitle.get(titleKey), method: 'title' };
+
+    return { row: null, method: 'none' };
+  }
+
+  function enrichResolvedFields(mergedRow, matchedBaseRow) {
+    const topicPrimary = utils.firstNonEmpty(derive.topicPrimary(mergedRow), matchedBaseRow ? derive.topicPrimary(matchedBaseRow) : null);
+    const topicSecondary = utils.firstNonEmpty(derive.topicSecondary(mergedRow), matchedBaseRow ? derive.topicSecondary(matchedBaseRow) : null);
+    const distributor = utils.firstNonEmpty(derive.distributor(mergedRow), matchedBaseRow ? derive.distributor(matchedBaseRow) : null);
+
+    return {
+      ...mergedRow,
+      __resolved_topic_primary: topicPrimary || null,
+      __resolved_topic_secondary: topicSecondary || null,
+      __resolved_distributor: distributor || null
+    };
+  }
+
+  function buildFieldAudit(rows = []) {
+    const audit = {
+      rowCount: rows.length,
+      missingTopicCount: 0,
+      missingDistributorCount: 0,
+      missingBothCount: 0,
+      matchedByIdCount: 0,
+      matchedByNolaCount: 0,
+      matchedByTitleCount: 0,
+      unmatchedSupplementCount: 0,
+      topicCandidateKeys: utils.candidateKeys(rows, /(topic|subject|category|genre)/i, /(id|code|count)/i),
+      distributorCandidateKeys: utils.candidateKeys(rows, /(distributor|syndicator|supplier)/i, /(id|code|count)/i)
+    };
+
+    rows.forEach((row) => {
+      if (!derive.topicPrimary(row)) audit.missingTopicCount += 1;
+      if (!derive.distributor(row)) audit.missingDistributorCount += 1;
+      if (!derive.topicPrimary(row) && !derive.distributor(row)) audit.missingBothCount += 1;
+      switch (row?.__supplement_match_method) {
+        case 'id': audit.matchedByIdCount += 1; break;
+        case 'nola': audit.matchedByNolaCount += 1; break;
+        case 'title': audit.matchedByTitleCount += 1; break;
+        default: audit.unmatchedSupplementCount += 1; break;
+      }
+    });
+
+    return audit;
+  }
+
+  function mergeLibraryRows(summaryRows = [], baseRows = []) {
+    if (!summaryRows.length) {
+      return baseRows.map((row) => ({
+        ...enrichResolvedFields(row, row),
+        __supplement_match_method: 'id'
+      }));
+    }
+    if (!baseRows.length) {
+      return summaryRows.map((row) => ({
+        ...enrichResolvedFields(row, null),
+        __supplement_match_method: 'none'
+      }));
+    }
+
+    const indexes = buildBaseIndexes(baseRows);
+    return summaryRows.map((row) => {
+      const matched = matchBaseRow(row, indexes);
+      const merged = utils.mergeRows(row, matched.row || {});
+      return {
+        ...enrichResolvedFields(merged, matched.row),
+        __supplement_match_method: matched.method
+      };
+    });
+  }
+
   async function refreshRawRows() {
     const source = await chooseLibrarySource();
-    const rows = await fetchAllRows(source.name);
-    state.rawRows = rows;
-    return rows;
+    const sourceRows = await fetchAllRows(source.name);
+    let baseRows = [];
+
+    const baseProbe = state.lastProbeSummary.find((probe) => probe.name === constants.BASE_TABLE);
+    const shouldSupplementWithBase = source.name === constants.LIBRARY_VIEW && baseProbe?.okay;
+    if (shouldSupplementWithBase) {
+      try {
+        baseRows = await fetchAllRows(constants.BASE_TABLE);
+      } catch (error) {
+        console.warn('Base-table supplement fetch failed.', error);
+      }
+    } else if (source.name === constants.BASE_TABLE) {
+      baseRows = sourceRows;
+    }
+
+    state.baseRows = baseRows;
+    state.rawRows = mergeLibraryRows(sourceRows, baseRows);
+    state.fieldAudit = buildFieldAudit(state.rawRows);
+    return state.rawRows;
   }
 
   function getProbeStatusMessage() {
@@ -105,7 +216,17 @@
     const prefix = source
       ? `Using ${source.label} (${source.name}).`
       : 'No readable data source selected.';
-    return [prefix, ...summaryBits].join(' ');
+
+    const auditBits = [];
+    if (state.fieldAudit.rowCount) {
+      auditBits.push(`topic gaps: ${utils.formatCount(state.fieldAudit.missingTopicCount)}`);
+      auditBits.push(`distributor gaps: ${utils.formatCount(state.fieldAudit.missingDistributorCount)}`);
+      if (state.librarySource?.name === constants.LIBRARY_VIEW && state.baseRows.length) {
+        auditBits.push(`matches by id/nola/title: ${utils.formatCount(state.fieldAudit.matchedByIdCount)}/${utils.formatCount(state.fieldAudit.matchedByNolaCount)}/${utils.formatCount(state.fieldAudit.matchedByTitleCount)}`);
+      }
+    }
+
+    return [prefix, ...summaryBits, ...auditBits].join(' ');
   }
 
   async function fetchOneById(tableName, programId) {
@@ -142,7 +263,7 @@
       fetchManyByProgramId(constants.AIRINGS_TABLE, programId, 'aired_at', false)
     ]);
 
-    const detailProgram = { ...(summaryRow || {}), ...(baseResp.data || {}) };
+    const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseResp.data || {}), baseResp.data || summaryRow || {});
     const warnings = [];
     if (baseResp.error && !baseResp.data) warnings.push(`Base row read warning: ${baseResp.error.message}`);
     if (timingResp.error) warnings.push(`Timing read warning: ${timingResp.error.message}`);
@@ -170,6 +291,10 @@
     refreshRawRows,
     getProbeStatusMessage,
     fetchProgramDetail,
-    updateProgram
+    updateProgram,
+    mergeLibraryRows,
+    buildFieldAudit,
+    buildBaseIndexes,
+    matchBaseRow
   };
 })();

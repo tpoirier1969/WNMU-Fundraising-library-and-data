@@ -44,25 +44,41 @@
     return rowMatchesSearch(row);
   }
 
-  function sortRows(rows) {
-    return [...rows].sort((a, b) => {
-      const topicCompare = utils.compareText(derive.topicPrimary(a), derive.topicPrimary(b));
-      if (topicCompare !== 0) return topicCompare;
-      return utils.compareText(derive.title(a), derive.title(b));
-    });
+  function compareBySortField(a, b) {
+    switch (state.sortField) {
+      case 'title':
+        return utils.compareText(derive.title(a), derive.title(b));
+      case 'length':
+        return utils.compareNumber(derive.lengthBucket(a), derive.lengthBucket(b)) || utils.compareText(derive.title(a), derive.title(b));
+      case 'rights_end':
+        return utils.compareDate(derive.rightsEnd(a), derive.rightsEnd(b)) || utils.compareText(derive.title(a), derive.title(b));
+      case 'avg_per_fundraiser':
+        return utils.compareNumber(derive.avgPerFundraiser(a), derive.avgPerFundraiser(b)) || utils.compareText(derive.title(a), derive.title(b));
+      case 'topic':
+      default:
+        return utils.compareText(derive.topicPrimary(a), derive.topicPrimary(b)) || utils.compareText(derive.title(a), derive.title(b));
+    }
   }
 
-  function premiumSummaryHtml(value) {
+  function sortRows(rows) {
+    const multiplier = state.sortDirection === 'desc' ? -1 : 1;
+    return [...rows].sort((a, b) => compareBySortField(a, b) * multiplier);
+  }
+
+  function premiumLines(value) {
     const text = utils.normalizeText(value);
-    if (!text) return '<div class="premium-line">—</div>';
+    if (!text) return ['—'];
     const lines = text
+      .replace(/\r/g, '')
       .replace(/\s*;\s*/g, '\n')
-      .replace(/\s+(?=\$)/g, '\n')
       .split(/\n+/)
       .map((part) => utils.normalizeText(part))
       .filter(Boolean);
-    const finalLines = lines.length ? lines : [text];
-    return finalLines.map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('');
+    return lines.length ? lines : [text];
+  }
+
+  function premiumSummaryHtml(value) {
+    return `<div class="premium-lines">${premiumLines(value).map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
   }
 
   function buildFilterOptions() {
@@ -76,11 +92,13 @@
     renderSelectOptions(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
     renderSelectOptions(els.lengthFilter, state.lengthOptions, state.lengthFilter, 'All lengths');
     renderSelectOptions(els.distributorFilter, state.distributorOptions, state.distributorFilter, 'All distributors');
+    if (els.sortFieldSelect) els.sortFieldSelect.value = state.sortField;
+    if (els.sortDirectionButton) els.sortDirectionButton.textContent = state.sortDirection === 'desc' ? '↓ Desc' : '↑ Asc';
   }
 
   function renderRows() {
     if (!state.rows.length) {
-      els.libraryBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No matching pledge titles found.</td></tr>';
+      els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">No matching pledge titles found.</td></tr>';
       return;
     }
 
@@ -98,6 +116,7 @@
           <td>${utils.escapeHtml(derive.lengthLabel(row))}</td>
           <td>${utils.escapeHtml(derive.topicPrimary(row) || '—')}</td>
           <td>${utils.escapeHtml(derive.distributor(row) || '—')}</td>
+          <td class="avg-cell">${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</td>
           <td class="premiums-cell">${premiumSummaryHtml(derive.premiumSummary(row))}</td>
           <td>${utils.escapeHtml(utils.formatDate(derive.rightsBegin(row)))}</td>
           <td>${utils.escapeHtml(utils.formatDate(derive.rightsEnd(row)))}</td>
@@ -114,8 +133,9 @@
     if (state.lengthFilter) filters.push(`length: ${state.lengthFilter}`);
     if (state.distributorFilter) filters.push(`distributor: ${state.distributorFilter}`);
     filters.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
+    filters.push(`sorted by ${utils.sortLabel(state.sortField)} ${state.sortDirection === 'desc' ? 'descending' : 'ascending'}`);
     const sourceName = state.librarySource ? `source: ${state.librarySource.name}` : 'source: unknown';
-    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles · sorted by topic then title · ${filters.join(' · ')} · ${sourceName}`;
+    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles · ${filters.join(' · ')} · ${sourceName}`;
   }
 
   function syncSelectedRows() {
@@ -149,6 +169,8 @@
     state.secondaryTopicFilter = '';
     state.lengthFilter = '';
     state.distributorFilter = '';
+    state.sortField = 'topic';
+    state.sortDirection = 'asc';
     els.searchInput.value = '';
     els.searchFieldSelect.value = '';
     els.statusFilter.value = 'active';
@@ -159,6 +181,7 @@
     buildFilterOptions,
     applyLibraryView,
     resetFilters,
-    syncSelectedRows
+    syncSelectedRows,
+    premiumLines
   };
 })();

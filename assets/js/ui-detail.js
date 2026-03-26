@@ -138,10 +138,7 @@
   }
 
   function renderPremiums(program) {
-    const text = derive.premiumSummary(program);
-    const lines = utils.normalizeText(text)
-      ? utils.normalizeText(text).replace(/\s*;\s*/g, '\n').replace(/\s+(?=\$)/g, '\n').split(/\n+/).map((line) => utils.normalizeText(line)).filter(Boolean)
-      : [];
+    const lines = App.listUi.premiumLines(derive.premiumSummary(program)).filter((line) => line !== '—');
     els.premiumCountChip.textContent = `${lines.length || 0}`;
     els.premiumsList.innerHTML = lines.length
       ? lines.map((line) => `<article class="premium-card">${utils.escapeHtml(line)}</article>`).join('')

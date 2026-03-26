@@ -5,11 +5,12 @@
 
   async function refreshAll(options = {}) {
     if (!state.client) return;
-    els.libraryBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">Loading library…</td></tr>';
+    els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">Loading library…</td></tr>';
     try {
       await App.data.refreshRawRows();
       App.listUi.buildFilterOptions();
       App.listUi.applyLibraryView();
+      App.workspaceUi?.refreshScaffoldSummary();
       const probeStatus = App.data.getProbeStatusMessage();
       if (state.configVersionMismatch) {
         setBuildMeta(`${state.configVersionMismatch} ${probeStatus}`);
@@ -25,7 +26,7 @@
       const message = /permission denied|row-level security|schema cache/i.test(rawMessage)
         ? `${rawMessage} Run the v2 access SQL patch, then reload.`
         : rawMessage;
-      els.libraryBody.innerHTML = `<tr><td colspan="8" class="placeholder-row">${utils.escapeHtml(message)}</td></tr>`;
+      els.libraryBody.innerHTML = `<tr><td colspan="9" class="placeholder-row">${utils.escapeHtml(message)}</td></tr>`;
       els.resultSummary.textContent = 'Load failed.';
       setNotice(message, 'warn');
       if (state.configVersionMismatch) setBuildMeta(state.configVersionMismatch);
@@ -48,6 +49,12 @@
     els.lengthFilter.addEventListener('change', (event) => { state.lengthFilter = event.target.value || ''; App.listUi.applyLibraryView(); });
     els.distributorFilter.addEventListener('change', (event) => { state.distributorFilter = event.target.value || ''; App.listUi.applyLibraryView(); });
     els.statusFilter.addEventListener('change', (event) => { state.statusFilter = event.target.value || 'active'; App.listUi.applyLibraryView(); });
+    els.sortFieldSelect?.addEventListener('change', (event) => { state.sortField = event.target.value || 'topic'; App.listUi.applyLibraryView(); });
+    els.sortDirectionButton?.addEventListener('click', () => {
+      state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+      App.listUi.buildFilterOptions();
+      App.listUi.applyLibraryView();
+    });
     els.resetFiltersButton.addEventListener('click', () => { App.listUi.resetFilters(); App.listUi.applyLibraryView(); });
     els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true }); });
     els.libraryBody.addEventListener('click', (event) => {
@@ -96,10 +103,13 @@
         setNotice(error.message || 'Save failed.', 'warn');
       }
     });
+
+    App.workspaceUi?.bindEvents();
   }
 
   async function init() {
     App.auth.setRoleUi();
+    App.workspaceUi?.setWorkspace(state.activeWorkspace);
     setBuildMeta(state.configVersionMismatch || '');
     if (!App.data.validateConfig()) {
       setNotice('Fill in config.js with your Supabase URL and anon key. Until then this page is decorative.', 'warn');

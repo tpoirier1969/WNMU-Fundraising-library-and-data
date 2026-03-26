@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.7.0</title>
+  <title>WNMU Pledge Program Library v0.8.0</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.7.0">
+  <link rel="stylesheet" href="assets/styles.css?v=0.8.0">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  
-  <script defer src="assets/js/core.js?v=0.7.0"></script>
-  <script defer src="assets/js/dom.js?v=0.7.0"></script>
-  <script defer src="assets/js/data.js?v=0.7.0"></script>
-  <script defer src="assets/js/ui-list.js?v=0.7.0"></script>
-  <script defer src="assets/js/auth.js?v=0.7.0"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.7.0"></script>
-  <script defer src="assets/js/app.js?v=0.7.0"></script>
+  <script defer src="assets/js/core.js?v=0.8.0"></script>
+  <script defer src="assets/js/dom.js?v=0.8.0"></script>
+  <script defer src="assets/js/data.js?v=0.8.0"></script>
+  <script defer src="assets/js/ui-list.js?v=0.8.0"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.8.0"></script>
+  <script defer src="assets/js/auth.js?v=0.8.0"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.8.0"></script>
+  <script defer src="assets/js/app.js?v=0.8.0"></script>
 </head>
 <body>
 
@@ -47,7 +47,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.7.0</span>
+            <span class="version-pill" id="version-flag">v0.8.0</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -61,81 +61,249 @@
       </div>
     </header>
 
-    <section class="controls compact-controls">
-      <div class="filter-row">
-        <div class="filter-field narrow">
-          <label class="filter-label" for="search-field-select">Search in</label>
-          <select id="search-field-select">
-            <option value="">All fields</option>
-            <option value="title">Title</option>
-            <option value="nola_code">NOLA</option>
-            <option value="topic_primary">Topic</option>
-            <option value="topic_secondary">Secondary topic</option>
-            <option value="distributor">Distributor</option>
-            <option value="premium_summary">Premiums</option>
-          </select>
+    <section class="workspace-switcher">
+      <div class="workspace-switcher-head">
+        <div>
+          <div class="workspace-kicker">Workspaces</div>
+          <div class="workspace-current-row">
+            <h2 id="workspace-title">Library</h2>
+            <span id="workspace-status" class="workspace-status-pill">Live workspace</span>
+          </div>
         </div>
-        <div class="filter-field search-grow">
-          <label class="filter-label" for="search-input">Search text</label>
-          <input id="search-input" type="search" placeholder="Search title, NOLA, topic, distributor, description, or premiums.">
-        </div>
-        <div class="filter-field">
-          <label class="filter-label" for="topic-filter">Topic</label>
-          <select id="topic-filter"></select>
-        </div>
-        <div class="filter-field">
-          <label class="filter-label" for="secondary-topic-filter">Secondary topic</label>
-          <select id="secondary-topic-filter"></select>
-        </div>
-        <div class="filter-field narrow">
-          <label class="filter-label" for="length-filter">Length</label>
-          <select id="length-filter"></select>
-        </div>
-        <div class="filter-field">
-          <label class="filter-label" for="distributor-filter">Distributor</label>
-          <select id="distributor-filter"></select>
-        </div>
-        <div class="filter-field narrow">
-          <label class="filter-label" for="status-filter">Library state</label>
-          <select id="status-filter">
-            <option value="all">All titles</option>
-            <option value="active" selected>Active only</option>
-            <option value="archived">Archived only</option>
-          </select>
-        </div>
-        <div class="filter-actions">
-          <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
+        <div class="workspace-button-row">
+          <button type="button" class="workspace-tab active" data-workspace-button="library" aria-pressed="true">Library</button>
+          <button type="button" class="workspace-tab" data-workspace-button="versions" aria-pressed="false">Versions &amp; Timing</button>
+          <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Performance</button>
+          <button type="button" class="workspace-tab" data-workspace-button="imports" aria-pressed="false">Import Tools</button>
+          <button type="button" class="workspace-tab" data-workspace-button="reports" aria-pressed="false">Reports</button>
+          <button type="button" class="workspace-tab" data-workspace-button="admin" aria-pressed="false">Admin</button>
         </div>
       </div>
     </section>
 
-    <section class="list-panel">
-      <div class="list-meta">
-        <div>
-          <div class="list-title">Program list</div>
-          <div class="list-summary" id="result-summary">Waiting on data…</div>
+    <section class="workspace-pane" data-workspace-pane="library">
+      <section class="controls compact-controls">
+        <div class="filter-row">
+          <div class="filter-field narrow">
+            <label class="filter-label" for="search-field-select">Search in</label>
+            <select id="search-field-select">
+              <option value="">All fields</option>
+              <option value="title">Title</option>
+              <option value="nola_code">NOLA</option>
+              <option value="topic_primary">Topic</option>
+              <option value="topic_secondary">Secondary topic</option>
+              <option value="distributor">Distributor</option>
+              <option value="premium_summary">Premiums</option>
+            </select>
+          </div>
+          <div class="filter-field search-grow">
+            <label class="filter-label" for="search-input">Search text</label>
+            <input id="search-input" type="search" placeholder="Search title, NOLA, topic, distributor, description, or premiums.">
+          </div>
+          <div class="filter-field">
+            <label class="filter-label" for="topic-filter">Topic</label>
+            <select id="topic-filter"></select>
+          </div>
+          <div class="filter-field">
+            <label class="filter-label" for="secondary-topic-filter">Secondary topic</label>
+            <select id="secondary-topic-filter"></select>
+          </div>
+          <div class="filter-field narrow">
+            <label class="filter-label" for="length-filter">Length</label>
+            <select id="length-filter"></select>
+          </div>
+          <div class="filter-field">
+            <label class="filter-label" for="distributor-filter">Distributor</label>
+            <select id="distributor-filter"></select>
+          </div>
+          <div class="filter-field narrow">
+            <label class="filter-label" for="status-filter">Library state</label>
+            <select id="status-filter">
+              <option value="all">All titles</option>
+              <option value="active" selected>Active only</option>
+              <option value="archived">Archived only</option>
+            </select>
+          </div>
+          <div class="filter-actions">
+            <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="table-wrap all-rows-wrap">
-        <table class="programs-table">
-          <thead>
-            <tr>
-              <th class="col-title">Title</th>
-              <th class="col-length">Length</th>
-              <th class="col-topic">Topic</th>
-              <th class="col-distributor">Distributor</th>
-              <th class="col-premiums">Premiums</th>
-              <th class="col-rights">Rights Begin</th>
-              <th class="col-rights">Rights End</th>
-              <th class="col-airing">Last Aired</th>
-            </tr>
-          </thead>
-          <tbody id="library-body">
-            <tr><td colspan="8" class="placeholder-row">Loading library…</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <section class="list-panel">
+        <div class="list-meta">
+          <div>
+            <div class="list-title">Program list</div>
+            <div class="list-summary" id="result-summary">Waiting on data…</div>
+          </div>
+          <div class="list-sort-tools">
+            <label class="filter-label sort-label" for="sort-field-select">Sort list by</label>
+            <div class="sort-controls">
+              <select id="sort-field-select">
+                <option value="title">Title</option>
+                <option value="length">Length</option>
+                <option value="topic" selected>Topic</option>
+                <option value="rights_end">Rights End</option>
+                <option value="avg_per_fundraiser">Average $ / fundraiser</option>
+              </select>
+              <button type="button" class="ghost sort-direction-button" id="sort-direction-button">↑ Asc</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap all-rows-wrap">
+          <table class="programs-table">
+            <thead>
+              <tr>
+                <th class="col-title">Title</th>
+                <th class="col-length">Length</th>
+                <th class="col-topic">Topic</th>
+                <th class="col-distributor">Distributor</th>
+                <th class="col-avg">Avg $ / fundraiser</th>
+                <th class="col-premiums">Premiums</th>
+                <th class="col-rights">Rights Begin</th>
+                <th class="col-rights">Rights End</th>
+                <th class="col-airing">Last Aired</th>
+              </tr>
+            </thead>
+            <tbody id="library-body">
+              <tr><td colspan="9" class="placeholder-row">Loading library…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="workspace-pane hidden" data-workspace-pane="versions">
+      <section class="scaffold-grid">
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Version browser</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Future home for multiple pledge cuts, packaging variants, runtime profiles, and segment structures tied back to a title.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="versions" data-workspace-feature="Version browser">Open versions workbench</button>
+            <button type="button" class="ghost" data-workspace-launch="library" data-workspace-feature="Program detail modal">Use current detail modal</button>
+          </div>
+        </article>
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Timing editor</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Reserved for slot-by-slot runtime editing, break structures, local cut-ins, and validation checks against length buckets.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="versions" data-workspace-feature="Timing editor">Launch timing editor</button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="workspace-pane hidden" data-workspace-pane="performance">
+      <section class="scaffold-grid">
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Drive performance dashboard</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Planned home for fundraiser totals, average contribution comparisons, best-performing titles, and date-range performance cuts.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="performance" data-workspace-feature="Drive performance dashboard">Open performance dashboard</button>
+            <button type="button" class="ghost" data-workspace-launch="reports" data-workspace-feature="Performance export">Open report handoff</button>
+          </div>
+        </article>
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Premium effectiveness</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Reserved for premium bundle tracking, contribution lift by offer, and which premiums actually move the needle.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="performance" data-workspace-feature="Premium effectiveness view">Open premium effectiveness view</button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="workspace-pane hidden" data-workspace-pane="imports">
+      <section class="scaffold-grid">
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Import runner</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>This is where staged CSV imports, normalization passes, validation runs, and controlled promotion into final tables can live.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="imports" data-workspace-feature="Import runner">Start import runner</button>
+            <button type="button" class="ghost" data-workspace-launch="admin" data-workspace-feature="Import diagnostics">Open diagnostics</button>
+          </div>
+        </article>
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Rebuild / repair queue</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Reserved for catch-and-fix tasks: bad headers, stale views, malformed runtime fields, and row-level cleanup batches.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="imports" data-workspace-feature="Repair queue">Open repair queue</button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="workspace-pane hidden" data-workspace-pane="reports">
+      <section class="scaffold-grid">
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Exports &amp; printable views</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Future home for rights-ending reports, topic summaries, distributor rollups, and pledge-performance exports.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="reports" data-workspace-feature="Report builder">Open report builder</button>
+          </div>
+        </article>
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Saved report recipes</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Reserved for one-click report presets like “rights expiring soon,” “top fundraiser averages,” and “weak metadata audit.”</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="reports" data-workspace-feature="Saved report recipes">Open saved recipes</button>
+          </div>
+        </article>
+      </section>
+    </section>
+
+    <section class="workspace-pane hidden" data-workspace-pane="admin">
+      <section class="scaffold-grid scaffold-grid-admin">
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Live metadata audit</h3>
+            <span class="scaffold-pill live-audit">Live</span>
+          </div>
+          <dl class="audit-list">
+            <div><dt>Loaded titles</dt><dd id="scaffold-library-count">0</dd></div>
+            <div><dt>Missing topic</dt><dd id="scaffold-topic-gap-count">0</dd></div>
+            <div><dt>Missing distributor</dt><dd id="scaffold-distributor-gap-count">0</dd></div>
+          </dl>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="library" data-workspace-feature="Library refresh">Back to live library</button>
+          </div>
+        </article>
+        <article class="scaffold-card">
+          <div class="scaffold-card-head">
+            <h3>Permissions &amp; source health</h3>
+            <span class="scaffold-pill">Scaffold</span>
+          </div>
+          <p>Reserved for source probes, RLS/grant checks, stale-view warnings, and anything else that makes the app act drunk.</p>
+          <div class="scaffold-actions">
+            <button type="button" class="ghost" data-workspace-launch="admin" data-workspace-feature="Source health panel">Open source health panel</button>
+          </div>
+        </article>
+      </section>
     </section>
 
     <div id="detail-backdrop" class="detail-backdrop hidden"></div>
@@ -219,7 +387,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.7.0</div>
+      <div id="footer-version">v0.8.0</div>
     </footer>
   </div>
 </body>

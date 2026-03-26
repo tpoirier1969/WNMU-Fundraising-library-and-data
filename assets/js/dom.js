@@ -10,6 +10,13 @@
     roleChip: document.getElementById('role-chip'),
     versionFlag: document.getElementById('version-flag'),
     footerVersion: document.getElementById('footer-version'),
+    workspaceButtons: [...document.querySelectorAll('[data-workspace-button]')],
+    workspacePanes: [...document.querySelectorAll('[data-workspace-pane]')],
+    workspaceTitle: document.getElementById('workspace-title'),
+    workspaceStatus: document.getElementById('workspace-status'),
+    scaffoldLibraryCount: document.getElementById('scaffold-library-count'),
+    scaffoldTopicGapCount: document.getElementById('scaffold-topic-gap-count'),
+    scaffoldDistributorGapCount: document.getElementById('scaffold-distributor-gap-count'),
     searchFieldSelect: document.getElementById('search-field-select'),
     searchInput: document.getElementById('search-input'),
     topicFilter: document.getElementById('topic-filter'),
@@ -17,6 +24,8 @@
     lengthFilter: document.getElementById('length-filter'),
     distributorFilter: document.getElementById('distributor-filter'),
     statusFilter: document.getElementById('status-filter'),
+    sortFieldSelect: document.getElementById('sort-field-select'),
+    sortDirectionButton: document.getElementById('sort-direction-button'),
     resetFiltersButton: document.getElementById('reset-filters-button'),
     refreshButton: document.getElementById('refresh-button'),
     adminButton: document.getElementById('admin-button'),
@@ -69,6 +78,7 @@
   }
 
   function renderSelectOptions(select, values, currentValue, placeholder) {
+    if (!select) return;
     const escapeHtml = App.utils.escapeHtml;
     const options = [`<option value="">${escapeHtml(placeholder)}</option>`];
     values.forEach((value) => {
