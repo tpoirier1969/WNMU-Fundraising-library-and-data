@@ -94,6 +94,7 @@
         if (!canEdit()) App.detailUi.setDetailMode('view');
         else if (state.detailEditMode) App.detailUi.setDetailMode('edit');
       }
+      App.schedulingUi?.renderAll?.();
     });
   }
 

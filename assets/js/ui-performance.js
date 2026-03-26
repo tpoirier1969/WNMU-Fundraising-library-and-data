@@ -158,42 +158,139 @@
     const driveRows = Array.isArray(inputs?.driveRows) ? inputs.driveRows : [];
     const airingRows = Array.isArray(inputs?.airingRows) ? inputs.airingRows : [];
     const warnings = [...(inputs?.warnings || [])];
-    const records = [];
-    const sourceRows = driveRows.length ? driveRows : airingRows;
-    const usingDriveRows = driveRows.length > 0;
+    const events = new Map();
+    const exactAiringKeys = new Map();
+    const dateOnlyAiringKeys = new Map();
+    let matchedDriveRows = 0;
+    let unmatchedDriveRows = 0;
 
-    sourceRows.forEach((row, index) => {
+    function localDateKey(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function signatureFor(row, programRow) {
+      return utils.normalizeLookupKey(
+        utils.firstNonEmpty(
+          programRow ? derive.programId(programRow) : '',
+          row?.program_id,
+          row?.pledge_program_id,
+          programRow ? derive.nola(programRow) : '',
+          row?.nola_code,
+          row?.nola,
+          programRow ? derive.title(programRow) : '',
+          row?.program_title,
+          row?.title,
+          row?.name
+        )
+      );
+    }
+
+    function eventId(signature, dateKey, timeKey) {
+      return [signature || 'unknown', dateKey || 'unknown-date', timeKey || 'unknown-time'].join('|');
+    }
+
+    function applyMetadata(record, row, programRow, when) {
+      record.programId = record.programId || (programRow ? derive.programId(programRow) : utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, ''));
+      record.title = record.title || (programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title'));
+      record.topic = record.topic || (programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, 'Unspecified topic')) || 'Unspecified topic';
+      const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, 'Unspecified distributor');
+      record.distributor = normalizeDistributor(record.distributor || distributor);
+      record.premiums = record.premiums || premiumLabel(row, programRow);
+      record.localBreaks = record.localBreaks || localBreakLabel(row, programRow);
+      record.liveBreaks = record.liveBreaks || liveBreakLabel(row, programRow);
+      record.when = record.when || when || null;
+      record.day = dayLabel(record.when);
+      record.date = dateLabel(record.when);
+      record.time = halfHourBucket(record.when);
+      record.monthIndex = record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when.getMonth() : null;
+    }
+
+    function getOrCreate(signature, dateKey, timeKey) {
+      const key = eventId(signature, dateKey, timeKey);
+      if (!events.has(key)) {
+        events.set(key, {
+          id: key,
+          source: 'normalized_event',
+          programId: '',
+          title: 'Unknown title',
+          topic: 'Unspecified topic',
+          distributor: 'Unspecified distributor',
+          premiums: 'No premium metadata',
+          localBreaks: 'No local breaks',
+          liveBreaks: 'No live breaks',
+          amount: 0,
+          when: null,
+          day: 'Unknown day',
+          date: 'Unknown date',
+          time: 'Unknown time',
+          monthIndex: null,
+          airingRows: 0,
+          driveRows: 0,
+          estimatedOnly: false
+        });
+      }
+      return events.get(key);
+    }
+
+    airingRows.forEach((row) => {
       const programRow = matchProgramRow(row, indexes);
       const when = parseDateTimeParts(row);
-      const amount = usingDriveRows ? parseMoney(candidateValue(row, MONEY_KEYS, /(contribution|raised|gross|amount|revenue|pledge)/i)) : null;
-      const topic = programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, 'Unspecified topic');
-      const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, 'Unspecified distributor');
-      const record = {
-        id: utils.firstNonEmpty(row?.id, row?.airing_id, row?.drive_result_id, `perf-${index}`),
-        source: usingDriveRows ? 'drive_results' : 'airings',
-        programId: programRow ? derive.programId(programRow) : utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, ''),
-        title: programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title'),
-        topic: topic || 'Unspecified topic',
-        distributor: normalizeDistributor(distributor),
-        premiums: premiumLabel(row, programRow),
-        localBreaks: localBreakLabel(row, programRow),
-        liveBreaks: liveBreakLabel(row, programRow),
-        amount,
-        when,
-        day: dayLabel(when),
-        date: dateLabel(when),
-        time: halfHourBucket(when),
-        monthIndex: when instanceof Date && !Number.isNaN(when.getTime()) ? when.getMonth() : null
-      };
-      records.push(record);
+      const signature = signatureFor(row, programRow);
+      const dateKey = localDateKey(when) || utils.normalizeLookupKey(candidateValue(row, DATETIME_KEYS, /(aired_at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at)/i)) || 'unknown-date';
+      const timeKey = halfHourBucket(when);
+      const record = getOrCreate(signature, dateKey, timeKey);
+      record.airingRows += 1;
+      applyMetadata(record, row, programRow, when);
+      const exactKey = eventId(signature, dateKey, timeKey);
+      const dateOnlyKey = [signature || 'unknown', dateKey || 'unknown-date'].join('|');
+      exactAiringKeys.set(exactKey, record.id);
+      if (!dateOnlyAiringKeys.has(dateOnlyKey)) dateOnlyAiringKeys.set(dateOnlyKey, []);
+      dateOnlyAiringKeys.get(dateOnlyKey).push(record.id);
     });
 
-    if (!sourceRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
+    driveRows.forEach((row, index) => {
+      const programRow = matchProgramRow(row, indexes);
+      const when = parseDateTimeParts(row);
+      const signature = signatureFor(row, programRow);
+      const dateKey = localDateKey(when) || utils.normalizeLookupKey(candidateValue(row, DATETIME_KEYS, /(aired_at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at)/i)) || 'unknown-date';
+      const timeKey = halfHourBucket(when);
+      const exactKey = eventId(signature, dateKey, timeKey);
+      const dateOnlyKey = [signature || 'unknown', dateKey || 'unknown-date'].join('|');
+      let record = exactAiringKeys.has(exactKey) ? events.get(exactAiringKeys.get(exactKey)) : null;
+      if (!record && dateOnlyAiringKeys.has(dateOnlyKey) && dateOnlyAiringKeys.get(dateOnlyKey).length === 1) {
+        record = events.get(dateOnlyAiringKeys.get(dateOnlyKey)[0]);
+      }
+      if (!record) {
+        record = getOrCreate(signature || `drive-${index}`, dateKey, timeKey);
+        record.estimatedOnly = true;
+        unmatchedDriveRows += 1;
+      } else {
+        matchedDriveRows += 1;
+      }
+      const amount = parseMoney(candidateValue(row, MONEY_KEYS, /(contribution|raised|gross|amount|revenue|pledge)/i));
+      if (Number.isFinite(amount)) record.amount += amount;
+      record.driveRows += 1;
+      applyMetadata(record, row, programRow, when);
+    });
+
+    const records = [...events.values()].map((record) => ({
+      ...record,
+      amount: Number.isFinite(record.amount) ? record.amount : 0
+    }));
+
+    if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
 
     perf().dataShape = {
       driveRows: driveRows.length,
       airingRows: airingRows.length,
-      recordsWithMoney: records.filter((record) => Number.isFinite(record.amount)).length,
+      normalizedEvents: records.length,
+      matchedDriveRows,
+      unmatchedDriveRows,
+      recordsWithMoney: records.filter((record) => Number.isFinite(record.amount) && record.amount !== 0).length,
       recordsWithDateTime: records.filter((record) => record.when instanceof Date && !Number.isNaN(record.when.getTime())).length
     };
     perf().warnings = warnings;
@@ -308,7 +405,7 @@
 
     const grouped = [...groups.values()].map((group) => ({
       ...group,
-      avgDollars: group.moneyCount ? group.totalDollars / group.moneyCount : 0,
+      avgDollars: group.airingCount ? group.totalDollars / group.airingCount : 0,
       titleCount: group.titles.size,
       titles: [...group.titles].sort((a, b) => utils.compareText(a, b))
     }));
@@ -338,7 +435,7 @@
     const moneyCount = records.filter((record) => Number.isFinite(record.amount)).length;
     const datedCount = records.filter((record) => record.when instanceof Date && !Number.isNaN(record.when.getTime())).length;
     const stats = [
-      ['Records used', utils.formatCount(records.length)],
+      ['Events used', utils.formatCount(records.length)],
       ['Titles represented', utils.formatCount(titles.size)],
       ['Dollars represented', utils.formatMoney(dollars)],
       ['Rows with money / date', `${utils.formatCount(moneyCount)} / ${utils.formatCount(datedCount)}`]
@@ -449,7 +546,8 @@
     const end = perf().endDate ? utils.formatDate(perf().endDate) : 'Latest available';
     const month = perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month';
     const topic = perf().topicFilter || 'All topics';
-    const source = perf().dataShape.driveRows ? 'Drive-result rows (money-bearing rows drive dollar metrics)' : 'Airings rows only';
+    const shape = perf().dataShape || {};
+    const source = `Normalized event view · ${utils.formatCount(shape.airingRows || 0)} airings rows + ${utils.formatCount(shape.driveRows || 0)} drive rows`; 
     perf().criteriaSummary = [
       ['Date window', `${start} to ${end}`],
       ['Fundraiser month', month],
@@ -473,8 +571,8 @@
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
       ['Topic filter', perf().topicFilter || 'All topics', 'Uses the program topic already in the library database.'],
       ['Compare by', criterionDisplayName(), `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
-      ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is normalized to dollars per counted airing row, which is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered rows, so groups with more rows can dominate.' : 'This is the number of included rows used in the comparison.'],
-      ['Source basis', perf().dataShape.driveRows ? 'Drive-result rows first, airings as fallback' : 'Airings rows only', 'Right now the app prefers rows that contain money. That keeps the framework useful, but it is not yet the final imported-report truth set.'],
+      ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized airing-like events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized airing-like events used in the comparison.'],
+      ['Source basis', 'Normalized event layer', `The app is combining ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} airings rows with ${utils.formatCount((perf().dataShape || {}).driveRows || 0)} drive rows. Unmatched drive rows are kept as estimated events instead of being silently dropped.`],
       ['Premium metadata', 'Not actual viewer choice data', 'Premium comparisons currently mean “programs carrying premium metadata,” not which premium item viewers actually chose.'],
       ['How sturdy is this?', `${utils.formatCount(groups.length)} groups from ${utils.formatCount(records.length)} filtered rows`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
     ];
@@ -491,17 +589,18 @@
     if (!els.performanceSourceNotes) return;
     const notes = [];
     const shape = perf().dataShape || {};
-    notes.push(`Pledge Performance is reading from ${utils.formatCount(shape.driveRows || 0)} drive-result rows and ${utils.formatCount(shape.airingRows || 0)} airings rows.`);
-    notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} records include a usable date/time stamp. ${utils.formatCount(shape.recordsWithMoney || 0)} include dollars.`);
-    if (!shape.driveRows) notes.push('Because drive-result rows were not available, dollar-based metrics may be thin or empty until those rows are imported.');
+    notes.push(`Pledge Performance is normalizing ${utils.formatCount(shape.airingRows || 0)} airings rows and ${utils.formatCount(shape.driveRows || 0)} drive-result rows into ${utils.formatCount(shape.normalizedEvents || 0)} comparison events.`);
+    notes.push(`${utils.formatCount(shape.matchedDriveRows || 0)} drive rows matched an airing-like event directly. ${utils.formatCount(shape.unmatchedDriveRows || 0)} drive rows remained estimated events because no clean airing match was found.`);
+    notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} comparison events include a usable date/time stamp. ${utils.formatCount(shape.recordsWithMoney || 0)} include dollars.`);
     notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
+    notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
     if (perf().warnings?.length) notes.push(...perf().warnings);
     els.performanceSourceNotes.innerHTML = `
       <ul class="performance-note-list">
         ${notes.map((note) => `<li>${utils.escapeHtml(note)}</li>`).join('')}
       </ul>
-      <div class="performance-footnote"><strong>Filtered scope:</strong> ${utils.escapeHtml(utils.formatCount(records.length))} rows feeding ${utils.escapeHtml(utils.formatCount(groups.length))} comparison groups.</div>
+      <div class="performance-footnote"><strong>Filtered scope:</strong> ${utils.escapeHtml(utils.formatCount(records.length))} events feeding ${utils.escapeHtml(utils.formatCount(groups.length))} comparison groups.</div>
     `;
   }
 

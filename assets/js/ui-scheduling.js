@@ -139,23 +139,65 @@
     return (state.rawRows || []).find((row) => String(derive.programId(row)) === String(programId)) || null;
   }
 
-  function scheduleProgramMatches(query) {
+  function canScheduleEdit() {
+    return Boolean(App.auth?.canEdit?.());
+  }
+
+  function showScheduleModalWarning(text = '', type = 'warn') {
+    state.scheduleModalWarning = { text, type };
+    if (!els.scheduleModalWarning) return;
+    if (!text) {
+      els.scheduleModalWarning.className = 'notice-strip hidden';
+      els.scheduleModalWarning.textContent = '';
+      return;
+    }
+    els.scheduleModalWarning.textContent = text;
+    els.scheduleModalWarning.className = 'notice-strip schedule-modal-warning';
+    if (type) els.scheduleModalWarning.classList.add(type);
+  }
+
+  function populateScheduleTopicSelect() {
+    if (!els.scheduleProgramTopicSelect) return;
+    const values = [...new Set((state.rawRows || [])
+      .flatMap((row) => [derive.topicPrimary(row), derive.topicSecondary(row)])
+      .map((value) => utils.normalizeText(value))
+      .filter(Boolean))].sort((a, b) => utils.compareText(a, b));
+    els.scheduleProgramTopicSelect.innerHTML = ['<option value="">All topics</option>', ...values.map((value) => `<option value="${utils.escapeHtml(value)}">${utils.escapeHtml(value)}</option>`)].join('');
+    els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
+  }
+
+  function scheduleProgramMatches(query, topicFilter, slotDateKey) {
     const text = utils.normalizeText(query).toLowerCase();
-    if (text.length < 4) return [];
+    const topicKey = utils.normalizeLookupKey(topicFilter || '');
+    const hasTopic = Boolean(topicKey);
+    const hasSearch = text.length >= 4;
+    if (!hasTopic && !hasSearch) return [];
     return (state.rawRows || [])
       .filter((row) => derive.isActive(row))
       .filter((row) => {
+        if (!hasTopic) return true;
+        const topics = [derive.topicPrimary(row), derive.topicSecondary(row)].map((value) => utils.normalizeLookupKey(value));
+        return topics.includes(topicKey);
+      })
+      .filter((row) => {
+        if (!hasSearch) return true;
         const title = utils.normalizeText(derive.title(row)).toLowerCase();
         const nola = utils.normalizeText(derive.nola(row)).toLowerCase();
         return title.includes(text) || nola.includes(text);
       })
-      .sort((a, b) => utils.compareText(derive.title(a), derive.title(b)))
-      .slice(0, 14);
+      .map((row) => ({ row, rights: rightsCheckForDate(row, slotDateKey) }))
+      .sort((a, b) => {
+        if (a.rights.ok !== b.rights.ok) return a.rights.ok ? -1 : 1;
+        return utils.compareText(derive.title(a.row), derive.title(b.row));
+      })
+      .slice(0, hasTopic ? 60 : 20);
   }
 
   function ensureScheduleModalState(slot) {
     state.selectedScheduleSlot = slot;
     state.scheduleProgramQuery = '';
+    state.scheduleProgramTopicFilter = '';
+    showScheduleModalWarning('', '');
     const schedule = getActiveSchedule();
     const placement = slot && schedule ? findPlacementForSlot(schedule, slot.key) : null;
     state.selectedScheduleProgram = placement ? placement.programId : null;
@@ -192,7 +234,7 @@
             <span class="schedule-list-title">${utils.escapeHtml(schedule.title)}</span>
             <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} scheduled blocks</span>
           </button>
-          <button type="button" class="ghost tiny-button" data-delete-schedule-id="${utils.escapeHtml(schedule.id)}">Remove</button>
+          ${canScheduleEdit() ? `<button type="button" class="ghost tiny-button" data-delete-schedule-id="${utils.escapeHtml(schedule.id)}">Remove</button>` : ''}
         </div>
       `;
     }).join('');
@@ -201,14 +243,17 @@
 
   function renderScheduleForm() {
     if (!els.scheduleForm) return;
+    const editable = canScheduleEdit();
     els.fundraiserTitleInput.value = state.scheduleDraft.title || '';
     els.fundraiserStartInput.value = state.scheduleDraft.startDate || '';
     els.fundraiserEndInput.value = state.scheduleDraft.endDate || '';
+    [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
+    if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
 
   function placementHeight(lengthMinutes, slotHeight) {
     const slots = Math.max(1, Math.ceil((Number(lengthMinutes) || 30) / constants.DEFAULT_SLOT_MINUTES));
-    const px = Math.max(slotHeight, (slots * slotHeight) + Math.max(0, slots - 1) - 2);
+    const px = Math.max(2, (slots * slotHeight) - 2);
     return `${px}px`;
   }
 
@@ -293,22 +338,28 @@
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const placements = annotatePlacements(schedule);
 
-    const zoom = Math.min(2.8, Math.max(0.16, Number(state.scheduleView.zoom || 1)));
-    const columnWidth = Math.max(70, Math.round(122 * Math.min(1.28, 0.52 + (zoom * 0.42))));
-    const slotHeight = Math.max(8, Math.round(24 * zoom));
+    const zoom = Math.min(2.8, Math.max(0.12, Number(state.scheduleView.zoom || 1)));
+    const editable = canScheduleEdit();
+    const columnWidth = Math.max(68, Math.round(122 * Math.min(1.28, 0.5 + (zoom * 0.42))));
+    const slotHeight = Math.max(6, Math.round(24 * zoom));
+    const timeFontPx = zoom < 0.2 ? 8 : zoom < 0.34 ? 9 : zoom < 0.55 ? 10 : 11;
+    const compactTimeLabels = zoom < 0.45;
+    const ultraCompactTimeLabels = zoom < 0.22;
     els.scheduleGrid.style.setProperty('--schedule-day-width', `${columnWidth}px`);
     els.scheduleGrid.style.setProperty('--schedule-slot-height', `${slotHeight}px`);
+    els.scheduleGrid.style.setProperty('--schedule-time-font-size', `${timeFontPx}px`);
     els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin === 1440 ? 1439 : visibleEndMin)}`;
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
     const header = ['<div class="schedule-corner sticky"></div>'];
     dayKeys.forEach((dateKey) => {
-      header.push(`<div class="schedule-day-head sticky">${utils.escapeHtml(formatScheduleDay(dateKey))}</div>`);
+      header.push(`<div class="schedule-day-head sticky"><span>${utils.escapeHtml(formatScheduleDay(dateKey))}</span></div>`);
     });
 
     const body = [];
     times.forEach((minutes) => {
-      body.push(`<div class="schedule-time-label">${utils.escapeHtml(utils.minutesToLabel(minutes))}</div>`);
+      const showTimeLabel = !compactTimeLabels || (ultraCompactTimeLabels ? (minutes % 120 === 0) : (minutes % 60 === 0));
+      body.push(`<div class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}"><span>${showTimeLabel ? utils.escapeHtml(utils.minutesToLabel(minutes)) : ''}</span></div>`);
       dayKeys.forEach((dateKey) => {
         const slotKey = `${dateKey}|${minutes}`;
         const placement = placements.find((item) => item.dateKey === dateKey && Number(item.startMinutes) <= minutes && Number(item.endMinutes) > minutes) || null;
@@ -316,8 +367,8 @@
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const klass = placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '';
         body.push(`
-          <button type="button" class="schedule-slot ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
-            ${isStart ? `<span draggable="true" class="schedule-placement ${klass}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${utils.escapeHtml(utils.minutesToLabel(placement.startMinutes))} · ${utils.escapeHtml(String(placement.lengthMinutes))} min</span></span>` : ''}
+          <button type="button" class="schedule-slot ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
+            ${isStart ? `<span draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${utils.escapeHtml(utils.minutesToLabel(placement.startMinutes))} · ${utils.escapeHtml(String(placement.lengthMinutes))} min</span></span>` : ''}
           </button>
         `);
       });
@@ -403,36 +454,70 @@
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     if (!(schedule && slot)) return;
+    const editable = canScheduleEdit();
+    populateScheduleTopicSelect();
     els.scheduleSlotLabel.textContent = slotLabel(slot.dateKey, slot.minutes);
-    els.scheduleProgramSearch.value = state.scheduleProgramQuery || '';
-    const matches = scheduleProgramMatches(state.scheduleProgramQuery || '');
-    if ((state.scheduleProgramQuery || '').trim().length < 4) {
-      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Type at least 4 letters. This only schedules titles already in the database.</div>';
-    } else if (!matches.length) {
-      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">No database titles matched that search.</div>';
+    if (els.scheduleProgramSearch) {
+      els.scheduleProgramSearch.value = state.scheduleProgramQuery || '';
+      els.scheduleProgramSearch.disabled = !editable;
+    }
+    if (els.scheduleProgramTopicSelect) {
+      els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
+      els.scheduleProgramTopicSelect.disabled = !editable;
+    }
+    if (els.scheduleLiveBreakNotes) els.scheduleLiveBreakNotes.disabled = !editable;
+    const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
+    const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
+    const hasSearch = utils.normalizeText(state.scheduleProgramQuery || '').trim().length >= 4;
+
+    if (!editable) {
+      showScheduleModalWarning('Viewer mode. Sign in as admin to create, move, remove, or edit scheduled programs.', 'warn');
+    } else if (state.scheduleModalWarning?.text) {
+      showScheduleModalWarning(state.scheduleModalWarning.text, state.scheduleModalWarning.type || 'warn');
     } else {
-      els.scheduleProgramResults.innerHTML = matches.map((row) => `
-        <button type="button" class="schedule-program-match" data-program-id="${utils.escapeHtml(derive.programId(row))}">
-          <strong>${utils.escapeHtml(derive.title(row))}</strong>
-          <span>${utils.escapeHtml(derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${String(derive.runtimeMinutes(row) || derive.lengthLabel(row) || '—')} min`)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')}</span>
-        </button>
-      `).join('');
+      showScheduleModalWarning('', '');
+    }
+
+    if (!editable && !findPlacementForSlot(schedule, slot.key)) {
+      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Viewer mode. Empty slots cannot be edited until an admin signs in.</div>';
+    } else if (!hasTopic && !hasSearch) {
+      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Type at least 4 letters to match an existing title, or choose a topic to browse titles already in the database.</div>';
+    } else if (!matches.length) {
+      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">No database titles matched this topic/search combination.</div>';
+    } else {
+      els.scheduleProgramResults.innerHTML = matches.map(({ row, rights }) => {
+        const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${String(derive.runtimeMinutes(row) || derive.lengthLabel(row) || '—')} min`;
+        const rightsBegin = derive.rightsBegin(row) ? utils.formatDate(derive.rightsBegin(row)) : '—';
+        const rightsEnd = derive.rightsEnd(row) ? utils.formatDate(derive.rightsEnd(row)) : '—';
+        const topicText = derive.topicPrimary(row) || derive.topicSecondary(row) || 'No topic';
+        return `
+          <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'}" data-program-id="${utils.escapeHtml(derive.programId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" ${editable ? '' : 'disabled'}>
+            <strong>${utils.escapeHtml(derive.title(row))}</strong>
+            <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
+            <span class="schedule-program-rights">Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}</span>
+            ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}
+          </button>
+        `;
+      }).join('');
     }
 
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     if (currentPlacement) {
       els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card"><strong>${utils.escapeHtml(currentPlacement.programTitle)}</strong><div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min · ${utils.escapeHtml(currentPlacement.liveBreakNotes || 'No live-break note')}</div></div>`;
       els.scheduleLiveBreakNotes.value = currentPlacement.liveBreakNotes || '';
-      els.scheduleClearPlacementButton.disabled = false;
+      if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
     } else {
       els.scheduleSelectedPreview.innerHTML = '<div class="schedule-hint">No program assigned to this slot yet.</div>';
       els.scheduleLiveBreakNotes.value = '';
-      els.scheduleClearPlacementButton.disabled = true;
+      if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = true;
     }
-    if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.';
+    if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = editable
+      ? 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.'
+      : 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
   }
 
   async function createOrUpdateScheduleFromDraft() {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to build or edit fundraiser schedules.', 'warn'); return; }
     const startDate = els.fundraiserStartInput.value;
     const endDate = els.fundraiserEndInput.value;
     const title = (els.fundraiserTitleInput.value || '').trim();
@@ -468,6 +553,7 @@
   }
 
   async function assignProgramToSelectedSlot(programId) {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to assign programs.', 'bad'); return; }
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     const row = getProgramRowById(programId);
@@ -476,6 +562,7 @@
     if (!rightsCheck.ok) {
       setNotice(rightsCheck.reason, 'warn');
       if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = rightsCheck.reason;
+      showScheduleModalWarning(rightsCheck.reason, 'bad');
       return;
     }
     const lengthMinutes = derive.runtimeMinutes(row) || derive.lengthBucket(row) || 30;
@@ -504,6 +591,7 @@
   }
 
   async function clearSelectedPlacement() {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to remove programs.', 'bad'); return; }
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     if (!schedule || !slot) return;
@@ -518,6 +606,7 @@
   }
 
   async function updateLiveBreakNote() {
+    if (!canScheduleEdit()) return;
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     if (!schedule || !slot) return;
@@ -529,7 +618,7 @@
   }
 
   function adjustZoom(delta) {
-    state.scheduleView.zoom = Math.min(2.8, Math.max(0.16, Number((state.scheduleView.zoom + delta).toFixed(2))));
+    state.scheduleView.zoom = Math.min(2.8, Math.max(0.12, Number((state.scheduleView.zoom + delta).toFixed(2))));
     renderScheduleGrid();
   }
 
@@ -546,6 +635,7 @@
   }
 
   async function movePlacement(placementId, targetDateKey, targetMinutes) {
+    if (!canScheduleEdit()) { setNotice('Viewer mode. Sign in as admin to move scheduled programs.', 'warn'); return; }
     const schedule = getActiveSchedule();
     const placement = findPlacementById(schedule, placementId);
     const row = getProgramRowById(placement?.programId);
@@ -553,6 +643,7 @@
     const rightsCheck = rightsCheckForDate(row, targetDateKey);
     if (!rightsCheck.ok) {
       setNotice(rightsCheck.reason, 'warn');
+      showScheduleModalWarning(rightsCheck.reason, 'bad');
       return;
     }
     const slotCount = Math.max(1, Math.ceil(Number(placement.lengthMinutes || 30) / constants.DEFAULT_SLOT_MINUTES));
@@ -626,6 +717,7 @@
       openScheduleModal({ key: slot.dataset.slotKey, dateKey: slot.dataset.dateKey, minutes: Number(slot.dataset.minutes || 0) });
     });
     els.scheduleGrid?.addEventListener('dragstart', (event) => {
+      if (!canScheduleEdit()) return;
       const block = event.target.closest('[data-placement-id]');
       if (!block) return;
       state.draggedPlacementId = block.dataset.placementId;
@@ -639,6 +731,7 @@
       els.scheduleGrid.querySelectorAll('.schedule-slot.drag-target').forEach((node) => node.classList.remove('drag-target'));
     });
     els.scheduleGrid?.addEventListener('dragover', (event) => {
+      if (!canScheduleEdit()) return;
       const slot = event.target.closest('[data-slot-key]');
       if (!slot || !state.draggedPlacementId) return;
       event.preventDefault();
@@ -650,6 +743,7 @@
       if (slot) slot.classList.remove('drag-target');
     });
     els.scheduleGrid?.addEventListener('drop', (event) => {
+      if (!canScheduleEdit()) return;
       const slot = event.target.closest('[data-slot-key]');
       const placementId = state.draggedPlacementId || event.dataTransfer?.getData('text/plain');
       if (!slot || !placementId) return;
@@ -658,9 +752,16 @@
       void movePlacement(placementId, slot.dataset.dateKey, Number(slot.dataset.minutes || 0));
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
+    els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-program-id]');
       if (!btn) return;
+      const rightsOk = btn.dataset.rightsOk !== 'false';
+      const reason = btn.dataset.rightsReason || '';
+      if (!rightsOk) {
+        showScheduleModalWarning(reason || 'This title is out of rights for the selected slot.', 'bad');
+        return;
+      }
       void assignProgramToSelectedSlot(btn.dataset.programId);
     });
     els.scheduleLiveBreakNotes?.addEventListener('change', () => { void updateLiveBreakNote(); });
@@ -685,6 +786,7 @@
   }
 
   function renderAll() {
+    populateScheduleTopicSelect();
     renderScheduleList();
     renderScheduleForm();
     renderScheduleGrid();

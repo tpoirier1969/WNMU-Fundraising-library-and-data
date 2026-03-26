@@ -78,6 +78,8 @@
     scheduleProgramPicker: document.getElementById('schedule-program-picker'),
     scheduleSlotLabel: document.getElementById('schedule-slot-label'),
     scheduleProgramSearch: document.getElementById('schedule-program-search'),
+    scheduleProgramTopicSelect: document.getElementById('schedule-program-topic-select'),
+    scheduleModalWarning: document.getElementById('schedule-modal-warning'),
     scheduleProgramResults: document.getElementById('schedule-program-results'),
     scheduleSelectedPreview: document.getElementById('schedule-selected-preview'),
     scheduleLiveBreakNotes: document.getElementById('schedule-live-break-notes'),

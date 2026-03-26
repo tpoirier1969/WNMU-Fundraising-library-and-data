@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.11.1</title>
+  <title>WNMU Pledge Program Library v0.12.0</title>
   <link rel="icon" type="image/png" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="shortcut icon" href="assets/WNMU-TV-logo-head2019.png">
   <link rel="apple-touch-icon" href="assets/WNMU-TV-logo-head2019.png">
@@ -49,7 +49,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.11.1</span>
+            <span class="version-pill" id="version-flag">v0.12.0</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -282,18 +282,49 @@
         <section class="performance-toolbar-card">
           <div>
             <div class="list-title">Pledge Performance comparisons</div>
-            <div class="list-summary" id="performance-status">Open Performance to load the first comparison set.</div>
+            <div class="list-summary" id="performance-status">Open Pledge Performance to load the first comparison set.</div>
           </div>
-          <div class="performance-toolbar-grid">
+          <div class="performance-toolbar-grid expanded">
+            <label class="filter-field narrow">
+              <span class="filter-label">Start date</span>
+              <input id="performance-start-date" type="date">
+            </label>
+            <label class="filter-field narrow">
+              <span class="filter-label">End date</span>
+              <input id="performance-end-date" type="date">
+            </label>
+            <label class="filter-field narrow">
+              <span class="filter-label">Fundraiser month</span>
+              <select id="performance-month-select">
+                <option value="">All months</option>
+                <option value="0">January</option>
+                <option value="1">February</option>
+                <option value="2">March</option>
+                <option value="3">April</option>
+                <option value="4">May</option>
+                <option value="5">June</option>
+                <option value="6">July</option>
+                <option value="7">August</option>
+                <option value="8">September</option>
+                <option value="9">October</option>
+                <option value="10">November</option>
+                <option value="11">December</option>
+              </select>
+            </label>
+            <label class="filter-field narrow">
+              <span class="filter-label">Topic</span>
+              <select id="performance-topic-select"></select>
+            </label>
             <label class="filter-field narrow">
               <span class="filter-label">Compare by</span>
               <select id="performance-criterion-select">
-                <option value="day">Day</option>
+                <option value="date">Date</option>
+                <option value="day" selected>Day</option>
                 <option value="time">Time</option>
                 <option value="topic">Topic</option>
                 <option value="local_breaks">Local breaks</option>
                 <option value="live_breaks">Live breaks</option>
-                <option value="premiums">Premiums</option>
+                <option value="premiums">Premium metadata</option>
                 <option value="distributor">Distributor</option>
               </select>
             </label>
@@ -306,29 +337,47 @@
               </select>
             </label>
             <label class="filter-field narrow">
+              <span class="filter-label">Chart type</span>
+              <select id="performance-chart-type-select">
+                <option value="auto" selected>Auto</option>
+                <option value="line">Line</option>
+                <option value="bar">Bar</option>
+              </select>
+            </label>
+            <label class="filter-field narrow">
               <span class="filter-label">Show top</span>
               <select id="performance-topn-select">
                 <option value="8">8</option>
                 <option value="12" selected>12</option>
                 <option value="16">16</option>
                 <option value="24">24</option>
+                <option value="999">All</option>
               </select>
             </label>
             <label class="filter-field search-grow">
               <span class="filter-label">Label contains</span>
-              <input id="performance-filter-input" type="search" placeholder="Optional label filter, like Saturday or Music">
+              <input id="performance-filter-input" type="search" placeholder="Optional label filter, like Saturday, Music, or PBS">
             </label>
-            <div class="filter-actions filter-actions-inline">
+            <div class="filter-actions filter-actions-inline performance-actions-inline">
               <button type="button" class="ghost" id="performance-refresh-button">Refresh performance</button>
+              <button type="button" class="ghost" id="performance-export-button">Export chart (SVG)</button>
             </div>
           </div>
+        </section>
+
+        <section class="performance-card performance-criteria-card">
+          <div class="performance-card-head">
+            <h3>Current analysis criteria</h3>
+            <span class="mini-chip">Read this first</span>
+          </div>
+          <div id="performance-criteria-bar" class="performance-criteria-bar"></div>
         </section>
 
         <section class="performance-stat-grid" id="performance-stat-grid">
           <article class="performance-stat-card"><div class="performance-stat-label">Records</div><div class="performance-stat-value">—</div></article>
           <article class="performance-stat-card"><div class="performance-stat-label">Titles represented</div><div class="performance-stat-value">—</div></article>
           <article class="performance-stat-card"><div class="performance-stat-label">Dollars represented</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Money-bearing rows</div><div class="performance-stat-value">—</div></article>
+          <article class="performance-stat-card"><div class="performance-stat-label">Rows with money / date</div><div class="performance-stat-value">—</div></article>
         </section>
 
         <section class="performance-main-grid">
@@ -349,7 +398,7 @@
               <table class="programs-table performance-table">
                 <thead>
                   <tr>
-                    <th>Group</th>
+                    <th id="performance-table-group-header">Group</th>
                     <th>Airings</th>
                     <th>Total dollars</th>
                     <th>Avg dollars / airing</th>
@@ -357,11 +406,32 @@
                   </tr>
                 </thead>
                 <tbody id="performance-table-body">
-                  <tr><td colspan="5" class="placeholder-row">Open Performance to load comparison data.</td></tr>
+                  <tr><td colspan="5" class="placeholder-row">Open Pledge Performance to load comparison data.</td></tr>
                 </tbody>
               </table>
             </div>
           </article>
+        </section>
+
+        <section class="performance-card performance-explain-card">
+          <div class="performance-card-head">
+            <h3>How to read this comparison</h3>
+            <span class="mini-chip">Method</span>
+          </div>
+          <div class="table-wrap performance-explain-wrap">
+            <table class="programs-table performance-explain-table">
+              <thead>
+                <tr>
+                  <th>Setting</th>
+                  <th>Current value</th>
+                  <th>How to read it</th>
+                </tr>
+              </thead>
+              <tbody id="performance-explain-body">
+                <tr><td colspan="3" class="placeholder-row">Choose some criteria and open Pledge Performance.</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section class="performance-card performance-insights-card">
@@ -374,7 +444,7 @@
       </section>
     </section>
 
-    <div id="detail-backdrop" class="detail-backdrop hidden"></div>
+<div id="detail-backdrop" class="detail-backdrop hidden"></div>
     <section id="detail-modal" class="detail-modal hidden" aria-modal="true" role="dialog" aria-labelledby="detail-title">
       <div class="detail-modal-card">
         <div class="detail-header sticky">
@@ -468,7 +538,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.11.1</div>
+      <div id="footer-version">v0.12.0</div>
     </footer>
   </div>
 </body>
