@@ -7,11 +7,11 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.13.0',
+    APP_VERSION: 'v0.14.0',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
-    DRIVE_RESULTS_TABLE: 'pledge_program_drive_results_v2',
+    DRIVE_RESULTS_TABLE: 'pledge_program_drive_rollups_v2',
     AIRINGS_TABLE: 'pledge_program_airings_v2',
     DEFAULT_PAGE_SIZE: Number(cfg.DEFAULT_PAGE_SIZE) || 100,
     SEARCHABLE_FIELDS: new Set([

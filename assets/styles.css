@@ -1771,3 +1771,35 @@ button.primary {
     grid-template-columns: 1fr;
   }
 }
+
+
+.schedule-context-menu {
+  position: absolute;
+  z-index: 1200;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(10, 18, 28, 0.98);
+  border: 1px solid rgba(111, 196, 193, 0.28);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+}
+.schedule-context-menu.hidden { display: none; }
+.schedule-context-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #ecf5ff;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.schedule-context-menu button:hover:not(:disabled) {
+  background: rgba(111, 196, 193, 0.18);
+}
+.schedule-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -222,7 +222,7 @@
     const id = utils.normalizeLookupKey(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, row?.id));
     if (id && indexes.byId.has(id)) return indexes.byId.get(id);
     const nola = utils.normalizeLookupKey(utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola));
-    if (nola && indexes.byNola.has(nola)) return indexes.byNola.get(nola);
+    if (nola) return indexes.byNola.get(nola) || null;
     const title = utils.normalizeLookupKey(utils.firstNonEmpty(row?.title, row?.program_title, row?.name));
     if (title && indexes.byTitle.has(title)) return indexes.byTitle.get(title);
     return fuzzyTitleMatch(title, indexes.titleEntries);
@@ -696,7 +696,7 @@
     const topic = perf().topicFilter || 'All topics';
     const shape = perf().dataShape || {};
     const analysisMeta = perf().analysisMeta || {};
-    const source = `Normalized event view · ${utils.formatCount(shape.airingRows || 0)} airings rows + ${utils.formatCount(shape.driveRows || 0)} drive rows`;
+    const source = `Imported airings view · ${utils.formatCount(shape.airingRows || 0)} airings rows`;
     perf().criteriaSummary = [
       ['Date window', `${start} to ${end}`],
       ['Fundraiser month', month],
@@ -728,7 +728,7 @@
       ['Topic filter', perf().topicFilter || 'All topics', 'Checks both primary and secondary topic text from the library where available.'],
       ['Compare by', criterionDisplayName(), `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized events used in the comparison.'],
-      ['Source basis', 'Normalized event layer', `The app is combining ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} airings rows with ${utils.formatCount((perf().dataShape || {}).driveRows || 0)} drive rows. Unmatched drive rows stay in non-temporal comparisons, but temporal comparisons exclude weak unmatched rows.`],
+      ['Source basis', 'Imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows. Fundraiser totals are derived later from those same rows instead of being stored a second time.`],
       ['Temporal confidence', confidenceLabel(), meta.noTemporalSupport ? 'Day/date/time comparisons do not have enough trustworthy airing-date evidence for this filter yet.' : meta.lowConfidenceTemporal ? 'There are some temporal matches, but the sample is small enough that the result can wobble.' : 'This comparison has enough temporal support to be usable, but still read the airing count.'],
       ['Premium metadata', 'Not actual viewer choice data', 'Premium comparisons currently mean “programs carrying premium metadata,” not which premium item viewers actually chose.'],
       ['How sturdy is this?', `${utils.formatCount(records.length)} rows from ${utils.formatCount(postFilter.length)} rows after non-label filters`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
@@ -747,10 +747,9 @@
     const notes = [];
     const shape = perf().dataShape || {};
     const meta = perf().analysisMeta || {};
-    notes.push(`Pledge Performance is normalizing ${utils.formatCount(shape.airingRows || 0)} airings rows and ${utils.formatCount(shape.driveRows || 0)} drive-result rows into ${utils.formatCount(shape.normalizedEvents || 0)} comparison events.`);
-    notes.push(`${utils.formatCount(shape.matchedDriveRows || 0)} drive rows matched an airing-like event directly. ${utils.formatCount(shape.unmatchedDriveRows || 0)} drive rows remained estimated events because no clean airing match was found.`);
+    notes.push(`Pledge Performance is normalizing ${utils.formatCount(shape.airingRows || 0)} imported airings rows into ${utils.formatCount(shape.normalizedEvents || 0)} comparison events.`);
     notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} normalized events include a usable date. ${utils.formatCount(shape.recordsWithExplicitTime || 0)} include an explicit time.`);
-    notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.fuzzyProgramMatches || 0)} rows used a fuzzy title match to connect abbreviated performance rows back to library metadata.`);
+    notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.fuzzyProgramMatches || 0)} rows needed a title fallback because NOLA was missing.`);
     notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');

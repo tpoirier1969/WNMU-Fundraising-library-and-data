@@ -1,10 +1,10 @@
+
 (() => {
   const App = window.PledgeLib;
-  const { state, utils } = App;
+  const { state, utils, derive } = App;
   const { els, setNotice } = App.dom;
 
   function imp() { return state.imports; }
-
   function escape(value) { return utils.escapeHtml(utils.toDisplayText(value)); }
 
   function setStatus(text, type = '') {
@@ -21,14 +21,14 @@
   }
 
   function detectDelimiter(text) {
-    const sample = String(text || '').split(/\r?\n/).slice(0, 5).join('\n');
+    const sample = String(text || '').split(/\r?\n/).slice(0, 6).join('\n');
     const counts = [
-      { delimiter: '\t', score: (sample.match(/\t/g) || []).length },
-      { delimiter: ',', score: (sample.match(/,/g) || []).length },
-      { delimiter: ';', score: (sample.match(/;/g) || []).length },
-      { delimiter: '|', score: (sample.match(/\|/g) || []).length }
+      { delimiter: '\t', score: (sample.match(/\t/g) || []).length, label: 'TSV' },
+      { delimiter: ',', score: (sample.match(/,/g) || []).length, label: 'CSV' },
+      { delimiter: ';', score: (sample.match(/;/g) || []).length, label: 'Semicolon' },
+      { delimiter: '|', score: (sample.match(/\|/g) || []).length, label: 'Pipe' }
     ].sort((a, b) => b.score - a.score);
-    return counts[0]?.score ? counts[0].delimiter : ',';
+    return counts[0]?.score ? counts[0] : { delimiter: ',', label: 'CSV' };
   }
 
   function parseDelimited(text, delimiter) {
@@ -57,8 +57,7 @@
       if (!inQuotes && (char === '\n' || char === '\r')) {
         if (char === '\r' && next === '\n') i += 1;
         row.push(cell);
-        const meaningful = row.some((value) => utils.normalizeText(value));
-        if (meaningful) rows.push(row);
+        if (row.some((value) => utils.normalizeText(value))) rows.push(row);
         row = [];
         cell = '';
         continue;
@@ -111,7 +110,7 @@
       if (Object.prototype.hasOwnProperty.call(row, key) && !utils.isBlank(row[key])) return row[key];
     }
     if (!regex) return null;
-    for (const [key, value] of Object.entries(row)) {
+    for (const [key, value] of Object.entries(row || {})) {
       if (regex.test(key) && !utils.isBlank(value)) return value;
     }
     return null;
@@ -120,51 +119,68 @@
   function parseMoney(value) {
     if (value == null || value === '') return null;
     if (typeof value === 'number' && Number.isFinite(value)) return value;
-    const cleaned = String(value).replace(/[$,()]/g, '').replace(/\s+/g, '').trim();
+    const raw = String(value);
+    const cleaned = raw.replace(/[$,]/g, '').trim();
     if (!cleaned) return null;
-    const negative = String(value).includes('(') && String(value).includes(')');
-    const num = Number(cleaned);
+    const negative = /^\(.*\)$/.test(raw.trim());
+    const num = Number(cleaned.replace(/[()]/g, ''));
     if (!Number.isFinite(num)) return null;
     return negative ? -num : num;
   }
 
   function parseInteger(value) {
     if (value == null || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
     const num = Number(String(value).replace(/[^\d.-]/g, ''));
     return Number.isFinite(num) ? Math.trunc(num) : null;
-  }
-
-  function parseBooleanish(value) {
-    if (typeof value === 'boolean') return value;
-    const text = utils.normalizeText(value).toLowerCase();
-    if (!text) return null;
-    if (['true', 'yes', 'y', '1', 'live', 'has live breaks'].includes(text)) return true;
-    if (['false', 'no', 'n', '0', 'none', 'no live breaks'].includes(text)) return false;
-    return null;
-  }
-
-
-  function parseDateTimeish(value) {
-    const text = utils.normalizeText(value);
-    if (!text) return '';
-    const date = new Date(text);
-    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
   }
 
   function parseDateish(value) {
     const text = utils.normalizeText(value);
     if (!text) return '';
+    if (/^\d{6}$/.test(text)) {
+      const mm = text.slice(0, 2);
+      const dd = text.slice(2, 4);
+      const yy = text.slice(4, 6);
+      return `20${yy}-${mm}-${dd}`;
+    }
+    if (/^\d{8}$/.test(text)) {
+      if (text.startsWith('19') || text.startsWith('20')) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+      return `${text.slice(4, 8)}-${text.slice(0, 2)}-${text.slice(2, 4)}`;
+    }
     const date = new Date(text);
     if (Number.isNaN(date.getTime())) return '';
     return utils.dateKeyFromDate(date);
   }
 
   function parseTimeish(value) {
+    if (value == null || value === '') return '';
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const raw = String(Math.trunc(value));
+      if (raw.length <= 4) {
+        const padded = raw.padStart(4, '0');
+        return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:00`;
+      }
+    }
     const text = utils.normalizeText(value);
     if (!text) return '';
-    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return text.slice(0, 8);
-    const date = new Date(`1970-01-01T${text}`);
-    if (!Number.isNaN(date.getTime())) return text;
+    if (/^\d{3,4}$/.test(text)) {
+      const padded = text.padStart(4, '0');
+      return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:00`;
+    }
+    const twelveHour = text.match(/^(\d{1,2}):?(\d{2})\s*([ap]m)$/i);
+    if (twelveHour) {
+      let hours = Number(twelveHour[1]);
+      const minutes = twelveHour[2];
+      const suffix = twelveHour[3].toLowerCase();
+      if (suffix === 'pm' && hours < 12) hours += 12;
+      if (suffix === 'am' && hours === 12) hours = 0;
+      return `${String(hours).padStart(2, '0')}:${minutes}:00`;
+    }
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) {
+      const parts = text.split(':');
+      return `${parts[0].padStart(2, '0')}:${parts[1]}:${(parts[2] || '00').padStart(2, '0')}`;
+    }
     return '';
   }
 
@@ -172,164 +188,252 @@
     const dateKey = parseDateish(dateText);
     if (!dateKey) return '';
     const time = parseTimeish(timeText);
-    if (time) {
-      const combined = new Date(`${dateKey}T${time}`);
-      if (!Number.isNaN(combined.getTime())) return combined.toISOString();
-    }
-    const plain = new Date(`${dateKey}T12:00:00`);
-    return Number.isNaN(plain.getTime()) ? '' : plain.toISOString();
+    const stamp = time ? `${dateKey}T${time}` : `${dateKey}T12:00:00`;
+    const dt = new Date(stamp);
+    return Number.isNaN(dt.getTime()) ? '' : dt.toISOString();
   }
 
-  function guessTarget(headers = [], rows = []) {
-    const sampleKeys = headers.map(keyify);
-    const joined = sampleKeys.join(' ');
-    let driveScore = 0;
-    let airingScore = 0;
-    if (/(contribution|raised|revenue|gross|pledge|amount|total)/.test(joined)) driveScore += 5;
-    if (/(local_break|live_break|air_date|air_time|aired_at|airing)/.test(joined)) airingScore += 4;
-    if (/(drive_date|fundraiser|drive)/.test(joined)) driveScore += 3;
-    rows.slice(0, 25).forEach((row) => {
-      const mapped = mapRowKeys(row);
-      if (firstMatching(mapped, [], /(contribution|raised|revenue|gross|pledge|amount|total)/)) driveScore += 1;
-      if (firstMatching(mapped, [], /(air_date|air_time|aired_at|broadcast|slot)/)) airingScore += 1;
-    });
-    return driveScore > airingScore ? 'drive_results' : 'airings';
-  }
-
-  function baseNormalization(mapped, meta) {
-    const title = utils.normalizeText(firstMatching(mapped, ['title', 'program_title', 'program', 'show_title', 'program_name'], /(program|show|title|series)/i));
-    const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|episode_code|program_code)/i));
-    const programId = utils.normalizeText(firstMatching(mapped, ['program_id', 'pledge_program_id', 'id'], /program_id|pledge_program_id/i));
-    const rawDate = utils.normalizeText(firstMatching(mapped, ['aired_at', 'air_date', 'broadcast_date', 'date', 'drive_date'], /(air.*date|broadcast.*date|drive.*date|date$)/i));
-    const rawTime = utils.normalizeText(firstMatching(mapped, ['air_time', 'time', 'broadcast_time', 'slot_time'], /(air.*time|broadcast.*time|slot.*time|time$)/i));
-    const directDateTime = utils.normalizeText(firstMatching(mapped, ['aired_at', 'broadcast_at', 'datetime', 'date_time'], /(aired_at|broadcast_at|datetime|date_time)/i));
-    const airedAt = directDateTime ? (parseDateTimeish(directDateTime) || composeDateTime(directDateTime, '') || directDateTime) : composeDateTime(rawDate, rawTime);
-    const airDate = parseDateish(rawDate || directDateTime);
-    const airTime = parseTimeish(rawTime);
-    const localBreakCount = parseInteger(firstMatching(mapped, ['local_breaks', 'local_break_count', 'local_cutins', 'local_cutins_count'], /(local.*break|local.*cutin)/i));
-    const liveBreakFlag = parseBooleanish(firstMatching(mapped, ['live_breaks', 'live_break_flag', 'live_break_count'], /(live.*break)/i));
-    const premiumSummary = utils.normalizeText(firstMatching(mapped, ['premium_summary', 'premium_notes', 'premiums'], /(premium)/i));
+  function parseDateRangeFromFilename(fileName = '') {
+    const text = String(fileName || '');
+    const matches = [...text.matchAll(/(\d{6,8})/g)].map((entry) => entry[1]);
+    if (matches.length < 2) return { driveStartDate: '', driveEndDate: '', fundraiserLabel: '' };
+    const start = parseDateish(matches[0]);
+    const end = parseDateish(matches[1]);
+    const labelBits = [];
+    if (start) labelBits.push(utils.formatDate(start));
+    if (end) labelBits.push(utils.formatDate(end));
     return {
-      program_id: programId || null,
-      pledge_program_id: programId || null,
-      title: title || null,
-      program_title: title || null,
-      nola_code: nola || null,
-      aired_at: airedAt || null,
-      air_date: airDate || null,
-      air_time: airTime || null,
-      local_break_count: Number.isFinite(localBreakCount) ? localBreakCount : null,
-      live_break_flag: liveBreakFlag == null ? null : liveBreakFlag,
-      premium_summary: premiumSummary || null,
-      source_file_name: meta.fileName,
-      source_report_type: meta.target,
-      source_delimiter: meta.delimiterLabel,
-      import_batch_id: imp().importBatchId || '',
-      imported_by_email: state.userEmail || null,
-      raw_payload: mapped
+      driveStartDate: start,
+      driveEndDate: end,
+      fundraiserLabel: labelBits.length === 2 ? `Imported pledge ${labelBits[0]} – ${labelBits[1]}` : ''
     };
   }
 
-  function normalizeRecord(row, meta) {
-    const mapped = mapRowKeys(row);
-    const base = baseNormalization(mapped, meta);
-    if (!base.title && !base.nola_code) return null;
+  function buildLibraryNolaIndex() {
+    const rows = state.rawRows || [];
+    const byNola = new Map();
+    rows.forEach((row) => {
+      const nolaKey = utils.normalizeLookupKey(derive.nola(row));
+      if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, row);
+    });
+    return byNola;
+  }
 
-    if (meta.target === 'drive_results') {
-      const contribution = parseMoney(firstMatching(mapped, ['contribution_total', 'total_contributions', 'total_raised', 'revenue', 'gross_contributions'], /(contribution|raised|revenue|gross|amount|pledge)/i));
-      const driveDate = parseDateish(firstMatching(mapped, ['drive_date', 'air_date', 'date'], /(drive.*date|air.*date|date$)/i)) || base.air_date || null;
-      const payload = {
-        ...base,
-        drive_date: driveDate,
-        contribution_total: Number.isFinite(contribution) ? contribution : null
-      };
-      payload.row_hash = hashText(stableStringify({
-        type: meta.target,
-        file: meta.fileName,
-        title: payload.title,
-        nola: payload.nola_code,
-        drive_date: payload.drive_date,
-        aired_at: payload.aired_at,
-        contribution_total: payload.contribution_total,
-        raw: payload.raw_payload
-      }));
-      return payload;
+  function guessTarget(headers = [], rows = [], fileName = '') {
+    const sampleKeys = headers.map(keyify);
+    const joined = sampleKeys.join(' ');
+    if (/pbs_break_report|break report/i.test(fileName)) return 'airings';
+    const hasAiringShape = /(air_date|air_time|program_title|nola|dollars|pledges|program_minutes|sustainers)/.test(joined);
+    return hasAiringShape ? 'airings' : 'airings';
+  }
+
+  function normalizeAiringRow(row, meta, nolaIndex) {
+    const mapped = mapRowKeys(row);
+    const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'title', 'program', 'show_title'], /(program|show|title)/i));
+    const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|program_code|episode_code)/i));
+    if (!nola) {
+      return { row: null, warning: `Skipped one row in ${meta.fileName} because it had no NOLA.` };
     }
 
-    const payload = { ...base };
-    payload.row_hash = hashText(stableStringify({
-      type: meta.target,
-      file: meta.fileName,
-      title: payload.title,
-      nola: payload.nola_code,
-      air_date: payload.air_date,
-      air_time: payload.air_time,
-      aired_at: payload.aired_at,
-      raw: payload.raw_payload
-    }));
-    return payload;
+    const matchedProgram = nolaIndex.get(utils.normalizeLookupKey(nola)) || null;
+    const matchedLibraryTitle = matchedProgram ? derive.title(matchedProgram) : '';
+    const matchedProgramId = matchedProgram ? derive.programId(matchedProgram) : '';
+    const titleMismatch = matchedProgram && importedTitle && utils.normalizeLookupKey(importedTitle) !== utils.normalizeLookupKey(matchedLibraryTitle);
+
+    const airDateRaw = firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(air.*date|broadcast.*date|date$)/i);
+    const airTimeRaw = firstMatching(mapped, ['air_time', 'time', 'broadcast_time'], /(air.*time|broadcast.*time|time$)/i);
+    const airDate = parseDateish(airDateRaw);
+    const airTime = parseTimeish(airTimeRaw);
+    const airedAt = composeDateTime(airDateRaw, airTimeRaw);
+
+    const station = utils.normalizeText(firstMatching(mapped, ['station'], /(station)/i));
+    const dollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(dollars|contribution|revenue|gross|amount)/i));
+    const pledges = parseInteger(firstMatching(mapped, ['pledges'], /(pledges|pledge_count)/i));
+    const programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(program.*minutes|minutes)/i));
+    const sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(sustainers)/i));
+
+    const baseForHash = {
+      nola_code: nola,
+      air_date: airDate || '',
+      air_time: airTime || '',
+      dollars: dollars ?? '',
+      pledges: pledges ?? '',
+      source_file_name: meta.fileName,
+      drive_start_date: meta.driveStartDate || '',
+      drive_end_date: meta.driveEndDate || ''
+    };
+
+    return {
+      row: {
+        program_id: matchedProgramId || null,
+        pledge_program_id: matchedProgramId || null,
+        title: matchedLibraryTitle || importedTitle || null,
+        program_title: matchedLibraryTitle || importedTitle || null,
+        imported_program_title: importedTitle || null,
+        matched_library_title: matchedLibraryTitle || null,
+        nola_code: nola || null,
+        station: station || null,
+        aired_at: airedAt || null,
+        air_date: airDate || null,
+        air_time: airTime || null,
+        dollars: Number.isFinite(dollars) ? dollars : null,
+        pledge_count: Number.isFinite(pledges) ? pledges : null,
+        program_minutes: Number.isFinite(programMinutes) ? programMinutes : null,
+        sustainer_count: Number.isFinite(sustainers) ? sustainers : null,
+        fundraiser_label: meta.fundraiserLabel || null,
+        drive_start_date: meta.driveStartDate || null,
+        drive_end_date: meta.driveEndDate || null,
+        source_file_name: meta.fileName,
+        source_report_type: meta.target,
+        source_delimiter: meta.delimiterLabel,
+        import_batch_id: imp().importBatchId || '',
+        imported_by_email: state.userEmail || null,
+        match_method: matchedProgram ? 'nola' : 'unmatched_nola',
+        title_mismatch_flag: titleMismatch || false,
+        row_hash: hashText(stableStringify(baseForHash)),
+        raw_payload: mapped
+      },
+      warning: matchedProgram
+        ? (titleMismatch ? `NOLA ${nola} matched library title “${matchedLibraryTitle}” while the report carried abbreviated title “${importedTitle}”. Imported using the library title.` : '')
+        : `NOLA ${nola} from ${meta.fileName} did not match any title in the pledge library.`
+    };
   }
 
-  function delimiterLabel(delimiter) {
-    if (delimiter === '\t') return 'tab';
-    if (delimiter === ',') return 'comma';
-    if (delimiter === ';') return 'semicolon';
-    if (delimiter === '|') return 'pipe';
-    return delimiter || 'unknown';
+  function deriveRollups(airingsRows = []) {
+    const groups = new Map();
+    airingsRows.forEach((row) => {
+      const driveKey = utils.normalizeLookupKey([
+        row.fundraiser_label || '',
+        row.drive_start_date || '',
+        row.drive_end_date || '',
+        row.source_file_name || ''
+      ].join('|')) || `ungrouped|${row.source_file_name || 'file'}`;
+      const key = `${driveKey}|${utils.normalizeLookupKey(row.nola_code || row.title || 'unknown')}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          title: row.title || row.program_title || row.imported_program_title || 'Untitled program',
+          nola_code: row.nola_code || '',
+          fundraiser_label: row.fundraiser_label || row.source_file_name || 'Imported batch',
+          drive_start_date: row.drive_start_date || '',
+          drive_end_date: row.drive_end_date || '',
+          airing_count: 0,
+          total_dollars: 0,
+          total_pledges: 0,
+          total_sustainers: 0,
+          total_minutes: 0,
+          program_id: row.program_id || row.pledge_program_id || null,
+          pledge_program_id: row.pledge_program_id || row.program_id || null
+        });
+      }
+      const bucket = groups.get(key);
+      bucket.airing_count += 1;
+      bucket.total_dollars += Number(row.dollars || 0);
+      bucket.total_pledges += Number(row.pledge_count || 0);
+      bucket.total_sustainers += Number(row.sustainer_count || 0);
+      bucket.total_minutes += Number(row.program_minutes || 0);
+    });
+    return [...groups.values()].sort((a, b) => {
+      const dateA = `${a.drive_start_date}|${a.nola_code}`;
+      const dateB = `${b.drive_start_date}|${b.nola_code}`;
+      return dateA.localeCompare(dateB);
+    });
   }
 
-  async function analyzeFiles(fileList = []) {
+  async function readFileText(file) {
+    const name = String(file?.name || '').toLowerCase();
+    if (/\.(xlsx|xls)$/.test(name)) {
+      throw new Error(`Excel workbooks are still not parsed in-browser. Export the PBS Break Report tab from ${file.name} as CSV, then load that CSV here.`);
+    }
+    return file.text();
+  }
+
+  async function analyzeFiles(files = []) {
     imp().loading = true;
     imp().error = '';
-    imp().warnings = [];
+    imp().rawFiles = files;
+    imp().fileSummaries = [];
     imp().airingsRows = [];
     imp().driveRows = [];
-    imp().fileSummaries = [];
-    imp().rawFiles = [...fileList];
-    imp().importBatchId = `batch-${Date.now()}`;
-    setStatus('Analyzing report files…');
+    imp().warnings = [];
+    imp().lastAnalyzedAt = new Date().toISOString();
+    imp().lastImportResult = null;
+    imp().importBatchId = utils.makeId('import');
+    renderAll();
+    setStatus(`Analyzing ${utils.formatCount(files.length)} file${files.length === 1 ? '' : 's'}…`);
+
+    const nolaIndex = buildLibraryNolaIndex();
+
     try {
-      for (const file of fileList) {
-        const text = await file.text();
-        const delimiter = detectDelimiter(text);
-        const parsed = parseDelimited(text, delimiter);
-        const forcedTarget = imp().targetMode === 'auto' ? '' : imp().targetMode;
-        const target = forcedTarget || guessTarget(parsed.headers, parsed.records);
-        const warnings = [];
-        if (!parsed.headers.length) warnings.push('No readable headers found.');
-        if (!parsed.records.length) warnings.push('No data rows found.');
-        const normalized = parsed.records.map((row) => normalizeRecord(row, {
-          fileName: file.name,
-          target,
-          delimiterLabel: delimiterLabel(delimiter)
-        })).filter(Boolean);
-        if (!normalized.length && parsed.records.length) warnings.push('No rows survived normalization. At least title or NOLA is required.');
-        const airings = normalized.filter((row) => target === 'airings');
-        const drive = normalized.filter((row) => target === 'drive_results');
-        imp().airingsRows.push(...airings);
-        imp().driveRows.push(...drive);
-        imp().fileSummaries.push({
-          fileName: file.name,
-          delimiter: delimiterLabel(delimiter),
-          headerCount: parsed.headers.length,
-          parsedRows: parsed.records.length,
-          target,
-          normalizedRows: normalized.length,
-          warnings
-        });
-        if (warnings.length) imp().warnings.push(...warnings.map((warning) => `${file.name}: ${warning}`));
+      const allAirings = [];
+      for (const file of files) {
+        const fileWarnings = [];
+        try {
+          const text = await readFileText(file);
+          const delimiterInfo = detectDelimiter(text);
+          const parsed = parseDelimited(text, delimiterInfo.delimiter);
+          const meta = {
+            fileName: file.name,
+            target: imp().targetMode === 'auto' ? guessTarget(parsed.headers, parsed.records, file.name) : imp().targetMode,
+            delimiterLabel: delimiterInfo.label,
+            ...parseDateRangeFromFilename(file.name)
+          };
+
+          const normalized = [];
+          parsed.records.forEach((record) => {
+            const result = normalizeAiringRow(record, meta, nolaIndex);
+            if (result.warning) fileWarnings.push(result.warning);
+            if (result.row) normalized.push(result.row);
+          });
+
+          imp().fileSummaries.push({
+            fileName: file.name,
+            delimiter: delimiterInfo.label,
+            headerCount: parsed.headers.length,
+            parsedRows: parsed.records.length,
+            target: 'airings',
+            normalizedRows: normalized.length,
+            warnings: [...new Set(fileWarnings)].slice(0, 8)
+          });
+          allAirings.push(...normalized);
+        } catch (error) {
+          const message = error?.message || String(error);
+          imp().fileSummaries.push({
+            fileName: file.name,
+            delimiter: '—',
+            headerCount: 0,
+            parsedRows: 0,
+            target: 'airings',
+            normalizedRows: 0,
+            warnings: [message]
+          });
+          imp().warnings.push(message);
+        }
       }
-      imp().lastAnalyzedAt = new Date().toISOString();
-      imp().ready = true;
+
+      const deduped = new Map();
+      allAirings.forEach((row) => {
+        if (!deduped.has(row.row_hash)) deduped.set(row.row_hash, row);
+      });
+      imp().airingsRows = [...deduped.values()];
+      imp().driveRows = deriveRollups(imp().airingsRows);
+
+      const matchedCount = imp().airingsRows.filter((row) => row.match_method === 'nola').length;
+      const unmatchedCount = imp().airingsRows.length - matchedCount;
+      if (imp().airingsRows.length) {
+        imp().warnings.unshift(`NOLA matched ${utils.formatCount(matchedCount)} imported airing rows to the pledge library. ${utils.formatCount(unmatchedCount)} rows stayed unmatched.`);
+      }
+      if (imp().driveRows.length) {
+        imp().warnings.unshift(`Derived ${utils.formatCount(imp().driveRows.length)} fundraiser rollups from imported airings. No separate money rows will be stored.`);
+      }
+
       renderAll();
-      const totalRows = imp().airingsRows.length + imp().driveRows.length;
-      setStatus(`Analyzed ${utils.formatCount(imp().rawFiles.length)} file${imp().rawFiles.length === 1 ? '' : 's'} into ${utils.formatCount(totalRows)} normalized row${totalRows === 1 ? '' : 's'}.`, imp().warnings.length ? 'warn' : '');
-      setNotice(`Report importer analyzed ${utils.formatCount(totalRows)} normalized row${totalRows === 1 ? '' : 's'}.`);
+      setStatus(`Analyzed ${utils.formatCount(imp().airingsRows.length)} normalized airings rows. Derived ${utils.formatCount(imp().driveRows.length)} fundraiser rollups.`);
     } catch (error) {
       console.error(error);
-      imp().error = error?.message || 'Import analysis failed.';
-      setStatus(imp().error, 'warn');
-      setNotice(imp().error, 'warn');
+      const message = error?.message || 'Report analysis failed.';
+      imp().error = message;
+      setStatus(message, 'warn');
+      setNotice(message, 'warn');
     } finally {
       imp().loading = false;
     }
@@ -399,23 +503,22 @@
       setStatus('Direct import is admin-only.', 'warn');
       return;
     }
-    const total = imp().airingsRows.length + imp().driveRows.length;
-    if (!total) {
+    if (!imp().airingsRows.length) {
       setNotice('There is nothing to import yet.', 'warn');
       return;
     }
-    setStatus(`Importing ${utils.formatCount(total)} normalized rows to Supabase…`);
+    setStatus(`Importing ${utils.formatCount(imp().airingsRows.length)} normalized airings rows to Supabase…`);
     try {
       const summary = await App.data.importNormalizedRows({
         airingsRows: imp().airingsRows,
-        driveRows: imp().driveRows
+        driveRows: []
       });
       imp().lastImportResult = summary;
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
       renderAll();
-      setStatus(`Imported ${utils.formatCount(summary.airings.written + summary.driveResults.written)} rows into Supabase.`);
-      setNotice(`Imported airings: ${utils.formatCount(summary.airings.written)}. Drive results: ${utils.formatCount(summary.driveResults.written)}.`);
+      setStatus(`Imported ${utils.formatCount(summary.airings.written)} airings rows into Supabase. Rollups are derived, not stored twice.`);
+      setNotice(`Imported ${utils.formatCount(summary.airings.written)} airings rows. Fundraiser totals will be derived from those rows.`);
       if (state.performance?.ready) {
         await App.performanceUi?.refreshData({ silent: true });
         App.performanceUi?.renderAll();
@@ -454,16 +557,16 @@
       <div class="import-table-status-row ${item.readable ? '' : 'bad'}">
         <strong>${escape(item.tableName)}</strong>
         <div>${item.readable ? `${escape(utils.formatCount(item.count))} readable rows` : 'Unreadable right now'}</div>
-        <div>${item.error ? escape(item.error) : 'Select works. Import still depends on write policy.'}</div>
+        <div>${item.error ? escape(item.error) : (item.writable ? 'Ready for writes where applicable.' : 'Readable derived view.')}</div>
       </div>
     `).join('');
   }
 
   function renderWarnings() {
     if (!els.importWarningList) return;
-    const warnings = [...imp().warnings];
+    const warnings = [...new Set(imp().warnings.filter(Boolean))];
     if (imp().lastImportResult) {
-      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows and ${utils.formatCount(imp().lastImportResult.driveResults.written)} drive rows.`);
+      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows. Fundraiser rollups remain derived only.`);
     }
     if (!warnings.length) {
       els.importWarningList.innerHTML = '';
@@ -492,10 +595,10 @@
     `).join('');
   }
 
-  function renderPreviewRows(rows, bodyEl, columns) {
+  function renderPreviewRows(rows, bodyEl, columns, emptyMessage) {
     if (!bodyEl) return;
     if (!rows.length) {
-      bodyEl.innerHTML = `<tr><td colspan="${columns.length}" class="placeholder-row">No normalized rows yet.</td></tr>`;
+      bodyEl.innerHTML = `<tr><td colspan="${columns.length}" class="placeholder-row">${escape(emptyMessage)}</td></tr>`;
       return;
     }
     bodyEl.innerHTML = rows.slice(0, 25).map((row) => `
@@ -507,27 +610,29 @@
 
   function renderPreviews() {
     if (els.importAiringsPill) els.importAiringsPill.textContent = `${utils.formatCount(imp().airingsRows.length)} rows`;
-    if (els.importDrivePill) els.importDrivePill.textContent = `${utils.formatCount(imp().driveRows.length)} rows`;
+    if (els.importDrivePill) els.importDrivePill.textContent = `${utils.formatCount(imp().driveRows.length)} derived rows`;
+
     renderPreviewRows(imp().airingsRows, els.importAiringsBody, [
       { key: 'title' },
       { key: 'nola_code' },
       { key: 'aired_at', format: (value) => utils.formatDateTime(value, '—') },
-      { key: 'air_date' },
-      { key: 'air_time' },
-      { key: 'local_break_count' },
-      { key: 'live_break_flag', format: (value) => value == null ? '—' : (value ? 'Yes' : 'No') },
-      { key: 'premium_summary' }
-    ]);
+      { key: 'dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
+      { key: 'pledge_count' },
+      { key: 'program_minutes' },
+      { key: 'match_method' },
+      { key: 'matched_library_title' }
+    ], 'No normalized airings rows yet.');
+
     renderPreviewRows(imp().driveRows, els.importDriveBody, [
       { key: 'title' },
       { key: 'nola_code' },
-      { key: 'drive_date' },
-      { key: 'aired_at', format: (value) => utils.formatDateTime(value, '—') },
-      { key: 'contribution_total', format: (value) => value == null ? '—' : utils.formatMoney(value) },
-      { key: 'local_break_count' },
-      { key: 'live_break_flag', format: (value) => value == null ? '—' : (value ? 'Yes' : 'No') },
-      { key: 'premium_summary' }
-    ]);
+      { key: 'fundraiser_label' },
+      { key: 'drive_start_date' },
+      { key: 'drive_end_date' },
+      { key: 'total_dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
+      { key: 'total_pledges' },
+      { key: 'airing_count' }
+    ], 'No derived fundraiser rollups yet.');
   }
 
   function renderActions() {
@@ -577,7 +682,7 @@
       downloadCsv(`pledge-airings-normalized-${Date.now()}.csv`, imp().airingsRows);
     });
     els.importExportDriveButton?.addEventListener('click', () => {
-      downloadCsv(`pledge-drive-results-normalized-${Date.now()}.csv`, imp().driveRows);
+      downloadCsv(`pledge-fundraiser-rollups-derived-${Date.now()}.csv`, imp().driveRows);
     });
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
   }

@@ -390,19 +390,13 @@
 
   async function fetchPerformanceInputs() {
     const warnings = [];
-    let driveRows = [];
     let airingRows = [];
-    try {
-      driveRows = await fetchAllRows(constants.DRIVE_RESULTS_TABLE);
-    } catch (error) {
-      warnings.push(`Drive results read warning: ${error.message || error}`);
-    }
     try {
       airingRows = await fetchAllRows(constants.AIRINGS_TABLE);
     } catch (error) {
       warnings.push(`Airings read warning: ${error.message || error}`);
     }
-    return { driveRows, airingRows, warnings };
+    return { driveRows: [], airingRows, warnings };
   }
 
 
@@ -417,6 +411,7 @@
         results.push({
           tableName,
           readable: !error,
+          writable: tableName === constants.AIRINGS_TABLE,
           count: Number.isFinite(count) ? count : 0,
           error: error?.message || ''
         });
@@ -424,6 +419,7 @@
         results.push({
           tableName,
           readable: false,
+          writable: tableName === constants.AIRINGS_TABLE,
           count: 0,
           error: error?.message || String(error)
         });
@@ -454,7 +450,7 @@
   async function importNormalizedRows({ airingsRows = [], driveRows = [] } = {}) {
     const summary = {
       airings: { attempted: airingsRows.length, written: 0, mode: 'skip' },
-      driveResults: { attempted: driveRows.length, written: 0, mode: 'skip' }
+      driveResults: { attempted: 0, written: 0, mode: 'derived' }
     };
 
     const chunkSize = 250;
@@ -462,11 +458,6 @@
       const result = await writeImportChunk(constants.AIRINGS_TABLE, airingsRows.slice(index, index + chunkSize));
       summary.airings.written += result.written;
       summary.airings.mode = result.mode;
-    }
-    for (let index = 0; index < driveRows.length; index += chunkSize) {
-      const result = await writeImportChunk(constants.DRIVE_RESULTS_TABLE, driveRows.slice(index, index + chunkSize));
-      summary.driveResults.written += result.written;
-      summary.driveResults.mode = result.mode;
     }
     return summary;
   }

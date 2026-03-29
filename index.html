@@ -301,7 +301,7 @@
           <div class="performance-card-head">
             <div>
               <h3>Start importing pledge reports</h3>
-              <p class="muted">Load CSV, TSV, or delimited text exports, let the app normalize them, then export or push them into Supabase.</p>
+              <p class="muted">Load CSV, TSV, or delimited text exports, let the app normalize PBS Break Report-style airings, then export or push only the airings into Supabase. Fundraiser totals stay derived.</p>
             </div>
             <span class="mini-chip" id="import-status-pill">Starter importer</span>
           </div>
@@ -312,18 +312,18 @@
               <select id="import-target-select">
                 <option value="auto" selected>Auto-detect per file</option>
                 <option value="airings">Force airings</option>
-                <option value="drive_results">Force drive results</option>
+                <option value="drive_results">Force airings anyway (legacy label)</option>
               </select>
             </label>
             <label class="filter-field import-file-field">
               <span class="filter-label">Report files</span>
-              <input id="import-file-input" type="file" accept=".csv,.tsv,.txt,.tab,.psv,.dat" multiple>
+              <input id="import-file-input" type="file" accept=".csv,.tsv,.txt,.tab,.psv,.dat,.xls,.xlsx" multiple>
             </label>
             <div class="filter-actions filter-actions-inline import-actions-inline">
               <button type="button" class="ghost" id="import-refresh-button">Check tables</button>
               <button type="button" class="ghost" id="import-clear-button">Clear batch</button>
               <button type="button" class="ghost" id="import-export-airings-button">Export airings CSV</button>
-              <button type="button" class="ghost" id="import-export-drive-button">Export drive CSV</button>
+              <button type="button" class="ghost" id="import-export-drive-button">Export rollups CSV</button>
               <button type="button" class="primary" id="import-supabase-button">Import to Supabase</button>
             </div>
           </div>
@@ -333,7 +333,7 @@
           <article class="import-stat-card"><div class="performance-stat-label">Files loaded</div><div class="performance-stat-value">0</div></article>
           <article class="import-stat-card"><div class="performance-stat-label">Parsed rows</div><div class="performance-stat-value">0</div></article>
           <article class="import-stat-card"><div class="performance-stat-label">Airings rows</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Drive rows</div><div class="performance-stat-value">0</div></article>
+          <article class="import-stat-card"><div class="performance-stat-label">Derived rollups</div><div class="performance-stat-value">0</div></article>
         </section>
 
         <section class="performance-card import-table-status-card">
@@ -399,8 +399,8 @@
 
           <article class="performance-card">
             <div class="performance-card-head">
-              <h3>Normalized drive-results preview</h3>
-              <span class="mini-chip" id="import-drive-pill">0 rows</span>
+              <h3>Derived fundraiser rollups preview</h3>
+              <span class="mini-chip" id="import-drive-pill">0 derived rows</span>
             </div>
             <div class="table-wrap import-preview-wrap">
               <table class="programs-table import-preview-table">
@@ -408,16 +408,16 @@
                   <tr>
                     <th>Title</th>
                     <th>NOLA</th>
-                    <th>Drive date</th>
-                    <th>Aired at</th>
-                    <th>Contributions</th>
-                    <th>Local breaks</th>
-                    <th>Live breaks</th>
-                    <th>Premium</th>
+                    <th>Fundraiser</th>
+                    <th>Drive start</th>
+                    <th>Drive end</th>
+                    <th>Total dollars</th>
+                    <th>Total pledges</th>
+                    <th>Airings</th>
                   </tr>
                 </thead>
                 <tbody id="import-drive-body">
-                  <tr><td colspan="8" class="placeholder-row">No normalized drive rows yet.</td></tr>
+                  <tr><td colspan="8" class="placeholder-row">No derived fundraiser rollups yet.</td></tr>
                 </tbody>
               </table>
             </div>

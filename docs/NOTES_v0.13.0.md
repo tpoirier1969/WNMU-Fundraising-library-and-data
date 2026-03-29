@@ -1,4 +1,4 @@
-# Notes for v0.13.0
+# Notes for v0.14.0
 
 - Scheduler rights windows now appear directly in the slot picker.
 - Topic browse is available in the scheduling popup.
