@@ -136,7 +136,58 @@
   }
 
   function getProgramRowById(programId) {
-    return (state.rawRows || []).find((row) => String(derive.programId(row)) === String(programId)) || null;
+    const key = String(programId || '');
+    return [...(state.rawRows || []), ...(state.nonPledgeRows || [])]
+      .find((row) => String(derive.programId(row)) === key) || null;
+  }
+
+  function isWeekendDateKey(dateKey) {
+    const date = new Date(`${dateKey}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return false;
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  }
+
+  function hasLiveBreakFlag(placement = {}) {
+    if (placement?.liveBreakFlag === true) return true;
+    if (placement?.liveBreakFlag === false) return false;
+    return Boolean(utils.normalizeText(placement?.liveBreakNotes));
+  }
+
+  function liveBreakFlagLabel(placement = {}) {
+    return hasLiveBreakFlag(placement) ? 'Live break flagged' : 'No live-break flag';
+  }
+
+  function timingLocalCutinSummary(timings = []) {
+    if (!Array.isArray(timings) || !timings.length) return 'Local cut-ins: no break timings yet';
+    const cutins = timings
+      .map((row) => timingValue(row, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    if (!cutins.length) return 'Local cut-ins: none';
+    return `Local cut-ins: ${cutins.length} total · ${cutins.map((value) => utils.formatSeconds(value)).join(', ')}`;
+  }
+
+  function lengthMetaLabel(row = {}) {
+    const runtimeMinutes = derive.runtimeMinutes(row);
+    const runtimeClock = derive.actualRuntimeLabel(row);
+    if (runtimeMinutes && runtimeClock !== '—') return `${runtimeMinutes} min · ${runtimeClock}`;
+    if (runtimeMinutes) return `${runtimeMinutes} min`;
+    if (runtimeClock !== '—') return runtimeClock;
+    return 'Length unknown';
+  }
+
+  function ensureNonPledgeRowsLoaded() {
+    if (!state.scheduleNonPledgeMode) return;
+    if (state.nonPledgeLoadState === 'ready' || state.nonPledgeLoadState === 'loading') return;
+    App.data.refreshNonPledgeRows().then(() => {
+      if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
+    }).catch((error) => {
+      console.warn('Non-pledge library load failed.', error);
+      if (!els.scheduleProgramModal?.classList.contains('hidden')) {
+        showScheduleModalWarning(`Program Library read warning: ${error.message || error}`, 'warn');
+        renderProgramPicker();
+      }
+    });
   }
 
   function canScheduleEdit() {
@@ -153,6 +204,10 @@
       programId: placement.programId,
       programTitle: placement.programTitle,
       lengthMinutes: placement.lengthMinutes,
+      liveBreakFlag: hasLiveBreakFlag(placement),
+      isNonPledge: Boolean(placement.isNonPledge),
+      sourceName: placement.sourceName || '',
+      sourceLabel: placement.sourceLabel || '',
       liveBreakNotes: placement.liveBreakNotes || ''
     };
     return true;
@@ -173,7 +228,8 @@
 
   function populateScheduleTopicSelect() {
     if (!els.scheduleProgramTopicSelect) return;
-    const values = [...new Set((state.rawRows || [])
+    const sourceRows = state.scheduleNonPledgeMode ? (state.nonPledgeRows || []) : (state.rawRows || []);
+    const values = [...new Set((sourceRows || [])
       .flatMap((row) => [derive.topicPrimary(row), derive.topicSecondary(row)])
       .map((value) => utils.normalizeText(value))
       .filter(Boolean))].sort((a, b) => utils.compareText(a, b));
@@ -186,9 +242,11 @@
     const topicKey = utils.normalizeLookupKey(topicFilter || '');
     const hasTopic = Boolean(topicKey);
     const hasSearch = text.length >= 4;
+    const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
+    const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
     if (!hasTopic && !hasSearch) return [];
-    return (state.rawRows || [])
-      .filter((row) => derive.isActive(row))
+    return sourceRows
+      .filter((row) => usingNonPledge || derive.isActive(row))
       .filter((row) => {
         if (!hasTopic) return true;
         const topics = [derive.topicPrimary(row), derive.topicSecondary(row)].map((value) => utils.normalizeLookupKey(value));
@@ -200,12 +258,12 @@
         const nola = utils.normalizeText(derive.nola(row)).toLowerCase();
         return title.includes(text) || nola.includes(text);
       })
-      .map((row) => ({ row, rights: rightsCheckForDate(row, slotDateKey) }))
+      .map((row) => ({ row, rights: rightsCheckForDate(row, slotDateKey), isNonPledge: usingNonPledge }))
       .sort((a, b) => {
         if (a.rights.ok !== b.rights.ok) return a.rights.ok ? -1 : 1;
         return utils.compareText(derive.title(a.row), derive.title(b.row));
       })
-      .slice(0, hasTopic ? 60 : 20);
+      .slice(0, hasTopic ? 60 : 24);
   }
 
   function ensureScheduleModalState(slot) {
@@ -216,6 +274,7 @@
     const schedule = getActiveSchedule();
     const placement = slot && schedule ? findPlacementForSlot(schedule, slot.key) : null;
     state.selectedScheduleProgram = placement ? placement.programId : null;
+    state.scheduleNonPledgeMode = Boolean(placement?.isNonPledge);
   }
 
   function openScheduleModal(slot) {
@@ -311,7 +370,7 @@
     if (Number.isFinite(actSeconds)) parts.push(`Program ${utils.formatSeconds(actSeconds)}`);
     if (Number.isFinite(breakSeconds)) parts.push(`Break ${utils.formatSeconds(breakSeconds)}`);
     if (Number.isFinite(breakAt)) parts.push(`At ${utils.formatSeconds(breakAt)}`);
-    if (Number.isFinite(localCutinSeconds) && localCutinSeconds > 0) parts.push(`Local cutin ${utils.formatSeconds(localCutinSeconds)}`);
+    if (Number.isFinite(localCutinSeconds) && localCutinSeconds > 0) parts.push(`Local cut-in ${utils.formatSeconds(localCutinSeconds)}`);
     const note = utils.normalizeText(row.notes || row.description || row.segment_title || row.segment_name);
     if (note) parts.push(note);
     return parts;
@@ -355,20 +414,24 @@
 
     const zoom = Math.min(2.8, Math.max(0.12, Number(state.scheduleView.zoom || 1)));
     const editable = canScheduleEdit();
-    const columnWidth = Math.max(68, Math.round(122 * Math.min(1.28, 0.5 + (zoom * 0.42))));
+    const columnWidth = Math.max(72, Math.round(126 * Math.min(1.28, 0.54 + (zoom * 0.40))));
+    const timeColumnWidth = 96;
     const slotHeight = Math.max(6, Math.round(24 * zoom));
     const timeFontPx = zoom < 0.2 ? 8 : zoom < 0.34 ? 9 : zoom < 0.55 ? 10 : 11;
     const compactTimeLabels = zoom < 0.45;
     const ultraCompactTimeLabels = zoom < 0.22;
+    const gridTemplate = `${timeColumnWidth}px repeat(${dayKeys.length}, ${columnWidth}px)`;
+    const gridWidth = timeColumnWidth + (dayKeys.length * columnWidth);
     els.scheduleGrid.style.setProperty('--schedule-day-width', `${columnWidth}px`);
     els.scheduleGrid.style.setProperty('--schedule-slot-height', `${slotHeight}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-font-size', `${timeFontPx}px`);
+    els.scheduleGrid.style.setProperty('--schedule-time-width', `${timeColumnWidth}px`);
     els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin === 1440 ? 1439 : visibleEndMin)}`;
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
     const header = ['<div class="schedule-corner sticky"></div>'];
     dayKeys.forEach((dateKey) => {
-      header.push(`<div class="schedule-day-head sticky"><span>${utils.escapeHtml(formatScheduleDay(dateKey))}</span></div>`);
+      header.push(`<div class="schedule-day-head sticky ${isWeekendDateKey(dateKey) ? 'weekend' : ''}"><span>${utils.escapeHtml(formatScheduleDay(dateKey))}</span></div>`);
     });
 
     const body = [];
@@ -380,18 +443,24 @@
         const placement = placements.find((item) => item.dateKey === dateKey && Number(item.startMinutes) <= minutes && Number(item.endMinutes) > minutes) || null;
         const isStart = placement && Number(placement.startMinutes) === minutes;
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
-        const klass = placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '';
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : ''].filter(Boolean).join(' ');
+        const subtitleBits = [];
+        if (placement) {
+          subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
+          if (placement.isNonPledge) subtitleBits.push('non-pledge');
+          if (hasLiveBreakFlag(placement)) subtitleBits.push('live break');
+        }
         body.push(`
-          <button type="button" class="schedule-slot ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
-            ${isStart ? `<span draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${utils.escapeHtml(utils.minutesToLabel(placement.startMinutes))} · ${utils.escapeHtml(String(placement.lengthMinutes))} min</span></span>` : ''}
+          <button type="button" class="schedule-slot ${isWeekendDateKey(dateKey) ? 'weekend' : ''} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${subtitleBits.join(' · ')}</span></span>` : ''}
           </button>
         `);
       });
     });
 
     els.scheduleGrid.innerHTML = `
-      <div class="schedule-grid-head" style="grid-template-columns:88px repeat(${dayKeys.length}, minmax(var(--schedule-day-width), 1fr));">${header.join('')}</div>
-      <div class="schedule-grid-body" style="grid-template-columns:88px repeat(${dayKeys.length}, minmax(var(--schedule-day-width), 1fr));">${body.join('')}</div>
+      <div class="schedule-grid-head" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${header.join('')}</div>
+      <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}</div>
     `;
     renderScheduledProgramDetails();
   }
@@ -420,8 +489,13 @@
       els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
       return;
     }
+    const pledgePlacements = annotatePlacements(schedule).filter((placement) => !placement.isNonPledge);
+    if (!pledgePlacements.length) {
+      els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Only non-pledge markers are on this calendar right now. They stay on the calendar, but they do not appear in the pledge detail list below.</div>';
+      return;
+    }
     const grouped = new Map();
-    annotatePlacements(schedule).forEach((placement) => {
+    pledgePlacements.forEach((placement) => {
       const key = String(placement.programId || placement.programTitle || placement.id);
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(placement);
@@ -433,12 +507,21 @@
       const cache = state.scheduleDetailCache[programId];
       const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
       const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
+      const avgPerFundraiser = Number(derive.avgPerFundraiser(row) || 0) || 0;
+      const fundraiserCount = Number(row?.fundraiser_count || row?.drive_count || row?.fundraiser_total || 0) || 0;
+      const rawTotalRaised = Number(derive.totalRaised(row) || 0) || 0;
+      const computedHistoricalTotal = rawTotalRaised > 0
+        ? rawTotalRaised
+        : (avgPerFundraiser > 0 ? (fundraiserCount > 0 ? (avgPerFundraiser * fundraiserCount) : avgPerFundraiser) : 0);
+      const historicalTotalDisplay = computedHistoricalTotal > 0 ? utils.formatMoney(computedHistoricalTotal) : 'Pending report import';
+      const historicalAvgDisplay = avgPerFundraiser > 0 ? utils.formatMoney(avgPerFundraiser) : 'Pending report import';
+      const fundraiserCountDisplay = fundraiserCount > 0 ? utils.formatCount(fundraiserCount) : '—';
       const scheduledRows = occurrences
         .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
         .map((item) => `
           <label class="scheduled-occurrence-row">
             <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
-            <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}</span>
+            <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${hasLiveBreakFlag(item) ? ' · live-break' : ''}</span>
           </label>
         `).join('');
       let breakHtml = '<div class="scheduled-program-note">Loading break detail…</div>';
@@ -454,11 +537,12 @@
           </div>
           <div class="scheduled-program-line scheduled-program-line-bottom">
             <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Avg / fundraiser</span><span>${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span></div>
             <div class="scheduled-data-chunk scheduled-break-chunk"><span class="mini-label inline">Break detail</span>${breakHtml}</div>
             <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(row) || '—')}</div>
-            <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Scheduled in this fundraiser</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Fundraisers with data</span><span>${utils.escapeHtml(fundraiserCountDisplay)}</span></div>
+            <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Breaks in ProTrack</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
           </div>
         </article>
       `;
@@ -470,6 +554,11 @@
     const slot = state.selectedScheduleSlot;
     if (!(schedule && slot)) return;
     const editable = canScheduleEdit();
+    if (els.scheduleNonPledgeToggle) {
+      els.scheduleNonPledgeToggle.checked = Boolean(state.scheduleNonPledgeMode);
+      els.scheduleNonPledgeToggle.disabled = !editable;
+    }
+    if (state.scheduleNonPledgeMode) ensureNonPledgeRowsLoaded();
     populateScheduleTopicSelect();
     els.scheduleSlotLabel.textContent = slotLabel(slot.dateKey, slot.minutes);
     if (els.scheduleProgramSearch) {
@@ -480,10 +569,11 @@
       els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
       els.scheduleProgramTopicSelect.disabled = !editable;
     }
-    if (els.scheduleLiveBreakNotes) els.scheduleLiveBreakNotes.disabled = !editable;
+    if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.disabled = !editable;
     const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
     const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
     const hasSearch = utils.normalizeText(state.scheduleProgramQuery || '').trim().length >= 4;
+    const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
 
     if (!editable) {
       showScheduleModalWarning('Viewer mode. Sign in as admin to create, move, remove, or edit scheduled programs.', 'warn');
@@ -493,23 +583,29 @@
       showScheduleModalWarning('', '');
     }
 
-    if (!editable && !findPlacementForSlot(schedule, slot.key)) {
+    if (usingNonPledge && state.nonPledgeLoadState === 'loading') {
+      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Checking the WNMU Program Library for non-pledge titles…</div>';
+    } else if (usingNonPledge && state.nonPledgeLoadState === 'missing') {
+      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">No readable WNMU Program Library source was found. Add a source name in config.js if this app is pointing at the wrong table or view.</div>';
+    } else if (usingNonPledge && state.nonPledgeLoadState === 'error') {
+      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">The WNMU Program Library could not be read right now.</div>';
+    } else if (!editable && !findPlacementForSlot(schedule, slot.key)) {
       els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Viewer mode. Empty slots cannot be edited until an admin signs in.</div>';
     } else if (!hasTopic && !hasSearch) {
-      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Type at least 4 letters to match an existing title, or choose a topic to browse titles already in the database.</div>';
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Type at least 4 letters to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title, or choose a topic to browse.</div>`;
     } else if (!matches.length) {
-      els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">No database titles matched this topic/search combination.</div>';
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched this topic/search combination.</div>`;
     } else {
-      els.scheduleProgramResults.innerHTML = matches.map(({ row, rights }) => {
-        const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${String(derive.runtimeMinutes(row) || derive.lengthLabel(row) || '—')} min`;
+      els.scheduleProgramResults.innerHTML = matches.map(({ row, rights, isNonPledge }) => {
+        const runtimeLabel = lengthMetaLabel(row);
         const rightsBegin = derive.rightsBegin(row) ? utils.formatDate(derive.rightsBegin(row)) : '—';
         const rightsEnd = derive.rightsEnd(row) ? utils.formatDate(derive.rightsEnd(row)) : '—';
         const topicText = derive.topicPrimary(row) || derive.topicSecondary(row) || 'No topic';
         return `
-          <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'}" data-program-id="${utils.escapeHtml(derive.programId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" ${editable ? '' : 'disabled'}>
+          <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}" data-program-id="${utils.escapeHtml(derive.programId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" data-non-pledge="${isNonPledge ? 'true' : 'false'}" ${editable ? '' : 'disabled'}>
             <strong>${utils.escapeHtml(derive.title(row))}</strong>
             <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
-            <span class="schedule-program-rights">Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}</span>
+            <span class="schedule-program-rights">${isNonPledge ? 'Program Library marker' : `Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}`}</span>
             ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}
           </button>
         `;
@@ -518,20 +614,26 @@
 
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     if (currentPlacement) {
-      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card"><strong>${utils.escapeHtml(currentPlacement.programTitle)}</strong><div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min · ${utils.escapeHtml(currentPlacement.liveBreakNotes || 'No live-break note')}</div></div>`;
-      els.scheduleLiveBreakNotes.value = currentPlacement.liveBreakNotes || '';
+      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card"><strong>${utils.escapeHtml(currentPlacement.programTitle)}</strong><div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${currentPlacement.isNonPledge ? ' · non-pledge marker' : ''} · ${utils.escapeHtml(liveBreakFlagLabel(currentPlacement))}</div></div>`;
+      if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.checked = hasLiveBreakFlag(currentPlacement);
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;
     } else {
       els.scheduleSelectedPreview.innerHTML = '<div class="schedule-hint">No program assigned to this slot yet.</div>';
-      els.scheduleLiveBreakNotes.value = '';
+      if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.checked = false;
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = true;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
-    if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = editable
-      ? 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.'
-      : 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
+    if (els.scheduleAssignmentNote) {
+      if (!editable) {
+        els.scheduleAssignmentNote.textContent = 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
+      } else if (usingNonPledge) {
+        els.scheduleAssignmentNote.textContent = 'Non-pledge markers come from the WNMU Program Library, render in light green, and stay out of the pledge detail list below.';
+      } else {
+        els.scheduleAssignmentNote.textContent = 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.';
+      }
+    }
   }
 
   async function createOrUpdateScheduleFromDraft() {
@@ -570,12 +672,13 @@
     persistSchedules(schedule);
   }
 
-  async function assignProgramToSelectedSlot(programId) {
+  async function assignProgramToSelectedSlot(programId, options = {}) {
     if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to assign programs.', 'bad'); return; }
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     const row = getProgramRowById(programId);
     if (!schedule || !slot || !row) return;
+    const isNonPledge = Boolean(options.isNonPledge || row?.__external_source_name);
     const rightsCheck = rightsCheckForDate(row, slot.dateKey);
     if (!rightsCheck.ok) {
       setNotice(rightsCheck.reason, 'warn');
@@ -589,14 +692,18 @@
     const endMinutes = Math.min((slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES)), 1440);
     const base = {
       id: existing?.id || utils.makeId('place'),
-      programId,
+      programId: derive.programId(row),
       programTitle: derive.title(row),
       lengthMinutes,
       dateKey: slot.dateKey,
       startMinutes: slot.minutes,
       endMinutes,
       startSlotKey: slot.key,
-      liveBreakNotes: (els.scheduleLiveBreakNotes.value || '').trim(),
+      liveBreakFlag: Boolean(els.scheduleLiveBreakFlag?.checked),
+      liveBreakNotes: Boolean(els.scheduleLiveBreakFlag?.checked) ? (existing?.liveBreakNotes || '') : '',
+      isNonPledge,
+      sourceName: row?.__external_source_name || '',
+      sourceLabel: row?.__external_source_label || '',
       transferredToStation: existing?.transferredToStation || false
     };
     if (existing) Object.assign(existing, base);
@@ -623,16 +730,18 @@
     setNotice(`Removed ${target.programTitle} from ${slotLabel(target.dateKey, target.startMinutes)}.`);
   }
 
-  async function updateLiveBreakNote() {
+  async function updateLiveBreakFlag() {
     if (!canScheduleEdit()) return;
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     if (!schedule || !slot) return;
     const target = findPlacementForSlot(schedule, slot.key);
     if (!target) return;
-    target.liveBreakNotes = (els.scheduleLiveBreakNotes.value || '').trim();
+    target.liveBreakFlag = Boolean(els.scheduleLiveBreakFlag?.checked);
+    if (!target.liveBreakFlag) target.liveBreakNotes = '';
     await persistSchedules(schedule);
     renderScheduleGrid();
+    renderProgramPicker();
   }
 
   function adjustZoom(delta) {
@@ -723,7 +832,11 @@
       endMinutes,
       startSlotKey: slot.key,
       lengthMinutes,
-      liveBreakNotes: clip.liveBreakNotes || ''
+      liveBreakFlag: Boolean(clip.liveBreakFlag),
+      liveBreakNotes: Boolean(clip.liveBreakFlag) ? (clip.liveBreakNotes || '') : '',
+      isNonPledge: Boolean(clip.isNonPledge || row?.__external_source_name),
+      sourceName: clip.sourceName || row?.__external_source_name || '',
+      sourceLabel: clip.sourceLabel || row?.__external_source_label || ''
     });
     await persistSchedules(schedule);
     renderScheduleGrid();
@@ -734,7 +847,26 @@
     return true;
   }
 
+  async function openPlacementDetailFromContext(slot, editMode = true) {
+    const schedule = getActiveSchedule();
+    const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
+    if (!placement || placement.isNonPledge) return false;
+    await App.detailUi.loadProgramDetail(placement.programId, { preserveMode: editMode && canScheduleEdit() });
+    if (editMode && canScheduleEdit()) App.detailUi.setDetailMode('edit');
+    return true;
+  }
 
+  async function deletePlacementFromContext(slot) {
+    if (!canScheduleEdit()) return false;
+    const schedule = getActiveSchedule();
+    const target = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
+    if (!schedule || !target) return false;
+    schedule.placements = schedule.placements.filter((item) => item.id !== target.id);
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    setNotice(`Removed ${target.programTitle} from ${slotLabel(target.dateKey, target.startMinutes)}.`);
+    return true;
+  }
 
   function scheduleSlotPayloadFromElement(target) {
     if (!target) return null;
@@ -753,7 +885,12 @@
     menu = document.createElement('div');
     menu.id = 'schedule-context-menu';
     menu.className = 'schedule-context-menu hidden';
-    menu.innerHTML = '<button type="button" data-action="copy">Copy program</button><button type="button" data-action="paste">Paste copied program here</button>';
+    menu.innerHTML = [
+      '<button type="button" data-action="copy">Copy program</button>',
+      '<button type="button" data-action="paste">Paste copied program here</button>',
+      '<button type="button" data-action="detail">Open details / edit</button>',
+      '<button type="button" class="destructive" data-action="delete">Delete scheduled program</button>'
+    ].join('');
     document.body.appendChild(menu);
     menu.addEventListener('click', (event) => {
       const button = event.target.closest('[data-action]');
@@ -765,6 +902,8 @@
       state.selectedScheduleSlot = slot;
       if (action === 'copy') copySelectedPlacement(false);
       if (action === 'paste') void pasteClipboardToSelectedSlot(false);
+      if (action === 'detail') void openPlacementDetailFromContext(slot, true);
+      if (action === 'delete') void deletePlacementFromContext(slot);
     });
     return menu;
   }
@@ -789,14 +928,18 @@
     const menu = ensureScheduleContextMenu();
     const copyButton = menu.querySelector('[data-action="copy"]');
     const pasteButton = menu.querySelector('[data-action="paste"]');
+    const detailButton = menu.querySelector('[data-action="detail"]');
+    const deleteButton = menu.querySelector('[data-action="delete"]');
     if (copyButton) copyButton.disabled = !placement;
     if (pasteButton) pasteButton.disabled = !hasScheduleClipboard();
+    if (detailButton) detailButton.disabled = !placement || Boolean(placement?.isNonPledge);
+    if (deleteButton) deleteButton.disabled = !placement;
     menu.classList.remove('hidden');
     menu.style.left = `${event.pageX}px`;
     menu.style.top = `${event.pageY}px`;
   }
 
-  function exportScheduleView() {
+  async function exportScheduleView() {
     const schedule = getActiveSchedule();
     if (!schedule) return;
     const rows = annotatePlacements(schedule);
@@ -806,13 +949,30 @@
       byDay.get(item.dateKey).push(item);
     });
     const lines = [`${schedule.title}`, ''];
-    [...byDay.entries()].forEach(([dateKey, items]) => {
+    for (const [dateKey, items] of [...byDay.entries()]) {
       lines.push(formatScheduleDay(dateKey));
-      items.sort((a, b) => a.startMinutes - b.startMinutes).forEach((item) => {
-        lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${item.liveBreakNotes ? ` | Note: ${item.liveBreakNotes}` : ''}`);
-      });
+      for (const item of items.sort((a, b) => a.startMinutes - b.startMinutes)) {
+        const markerBits = [];
+        if (item.isNonPledge) markerBits.push('non-pledge marker');
+        if (hasLiveBreakFlag(item)) markerBits.push('live-break');
+        lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${markerBits.length ? ` | ${markerBits.join(' · ')}` : ''}`);
+        let cutinLine = 'Local cut-ins: no break timings yet';
+        if (!item.isNonPledge && item.programId) {
+          let cache = state.scheduleDetailCache[item.programId];
+          if (!cache?.loaded && !cache?.loading && state.client) {
+            try {
+              const detail = await App.data.fetchProgramDetail(item.programId);
+              cache = state.scheduleDetailCache[item.programId] = { loading: false, loaded: true, detail };
+            } catch (error) {
+              cache = state.scheduleDetailCache[item.programId] = { loading: false, loaded: true, error };
+            }
+          }
+          if (cache?.detail?.timings) cutinLine = timingLocalCutinSummary(cache.detail.timings);
+        }
+        lines.push(`  ${cutinLine}`);
+      }
       lines.push('');
-    });
+    }
     const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -897,6 +1057,7 @@
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
+    els.scheduleNonPledgeToggle?.addEventListener('change', (event) => { state.scheduleNonPledgeMode = Boolean(event.target.checked); state.scheduleProgramTopicFilter = ''; renderProgramPicker(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-program-id]');
       if (!btn) return;
@@ -906,9 +1067,9 @@
         showScheduleModalWarning(reason || 'This title is out of rights for the selected slot.', 'bad');
         return;
       }
-      void assignProgramToSelectedSlot(btn.dataset.programId);
+      void assignProgramToSelectedSlot(btn.dataset.programId, { isNonPledge: btn.dataset.nonPledge === 'true' });
     });
-    els.scheduleLiveBreakNotes?.addEventListener('change', () => { void updateLiveBreakNote(); });
+    els.scheduleLiveBreakFlag?.addEventListener('change', () => { void updateLiveBreakFlag(); });
     els.scheduleClearPlacementButton?.addEventListener('click', () => { void clearSelectedPlacement(); });
     els.scheduleZoomInButton?.addEventListener('click', () => adjustZoom(0.15));
     els.scheduleZoomOutButton?.addEventListener('click', () => adjustZoom(-0.15));
@@ -916,7 +1077,7 @@
     els.scheduleStartLaterButton?.addEventListener('click', () => adjustRange('start', 1));
     els.scheduleEndEarlierButton?.addEventListener('click', () => adjustRange('end', -1));
     els.scheduleEndLaterButton?.addEventListener('click', () => adjustRange('end', 1));
-    els.scheduleExportButton?.addEventListener('click', exportScheduleView);
+    els.scheduleExportButton?.addEventListener('click', () => { void exportScheduleView(); });
     els.scheduleProgramDetails?.addEventListener('change', (event) => {
       const checkbox = event.target.closest('[data-transfer-placement-id]');
       if (!checkbox) return;

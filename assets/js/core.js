@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.15.0',
+    APP_VERSION: 'v0.17.0',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -58,6 +58,20 @@ window.PledgeLib = window.PledgeLib || {};
     ],
     SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV2',
     SCHEDULES_TABLE: 'pledge_fundraiser_schedules',
+    NON_PLEDGE_SOURCE_CANDIDATES: (() => {
+      const raw = cfg.NON_PLEDGE_SOURCE_CANDIDATES;
+      if (Array.isArray(raw) && raw.length) {
+        return raw.map((entry) => (typeof entry === 'string'
+          ? { name: entry, label: entry }
+          : { name: entry?.name || '', label: entry?.label || entry?.name || '' })).filter((entry) => entry.name);
+      }
+      return [
+        { name: 'program_library_summary_v2', label: 'Program Library summary' },
+        { name: 'wnmu_program_library_summary_v2', label: 'WNMU Program Library summary' },
+        { name: 'program_library_v2', label: 'Program Library table' },
+        { name: 'programs_v2', label: 'Programs table' }
+      ];
+    })(),
     DEFAULT_DAY_START_HOUR: 6,
     DEFAULT_DAY_END_HOUR: 24,
     MIN_VISIBLE_HOUR: 0,
@@ -139,9 +153,14 @@ window.PledgeLib = window.PledgeLib || {};
     selectedScheduleProgram: null,
     scheduleProgramQuery: '',
     scheduleProgramTopicFilter: '',
+    scheduleNonPledgeMode: false,
     scheduleModalWarning: { text: '', type: '' },
     scheduleStoreMode: 'local',
     scheduleStoreReady: false,
+    nonPledgeRows: [],
+    nonPledgeSource: null,
+    nonPledgeLoadState: 'idle',
+    nonPledgeLoadPromise: null,
     scheduleDetailCache: {},
     scheduleClipboard: null,
     draggedPlacementId: '',
@@ -432,7 +451,7 @@ window.PledgeLib = window.PledgeLib || {};
 
   const derive = {
     programId(row) {
-      return utils.firstNonEmpty(row?.id, row?.program_id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '';
+      return utils.firstNonEmpty(row?.__synthetic_program_id, row?.id, row?.program_id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '';
     },
 
     title(row) {

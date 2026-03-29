@@ -87,6 +87,51 @@
     throw new Error(message || 'Neither the summary view nor the base table could be read.');
   }
 
+  async function chooseOptionalSource(candidates = []) {
+    const probes = [];
+    for (const candidate of candidates) {
+      try {
+        probes.push(await probeSource(candidate));
+      } catch (error) {
+        probes.push({ ...candidate, okay: false, error, count: 0, rows: [] });
+      }
+    }
+    return probes.find((probe) => probe.okay && probe.count >= 0) || null;
+  }
+
+  async function refreshNonPledgeRows(force = false) {
+    if (!force && state.nonPledgeLoadState === 'ready') return state.nonPledgeRows;
+    if (!force && state.nonPledgeLoadState === 'loading' && state.nonPledgeLoadPromise) return state.nonPledgeLoadPromise;
+
+    state.nonPledgeLoadState = 'loading';
+    state.nonPledgeLoadPromise = (async () => {
+      const source = await chooseOptionalSource(constants.NON_PLEDGE_SOURCE_CANDIDATES || []);
+      if (!source) {
+        state.nonPledgeRows = [];
+        state.nonPledgeSource = null;
+        state.nonPledgeLoadState = 'missing';
+        return [];
+      }
+      const rows = await fetchAllRows(source.name);
+      state.nonPledgeSource = source;
+      state.nonPledgeRows = rows.map((row, index) => ({
+        ...row,
+        __external_source_name: source.name,
+        __external_source_label: source.label || source.name,
+        __synthetic_program_id: `nonpledge:${source.name}:${utils.normalizeLookupKey(derive.programId(row) || derive.title(row) || index) || index}`
+      }));
+      state.nonPledgeLoadState = 'ready';
+      return state.nonPledgeRows;
+    })().catch((error) => {
+      state.nonPledgeRows = [];
+      state.nonPledgeSource = null;
+      state.nonPledgeLoadState = 'error';
+      throw error;
+    });
+
+    return state.nonPledgeLoadPromise;
+  }
+
   function buildBaseIndexes(baseRows = []) {
     const byId = new Map();
     const byNola = new Map();
@@ -479,6 +524,7 @@
     buildBaseIndexes,
     matchBaseRow,
     probeScheduleStore,
+    refreshNonPledgeRows,
     fetchSchedulesRemote,
     upsertScheduleRemote,
     deleteScheduleRemote,
