@@ -1,16 +1,17 @@
-
 (() => {
   const App = window.PledgeLib;
   const { state, utils, derive } = App;
   const { els, setNotice, renderSelectOptions } = App.dom;
 
-  const DATETIME_KEYS = ['aired_at', 'air_datetime', 'air_date', 'drive_date', 'broadcast_at', 'scheduled_at', 'date_time', 'datetime', 'airing_at'];
-  const TIME_ONLY_KEYS = ['air_time', 'time_of_day', 'scheduled_time', 'slot_time', 'airtime'];
+  const DATETIME_KEYS = ['aired_at', 'air_datetime', 'air_date', 'drive_date', 'broadcast_at', 'scheduled_at', 'date_time', 'datetime', 'airing_at', 'airing_date'];
+  const TIME_ONLY_KEYS = ['air_time', 'time_of_day', 'scheduled_time', 'slot_time', 'airtime', 'broadcast_time'];
   const MONEY_KEYS = ['contribution_total', 'total_contributions', 'total_raised', 'gross_contributions', 'amount_raised', 'revenue', 'pledge_total', 'contributions'];
   const LOCAL_BREAK_KEYS = ['local_breaks', 'local_break_count', 'local_cutins_count', 'local_cutin_count', 'local_cutins', 'legacy_has_local_cutins_raw'];
   const LIVE_BREAK_KEYS = ['live_breaks', 'live_break_count', 'live_break_flag', 'live_break_notes', 'live_break_note'];
   const PREMIUM_KEYS = ['premium_summary', 'premiums', 'premium_notes', 'premium_offer', 'premium_description'];
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const DAY_ORDER = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time']);
 
   function perf() { return state.performance; }
 
@@ -52,44 +53,109 @@
     const text = utils.normalizeText(value).toLowerCase();
     if (!text) return null;
     if (['true', 'yes', 'y', '1', 'live', 'has live breaks'].includes(text)) return true;
-    if (['false', 'no', 'n', '0', 'none'].includes(text)) return false;
+    if (['false', 'no', 'n', '0', 'none', 'no local breaks', 'no live breaks'].includes(text)) return false;
     return null;
   }
 
-  function parseDateTimeParts(row) {
-    const rawDateTime = candidateValue(row, DATETIME_KEYS, /(aired_at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at)/i);
-    const rawTimeOnly = candidateValue(row, TIME_ONLY_KEYS, /(air_?time|slot_?time|scheduled_?time|time_?of_?day|airtime)/i);
+  function parseTemporal(row) {
+    const rawDateTime = candidateValue(row, DATETIME_KEYS, /(aired_?at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at|airing_?date)/i);
+    const rawTimeOnly = candidateValue(row, TIME_ONLY_KEYS, /(air_?time|slot_?time|scheduled_?time|time_?of_?day|airtime|broadcast_?time)/i);
+    const out = {
+      when: null,
+      hasDate: false,
+      hasExplicitTime: false,
+      rawDateText: '',
+      rawTimeText: ''
+    };
+
     if (!utils.isBlank(rawDateTime)) {
       const text = String(rawDateTime).trim();
-      const date = new Date(text);
-      if (!Number.isNaN(date.getTime())) return date;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(text) && !utils.isBlank(rawTimeOnly)) {
-        const merged = new Date(`${text}T${String(rawTimeOnly).trim()}`);
-        if (!Number.isNaN(merged.getTime())) return merged;
+      out.rawDateText = text;
+      const hasExplicitTime = /\d{1,2}:\d{2}/.test(text) || /T\d{2}:\d{2}/i.test(text);
+      const parsed = new Date(text);
+      if (!Number.isNaN(parsed.getTime())) {
+        out.when = parsed;
+        out.hasDate = true;
+        out.hasExplicitTime = hasExplicitTime;
+        return out;
       }
       if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-        const merged = new Date(`${text}T12:00:00`);
-        if (!Number.isNaN(merged.getTime())) return merged;
+        out.hasDate = true;
+        if (!utils.isBlank(rawTimeOnly)) {
+          const timeText = String(rawTimeOnly).trim();
+          out.rawTimeText = timeText;
+          const merged = new Date(`${text}T${timeText}`);
+          if (!Number.isNaN(merged.getTime())) {
+            out.when = merged;
+            out.hasExplicitTime = true;
+            return out;
+          }
+        }
+        const midday = new Date(`${text}T12:00:00`);
+        if (!Number.isNaN(midday.getTime())) {
+          out.when = midday;
+          out.hasExplicitTime = false;
+          return out;
+        }
       }
     }
-    return null;
+
+    if (utils.isBlank(rawDateTime) && !utils.isBlank(rawTimeOnly)) {
+      out.rawTimeText = String(rawTimeOnly).trim();
+    }
+    return out;
   }
 
-  function halfHourBucket(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown time';
-    const minutes = (date.getHours() * 60) + date.getMinutes();
+  function timeBucketLabel(record) {
+    if (!record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown time';
+    const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
     const bucketMinutes = Math.floor(minutes / 30) * 30;
     return utils.minutesToLabel(bucketMinutes);
   }
 
-  function dayLabel(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown day';
-    return date.toLocaleDateString(undefined, { weekday: 'long' });
+  function dayLabel(record) {
+    if (!record?.hasDate || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown day';
+    return record.when.toLocaleDateString(undefined, { weekday: 'long' });
   }
 
-  function dateLabel(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown date';
-    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  function dateLabel(record) {
+    if (!record?.hasDate || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown date';
+    return record.when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function splitTopicTokens(...values) {
+    const tokens = [];
+    values.flat().forEach((value) => {
+      const text = utils.normalizeText(value);
+      if (!text) return;
+      text
+        .split(/[;|/]+/)
+        .flatMap((part) => part.split(/,(?=\s*[A-Z]|\s*[a-z])/))
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .forEach((part) => tokens.push(part));
+    });
+    const seen = new Set();
+    return tokens.filter((token) => {
+      const key = utils.normalizeLookupKey(token);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function topicDisplayFromTokens(tokens = []) {
+    if (!tokens.length) return 'Unspecified topic';
+    return tokens.join(' · ');
+  }
+
+  function topicMatches(record, filterValue) {
+    const key = utils.normalizeLookupKey(filterValue);
+    if (!key) return true;
+    const tokenKeys = (record.topicTokens || []).map((token) => utils.normalizeLookupKey(token));
+    if (tokenKeys.some((token) => token === key || token.includes(key) || key.includes(token))) return true;
+    const full = utils.normalizeLookupKey(record.topicDisplay || record.topic || '');
+    return full.includes(key);
   }
 
   function premiumLabel(row, programRow) {
@@ -124,7 +190,7 @@
     const key = utils.normalizeLookupKey(raw);
     if (!key) return 'Unspecified distributor';
     if (['pbs', 'pbs distribution', 'public broadcasting service', 'pbs dist'].includes(key)) return 'PBS';
-    if (key === 'eps') return 'EPS';
+    if (['eps', 'educational programming services'].includes(key)) return 'EPS';
     return raw;
   }
 
@@ -132,6 +198,7 @@
     const byId = new Map();
     const byNola = new Map();
     const byTitle = new Map();
+    const titleEntries = [];
     (rows || []).forEach((row) => {
       const id = utils.normalizeLookupKey(derive.programId(row));
       const nola = utils.normalizeLookupKey(derive.nola(row));
@@ -139,8 +206,16 @@
       if (id && !byId.has(id)) byId.set(id, row);
       if (nola && !byNola.has(nola)) byNola.set(nola, row);
       if (title && !byTitle.has(title)) byTitle.set(title, row);
+      if (title) titleEntries.push({ key: title, row });
     });
-    return { byId, byNola, byTitle };
+    return { byId, byNola, byTitle, titleEntries };
+  }
+
+  function fuzzyTitleMatch(titleKey, titleEntries) {
+    if (!titleKey || titleKey.length < 6) return null;
+    const matches = titleEntries.filter((entry) => entry.key.includes(titleKey) || titleKey.includes(entry.key));
+    if (matches.length === 1) return matches[0].row;
+    return null;
   }
 
   function matchProgramRow(row, indexes) {
@@ -150,7 +225,7 @@
     if (nola && indexes.byNola.has(nola)) return indexes.byNola.get(nola);
     const title = utils.normalizeLookupKey(utils.firstNonEmpty(row?.title, row?.program_title, row?.name));
     if (title && indexes.byTitle.has(title)) return indexes.byTitle.get(title);
-    return null;
+    return fuzzyTitleMatch(title, indexes.titleEntries);
   }
 
   function buildPerformanceRecords(inputs) {
@@ -163,6 +238,7 @@
     const dateOnlyAiringKeys = new Map();
     let matchedDriveRows = 0;
     let unmatchedDriveRows = 0;
+    let fuzzyProgramMatches = 0;
 
     function localDateKey(date) {
       if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
@@ -193,71 +269,89 @@
       return [signature || 'unknown', dateKey || 'unknown-date', timeKey || 'unknown-time'].join('|');
     }
 
-    function applyMetadata(record, row, programRow, when) {
-      record.programId = record.programId || (programRow ? derive.programId(programRow) : utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, ''));
-      record.title = record.title || (programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title'));
-      record.topic = record.topic || (programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, 'Unspecified topic')) || 'Unspecified topic';
-      const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, 'Unspecified distributor');
-      record.distributor = normalizeDistributor(record.distributor || distributor);
-      record.premiums = record.premiums || premiumLabel(row, programRow);
-      record.localBreaks = record.localBreaks || localBreakLabel(row, programRow);
-      record.liveBreaks = record.liveBreaks || liveBreakLabel(row, programRow);
-      record.when = record.when || when || null;
-      record.day = dayLabel(record.when);
-      record.date = dateLabel(record.when);
-      record.time = halfHourBucket(record.when);
-      record.monthIndex = record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when.getMonth() : null;
-    }
-
     function getOrCreate(signature, dateKey, timeKey) {
-      const key = eventId(signature, dateKey, timeKey);
-      if (!events.has(key)) {
-        events.set(key, {
-          id: key,
-          source: 'normalized_event',
+      const id = eventId(signature, dateKey, timeKey);
+      if (!events.has(id)) {
+        events.set(id, {
+          id,
+          signature,
+          dateKey,
+          timeKey,
+          amount: 0,
+          driveRows: 0,
+          airingRows: 0,
+          matchedDriveRows: 0,
+          estimatedOnly: false,
+          when: null,
+          hasDate: false,
+          hasExplicitTime: false,
           programId: '',
           title: 'Unknown title',
           topic: 'Unspecified topic',
+          topicDisplay: 'Unspecified topic',
+          topicTokens: [],
           distributor: 'Unspecified distributor',
           premiums: 'No premium metadata',
           localBreaks: 'No local breaks',
-          liveBreaks: 'No live breaks',
-          amount: 0,
-          when: null,
-          day: 'Unknown day',
-          date: 'Unknown date',
-          time: 'Unknown time',
-          monthIndex: null,
-          airingRows: 0,
-          driveRows: 0,
-          estimatedOnly: false
+          liveBreaks: 'No live breaks'
         });
       }
-      return events.get(key);
+      return events.get(id);
+    }
+
+    function applyMetadata(record, row, programRow, temporal) {
+      record.programId = record.programId || (programRow ? derive.programId(programRow) : utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, ''));
+      record.title = record.title || (programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title'));
+      const topicTokens = splitTopicTokens(
+        programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, ''),
+        programRow ? derive.topicSecondary(programRow) : utils.firstNonEmpty(row?.topic_secondary, row?.secondary_topic, '')
+      );
+      if (!record.topicTokens.length && topicTokens.length) record.topicTokens = topicTokens;
+      record.topicDisplay = record.topicTokens.length ? topicDisplayFromTokens(record.topicTokens) : record.topicDisplay;
+      record.topic = record.topicDisplay || 'Unspecified topic';
+      const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, row?.distributor_name, 'Unspecified distributor');
+      record.distributor = normalizeDistributor(record.distributor || distributor);
+      record.premiums = record.premiums === 'No premium metadata' ? premiumLabel(row, programRow) : record.premiums;
+      record.localBreaks = record.localBreaks === 'No local breaks' ? localBreakLabel(row, programRow) : record.localBreaks;
+      record.liveBreaks = record.liveBreaks === 'No live breaks' ? liveBreakLabel(row, programRow) : record.liveBreaks;
+      if (!record.when && temporal?.when) record.when = temporal.when;
+      if (temporal?.hasDate) record.hasDate = true;
+      if (temporal?.hasExplicitTime) record.hasExplicitTime = true;
+      record.day = dayLabel(record);
+      record.date = dateLabel(record);
+      record.time = timeBucketLabel(record);
+      record.monthIndex = record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when.getMonth() : null;
     }
 
     airingRows.forEach((row) => {
+      const sourceTitleKey = utils.normalizeLookupKey(utils.firstNonEmpty(row?.title, row?.program_title, row?.name));
       const programRow = matchProgramRow(row, indexes);
-      const when = parseDateTimeParts(row);
+      if (programRow && sourceTitleKey && sourceTitleKey !== utils.normalizeLookupKey(derive.title(programRow))) {
+        fuzzyProgramMatches += 1;
+      }
+      const temporal = parseTemporal(row);
       const signature = signatureFor(row, programRow);
-      const dateKey = localDateKey(when) || utils.normalizeLookupKey(candidateValue(row, DATETIME_KEYS, /(aired_at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at)/i)) || 'unknown-date';
-      const timeKey = halfHourBucket(when);
-      const record = getOrCreate(signature, dateKey, timeKey);
+      const dateKey = temporal.hasDate ? localDateKey(temporal.when) : '';
+      const timeKey = temporal.hasExplicitTime ? timeBucketLabel({ when: temporal.when, hasExplicitTime: true }) : 'unknown-time';
+      const record = getOrCreate(signature || utils.makeId('perf-airing'), dateKey, timeKey);
       record.airingRows += 1;
-      applyMetadata(record, row, programRow, when);
-      const exactKey = eventId(signature, dateKey, timeKey);
-      const dateOnlyKey = [signature || 'unknown', dateKey || 'unknown-date'].join('|');
-      exactAiringKeys.set(exactKey, record.id);
-      if (!dateOnlyAiringKeys.has(dateOnlyKey)) dateOnlyAiringKeys.set(dateOnlyKey, []);
-      dateOnlyAiringKeys.get(dateOnlyKey).push(record.id);
+      record.estimatedOnly = false;
+      applyMetadata(record, row, programRow, temporal);
+      if (temporal.hasDate) {
+        const exactKey = eventId(signature, dateKey, timeKey);
+        exactAiringKeys.set(exactKey, record.id);
+        const dateOnlyKey = [signature || 'unknown', dateKey || 'unknown-date'].join('|');
+        if (!dateOnlyAiringKeys.has(dateOnlyKey)) dateOnlyAiringKeys.set(dateOnlyKey, []);
+        dateOnlyAiringKeys.get(dateOnlyKey).push(record.id);
+      }
     });
 
     driveRows.forEach((row, index) => {
       const programRow = matchProgramRow(row, indexes);
-      const when = parseDateTimeParts(row);
+      const temporal = parseTemporal(row);
       const signature = signatureFor(row, programRow);
-      const dateKey = localDateKey(when) || utils.normalizeLookupKey(candidateValue(row, DATETIME_KEYS, /(aired_at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at)/i)) || 'unknown-date';
-      const timeKey = halfHourBucket(when);
+      const dateKey = temporal.hasDate ? localDateKey(temporal.when) : '';
+      const timeKey = temporal.hasExplicitTime ? timeBucketLabel({ when: temporal.when, hasExplicitTime: true }) : 'unknown-time';
       const exactKey = eventId(signature, dateKey, timeKey);
       const dateOnlyKey = [signature || 'unknown', dateKey || 'unknown-date'].join('|');
       let record = exactAiringKeys.has(exactKey) ? events.get(exactAiringKeys.get(exactKey)) : null;
@@ -270,19 +364,26 @@
         unmatchedDriveRows += 1;
       } else {
         matchedDriveRows += 1;
+        record.matchedDriveRows += 1;
       }
       const amount = parseMoney(candidateValue(row, MONEY_KEYS, /(contribution|raised|gross|amount|revenue|pledge)/i));
       if (Number.isFinite(amount)) record.amount += amount;
       record.driveRows += 1;
-      applyMetadata(record, row, programRow, when);
+      applyMetadata(record, row, programRow, temporal);
     });
 
     const records = [...events.values()].map((record) => ({
       ...record,
-      amount: Number.isFinite(record.amount) ? record.amount : 0
+      amount: Number.isFinite(record.amount) ? record.amount : 0,
+      topicDisplay: record.topicDisplay || 'Unspecified topic',
+      topic: record.topicDisplay || 'Unspecified topic',
+      time: timeBucketLabel(record),
+      day: dayLabel(record),
+      date: dateLabel(record)
     }));
 
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
+    if (!records.some((record) => record.topicTokens.length)) warnings.push('Topic matching is still sparse. Some performance rows do not inherit library topics cleanly yet.');
 
     perf().dataShape = {
       driveRows: driveRows.length,
@@ -290,8 +391,13 @@
       normalizedEvents: records.length,
       matchedDriveRows,
       unmatchedDriveRows,
+      fuzzyProgramMatches,
       recordsWithMoney: records.filter((record) => Number.isFinite(record.amount) && record.amount !== 0).length,
-      recordsWithDateTime: records.filter((record) => record.when instanceof Date && !Number.isNaN(record.when.getTime())).length
+      recordsWithDateTime: records.filter((record) => record.hasDate).length,
+      recordsWithExplicitTime: records.filter((record) => record.hasExplicitTime).length,
+      recordsWithTopic: records.filter((record) => record.topicTokens.length).length,
+      temporalEligibleDayDate: records.filter((record) => record.hasDate && !record.estimatedOnly).length,
+      temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly).length
     };
     perf().warnings = warnings;
     perf().records = records;
@@ -317,7 +423,7 @@
       case 'date': return record.date || 'Unknown date';
       case 'day': return record.day || 'Unknown day';
       case 'time': return record.time || 'Unknown time';
-      case 'topic': return record.topic || 'Unspecified topic';
+      case 'topic': return record.topicDisplay || 'Unspecified topic';
       case 'local_breaks': return record.localBreaks || 'No local breaks';
       case 'live_breaks': return record.liveBreaks || 'No live breaks';
       case 'premiums': return record.premiums || 'No premium metadata';
@@ -329,7 +435,7 @@
   function criterionOrderKey(group, criterion) {
     if (criterion === 'date') return group.minTime || Number.MAX_SAFE_INTEGER;
     if (criterion === 'time') return group.minMinutes ?? Number.MAX_SAFE_INTEGER;
-    if (criterion === 'day') return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].indexOf(group.label);
+    if (criterion === 'day') return DAY_ORDER.indexOf(group.label);
     return group.label;
   }
 
@@ -369,22 +475,38 @@
     return perf().chartType;
   }
 
+  function temporalEligibility(record, criterion) {
+    if (criterion === 'time') return record.hasExplicitTime && !record.estimatedOnly;
+    if (criterion === 'date' || criterion === 'day') return record.hasDate && !record.estimatedOnly;
+    return true;
+  }
+
   function filterAndGroupRecords() {
     const labelFilter = utils.normalizeLookupKey(perf().labelFilter || '');
     const startDate = perf().startDate ? new Date(`${perf().startDate}T00:00:00`) : null;
     const endDate = perf().endDate ? new Date(`${perf().endDate}T23:59:59`) : null;
-    const records = (perf().records || []).filter((record) => {
+    const criterion = perf().criterion;
+    const sourceRecords = perf().records || [];
+    const postFilter = sourceRecords.filter((record) => {
       if (perf().monthFilter !== '' && record.monthIndex !== Number(perf().monthFilter)) return false;
-      if (perf().topicFilter && utils.normalizeLookupKey(record.topic) !== utils.normalizeLookupKey(perf().topicFilter)) return false;
+      if (perf().topicFilter && !topicMatches(record, perf().topicFilter)) return false;
       if (startDate && (!(record.when instanceof Date) || record.when < startDate)) return false;
       if (endDate && (!(record.when instanceof Date) || record.when > endDate)) return false;
-      if (labelFilter && !utils.normalizeLookupKey(criterionLabel(record, perf().criterion)).includes(labelFilter)) return false;
+      return true;
+    });
+
+    const eligibleTemporal = TEMPORAL_CRITERIA.has(criterion)
+      ? postFilter.filter((record) => temporalEligibility(record, criterion))
+      : postFilter;
+
+    const records = eligibleTemporal.filter((record) => {
+      if (labelFilter && !utils.normalizeLookupKey(criterionLabel(record, criterion)).includes(labelFilter)) return false;
       return true;
     });
 
     const groups = new Map();
     records.forEach((record) => {
-      const label = criterionLabel(record, perf().criterion);
+      const label = criterionLabel(record, criterion);
       if (!groups.has(label)) {
         groups.set(label, { label, airingCount: 0, totalDollars: 0, moneyCount: 0, avgDollars: 0, titles: new Set(), minTime: null, minMinutes: null });
       }
@@ -411,9 +533,9 @@
     }));
 
     const sorted = grouped.sort((a, b) => {
-      if (effectiveChartType() === 'line' && isLineFriendly(perf().criterion)) {
-        const ak = criterionOrderKey(a, perf().criterion);
-        const bk = criterionOrderKey(b, perf().criterion);
+      if (effectiveChartType() === 'line' && isLineFriendly(criterion)) {
+        const ak = criterionOrderKey(a, criterion);
+        const bk = criterionOrderKey(b, criterion);
         if (typeof ak === 'number' && typeof bk === 'number' && ak !== bk) return ak - bk;
         return utils.compareText(String(a.label), String(b.label));
       }
@@ -423,9 +545,18 @@
     });
 
     const limit = Math.max(1, Number(perf().topN) || 12);
+    const limited = limit >= 999 ? sorted : sorted.slice(0, limit);
     perf().filteredRecords = records;
-    perf().groups = limit >= 999 ? sorted : sorted.slice(0, limit);
-    return { records, grouped: perf().groups };
+    perf().groups = limited;
+    perf().analysisMeta = {
+      criterion,
+      postFilterCount: postFilter.length,
+      eligibleTemporalCount: eligibleTemporal.length,
+      excludedWeakTemporalCount: Math.max(0, postFilter.length - eligibleTemporal.length),
+      lowConfidenceTemporal: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length > 0 && eligibleTemporal.length < 12,
+      noTemporalSupport: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length === 0 && postFilter.length > 0
+    };
+    return { records, grouped: limited, postFilter };
   }
 
   function renderStats(records) {
@@ -433,7 +564,7 @@
     const titles = new Set(records.map((record) => record.title).filter(Boolean));
     const dollars = records.reduce((sum, record) => sum + (Number.isFinite(record.amount) ? record.amount : 0), 0);
     const moneyCount = records.filter((record) => Number.isFinite(record.amount)).length;
-    const datedCount = records.filter((record) => record.when instanceof Date && !Number.isNaN(record.when.getTime())).length;
+    const datedCount = records.filter((record) => record.hasDate).length;
     const stats = [
       ['Events used', utils.formatCount(records.length)],
       ['Titles represented', utils.formatCount(titles.size)],
@@ -454,41 +585,37 @@
     const right = 24;
     const top = 20;
     const rowH = 42;
-    const height = Math.max(240, top + (groups.length * rowH) + 40);
+    const height = Math.max(220, top + (groups.length * rowH) + 20);
     const chartW = width - left - right;
-    const max = Math.max(...groups.map((g) => metricValue(g)), 1);
-    const rows = groups.map((group, index) => {
+    const max = Math.max(...groups.map((group) => metricValue(group)), 1);
+    const bars = groups.map((group, index) => {
       const y = top + (index * rowH);
       const value = metricValue(group);
       const barW = Math.max(2, Math.round((value / max) * chartW));
-      const label = utils.escapeHtml(group.label);
-      const valueLabel = perf().metric === 'airings' ? utils.formatCount(value) : utils.formatMoney(value);
+      const display = perf().metric === 'airings' ? utils.formatCount(value) : utils.formatMoney(value);
       return `
-        <text x="10" y="${y + 16}" font-size="13" font-weight="700" fill="#173a5e">${label}</text>
-        <rect x="${left}" y="${y}" width="${chartW}" height="14" rx="7" fill="#dce8f6"></rect>
-        <rect x="${left}" y="${y}" width="${barW}" height="14" rx="7" fill="#123e6b"></rect>
-        <text x="${left + barW + 8}" y="${y + 12}" font-size="12" fill="#102845">${utils.escapeHtml(valueLabel)}</text>
-        <text x="${left}" y="${y + 30}" font-size="11" fill="#5a687d">${utils.escapeHtml(utils.formatCount(group.airingCount))} airings · ${utils.escapeHtml(utils.formatCount(group.titleCount))} titles</text>
+        <text x="${left - 12}" y="${y + 18}" font-size="12" text-anchor="end" fill="#14314f">${utils.escapeHtml(group.label)}</text>
+        <rect x="${left}" y="${y + 4}" width="${barW}" height="18" rx="6" fill="#123e6b"></rect>
+        <text x="${left + barW + 10}" y="${y + 18}" font-size="12" fill="#183a5f">${utils.escapeHtml(display)}</text>
       `;
     }).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">${rows}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">${bars}</svg>`;
   }
 
   function buildLineSvg(groups) {
-    const width = 960;
-    const height = 360;
-    const left = 56;
+    const width = 940;
+    const height = 320;
+    const left = 64;
     const right = 20;
-    const top = 24;
-    const bottom = 58;
+    const top = 20;
+    const bottom = 48;
     const chartW = width - left - right;
     const chartH = height - top - bottom;
-    const values = groups.map((g) => metricValue(g));
-    const max = Math.max(...values, 1);
+    const max = Math.max(...groups.map((group) => metricValue(group)), 1);
     const points = groups.map((group, index) => {
       const x = left + (groups.length <= 1 ? chartW / 2 : (index * chartW / (groups.length - 1)));
       const y = top + chartH - ((metricValue(group) / max) * chartH);
-      return { x, y, label: group.label, value: metricValue(group), group };
+      return { x, y, label: group.label, value: metricValue(group) };
     });
     const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({ y: top + chartH - (ratio * chartH), value: max * ratio }));
@@ -512,7 +639,11 @@
   function renderChart(groups) {
     if (!els.performanceChart) return;
     if (!groups.length) {
-      els.performanceChart.innerHTML = '<div class="performance-chart-empty">No comparison groups match this filter yet.</div>';
+      const analysisMeta = perf().analysisMeta || {};
+      const msg = analysisMeta.noTemporalSupport
+        ? 'No reliable date/time-backed events match this filter yet. Day/date/time analytics need imported airing/report data or clean matched airings rows.'
+        : 'No comparison groups match this filter yet.';
+      els.performanceChart.innerHTML = `<div class="performance-chart-empty">${utils.escapeHtml(msg)}</div>`;
       return;
     }
     const chartType = effectiveChartType();
@@ -541,13 +672,21 @@
     `).join('');
   }
 
-  function buildCriteriaSummary(records, groups) {
+  function confidenceLabel() {
+    const meta = perf().analysisMeta || {};
+    if (meta.noTemporalSupport) return 'Unavailable until report/airing date data is imported';
+    if (meta.lowConfidenceTemporal) return 'Low confidence';
+    return 'Working comparison';
+  }
+
+  function buildCriteriaSummary(records) {
     const start = perf().startDate ? utils.formatDate(perf().startDate) : 'Earliest available';
     const end = perf().endDate ? utils.formatDate(perf().endDate) : 'Latest available';
     const month = perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month';
     const topic = perf().topicFilter || 'All topics';
     const shape = perf().dataShape || {};
-    const source = `Normalized event view · ${utils.formatCount(shape.airingRows || 0)} airings rows + ${utils.formatCount(shape.driveRows || 0)} drive rows`; 
+    const analysisMeta = perf().analysisMeta || {};
+    const source = `Normalized event view · ${utils.formatCount(shape.airingRows || 0)} airings rows + ${utils.formatCount(shape.driveRows || 0)} drive rows`;
     perf().criteriaSummary = [
       ['Date window', `${start} to ${end}`],
       ['Fundraiser month', month],
@@ -555,6 +694,7 @@
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
       ['Chart', chartTypeLabel(effectiveChartType())],
+      ['Confidence', confidenceLabel()],
       ['Source basis', source],
       ['Filtered rows', utils.formatCount(records.length)]
     ];
@@ -562,19 +702,26 @@
     els.performanceCriteriaBar.innerHTML = perf().criteriaSummary.map(([label, value]) => `
       <div class="performance-criteria-pill"><span class="label">${utils.escapeHtml(label)}</span><span>${utils.escapeHtml(value)}</span></div>
     `).join('');
+    if (analysisMeta.excludedWeakTemporalCount && TEMPORAL_CRITERIA.has(perf().criterion)) {
+      els.performanceCriteriaBar.innerHTML += `
+        <div class="performance-criteria-pill warn"><span class="label">Excluded weak temporal rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedWeakTemporalCount))}</span></div>
+      `;
+    }
   }
 
-  function renderExplainTable(records, groups) {
+  function renderExplainTable(records, postFilter) {
     if (!els.performanceExplainBody) return;
+    const meta = perf().analysisMeta || {};
     const rows = [
       ['Date window', perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || null, 'Latest available')}` : 'All available dates', 'Only records whose usable date falls inside this window are included.'],
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
-      ['Topic filter', perf().topicFilter || 'All topics', 'Uses the program topic already in the library database.'],
+      ['Topic filter', perf().topicFilter || 'All topics', 'Checks both primary and secondary topic text from the library where available.'],
       ['Compare by', criterionDisplayName(), `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
-      ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized airing-like events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized airing-like events used in the comparison.'],
-      ['Source basis', 'Normalized event layer', `The app is combining ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} airings rows with ${utils.formatCount((perf().dataShape || {}).driveRows || 0)} drive rows. Unmatched drive rows are kept as estimated events instead of being silently dropped.`],
+      ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized events used in the comparison.'],
+      ['Source basis', 'Normalized event layer', `The app is combining ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} airings rows with ${utils.formatCount((perf().dataShape || {}).driveRows || 0)} drive rows. Unmatched drive rows stay in non-temporal comparisons, but temporal comparisons exclude weak unmatched rows.`],
+      ['Temporal confidence', confidenceLabel(), meta.noTemporalSupport ? 'Day/date/time comparisons do not have enough trustworthy airing-date evidence for this filter yet.' : meta.lowConfidenceTemporal ? 'There are some temporal matches, but the sample is small enough that the result can wobble.' : 'This comparison has enough temporal support to be usable, but still read the airing count.'],
       ['Premium metadata', 'Not actual viewer choice data', 'Premium comparisons currently mean “programs carrying premium metadata,” not which premium item viewers actually chose.'],
-      ['How sturdy is this?', `${utils.formatCount(groups.length)} groups from ${utils.formatCount(records.length)} filtered rows`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
+      ['How sturdy is this?', `${utils.formatCount(records.length)} rows from ${utils.formatCount(postFilter.length)} rows after non-label filters`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
     ];
     els.performanceExplainBody.innerHTML = rows.map(([setting, value, read]) => `
       <tr>
@@ -589,12 +736,15 @@
     if (!els.performanceSourceNotes) return;
     const notes = [];
     const shape = perf().dataShape || {};
+    const meta = perf().analysisMeta || {};
     notes.push(`Pledge Performance is normalizing ${utils.formatCount(shape.airingRows || 0)} airings rows and ${utils.formatCount(shape.driveRows || 0)} drive-result rows into ${utils.formatCount(shape.normalizedEvents || 0)} comparison events.`);
     notes.push(`${utils.formatCount(shape.matchedDriveRows || 0)} drive rows matched an airing-like event directly. ${utils.formatCount(shape.unmatchedDriveRows || 0)} drive rows remained estimated events because no clean airing match was found.`);
-    notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} comparison events include a usable date/time stamp. ${utils.formatCount(shape.recordsWithMoney || 0)} include dollars.`);
+    notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} normalized events include a usable date. ${utils.formatCount(shape.recordsWithExplicitTime || 0)} include an explicit time.`);
+    notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.fuzzyProgramMatches || 0)} rows used a fuzzy title match to connect abbreviated performance rows back to library metadata.`);
     notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
+    if (meta.noTemporalSupport) notes.push('Day/date/time views are intentionally cautious now: weak unmatched rows are excluded, and if nothing trustworthy remains the comparison is marked unavailable instead of pretending to know.');
     if (perf().warnings?.length) notes.push(...perf().warnings);
     els.performanceSourceNotes.innerHTML = `
       <ul class="performance-note-list">
@@ -604,9 +754,25 @@
     `;
   }
 
+  function collectTopicOptions() {
+    const labels = new Map();
+    (state.rawRows || []).forEach((row) => {
+      splitTopicTokens(derive.topicPrimary(row), derive.topicSecondary(row)).forEach((token) => {
+        const key = utils.normalizeLookupKey(token);
+        if (key && !labels.has(key)) labels.set(key, token);
+      });
+    });
+    (perf().records || []).forEach((record) => {
+      (record.topicTokens || []).forEach((token) => {
+        const key = utils.normalizeLookupKey(token);
+        if (key && !labels.has(key)) labels.set(key, token);
+      });
+    });
+    return [...labels.values()].sort((a, b) => utils.compareText(a, b));
+  }
+
   function populateControls() {
-    const topicValues = [...new Set((state.rawRows || []).map((row) => derive.topicPrimary(row)).filter((value) => !utils.isBlank(value)))].sort((a, b) => utils.compareText(a, b));
-    renderSelectOptions(els.performanceTopicSelect, topicValues, perf().topicFilter, 'All topics');
+    renderSelectOptions(els.performanceTopicSelect, collectTopicOptions(), perf().topicFilter, 'All topics');
     if (els.performanceCriterionSelect) els.performanceCriterionSelect.value = perf().criterion;
     if (els.performanceMetricSelect) els.performanceMetricSelect.value = perf().metric;
     if (els.performanceChartTypeSelect) els.performanceChartTypeSelect.value = perf().chartType;
@@ -621,10 +787,10 @@
   function renderAll() {
     if (!els.performanceChart || !els.performanceTableBody) return;
     populateControls();
-    const { records, grouped } = filterAndGroupRecords();
+    const { records, grouped, postFilter } = filterAndGroupRecords();
     renderStats(records);
-    buildCriteriaSummary(records, grouped);
-    renderExplainTable(records, grouped);
+    buildCriteriaSummary(records);
+    renderExplainTable(records, postFilter);
     renderChart(perf().groups);
     renderTable(perf().groups);
     renderNotes(records, perf().groups);
@@ -632,7 +798,14 @@
     if (els.performanceChartPill) els.performanceChartPill.textContent = perf().ready ? `${chartTypeLabel(effectiveChartType())} · ${criterionDisplayName()}` : 'Awaiting data';
     if (els.performanceTablePill) els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
     if (els.performanceNotesPill) els.performanceNotesPill.textContent = perf().lastLoadedAt ? `Loaded ${utils.formatDateTime(perf().lastLoadedAt)}` : 'Starter framework';
-    setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${utils.formatCount(records.length)} filtered rows.`, perf().error ? 'warn' : '');
+    const meta = perf().analysisMeta || {};
+    const warn = meta.noTemporalSupport || meta.lowConfidenceTemporal || Boolean(perf().error);
+    const tail = meta.noTemporalSupport
+      ? 'Not enough trustworthy day/time evidence for this view yet.'
+      : meta.lowConfidenceTemporal
+        ? 'Small temporal sample — read it cautiously.'
+        : `${utils.formatCount(records.length)} filtered rows.`;
+    setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}`, warn ? 'warn' : '');
   }
 
   async function refreshData(options = {}) {
@@ -671,6 +844,7 @@
     perf().groups = [];
     perf().warnings = [];
     perf().lastLoadedAt = '';
+    perf().analysisMeta = {};
   }
 
   function exportChartSvg() {
@@ -692,7 +866,7 @@
 
   function bindEvents() {
     const rerender = () => renderAll();
-    els.performanceCriterionSelect?.addEventListener('change', (event) => { perf().criterion = event.target.value || 'day'; rerender(); });
+    els.performanceCriterionSelect?.addEventListener('change', (event) => { perf().criterion = event.target.value || 'topic'; rerender(); });
     els.performanceMetricSelect?.addEventListener('change', (event) => { perf().metric = event.target.value || 'avg_dollars'; rerender(); });
     els.performanceChartTypeSelect?.addEventListener('change', (event) => { perf().chartType = event.target.value || 'auto'; rerender(); });
     els.performanceTopnSelect?.addEventListener('change', (event) => { perf().topN = Number(event.target.value || 12); rerender(); });

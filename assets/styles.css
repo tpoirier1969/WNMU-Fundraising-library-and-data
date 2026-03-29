@@ -1278,7 +1278,7 @@ button.primary {
 }
 
 
-/* v0.12.0 scheduler rights + performance truth pass */
+/* v0.12.2 analytics confidence + topic matching pass */
 .schedule-day-head {
   display: flex;
   align-items: center;
@@ -1366,4 +1366,278 @@ button.primary {
 }
 @media (max-width: 900px) {
   .schedule-picker-search-row { grid-template-columns: 1fr; }
+}
+
+
+.performance-criteria-pill.warn { border-color: rgba(170, 80, 0, 0.35); background: rgba(255, 241, 224, 0.92); color: #7a3d00; }
+
+/* v0.12.2 responsive layouts + pledge icon pass */
+@media (max-width: 1100px) {
+  .topbar {
+    align-items: flex-start;
+  }
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .workspace-button-row-main {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+  .workspace-tab {
+    min-width: 0;
+    width: 100%;
+    padding: 11px 14px;
+  }
+  .brand-logo {
+    width: 66px;
+  }
+  .schedule-grid {
+    --schedule-day-width: 128px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    padding: 8px;
+    gap: 8px;
+  }
+  .topbar {
+    padding: 10px;
+    border-radius: 14px;
+  }
+  .brand-wrap {
+    width: 100%;
+    gap: 10px;
+  }
+  .brand-wrap > div {
+    min-width: 0;
+  }
+  #app-title {
+    font-size: 1.12rem;
+    line-height: 1.05;
+  }
+  .status-line,
+  .build-meta,
+  .muted {
+    font-size: .78rem;
+  }
+  .controls,
+  .list-panel,
+  .workspace-switcher,
+  .schedule-sidebar,
+  .schedule-builder-card,
+  .schedule-program-details-wrap,
+  .schedule-editor,
+  .performance-toolbar-card,
+  .performance-card,
+  .performance-criteria-card {
+    border-radius: 14px;
+  }
+  .workspace-switcher {
+    padding: 12px;
+  }
+  .workspace-button-row-main {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .workspace-tab {
+    font-size: .98rem;
+  }
+  .filter-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .list-meta {
+    padding: 10px;
+  }
+  .programs-table {
+    min-width: 920px;
+  }
+  .schedule-sidebar-head,
+  .schedule-builder-head,
+  .schedule-toolbar,
+  .performance-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .schedule-toolbar-group,
+  .performance-actions-inline {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .schedule-grid {
+    --schedule-day-width: 116px;
+  }
+  .schedule-grid-head,
+  .schedule-grid-body {
+    grid-template-columns: 72px repeat(auto-fit, minmax(var(--schedule-day-width), 1fr));
+  }
+  .schedule-day-head {
+    min-height: 54px;
+    padding: 8px 6px;
+    font-size: .8rem;
+    line-height: 1.1;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .schedule-time-label {
+    padding-inline: 6px;
+  }
+  .schedule-time-label > span {
+    left: 6px;
+    font-size: .68rem;
+  }
+  .performance-toolbar-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .performance-filter-span,
+  .performance-action-span {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  html, body {
+    font-size: 15px;
+  }
+  .topbar {
+    gap: 10px;
+  }
+  .brand-logo {
+    width: 54px;
+  }
+  .brand-name {
+    font-size: .9rem;
+  }
+  #app-title {
+    font-size: 1.02rem;
+  }
+  .title-row {
+    gap: 6px;
+  }
+  .version-pill,
+  .role-chip,
+  .mini-chip,
+  .status-pill {
+    font-size: .72rem;
+  }
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .topbar-actions button,
+  .topbar-actions .role-chip {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+  .controls,
+  .list-panel,
+  .workspace-switcher {
+    padding-inline: 8px;
+  }
+  .filter-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .filter-actions {
+    justify-content: stretch;
+  }
+  .top-reset {
+    width: 100%;
+  }
+  .list-title {
+    font-size: .9rem;
+  }
+  .list-summary,
+  .sort-inline-note {
+    font-size: .78rem;
+  }
+  .workspace-tab {
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: .96rem;
+  }
+  .all-rows-wrap,
+  .table-wrap {
+    max-height: none;
+  }
+  .detail-modal,
+  .schedule-modal {
+    padding: 8px;
+  }
+  .detail-modal-card,
+  .schedule-modal-card {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 14px;
+  }
+  .detail-header {
+    padding: 12px;
+  }
+  .detail-scroll,
+  .schedule-program-picker {
+    padding: 12px;
+  }
+  .schedule-grid {
+    --schedule-day-width: 100px;
+    --schedule-slot-height: 22px;
+  }
+  .schedule-grid-head,
+  .schedule-grid-body {
+    grid-template-columns: 62px repeat(auto-fit, minmax(var(--schedule-day-width), 1fr));
+  }
+  .schedule-corner,
+  .schedule-day-head {
+    min-height: 50px;
+  }
+  .schedule-day-head {
+    padding: 6px 4px;
+    font-size: .73rem;
+    line-height: 1.05;
+  }
+  .schedule-time-label > span {
+    left: 4px;
+    font-size: .62rem;
+  }
+  .schedule-placement {
+    padding: 1px 3px;
+    border-radius: 8px;
+  }
+  .schedule-placement strong {
+    font-size: clamp(.52rem, 1.8vw, .66rem);
+  }
+  .schedule-placement span {
+    font-size: clamp(.48rem, 1.55vw, .6rem);
+  }
+  .schedule-picker-search-row,
+  .performance-toolbar-grid,
+  .performance-stat-grid,
+  .performance-main-grid,
+  .scheduled-program-line-bottom {
+    grid-template-columns: 1fr;
+  }
+  .performance-filter-span,
+  .performance-action-span {
+    grid-column: span 1;
+  }
+  .performance-criteria-bar {
+    gap: .45rem;
+  }
+  .performance-criteria-pill {
+    width: 100%;
+    justify-content: space-between;
+    border-radius: 12px;
+  }
+}
+
+
+/* v0.12.3 library totals column */
+.programs-table .col-total,
+.programs-table .total-cell {
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }

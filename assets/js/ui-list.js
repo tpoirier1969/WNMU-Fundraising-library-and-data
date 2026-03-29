@@ -111,7 +111,7 @@
 
   function renderRows() {
     if (!state.rows.length) {
-      els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">No matching pledge titles found.</td></tr>';
+      els.libraryBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">No matching pledge titles found.</td></tr>';
       return;
     }
 
@@ -129,6 +129,7 @@
           <td>${utils.escapeHtml(derive.lengthLabel(row))}</td>
           <td>${utils.escapeHtml(derive.topicPrimary(row) || '—')}</td>
           <td>${utils.escapeHtml(derive.distributor(row) || '—')}</td>
+          <td class="total-cell">${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</td>
           <td class="avg-cell">${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</td>
           <td class="premiums-cell">${premiumSummaryHtml(derive.premiumSummary(row))}</td>
           <td>${utils.escapeHtml(utils.formatDate(derive.rightsBegin(row)))}</td>
