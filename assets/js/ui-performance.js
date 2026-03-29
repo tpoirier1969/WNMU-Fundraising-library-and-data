@@ -385,6 +385,12 @@
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
     if (!records.some((record) => record.topicTokens.length)) warnings.push('Topic matching is still sparse. Some performance rows do not inherit library topics cleanly yet.');
 
+    const datedRecords = records
+      .filter((record) => record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()))
+      .sort((a, b) => a.when.getTime() - b.when.getTime());
+    const oldestDate = datedRecords.length ? localDateKey(datedRecords[0].when) : '';
+    const newestDate = datedRecords.length ? localDateKey(datedRecords[datedRecords.length - 1].when) : '';
+
     perf().dataShape = {
       driveRows: driveRows.length,
       airingRows: airingRows.length,
@@ -397,8 +403,12 @@
       recordsWithExplicitTime: records.filter((record) => record.hasExplicitTime).length,
       recordsWithTopic: records.filter((record) => record.topicTokens.length).length,
       temporalEligibleDayDate: records.filter((record) => record.hasDate && !record.estimatedOnly).length,
-      temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly).length
+      temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly).length,
+      oldestDate,
+      newestDate
     };
+    if (!perf().startDate && oldestDate) perf().startDate = oldestDate;
+    if (!perf().endDate && newestDate) perf().endDate = newestDate;
     perf().warnings = warnings;
     perf().records = records;
     perf().lastLoadedAt = new Date().toISOString();
@@ -713,7 +723,7 @@
     if (!els.performanceExplainBody) return;
     const meta = perf().analysisMeta || {};
     const rows = [
-      ['Date window', perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || null, 'Latest available')}` : 'All available dates', 'Only records whose usable date falls inside this window are included.'],
+      ['Date window', perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates', 'Only records whose usable date falls inside this window are included.'],
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
       ['Topic filter', perf().topicFilter || 'All topics', 'Checks both primary and secondary topic text from the library where available.'],
       ['Compare by', criterionDisplayName(), `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
@@ -778,8 +788,18 @@
     if (els.performanceChartTypeSelect) els.performanceChartTypeSelect.value = perf().chartType;
     if (els.performanceTopnSelect) els.performanceTopnSelect.value = String(perf().topN);
     if (els.performanceFilterInput) els.performanceFilterInput.value = perf().labelFilter || '';
-    if (els.performanceStartDate) els.performanceStartDate.value = perf().startDate || '';
-    if (els.performanceEndDate) els.performanceEndDate.value = perf().endDate || '';
+    const oldestDate = perf().dataShape?.oldestDate || '';
+    const newestDate = perf().dataShape?.newestDate || '';
+    if (els.performanceStartDate) {
+      els.performanceStartDate.min = oldestDate || '';
+      els.performanceStartDate.max = newestDate || '';
+      els.performanceStartDate.value = perf().startDate || oldestDate || '';
+    }
+    if (els.performanceEndDate) {
+      els.performanceEndDate.min = oldestDate || '';
+      els.performanceEndDate.max = newestDate || '';
+      els.performanceEndDate.value = perf().endDate || newestDate || '';
+    }
     if (els.performanceMonthSelect) els.performanceMonthSelect.value = perf().monthFilter;
     if (els.performanceTopicSelect) els.performanceTopicSelect.value = perf().topicFilter;
   }
