@@ -228,6 +228,85 @@
     return fuzzyTitleMatch(title, indexes.titleEntries);
   }
 
+  function localDateKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function signatureForProgram(programRow, fallback = {}) {
+    return utils.normalizeLookupKey(
+      utils.firstNonEmpty(
+        programRow ? derive.programId(programRow) : '',
+        fallback?.programId,
+        fallback?.program_id,
+        fallback?.pledge_program_id,
+        programRow ? derive.nola(programRow) : '',
+        fallback?.nola_code,
+        fallback?.nola,
+        programRow ? derive.title(programRow) : '',
+        fallback?.programTitle,
+        fallback?.program_title,
+        fallback?.title,
+        fallback?.name
+      )
+    );
+  }
+
+  function buildSchedulePlacementIndex(indexes) {
+    const exact = new Map();
+    const byDate = new Map();
+    const schedules = Array.isArray(state.schedules) ? state.schedules : [];
+    const getProgramRowById = (programId) => {
+      const key = String(programId || '');
+      return [...(state.rawRows || []), ...(state.nonPledgeRows || [])]
+        .find((row) => String(derive.programId(row)) === key) || null;
+    };
+    const push = (map, key, value) => {
+      if (!key) return;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(value);
+    };
+    schedules.forEach((schedule) => {
+      (schedule?.placements || []).forEach((placement) => {
+        const programRow = getProgramRowById(placement.programId) || null;
+        const signature = signatureForProgram(programRow, placement);
+        const dateKey = String(placement.dateKey || '');
+        const startMinutes = Number(placement.startMinutes || 0);
+        const endMinutes = Number(placement.endMinutes || startMinutes);
+        const liveBreak = placement?.liveBreakFlag === true;
+        const entry = { scheduleId: schedule?.id || '', placementId: placement?.id || '', signature, dateKey, startMinutes, endMinutes, liveBreak, placement, programRow };
+        push(exact, `${signature}|${dateKey}|${startMinutes}`, entry);
+        push(byDate, `${signature}|${dateKey}`, entry);
+      });
+    });
+    return { exact, byDate };
+  }
+
+  function scheduleLiveBreakLabelForRecord(record, placementIndex) {
+    if (!(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record?.hasDate || !record?.hasExplicitTime) {
+      return { label: 'Unknown / not matched to schedule', matched: false };
+    }
+    const signature = record.signature || signatureForProgram(null, record);
+    if (!signature) return { label: 'Unknown / not matched to schedule', matched: false };
+    const dateKey = localDateKey(record.when);
+    const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
+    const exactMatches = placementIndex?.exact?.get(`${signature}|${dateKey}|${minutes}`) || [];
+    if (exactMatches.length) {
+      const live = exactMatches.some((item) => item.liveBreak);
+      return { label: live ? 'Live break' : 'No live break', matched: true };
+    }
+    const dateMatches = placementIndex?.byDate?.get(`${signature}|${dateKey}`) || [];
+    const overlapping = dateMatches.filter((item) => minutes >= item.startMinutes && minutes < item.endMinutes);
+    if (overlapping.length) {
+      const live = overlapping.some((item) => item.liveBreak);
+      return { label: live ? 'Live break' : 'No live break', matched: true };
+    }
+    return { label: 'Unknown / not matched to schedule', matched: false };
+  }
+
   function buildPerformanceRecords(inputs) {
     const indexes = buildProgramIndexes(state.rawRows || []);
     const driveRows = Array.isArray(inputs?.driveRows) ? inputs.driveRows : [];
@@ -239,32 +318,6 @@
     let matchedDriveRows = 0;
     let unmatchedDriveRows = 0;
     let fuzzyProgramMatches = 0;
-
-    function localDateKey(date) {
-      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
-
-    function signatureFor(row, programRow) {
-      return utils.normalizeLookupKey(
-        utils.firstNonEmpty(
-          programRow ? derive.programId(programRow) : '',
-          row?.program_id,
-          row?.pledge_program_id,
-          programRow ? derive.nola(programRow) : '',
-          row?.nola_code,
-          row?.nola,
-          programRow ? derive.title(programRow) : '',
-          row?.program_title,
-          row?.title,
-          row?.name
-        )
-      );
-    }
-
     function eventId(signature, dateKey, timeKey) {
       return [signature || 'unknown', dateKey || 'unknown-date', timeKey || 'unknown-time'].join('|');
     }
@@ -293,7 +346,11 @@
           distributor: 'Unspecified distributor',
           premiums: 'No premium metadata',
           localBreaks: 'No local breaks',
-          liveBreaks: 'No live breaks'
+          liveBreaks: 'Unknown / not matched to schedule',
+          liveBreakSource: 'schedule',
+          scheduleMatched: false,
+          nolaCode: '',
+          signature: ''
         });
       }
       return events.get(id);
@@ -301,7 +358,11 @@
 
     function applyMetadata(record, row, programRow, temporal) {
       record.programId = record.programId || (programRow ? derive.programId(programRow) : utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, ''));
-      record.title = record.title || (programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title'));
+      record.nolaCode = record.nolaCode || (programRow ? derive.nola(programRow) : utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola, ''));
+      record.signature = record.signature || signatureForProgram(programRow, row);
+      if (!record.title || record.title === 'Unknown title') {
+        record.title = programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title');
+      }
       const topicTokens = splitTopicTokens(
         programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, ''),
         programRow ? derive.topicSecondary(programRow) : utils.firstNonEmpty(row?.topic_secondary, row?.secondary_topic, '')
@@ -310,10 +371,9 @@
       record.topicDisplay = record.topicTokens.length ? topicDisplayFromTokens(record.topicTokens) : record.topicDisplay;
       record.topic = record.topicDisplay || 'Unspecified topic';
       const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, row?.distributor_name, 'Unspecified distributor');
-      record.distributor = normalizeDistributor(record.distributor || distributor);
+      record.distributor = normalizeDistributor((!record.distributor || record.distributor === 'Unspecified distributor') ? distributor : record.distributor);
       record.premiums = record.premiums === 'No premium metadata' ? premiumLabel(row, programRow) : record.premiums;
       record.localBreaks = record.localBreaks === 'No local breaks' ? localBreakLabel(row, programRow) : record.localBreaks;
-      record.liveBreaks = record.liveBreaks === 'No live breaks' ? liveBreakLabel(row, programRow) : record.liveBreaks;
       if (!record.when && temporal?.when) record.when = temporal.when;
       if (temporal?.hasDate) record.hasDate = true;
       if (temporal?.hasExplicitTime) record.hasExplicitTime = true;
@@ -330,7 +390,7 @@
         fuzzyProgramMatches += 1;
       }
       const temporal = parseTemporal(row);
-      const signature = signatureFor(row, programRow);
+      const signature = signatureForProgram(programRow, row);
       const dateKey = temporal.hasDate ? localDateKey(temporal.when) : '';
       const timeKey = temporal.hasExplicitTime ? timeBucketLabel({ when: temporal.when, hasExplicitTime: true }) : 'unknown-time';
       const record = getOrCreate(signature || utils.makeId('perf-airing'), dateKey, timeKey);
@@ -351,7 +411,7 @@
     driveRows.forEach((row, index) => {
       const programRow = matchProgramRow(row, indexes);
       const temporal = parseTemporal(row);
-      const signature = signatureFor(row, programRow);
+      const signature = signatureForProgram(programRow, row);
       const dateKey = temporal.hasDate ? localDateKey(temporal.when) : '';
       const timeKey = temporal.hasExplicitTime ? timeBucketLabel({ when: temporal.when, hasExplicitTime: true }) : 'unknown-time';
       const exactKey = eventId(signature, dateKey, timeKey);
@@ -374,6 +434,13 @@
       applyMetadata(record, row, programRow, temporal);
     });
 
+    const placementIndex = buildSchedulePlacementIndex(indexes);
+    for (const record of events.values()) {
+      const scheduleLive = scheduleLiveBreakLabelForRecord(record, placementIndex);
+      record.liveBreaks = scheduleLive.label;
+      record.scheduleMatched = scheduleLive.matched;
+    }
+
     const records = [...events.values()].map((record) => ({
       ...record,
       amount: Number.isFinite(record.amount) ? record.amount : 0,
@@ -386,6 +453,7 @@
 
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
     if (!records.some((record) => record.topicTokens.length)) warnings.push('Topic matching is still sparse. Some performance rows do not inherit library topics cleanly yet.');
+    if (records.length && !records.some((record) => record.scheduleMatched)) warnings.push('Live-break comparisons currently have no imported airings matched back to scheduled placements yet. Those rows will show as Unknown / not matched to schedule.');
 
     const datedRecords = records
       .filter((record) => record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()))
@@ -404,6 +472,7 @@
       recordsWithDateTime: records.filter((record) => record.hasDate).length,
       recordsWithExplicitTime: records.filter((record) => record.hasExplicitTime).length,
       recordsWithTopic: records.filter((record) => record.topicTokens.length).length,
+      recordsMatchedToSchedule: records.filter((record) => record.scheduleMatched).length,
       temporalEligibleDayDate: records.filter((record) => record.hasDate && !record.estimatedOnly).length,
       temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly).length,
       oldestDate,
@@ -437,7 +506,7 @@
       case 'time': return record.time || 'Unknown time';
       case 'topic': return record.topicDisplay || 'Unspecified topic';
       case 'local_breaks': return record.localBreaks || 'No local breaks';
-      case 'live_breaks': return record.liveBreaks || 'No live breaks';
+      case 'live_breaks': return record.liveBreaks || 'Unknown / not matched to schedule';
       case 'premiums': return record.premiums || 'No premium metadata';
       case 'distributor': return record.distributor || 'Unspecified distributor';
       default: return 'Unknown';
@@ -573,15 +642,15 @@
 
   function renderStats(records) {
     if (!els.performanceStatGrid) return;
-    const titles = new Set(records.map((record) => record.title).filter(Boolean));
+    const programs = new Set(records.map((record) => utils.normalizeLookupKey(utils.firstNonEmpty(record.programId, record.nolaCode, record.title))).filter(Boolean));
     const dollars = records.reduce((sum, record) => sum + (Number.isFinite(record.amount) ? record.amount : 0), 0);
     const moneyCount = records.filter((record) => Number.isFinite(record.amount)).length;
     const datedCount = records.filter((record) => record.hasDate).length;
     const stats = [
-      ['Events used', utils.formatCount(records.length)],
-      ['Titles represented', utils.formatCount(titles.size)],
+      ['Airings used', utils.formatCount(records.length)],
+      ['Programs represented', utils.formatCount(programs.size)],
       ['Dollars represented', utils.formatMoney(dollars)],
-      ['Rows with money / date', `${utils.formatCount(moneyCount)} / ${utils.formatCount(datedCount)}`]
+      ['Airings with dollars / dates', `${utils.formatCount(moneyCount)} / ${utils.formatCount(datedCount)}`]
     ];
     els.performanceStatGrid.innerHTML = stats.map(([label, value]) => `
       <article class="performance-stat-card">

@@ -1917,7 +1917,7 @@ button.primary {
 .schedule-grid-head { z-index: 12; }
 .schedule-grid-body { position: relative; z-index: 1; }
 .schedule-time-label { z-index: 14; box-shadow: 1px 0 0 #d9e4eb; }
-.schedule-slot { overflow: hidden; }
+.schedule-slot { overflow: visible; }
 .schedule-placement { left: 2px; right: 2px; top: 1px; z-index: 2; }
 .schedule-placement strong { font-size: clamp(.48rem, .54vw, .62rem); line-height: 1.04; }
 .schedule-placement span { font-size: clamp(.40rem, .44vw, .52rem); line-height: 1.02; }
