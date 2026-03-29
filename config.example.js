@@ -1,6 +1,6 @@
 window.PLEDGE_MANAGER_CONFIG = {
   APP_NAME: 'WNMU Pledge Program Library',
-  APP_VERSION: 'v0.12.4',
+  APP_VERSION: 'v0.13.0',
   SUPABASE_URL: 'https://YOUR_PROJECT.supabase.co',
   SUPABASE_ANON_KEY: 'YOUR_PUBLIC_ANON_KEY',
   ADMIN_EMAILS: [

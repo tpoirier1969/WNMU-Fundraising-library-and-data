@@ -31,6 +31,10 @@
       } else {
         App.performanceUi?.reset();
       }
+      if (state.imports?.ready) {
+        await App.importsUi?.refreshTableStatus({ silent: true });
+        App.importsUi?.renderAll();
+      }
       const probeStatus = App.data.getProbeStatusMessage();
       if (state.configVersionMismatch) {
         setBuildMeta(`${state.configVersionMismatch} ${probeStatus}`);
@@ -132,6 +136,7 @@
 
     App.workspaceUi?.bindEvents();
     App.schedulingUi?.bindEvents();
+    App.importsUi?.bindEvents();
     App.performanceUi?.bindEvents();
   }
 
@@ -165,6 +170,7 @@
     App.auth.bindAuthListener();
     await App.schedulingUi?.loadSchedules();
     App.schedulingUi?.renderAll();
+    await App.importsUi?.refreshTableStatus({ silent: true });
     await refreshAll();
   }
 

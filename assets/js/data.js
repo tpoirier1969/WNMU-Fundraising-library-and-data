@@ -405,6 +405,72 @@
     return { driveRows, airingRows, warnings };
   }
 
+
+  async function probeImportTables() {
+    const checks = [constants.AIRINGS_TABLE, constants.DRIVE_RESULTS_TABLE];
+    const results = [];
+    for (const tableName of checks) {
+      try {
+        const { error, count } = await state.client
+          .from(tableName)
+          .select('*', { head: true, count: 'exact' });
+        results.push({
+          tableName,
+          readable: !error,
+          count: Number.isFinite(count) ? count : 0,
+          error: error?.message || ''
+        });
+      } catch (error) {
+        results.push({
+          tableName,
+          readable: false,
+          count: 0,
+          error: error?.message || String(error)
+        });
+      }
+    }
+    return results;
+  }
+
+  function sanitizeImportRow(row = {}) {
+    return Object.fromEntries(
+      Object.entries(row).map(([key, value]) => [key, value === undefined ? null : value])
+    );
+  }
+
+  async function writeImportChunk(tableName, rows) {
+    if (!rows.length) return { written: 0, mode: 'skip' };
+    const payload = rows.map((row) => sanitizeImportRow(row));
+    let response = await state.client.from(tableName).upsert(payload, { onConflict: 'row_hash' });
+    if (!response.error) return { written: payload.length, mode: 'upsert' };
+    const message = response.error?.message || '';
+    if (/ON CONFLICT|constraint|row_hash|column .* does not exist|schema cache/i.test(message)) {
+      response = await state.client.from(tableName).insert(payload);
+      if (!response.error) return { written: payload.length, mode: 'insert' };
+    }
+    throw response.error || new Error(`Import failed for ${tableName}.`);
+  }
+
+  async function importNormalizedRows({ airingsRows = [], driveRows = [] } = {}) {
+    const summary = {
+      airings: { attempted: airingsRows.length, written: 0, mode: 'skip' },
+      driveResults: { attempted: driveRows.length, written: 0, mode: 'skip' }
+    };
+
+    const chunkSize = 250;
+    for (let index = 0; index < airingsRows.length; index += chunkSize) {
+      const result = await writeImportChunk(constants.AIRINGS_TABLE, airingsRows.slice(index, index + chunkSize));
+      summary.airings.written += result.written;
+      summary.airings.mode = result.mode;
+    }
+    for (let index = 0; index < driveRows.length; index += chunkSize) {
+      const result = await writeImportChunk(constants.DRIVE_RESULTS_TABLE, driveRows.slice(index, index + chunkSize));
+      summary.driveResults.written += result.written;
+      summary.driveResults.mode = result.mode;
+    }
+    return summary;
+  }
+
   App.data = {
     createClient,
     validateConfig,
@@ -422,6 +488,8 @@
     fetchSchedulesRemote,
     upsertScheduleRemote,
     deleteScheduleRemote,
-    fetchPerformanceInputs
+    fetchPerformanceInputs,
+    probeImportTables,
+    importNormalizedRows
   };
 })();

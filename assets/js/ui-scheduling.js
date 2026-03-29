@@ -143,6 +143,21 @@
     return Boolean(App.auth?.canEdit?.());
   }
 
+  function hasScheduleClipboard() {
+    return Boolean(state.scheduleClipboard?.programId);
+  }
+
+  function copyPlacementToClipboard(placement) {
+    if (!placement) return false;
+    state.scheduleClipboard = {
+      programId: placement.programId,
+      programTitle: placement.programTitle,
+      lengthMinutes: placement.lengthMinutes,
+      liveBreakNotes: placement.liveBreakNotes || ''
+    };
+    return true;
+  }
+
   function showScheduleModalWarning(text = '', type = 'warn') {
     state.scheduleModalWarning = { text, type };
     if (!els.scheduleModalWarning) return;
@@ -209,7 +224,7 @@
     els.scheduleProgramModal?.classList.remove('hidden');
     els.scheduleProgramBackdrop?.classList.remove('hidden');
     document.body.classList.add('modal-open');
-    window.setTimeout(() => els.scheduleProgramSearch?.focus(), 0);
+    window.setTimeout(() => { if (els.scheduleProgramSearch && !els.scheduleProgramSearch.disabled) { els.scheduleProgramSearch.focus(); els.scheduleProgramSearch.select?.(); } }, 0);
   }
 
   function closeScheduleModal() {
@@ -506,11 +521,14 @@
       els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card"><strong>${utils.escapeHtml(currentPlacement.programTitle)}</strong><div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min · ${utils.escapeHtml(currentPlacement.liveBreakNotes || 'No live-break note')}</div></div>`;
       els.scheduleLiveBreakNotes.value = currentPlacement.liveBreakNotes || '';
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
+      if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;
     } else {
       els.scheduleSelectedPreview.innerHTML = '<div class="schedule-hint">No program assigned to this slot yet.</div>';
       els.scheduleLiveBreakNotes.value = '';
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = true;
+      if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
+    if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
     if (els.scheduleAssignmentNote) els.scheduleAssignmentNote.textContent = editable
       ? 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.'
       : 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
@@ -656,6 +674,61 @@
     setNotice(`Moved ${placement.programTitle} to ${slotLabel(targetDateKey, targetMinutes)}. ${state.scheduleSyncMessage}`);
   }
 
+  function copySelectedPlacement() {
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    const target = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
+    if (!target) {
+      showScheduleModalWarning('There is no scheduled program in this slot to copy.', 'warn');
+      return;
+    }
+    copyPlacementToClipboard(target);
+    renderProgramPicker();
+    showScheduleModalWarning(`Copied ${target.programTitle}.`, 'ok');
+  }
+
+  async function pasteClipboardToSelectedSlot() {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to paste scheduled programs.', 'bad'); return; }
+    const clip = state.scheduleClipboard;
+    const slot = state.selectedScheduleSlot;
+    const schedule = getActiveSchedule();
+    if (!clip?.programId || !slot || !schedule) {
+      showScheduleModalWarning('Nothing is copied yet.', 'warn');
+      return;
+    }
+    const row = getProgramRowById(clip.programId);
+    if (!row) {
+      showScheduleModalWarning('The copied title could not be found in the current database.', 'bad');
+      return;
+    }
+    const rightsCheck = rightsCheckForDate(row, slot.dateKey);
+    if (!rightsCheck.ok) {
+      showScheduleModalWarning(rightsCheck.reason, 'bad');
+      return;
+    }
+    const existing = findPlacementForSlot(schedule, slot.key);
+    if (existing) schedule.placements = schedule.placements.filter((item) => item.id !== existing.id);
+    const lengthMinutes = Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
+    const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
+    const endMinutes = Math.min((slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES)), 1440);
+    schedule.placements.push({
+      id: utils.makeId('placement'),
+      programId: derive.programId(row),
+      programTitle: derive.title(row),
+      dateKey: slot.dateKey,
+      startMinutes: slot.minutes,
+      endMinutes,
+      startSlotKey: slot.key,
+      lengthMinutes,
+      liveBreakNotes: clip.liveBreakNotes || ''
+    });
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    showScheduleModalWarning(`Pasted ${derive.title(row)} into ${slotLabel(slot.dateKey, slot.minutes)}.`, 'ok');
+    setNotice(`Pasted ${derive.title(row)} into ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
+  }
+
   function exportScheduleView() {
     const schedule = getActiveSchedule();
     if (!schedule) return;
@@ -778,10 +851,26 @@
       if (!checkbox) return;
       toggleTransferred(checkbox.dataset.transferPlacementId, checkbox.checked);
     });
+    els.scheduleCopyPlacementButton?.addEventListener('click', copySelectedPlacement);
+    els.schedulePastePlacementButton?.addEventListener('click', () => { void pasteClipboardToSelectedSlot(); });
+    els.scheduleProgramModal?.addEventListener('click', (event) => event.stopPropagation());
     els.scheduleProgramBackdrop?.addEventListener('click', closeScheduleModal);
     els.scheduleProgramCloseButton?.addEventListener('click', closeScheduleModal);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && !els.scheduleProgramModal?.classList.contains('hidden')) closeScheduleModal();
+      if (els.scheduleProgramModal?.classList.contains('hidden')) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+      const activeTag = document.activeElement?.tagName || '';
+      const inField = /INPUT|TEXTAREA|SELECT/.test(activeTag);
+      if (event.key.toLowerCase() === 'c' && !inField) {
+        event.preventDefault();
+        copySelectedPlacement();
+      }
+      if (event.key.toLowerCase() === 'v' && !inField) {
+        event.preventDefault();
+        void pasteClipboardToSelectedSlot();
+      }
     });
   }
 

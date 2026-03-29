@@ -22,6 +22,7 @@
     });
 
     if (workspace.id === 'scheduling') App.schedulingUi?.renderAll();
+    if (workspace.id === 'imports') void App.importsUi?.ensureReady();
     if (workspace.id === 'performance') void App.performanceUi?.ensureReady();
   }
 
