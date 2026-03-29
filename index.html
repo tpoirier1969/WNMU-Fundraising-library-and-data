@@ -3,24 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.12.4</title>
+  <title>WNMU Pledge Program Library v0.13.0</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.12.1">
+  <link rel="stylesheet" href="assets/styles.css?v=0.13.0">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.12.1"></script>
-  <script defer src="assets/js/dom.js?v=0.12.1"></script>
-  <script defer src="assets/js/data.js?v=0.12.1"></script>
-  <script defer src="assets/js/ui-list.js?v=0.12.1"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.12.1"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.12.1"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.12.1"></script>
-  <script defer src="assets/js/auth.js?v=0.12.1"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.12.1"></script>
-  <script defer src="assets/js/app.js?v=0.12.1"></script>
+  <script defer src="assets/js/core.js?v=0.13.0"></script>
+  <script defer src="assets/js/dom.js?v=0.13.0"></script>
+  <script defer src="assets/js/data.js?v=0.13.0"></script>
+  <script defer src="assets/js/ui-list.js?v=0.13.0"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.13.0"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.13.0"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.13.0"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.13.0"></script>
+  <script defer src="assets/js/auth.js?v=0.13.0"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.13.0"></script>
+  <script defer src="assets/js/app.js?v=0.13.0"></script>
 </head>
 <body>
 
@@ -50,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.12.4</span>
+            <span class="version-pill" id="version-flag">v0.13.0</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -73,6 +74,7 @@
       <div class="workspace-button-row workspace-button-row-main">
         <button type="button" class="workspace-tab active" data-workspace-button="library" aria-pressed="true">Program Library</button>
         <button type="button" class="workspace-tab" data-workspace-button="scheduling" aria-pressed="false">Pledge Scheduling</button>
+        <button type="button" class="workspace-tab" data-workspace-button="imports" aria-pressed="false">Report Imports</button>
         <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Pledge Performance</button>
       </div>
     </section>
@@ -262,10 +264,19 @@
           </div>
         </div>
         <div class="schedule-program-picker" id="schedule-program-picker">
-          <label class="filter-field search-grow">
-            <span class="filter-label">Program title match</span>
-            <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
-          </label>
+          <div id="schedule-modal-warning" class="notice-strip hidden"></div>
+          <div class="schedule-picker-search-row">
+            <label class="filter-field search-grow">
+              <span class="filter-label">Topic browse</span>
+              <select id="schedule-program-topic-select">
+                <option value="">All topics</option>
+              </select>
+            </label>
+            <label class="filter-field search-grow">
+              <span class="filter-label">Program title match</span>
+              <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
+            </label>
+          </div>
           <div id="schedule-program-results" class="schedule-program-results"></div>
           <div id="schedule-selected-preview" class="schedule-selected-preview"></div>
           <label class="filter-field search-grow">
@@ -273,10 +284,146 @@
             <textarea id="schedule-live-break-notes" rows="2" placeholder="Optional note only. Break details stay out of the calendar."></textarea>
           </label>
           <div class="schedule-picker-actions">
+            <div class="toolbar-actions wrap">
+              <button type="button" class="ghost" id="schedule-copy-placement-button">Copy program</button>
+              <button type="button" class="ghost" id="schedule-paste-placement-button">Paste copied program here</button>
+            </div>
             <div id="schedule-assignment-note" class="muted">Selecting a program will place a block sized to that title’s actual runtime when available.</div>
           </div>
         </div>
       </div>
+    </section>
+
+
+    <section class="workspace-pane hidden" data-workspace-pane="imports">
+      <section class="import-shell">
+        <section class="import-toolbar-card performance-card">
+          <div class="performance-card-head">
+            <div>
+              <h3>Start importing pledge reports</h3>
+              <p class="muted">Load CSV, TSV, or delimited text exports, let the app normalize them, then export or push them into Supabase.</p>
+            </div>
+            <span class="mini-chip" id="import-status-pill">Starter importer</span>
+          </div>
+          <div class="list-summary" id="import-status">Choose one or more report files to analyze.</div>
+          <div class="import-toolbar-grid">
+            <label class="filter-field">
+              <span class="filter-label">Report target</span>
+              <select id="import-target-select">
+                <option value="auto" selected>Auto-detect per file</option>
+                <option value="airings">Force airings</option>
+                <option value="drive_results">Force drive results</option>
+              </select>
+            </label>
+            <label class="filter-field import-file-field">
+              <span class="filter-label">Report files</span>
+              <input id="import-file-input" type="file" accept=".csv,.tsv,.txt,.tab,.psv,.dat" multiple>
+            </label>
+            <div class="filter-actions filter-actions-inline import-actions-inline">
+              <button type="button" class="ghost" id="import-refresh-button">Check tables</button>
+              <button type="button" class="ghost" id="import-clear-button">Clear batch</button>
+              <button type="button" class="ghost" id="import-export-airings-button">Export airings CSV</button>
+              <button type="button" class="ghost" id="import-export-drive-button">Export drive CSV</button>
+              <button type="button" class="primary" id="import-supabase-button">Import to Supabase</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="import-summary-grid" id="import-summary-grid">
+          <article class="import-stat-card"><div class="performance-stat-label">Files loaded</div><div class="performance-stat-value">0</div></article>
+          <article class="import-stat-card"><div class="performance-stat-label">Parsed rows</div><div class="performance-stat-value">0</div></article>
+          <article class="import-stat-card"><div class="performance-stat-label">Airings rows</div><div class="performance-stat-value">0</div></article>
+          <article class="import-stat-card"><div class="performance-stat-label">Drive rows</div><div class="performance-stat-value">0</div></article>
+        </section>
+
+        <section class="performance-card import-table-status-card">
+          <div class="performance-card-head">
+            <h3>Table readiness</h3>
+            <span class="mini-chip" id="import-table-pill">Pending probe</span>
+          </div>
+          <div id="import-table-status" class="import-table-status"></div>
+          <div id="import-warning-list" class="import-warning-list"></div>
+        </section>
+
+        <section class="performance-card">
+          <div class="performance-card-head">
+            <h3>Batch file audit</h3>
+            <span class="mini-chip" id="import-file-pill">No files</span>
+          </div>
+          <div class="table-wrap import-file-table-wrap">
+            <table class="programs-table import-file-table">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Delimiter</th>
+                  <th>Headers</th>
+                  <th>Parsed rows</th>
+                  <th>Detected target</th>
+                  <th>Normalized rows</th>
+                  <th>Warnings</th>
+                </tr>
+              </thead>
+              <tbody id="import-file-body">
+                <tr><td colspan="7" class="placeholder-row">No reports analyzed yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="import-preview-grid">
+          <article class="performance-card">
+            <div class="performance-card-head">
+              <h3>Normalized airings preview</h3>
+              <span class="mini-chip" id="import-airings-pill">0 rows</span>
+            </div>
+            <div class="table-wrap import-preview-wrap">
+              <table class="programs-table import-preview-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>NOLA</th>
+                    <th>Aired at</th>
+                    <th>Air date</th>
+                    <th>Air time</th>
+                    <th>Local breaks</th>
+                    <th>Live breaks</th>
+                    <th>Premium</th>
+                  </tr>
+                </thead>
+                <tbody id="import-airings-body">
+                  <tr><td colspan="8" class="placeholder-row">No normalized airings rows yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="performance-card">
+            <div class="performance-card-head">
+              <h3>Normalized drive-results preview</h3>
+              <span class="mini-chip" id="import-drive-pill">0 rows</span>
+            </div>
+            <div class="table-wrap import-preview-wrap">
+              <table class="programs-table import-preview-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>NOLA</th>
+                    <th>Drive date</th>
+                    <th>Aired at</th>
+                    <th>Contributions</th>
+                    <th>Local breaks</th>
+                    <th>Live breaks</th>
+                    <th>Premium</th>
+                  </tr>
+                </thead>
+                <tbody id="import-drive-body">
+                  <tr><td colspan="8" class="placeholder-row">No normalized drive rows yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      </section>
     </section>
 
     <section class="workspace-pane hidden" data-workspace-pane="performance">
@@ -540,7 +687,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.12.4</div>
+      <div id="footer-version">v0.13.0</div>
     </footer>
   </div>
 </body>
