@@ -18,6 +18,7 @@
     els.versionFlag.textContent = constants.APP_VERSION;
     els.footerVersion.textContent = constants.APP_VERSION;
     els.detailEditButton.classList.toggle('hidden', !canEdit());
+    els.addProgramButton?.classList.toggle('hidden', !canEdit());
     if (canEdit()) {
       els.roleChip.textContent = state.userEmail ? `Admin · ${state.userEmail}` : 'Admin';
       els.roleChip.classList.add('admin');

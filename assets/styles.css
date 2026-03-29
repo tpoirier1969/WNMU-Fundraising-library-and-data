@@ -1803,3 +1803,16 @@ button.primary {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+
+.topbar-actions {
+  flex-wrap: wrap;
+}
+
+#detail-modal.create-mode .detail-readonly-block {
+  display: none;
+}
+
+#detail-modal.create-mode .detail-empty {
+  display: none !important;
+}

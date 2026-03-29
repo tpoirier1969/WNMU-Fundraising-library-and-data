@@ -14,6 +14,25 @@
     return App.auth.canEdit();
   }
 
+  function blankProgram() {
+    return {
+      title: '',
+      nola_code: '',
+      distributor: '',
+      length_bucket_minutes: '',
+      actual_runtime_seconds: '',
+      topic_primary: '',
+      topic_secondary: '',
+      rights_start: '',
+      rights_end: '',
+      package_type: '',
+      source_format: '',
+      rights_notes: '',
+      premium_summary: '',
+      program_notes: ''
+    };
+  }
+
   function labelValue(label, value, extraClass = '') {
     return `
       <div class="${utils.escapeHtml(extraClass)}">
@@ -24,7 +43,9 @@
   }
 
   function detailSubtitleHtml(_program) {
-    return 'Everything we know about this program.';
+    return state.detailCreateMode
+      ? 'Create a new pledge title. NOLA is the key field for report matching.'
+      : 'Everything we know about this program.';
   }
 
   function renderLead(program) {
@@ -227,7 +248,7 @@
   function renderDetail(program, timings, driveResults, exactAirings) {
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.remove('hidden');
-    els.detailTitle.textContent = derive.title(program);
+    els.detailTitle.textContent = state.detailCreateMode ? 'Add pledge program' : derive.title(program);
     els.detailSubtitle.textContent = detailSubtitleHtml(program);
     renderLead(program);
     renderOverview(program, driveResults, exactAirings);
@@ -245,15 +266,9 @@
     els.detailEmpty.textContent = message || 'Something went sideways while loading this title.';
   }
 
-  function setDetailMode(mode = 'view') {
-    state.detailEditMode = mode === 'edit' && canEdit();
-    els.detailEditForm.classList.toggle('hidden', !state.detailEditMode);
-    els.detailEditButton.classList.toggle('hidden', !canEdit() || state.detailEditMode);
-    if (!state.detailEditMode) return;
-
-    const source = state.currentDetailProgram || {};
+  function setFormFieldsFromSource(source = {}) {
     const form = els.detailEditForm;
-    form.elements.title.value = derive.title(source) === 'Untitled' ? '' : derive.title(source);
+    form.elements.title.value = derive.title(source) === 'Untitled program' ? '' : derive.title(source);
     form.elements.nola_code.value = derive.nola(source);
     form.elements.distributor.value = derive.distributor(source);
     form.elements.length_bucket_minutes.value = derive.lengthBucket(source) || '';
@@ -269,6 +284,73 @@
     form.elements.program_notes.value = derive.description(source);
   }
 
+  function findDuplicates({ title = '', nola = '', excludeId = '' } = {}) {
+    const titleKey = utils.normalizeLookupKey(title);
+    const nolaKey = utils.normalizeLookupKey(nola);
+    const excludeKey = String(excludeId || '');
+    let exactNola = null;
+    let exactTitle = null;
+
+    (state.rawRows || []).forEach((row) => {
+      const rowId = String(derive.programId(row) || '');
+      if (excludeKey && rowId === excludeKey) return;
+      if (!exactNola && nolaKey && utils.normalizeLookupKey(derive.nola(row)) === nolaKey) exactNola = row;
+      if (!exactTitle && titleKey && utils.normalizeLookupKey(derive.title(row)) === titleKey) exactTitle = row;
+    });
+
+    return { exactNola, exactTitle };
+  }
+
+  function editorDuplicateMessage({ title = '', nola = '' } = {}) {
+    const duplicates = findDuplicates({ title, nola, excludeId: state.detailCreateMode ? '' : state.selectedProgramId });
+    if (duplicates.exactNola) {
+      return {
+        text: `NOLA ${derive.nola(duplicates.exactNola)} already exists on “${derive.title(duplicates.exactNola)}”. NOLA is king, so this would create a duplicate title record.`,
+        type: 'warn',
+        blocking: true
+      };
+    }
+    if (duplicates.exactTitle) {
+      return {
+        text: `Title matches existing record “${derive.title(duplicates.exactTitle)}”${derive.nola(duplicates.exactTitle) ? ` (${derive.nola(duplicates.exactTitle)})` : ''}. Double-check before saving.`,
+        type: 'warn',
+        blocking: false
+      };
+    }
+    return { text: '', type: '', blocking: false };
+  }
+
+  function handleEditorInput() {
+    if (!state.detailEditMode) return;
+    const form = els.detailEditForm;
+    const title = utils.normalizeText(form.elements.title.value);
+    const nola = utils.normalizeText(form.elements.nola_code.value);
+    const dup = editorDuplicateMessage({ title, nola });
+    if (dup.text) {
+      setDetailNotice(dup.text, dup.type || 'warn');
+      return;
+    }
+    if (state.detailCreateMode) {
+      setDetailNotice('Add the core fields now. Timings, premiums, and manual money screens come next.', '');
+    } else {
+      setDetailNotice('');
+    }
+  }
+
+  function setDetailMode(mode = 'view') {
+    state.detailEditMode = mode === 'edit' && canEdit();
+    els.detailModal.classList.toggle('create-mode', state.detailCreateMode);
+    els.detailEditForm.classList.toggle('hidden', !state.detailEditMode);
+    els.detailEditButton.classList.toggle('hidden', !canEdit() || state.detailEditMode || state.detailCreateMode);
+    if (els.detailFormHeading) els.detailFormHeading.textContent = state.detailCreateMode ? 'Add pledge program' : 'Edit program';
+    if (els.detailSaveButton) els.detailSaveButton.textContent = state.detailCreateMode ? 'Create program' : 'Save';
+    if (!state.detailEditMode) return;
+
+    const source = state.currentDetailProgram || blankProgram();
+    setFormFieldsFromSource(source);
+    handleEditorInput();
+  }
+
   function openDetailModal() {
     els.detailBackdrop.classList.remove('hidden');
     els.detailModal.classList.remove('hidden');
@@ -280,14 +362,39 @@
     els.detailModal.classList.add('hidden');
     document.body.classList.remove('modal-open');
     state.detailEditMode = false;
+    state.detailCreateMode = false;
+    els.detailModal.classList.remove('create-mode');
     setDetailNotice('');
+  }
+
+  function openCreateProgram() {
+    if (!canEdit()) return;
+    state.selectedProgramId = '';
+    App.listUi.syncSelectedRows();
+    state.detailCreateMode = true;
+    state.currentDetailProgram = blankProgram();
+    state.currentDetailTimings = [];
+    state.currentDetailDriveResults = [];
+    state.currentDetailAirings = [];
+    openDetailModal();
+    els.detailTitle.textContent = 'Add pledge program';
+    els.detailSubtitle.textContent = 'Create the library record now. NOLA is required because reports match by NOLA, not title.';
+    if (els.detailProgramMeta) els.detailProgramMeta.innerHTML = '';
+    if (els.detailProgramDescription) els.detailProgramDescription.innerHTML = '';
+    els.detailEmpty.classList.add('hidden');
+    els.detailContent.classList.remove('hidden');
+    setDetailMode('edit');
+    setDetailNotice('Add the core fields now. Timings, premiums, and manual money screens come next.');
+    window.setTimeout(() => els.detailEditForm?.elements?.title?.focus(), 0);
   }
 
   async function loadProgramDetail(programId, options = {}) {
     if (!programId) return;
+    state.detailCreateMode = false;
     state.selectedProgramId = String(programId);
     App.listUi.syncSelectedRows();
     openDetailModal();
+    els.detailModal.classList.remove('create-mode');
     els.detailTitle.textContent = 'Loading detail…';
     els.detailSubtitle.textContent = 'Checking the program row, timing rows, and drive history.';
     if (els.detailProgramMeta) els.detailProgramMeta.innerHTML = '';
@@ -325,21 +432,10 @@
     }
   }
 
-  async function saveDetailEdit(event) {
-    event.preventDefault();
-    if (!canEdit()) return;
-    const programId = state.selectedProgramId;
-    if (!programId) return;
+  function buildPayloadFromForm() {
     const form = els.detailEditForm;
-    const title = utils.normalizeText(form.elements.title.value);
-    if (!title) {
-      setDetailNotice('Title is required.', 'bad');
-      form.elements.title.focus();
-      return;
-    }
-
     const payload = {
-      title,
+      title: utils.normalizeText(form.elements.title.value),
       nola_code: utils.normalizeText(form.elements.nola_code.value) || null,
       distributor: utils.normalizeText(form.elements.distributor.value) || null,
       length_bucket_minutes: form.elements.length_bucket_minutes.value ? Number(form.elements.length_bucket_minutes.value) : null,
@@ -355,8 +451,51 @@
       program_notes: utils.normalizeText(form.elements.program_notes.value) || null
     };
     if (payload.length_bucket_minutes != null && !Number.isFinite(payload.length_bucket_minutes)) payload.length_bucket_minutes = null;
+    return payload;
+  }
 
-    setDetailNotice('Saving changes…');
+  async function saveDetailEdit(event) {
+    event.preventDefault();
+    if (!canEdit()) return;
+
+    const payload = buildPayloadFromForm();
+    if (!payload.title) {
+      setDetailNotice('Title is required.', 'bad');
+      els.detailEditForm.elements.title.focus();
+      return;
+    }
+    if (state.detailCreateMode && !payload.nola_code) {
+      setDetailNotice('NOLA is required for a new pledge title. Reports match to the library by NOLA.', 'bad');
+      els.detailEditForm.elements.nola_code.focus();
+      return;
+    }
+
+    const duplicateState = editorDuplicateMessage({ title: payload.title, nola: payload.nola_code || '' });
+    if (duplicateState.blocking) {
+      setDetailNotice(duplicateState.text, 'bad');
+      els.detailEditForm.elements.nola_code.focus();
+      return;
+    }
+
+    setDetailNotice(state.detailCreateMode ? 'Creating program…' : 'Saving changes…');
+
+    if (state.detailCreateMode) {
+      const response = await App.data.createProgram(payload);
+      if (response.error) throw response.error;
+      const createdId = derive.programId(response.data || {});
+      await App.app.refreshAll();
+      if (createdId) {
+        state.detailCreateMode = false;
+        await loadProgramDetail(createdId, { preserveMode: false });
+      } else {
+        closeDetailModal();
+      }
+      App.dom.setNotice(`Added ${payload.title}.`);
+      return;
+    }
+
+    const programId = state.selectedProgramId;
+    if (!programId) return;
     const { error } = await App.data.updateProgram(programId, payload);
     if (error) throw error;
     await App.app.refreshAll({ preserveDetail: true });
@@ -370,9 +509,11 @@
     canEdit,
     openDetailModal,
     closeDetailModal,
+    openCreateProgram,
     setDetailMode,
     loadProgramDetail,
     saveDetailEdit,
+    handleEditorInput,
     showDetailFailure
   };
 })();

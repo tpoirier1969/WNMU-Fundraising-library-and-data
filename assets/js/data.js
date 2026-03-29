@@ -325,6 +325,9 @@
     return state.client.from(constants.BASE_TABLE).update(payload).eq('id', programId);
   }
 
+  async function createProgram(payload) {
+    return state.client.from(constants.BASE_TABLE).insert(payload).select('*').single();
+  }
 
 
   async function probeScheduleStore() {

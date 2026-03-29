@@ -122,8 +122,14 @@
       App.detailUi.setDetailMode('view');
       setNotice('Signed out.');
     });
+    els.addProgramButton?.addEventListener('click', () => App.detailUi.openCreateProgram());
     els.detailEditButton.addEventListener('click', () => { if (App.auth.canEdit()) App.detailUi.setDetailMode('edit'); });
-    els.detailCancelEditButton?.addEventListener('click', () => { setDetailNotice(''); App.detailUi.setDetailMode('view'); });
+    els.detailCancelEditButton?.addEventListener('click', () => {
+      setDetailNotice('');
+      if (state.detailCreateMode) App.detailUi.closeDetailModal();
+      else App.detailUi.setDetailMode('view');
+    });
+    els.detailEditForm?.addEventListener('input', () => App.detailUi.handleEditorInput?.());
     els.detailEditForm?.addEventListener('submit', async (event) => {
       try {
         await App.detailUi.saveDetailEdit(event);

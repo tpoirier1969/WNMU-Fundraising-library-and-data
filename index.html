@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.14.4</title>
+  <title>WNMU Pledge Program Library v0.13.0</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.14.4</span>
+            <span class="version-pill" id="version-flag">v0.15.0</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -61,6 +61,7 @@
         <div class="role-chip" id="role-chip">Viewer</div>
         <button type="button" class="ghost" id="admin-button">Admin sign in</button>
         <button type="button" class="ghost hidden" id="logout-button">Sign out</button>
+        <button type="button" class="ghost hidden" id="add-program-button">Add pledge program</button>
         <button type="button" class="ghost" id="refresh-button">Refresh</button>
       </div>
     </header>
@@ -617,7 +618,7 @@
         <div id="detail-content" class="detail-scroll hidden">
           <form id="detail-edit-form" class="detail-edit-form hidden">
             <div class="detail-block">
-              <div class="section-head"><h3>Edit program</h3><div class="mini-chip">Admin</div></div>
+              <div class="section-head"><h3 id="detail-form-heading">Edit program</h3><div class="mini-chip">Admin</div></div>
               <div class="detail-form-grid">
                 <label class="detail-form-field detail-form-span-2"><span class="filter-label">Title</span><input type="text" name="title" required></label>
                 <label class="detail-form-field"><span class="filter-label">NOLA</span><input type="text" name="nola_code"></label>
@@ -640,17 +641,17 @@
               </div>
             </div>
           </form>
-          <section class="detail-block detail-lead-block">
+          <section class="detail-block detail-readonly-block detail-lead-block">
             <div id="detail-program-meta" class="detail-program-meta"></div>
             <div id="detail-program-description" class="detail-program-description"></div>
           </section>
 
-          <section class="detail-block">
+          <section class="detail-block detail-readonly-block">
             <h3>Overview</h3>
             <dl class="overview-grid" id="overview-grid"></dl>
           </section>
 
-          <section class="detail-block">
+          <section class="detail-block detail-readonly-block">
             <div class="section-head">
               <h3>Timing &amp; segment structure</h3>
               <div id="timing-count-chip" class="mini-chip">0</div>
@@ -658,7 +659,7 @@
             <div id="timing-list" class="version-stack"></div>
           </section>
 
-          <section class="detail-block">
+          <section class="detail-block detail-readonly-block">
             <div class="section-head">
               <h3>Air dates &amp; contributions</h3>
               <div id="airing-count-chip" class="mini-chip">0</div>
@@ -666,7 +667,7 @@
             <div id="airing-list" class="simple-list"></div>
           </section>
 
-          <section class="detail-block">
+          <section class="detail-block detail-readonly-block">
             <div class="section-head">
               <h3>Premiums</h3>
               <div id="premium-count-chip" class="mini-chip">0</div>
@@ -674,7 +675,7 @@
             <div id="premiums-list" class="simple-list"></div>
           </section>
 
-          <section class="detail-block">
+          <section class="detail-block detail-readonly-block">
             <div class="section-head">
               <h3>All known program fields</h3>
               <div class="mini-chip">Full row</div>
@@ -687,7 +688,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.14.4</div>
+      <div id="footer-version">v0.15.0</div>
     </footer>
   </div>
 </body>
