@@ -336,6 +336,8 @@
       const record = getOrCreate(signature || utils.makeId('perf-airing'), dateKey, timeKey);
       record.airingRows += 1;
       record.estimatedOnly = false;
+      const amount = parseMoney(candidateValue(row, MONEY_KEYS, /(dollars?|total_?dollars?|contribution|raised|gross|amount|revenue|pledge)/i));
+      if (Number.isFinite(amount)) record.amount += amount;
       applyMetadata(record, row, programRow, temporal);
       if (temporal.hasDate) {
         const exactKey = eventId(signature, dateKey, timeKey);
