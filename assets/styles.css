@@ -1194,22 +1194,22 @@ button.primary {
 
 .performance-table td:first-child,
 .performance-table th:first-child {
-  min-width: 120px;
-  width: 34%;
+  min-width: 90px;
+  width: 28%;
 }
 
 .performance-table td:nth-child(2),
 .performance-table th:nth-child(2),
 .performance-table td:nth-child(5),
 .performance-table th:nth-child(5) {
-  width: 12%;
+  width: 10%;
 }
 
 .performance-table td:nth-child(3),
 .performance-table th:nth-child(3),
 .performance-table td:nth-child(4),
 .performance-table th:nth-child(4) {
-  width: 21%;
+  width: 16%;
 }
 
 .performance-table td:not(:first-child),
@@ -1335,6 +1335,16 @@ button.primary {
 }
 .schedule-slot.viewer-only {
   cursor: default;
+}
+
+.schedule-guide-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid rgba(191, 42, 51, 0.9);
+  z-index: 5;
+  pointer-events: none;
 }
 .schedule-placement.locked {
   cursor: default;
@@ -2024,7 +2034,7 @@ button.primary {
   .performance-main-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 10px; }
   .performance-chart { min-height: 280px !important; }
   .performance-explain-wrap, .performance-table-wrap, .import-preview-wrap { overflow-x: auto; }
-  .programs-table.performance-table { min-width: 540px; }
+  .programs-table.performance-table { min-width: 0; }
   .programs-table.performance-explain-table, .programs-table.import-preview-table { min-width: 760px; }
   .schedule-sidebar { display: none; }
   .schedule-toolbar {

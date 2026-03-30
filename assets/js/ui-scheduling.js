@@ -74,17 +74,52 @@
     renderAll();
   }
 
-  function createScheduleRecord({ title, startDate, endDate, dayStartHour, dayEndHour }) {
+  function createScheduleRecord({ title, startDate, endDate, dayStartHour, dayEndHour, dayStartMinutes, dayEndMinutes }) {
+    const resolvedStartMinutes = Number.isFinite(Number(dayStartMinutes)) ? Number(dayStartMinutes) : (Number(dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
+    let resolvedEndMinutes = Number.isFinite(Number(dayEndMinutes)) ? Number(dayEndMinutes) : (Number(dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60);
+    if (resolvedEndMinutes <= resolvedStartMinutes) resolvedEndMinutes += 1440;
     return {
       id: utils.makeId('schedule'),
       title: title || defaultScheduleTitle(startDate, endDate),
       startDate,
       endDate,
-      dayStartHour,
-      dayEndHour,
+      dayStartHour: Math.floor(resolvedStartMinutes / 60),
+      dayEndHour: Math.floor(resolvedEndMinutes / 60),
+      dayStartMinutes: resolvedStartMinutes,
+      dayEndMinutes: resolvedEndMinutes,
       createdAt: new Date().toISOString(),
       placements: [],
       slotNotes: {}
+    };
+  }
+
+  function getScheduleWindow(source = {}) {
+    const startMinutes = Number.isFinite(Number(source.dayStartMinutes))
+      ? Number(source.dayStartMinutes)
+      : (Number(source.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
+    let endMinutes = Number.isFinite(Number(source.dayEndMinutes))
+      ? Number(source.dayEndMinutes)
+      : (Number(source.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60);
+    if (endMinutes <= startMinutes) endMinutes += 1440;
+    return { startMinutes, endMinutes };
+  }
+
+  function toDisplayPlacement(placement = {}, windowStartMinutes = constants.DEFAULT_DAY_START_MINUTES) {
+    const cutoff = ((Number(windowStartMinutes) % 1440) + 1440) % 1440;
+    let displayDateKey = placement.dateKey;
+    let displayStartMinutes = Number(placement.startMinutes || 0);
+    if (displayStartMinutes < cutoff) {
+      displayDateKey = utils.plusDays(displayDateKey, -1);
+      displayStartMinutes += 1440;
+    }
+    const lengthMinutes = Math.max(1, Number(placement.lengthMinutes || 30));
+    const displayEndMinutes = displayStartMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES);
+    return {
+      ...placement,
+      displayDateKey,
+      displayStartMinutes,
+      displayEndMinutes,
+      displaySlotKey: `${displayDateKey}|${displayStartMinutes}`
     };
   }
 
@@ -153,22 +188,12 @@
     const importedMinutes = Number(row.program_minutes);
     const runtimeMinutes = Number(derive.runtimeMinutes(sourceRow));
     const bucketMinutes = Number(derive.lengthBucket(sourceRow));
-    let lengthMinutes = Number.isFinite(importedMinutes) && importedMinutes > 0
-      ? importedMinutes
-      : (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
-        ? runtimeMinutes
+    let lengthMinutes = Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
+      ? runtimeMinutes
+      : (Number.isFinite(importedMinutes) && importedMinutes > 0
+        ? importedMinutes
         : (Number.isFinite(bucketMinutes) && bucketMinutes > 0 ? bucketMinutes : 30));
-    let correctedFromLibrary = false;
-    if (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0) {
-      const importedLooksWrong = !Number.isFinite(importedMinutes)
-        || importedMinutes <= 0
-        || (runtimeMinutes <= 30 && importedMinutes >= Math.max(runtimeMinutes * 2, runtimeMinutes + 30))
-        || (runtimeMinutes > 30 && Math.abs(importedMinutes - runtimeMinutes) >= 60);
-      if (importedLooksWrong) {
-        lengthMinutes = runtimeMinutes;
-        correctedFromLibrary = Number.isFinite(importedMinutes) && importedMinutes > 0 && importedMinutes !== runtimeMinutes;
-      }
-    }
+    const correctedFromLibrary = Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 && Number.isFinite(importedMinutes) && importedMinutes > 0 && importedMinutes !== runtimeMinutes;
     return {
       lengthMinutes: Math.max(1, Math.round(lengthMinutes || 30)),
       correctedFromLibrary
@@ -181,7 +206,7 @@
     const startMinutes = importedRowStartMinutes(row);
     if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
     const { lengthMinutes, correctedFromLibrary } = resolveImportedPlacementLength(row, sourceRow);
-    const endMinutes = Math.min(startMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES), 1440);
+    const endMinutes = startMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES);
     return {
       id: utils.makeId('place'),
       programId: derive.programId(sourceRow),
@@ -239,7 +264,7 @@
         }) || null;
       }
       if (!schedule) {
-        schedule = createScheduleRecord({ title: group.title, startDate: group.startDate, endDate: group.endDate, dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR });
+        schedule = createScheduleRecord({ title: group.title, startDate: group.startDate, endDate: group.endDate, dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES });
         state.schedules.unshift(schedule);
         createdSchedules += 1;
       } else {
@@ -308,11 +333,16 @@
   function applyScheduleToView(schedule) {
     if (!schedule) return;
     state.activeScheduleId = schedule.id;
-    state.scheduleView.dayStartHour = Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR);
-    state.scheduleView.dayEndHour = Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR);
+    const windowConfig = getScheduleWindow(schedule);
+    state.scheduleView.dayStartMinutes = windowConfig.startMinutes;
+    state.scheduleView.dayEndMinutes = windowConfig.endMinutes;
+    state.scheduleView.dayStartHour = Math.floor(windowConfig.startMinutes / 60);
+    state.scheduleView.dayEndHour = Math.floor(windowConfig.endMinutes / 60);
     state.scheduleDraft.title = schedule.title || '';
     state.scheduleDraft.startDate = schedule.startDate || '';
     state.scheduleDraft.endDate = schedule.endDate || '';
+    state.scheduleDraft.dayStartMinutes = windowConfig.startMinutes;
+    state.scheduleDraft.dayEndMinutes = windowConfig.endMinutes;
   }
 
   function visibleDateKeys(schedule) {
@@ -623,11 +653,12 @@
     els.scheduleEditor.classList.remove('hidden');
 
     const dayKeys = visibleDateKeys(schedule);
-    const visibleStartMin = state.scheduleView.dayStartHour * 60;
-    const visibleEndMin = state.scheduleView.dayEndHour * 60;
+    const windowConfig = getScheduleWindow(state.scheduleView);
+    const visibleStartMin = windowConfig.startMinutes;
+    const visibleEndMin = windowConfig.endMinutes;
     const times = [];
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
-    const placements = annotatePlacements(schedule);
+    const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
 
     const zoom = Math.min(2.8, Math.max(0.12, Number(state.scheduleView.zoom || 1)));
     const editable = canScheduleEdit();
@@ -643,7 +674,7 @@
     els.scheduleGrid.style.setProperty('--schedule-slot-height', `${slotHeight}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-font-size', `${timeFontPx}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-width', `${timeColumnWidth}px`);
-    els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin === 1440 ? 1439 : visibleEndMin)}`;
+    els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin - constants.DEFAULT_SLOT_MINUTES)}`;
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
     const header = ['<div class="schedule-corner sticky"></div>'];
@@ -651,15 +682,19 @@
       header.push(`<div class="schedule-day-head sticky ${isWeekendDateKey(dateKey) ? 'weekend' : ''}"><span>${utils.escapeHtml(formatScheduleDay(dateKey))}</span></div>`);
     });
 
+    const guideMinutes = new Set([420, 1200, 1440]);
     const body = [];
     times.forEach((minutes) => {
-      const showTimeLabel = !compactTimeLabels || (ultraCompactTimeLabels ? (minutes % 120 === 0) : (minutes % 60 === 0));
-      const guideClass = (minutes === 420 || minutes === 1200) ? ' guide-line-red' : '';
+      const normalizedMinutes = ((minutes % 1440) + 1440) % 1440;
+      const showTimeLabel = !compactTimeLabels || (ultraCompactTimeLabels ? (normalizedMinutes % 120 === 0) : (normalizedMinutes % 60 === 0));
+      const guideClass = guideMinutes.has(minutes) || guideMinutes.has(normalizedMinutes) ? ' guide-line-red' : '';
       body.push(`<div class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}${guideClass}"><span>${showTimeLabel ? utils.escapeHtml(utils.minutesToLabel(minutes)) : ''}</span></div>`);
-      dayKeys.forEach((dateKey) => {
-        const slotKey = `${dateKey}|${minutes}`;
-        const placement = placements.find((item) => item.dateKey === dateKey && Number(item.startMinutes) <= minutes && Number(item.endMinutes) > minutes) || null;
-        const isStart = placement && Number(placement.startMinutes) === minutes;
+      dayKeys.forEach((displayDateKey) => {
+        const actualDateKey = minutes >= 1440 ? utils.plusDays(displayDateKey, 1) : displayDateKey;
+        const actualMinutes = minutes >= 1440 ? minutes - 1440 : minutes;
+        const slotKey = `${actualDateKey}|${actualMinutes}`;
+        const placement = placements.find((item) => item.displayDateKey === displayDateKey && Number(item.displayStartMinutes) <= minutes && Number(item.displayEndMinutes) > minutes) || null;
+        const isStart = placement && Number(placement.displayStartMinutes) === minutes;
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : ''].filter(Boolean).join(' ');
         const subtitleBits = [];
@@ -669,16 +704,21 @@
           if (hasLiveBreakFlag(placement)) subtitleBits.push('live break');
         }
         body.push(`
-          <button type="button" class="schedule-slot ${isWeekendDateKey(dateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${subtitleBits.join(' · ')}</span></span>` : ''}
+          <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${subtitleBits.join(' · ')}</span></span>` : ''}
           </button>
         `);
       });
     });
 
+    const guideOverlays = [420, 1200, 1440]
+      .filter((minutes) => minutes >= visibleStartMin && minutes < visibleEndMin)
+      .map((minutes) => `<div class="schedule-guide-overlay" style="top:${((minutes - visibleStartMin) / constants.DEFAULT_SLOT_MINUTES) * slotHeight}px"></div>`)
+      .join('');
+
     els.scheduleGrid.innerHTML = `
       <div class="schedule-grid-head" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${header.join('')}</div>
-      <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}</div>
+      <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}${guideOverlays}</div>
     `;
     renderScheduledProgramDetails();
   }
@@ -876,9 +916,15 @@
     schedule.title = title;
     schedule.startDate = startDate;
     schedule.endDate = endDate;
+    schedule.dayStartMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
+    schedule.dayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
+    schedule.dayStartHour = Math.floor(schedule.dayStartMinutes / 60);
+    schedule.dayEndHour = Math.floor(schedule.dayEndMinutes / 60);
     state.scheduleDraft.title = title;
     state.scheduleDraft.startDate = startDate;
     state.scheduleDraft.endDate = endDate;
+    state.scheduleDraft.dayStartMinutes = schedule.dayStartMinutes;
+    state.scheduleDraft.dayEndMinutes = schedule.dayEndMinutes;
     await persistSchedules(schedule);
     renderScheduleList();
     renderScheduleForm();
@@ -940,7 +986,7 @@
     const lengthMinutes = derive.runtimeMinutes(row) || derive.lengthBucket(row) || 30;
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const existing = findPlacementForSlot(schedule, slot.key);
-    const endMinutes = Math.min((slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES)), 1440);
+    const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     const base = {
       id: existing?.id || utils.makeId('place'),
       programId: derive.programId(row),
@@ -1001,14 +1047,16 @@
   }
 
   function adjustRange(kind, deltaHours) {
-    const field = kind === 'start' ? 'dayStartHour' : 'dayEndHour';
-    const other = kind === 'start' ? 'dayEndHour' : 'dayStartHour';
-    const candidate = state.scheduleView[field] + deltaHours;
+    const deltaMinutes = deltaHours * 60;
+    const startMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
+    const endMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
     if (kind === 'start') {
-      state.scheduleView.dayStartHour = Math.max(constants.MIN_VISIBLE_HOUR, Math.min(candidate, state.scheduleView[other] - 1));
+      state.scheduleView.dayStartMinutes = Math.max(constants.MIN_VISIBLE_HOUR * 60, Math.min(startMinutes + deltaMinutes, endMinutes - 60));
     } else {
-      state.scheduleView.dayEndHour = Math.min(constants.MAX_VISIBLE_HOUR, Math.max(candidate, state.scheduleView[other] + 1));
+      state.scheduleView.dayEndMinutes = Math.min(constants.MAX_VISIBLE_HOUR * 60, Math.max(endMinutes + deltaMinutes, startMinutes + 60));
     }
+    state.scheduleView.dayStartHour = Math.floor(state.scheduleView.dayStartMinutes / 60);
+    state.scheduleView.dayEndHour = Math.floor(state.scheduleView.dayEndMinutes / 60);
     renderScheduleGrid();
   }
 
@@ -1027,7 +1075,7 @@
     const slotCount = Math.max(1, Math.ceil(Number(placement.lengthMinutes || 30) / constants.DEFAULT_SLOT_MINUTES));
     placement.dateKey = targetDateKey;
     placement.startMinutes = targetMinutes;
-    placement.endMinutes = Math.min(targetMinutes + (slotCount * constants.DEFAULT_SLOT_MINUTES), 1440);
+    placement.endMinutes = targetMinutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     placement.startSlotKey = `${targetDateKey}|${targetMinutes}`;
     await persistSchedules(schedule);
     renderScheduleGrid();
@@ -1073,7 +1121,7 @@
     if (existing) schedule.placements = schedule.placements.filter((item) => item.id !== existing.id);
     const lengthMinutes = Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
-    const endMinutes = Math.min((slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES)), 1440);
+    const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     schedule.placements.push({
       id: utils.makeId('placement'),
       programId: derive.programId(row),
@@ -1121,6 +1169,14 @@
 
   function scheduleSlotPayloadFromElement(target) {
     if (!target) return null;
+    const placementEl = target.closest('[data-placement-id]');
+    if (placementEl) {
+      return {
+        key: `${placementEl.dataset.dateKey}|${placementEl.dataset.minutes}`,
+        dateKey: placementEl.dataset.dateKey,
+        minutes: Number(placementEl.dataset.minutes || 0)
+      };
+    }
     const slotEl = target.closest('[data-slot-key]');
     if (!slotEl) return null;
     return {
@@ -1237,7 +1293,7 @@
 
   function bindEvents() {
     els.newScheduleButton?.addEventListener('click', () => {
-      state.scheduleDraft = { title: '', startDate: '', endDate: '', dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR };
+      state.scheduleDraft = { title: '', startDate: '', endDate: '', dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES };
       renderScheduleForm();
       els.fundraiserTitleInput?.focus();
     });

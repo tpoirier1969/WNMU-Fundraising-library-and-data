@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.3',
+    APP_VERSION: 'v0.20.4',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -72,10 +72,12 @@ window.PledgeLib = window.PledgeLib || {};
         { name: 'programs_v2', label: 'Programs table' }
       ];
     })(),
-    DEFAULT_DAY_START_HOUR: 6,
-    DEFAULT_DAY_END_HOUR: 24,
+    DEFAULT_DAY_START_HOUR: 7,
+    DEFAULT_DAY_END_HOUR: 31,
+    DEFAULT_DAY_START_MINUTES: 420,
+    DEFAULT_DAY_END_MINUTES: 1830,
     MIN_VISIBLE_HOUR: 0,
-    MAX_VISIBLE_HOUR: 24,
+    MAX_VISIBLE_HOUR: 36,
     DEFAULT_SLOT_MINUTES: 30
   };
 
@@ -141,13 +143,17 @@ window.PledgeLib = window.PledgeLib || {};
       title: '',
       startDate: '',
       endDate: '',
-      dayStartHour: 6,
-      dayEndHour: 24
+      dayStartHour: 7,
+      dayEndHour: 31,
+      dayStartMinutes: 420,
+      dayEndMinutes: 1830
     },
     scheduleView: {
       zoom: 1,
-      dayStartHour: 6,
-      dayEndHour: 24
+      dayStartHour: 7,
+      dayEndHour: 31,
+      dayStartMinutes: 420,
+      dayEndMinutes: 1830
     },
     selectedScheduleSlot: null,
     selectedScheduleProgram: null,
@@ -395,8 +401,9 @@ window.PledgeLib = window.PledgeLib || {};
 
     minutesToLabel(minutes) {
       const total = Number(minutes) || 0;
-      const hour = Math.floor(total / 60);
-      const min = total % 60;
+      const wrapped = ((Math.floor(total) % 1440) + 1440) % 1440;
+      const hour = Math.floor(wrapped / 60);
+      const min = wrapped % 60;
       const suffix = hour >= 12 ? 'PM' : 'AM';
       const displayHour = ((hour + 11) % 12) + 1;
       return `${displayHour}:${String(min).padStart(2, '0')} ${suffix}`;

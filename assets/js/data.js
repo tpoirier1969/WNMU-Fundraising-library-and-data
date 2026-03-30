@@ -407,6 +407,8 @@
       endDate: row.end_date || '',
       dayStartHour: Number(row.day_start_hour ?? constants.DEFAULT_DAY_START_HOUR),
       dayEndHour: Number(row.day_end_hour ?? constants.DEFAULT_DAY_END_HOUR),
+      dayStartMinutes: Number(row.schedule_data?.dayStartMinutes ?? (Number(row.day_start_hour ?? constants.DEFAULT_DAY_START_HOUR) * 60) ?? constants.DEFAULT_DAY_START_MINUTES),
+      dayEndMinutes: Number(row.schedule_data?.dayEndMinutes ?? (Number(row.day_end_hour ?? constants.DEFAULT_DAY_END_HOUR) * 60) ?? constants.DEFAULT_DAY_END_MINUTES),
       createdAt: row.created_at || '',
       updatedAt: row.updated_at || '',
       placements: Array.isArray(row.schedule_data?.placements) ? row.schedule_data.placements : [],
@@ -420,9 +422,9 @@
       title: schedule.title,
       start_date: schedule.startDate,
       end_date: schedule.endDate,
-      day_start_hour: schedule.dayStartHour,
-      day_end_hour: schedule.dayEndHour,
-      schedule_data: { placements: schedule.placements || [], slotNotes: schedule.slotNotes || {} },
+      day_start_hour: Math.floor((schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60)) / 60),
+      day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60),
+      schedule_data: { placements: schedule.placements || [], slotNotes: schedule.slotNotes || {}, dayStartMinutes: schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60), dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60) },
       updated_at: new Date().toISOString()
     };
     const { error } = await state.client.from(constants.SCHEDULES_TABLE).upsert(payload);
