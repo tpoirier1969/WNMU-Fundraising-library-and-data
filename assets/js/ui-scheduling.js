@@ -139,9 +139,40 @@
     }
     const wantedNola = utils.normalizeLookupKey(row.nola_code);
     if (wantedNola) {
-      return (state.rawRows || []).find((item) => utils.normalizeLookupKey(derive.nola(item)) === wantedNola) || null;
+      const byNola = (state.rawRows || []).find((item) => utils.normalizeLookupKey(derive.nola(item)) === wantedNola) || null;
+      if (byNola) return byNola;
+    }
+    const wantedTitle = utils.normalizeLookupKey(row.program_title || row.title);
+    if (wantedTitle) {
+      return (state.rawRows || []).find((item) => utils.normalizeLookupKey(derive.title(item)) === wantedTitle) || null;
     }
     return null;
+  }
+
+  function resolveImportedPlacementLength(row = {}, sourceRow = null) {
+    const importedMinutes = Number(row.program_minutes);
+    const runtimeMinutes = Number(derive.runtimeMinutes(sourceRow));
+    const bucketMinutes = Number(derive.lengthBucket(sourceRow));
+    let lengthMinutes = Number.isFinite(importedMinutes) && importedMinutes > 0
+      ? importedMinutes
+      : (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0
+        ? runtimeMinutes
+        : (Number.isFinite(bucketMinutes) && bucketMinutes > 0 ? bucketMinutes : 30));
+    let correctedFromLibrary = false;
+    if (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0) {
+      const importedLooksWrong = !Number.isFinite(importedMinutes)
+        || importedMinutes <= 0
+        || (runtimeMinutes <= 30 && importedMinutes >= Math.max(runtimeMinutes * 2, runtimeMinutes + 30))
+        || (runtimeMinutes > 30 && Math.abs(importedMinutes - runtimeMinutes) >= 60);
+      if (importedLooksWrong) {
+        lengthMinutes = runtimeMinutes;
+        correctedFromLibrary = Number.isFinite(importedMinutes) && importedMinutes > 0 && importedMinutes !== runtimeMinutes;
+      }
+    }
+    return {
+      lengthMinutes: Math.max(1, Math.round(lengthMinutes || 30)),
+      correctedFromLibrary
+    };
   }
 
   function buildPlacementFromImportedAiring(row = {}) {
@@ -149,13 +180,14 @@
     const dateKey = importedRowDateKey(row);
     const startMinutes = importedRowStartMinutes(row);
     if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
-    const lengthMinutes = Number(row.program_minutes) || derive.runtimeMinutes(sourceRow) || derive.lengthBucket(sourceRow) || 30;
+    const { lengthMinutes, correctedFromLibrary } = resolveImportedPlacementLength(row, sourceRow);
     const endMinutes = Math.min(startMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES), 1440);
     return {
       id: utils.makeId('place'),
       programId: derive.programId(sourceRow),
       programTitle: derive.title(sourceRow),
       lengthMinutes,
+      durationCorrectedFromLibrary: correctedFromLibrary,
       dateKey,
       startMinutes,
       endMinutes,
@@ -175,7 +207,9 @@
   }
 
   function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
-    const validRows = (Array.isArray(rows) ? rows : []).filter((row) => (row?.pledge_program_id || row?.program_id) && importedRowDateKey(row) && Number.isFinite(importedRowStartMinutes(row)));
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const validRows = sourceRows.filter((row) => findProgramRowForImportedAiring(row) && importedRowDateKey(row) && Number.isFinite(importedRowStartMinutes(row)));
+    const skippedRows = Math.max(0, sourceRows.length - validRows.length);
     const groups = new Map();
     validRows.forEach((row) => {
       const key = importedScheduleKey(row);
@@ -191,6 +225,7 @@
     let updatedSchedules = 0;
     let createdPlacements = 0;
     let skippedPlacements = 0;
+    let correctedDurations = 0;
     let firstScheduleId = '';
 
     groups.forEach((group) => {
@@ -229,6 +264,7 @@
         schedule.placements.push(placement);
         existingKeys.add(dedupeKey);
         createdPlacements += 1;
+        if (placement.durationCorrectedFromLibrary) correctedDurations += 1;
       });
     });
 
@@ -243,6 +279,8 @@
       schedulesUpdated: updatedSchedules,
       placementsCreated: createdPlacements,
       placementsSkipped: skippedPlacements,
+      skippedRows,
+      correctedDurations,
       fundraiserCount: groups.size
     };
   }
@@ -256,7 +294,14 @@
       await persistSchedules(schedule);
     }
     renderAll();
-    setNotice(`Imported reports built ${utils.formatCount(summary.placementsCreated)} scheduler entries across ${utils.formatCount(summary.fundraiserCount)} fundraisers. ${utils.formatCount(summary.placementsSkipped)} duplicates were skipped. ${state.scheduleSyncMessage}`);
+    const noteBits = [
+      `Imported reports built ${utils.formatCount(summary.placementsCreated)} scheduler entries across ${utils.formatCount(summary.fundraiserCount)} fundraisers.`,
+      `${utils.formatCount(summary.placementsSkipped)} duplicates were skipped.`
+    ];
+    if (summary.skippedRows) noteBits.push(`${utils.formatCount(summary.skippedRows)} airings could not be placed automatically.`);
+    if (summary.correctedDurations) noteBits.push(`${utils.formatCount(summary.correctedDurations)} durations were corrected from library runtimes.`);
+    noteBits.push(state.scheduleSyncMessage);
+    setNotice(noteBits.join(' '));
     return summary;
   }
 
@@ -609,7 +654,8 @@
     const body = [];
     times.forEach((minutes) => {
       const showTimeLabel = !compactTimeLabels || (ultraCompactTimeLabels ? (minutes % 120 === 0) : (minutes % 60 === 0));
-      body.push(`<div class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}"><span>${showTimeLabel ? utils.escapeHtml(utils.minutesToLabel(minutes)) : ''}</span></div>`);
+      const guideClass = (minutes === 420 || minutes === 1200) ? ' guide-line-red' : '';
+      body.push(`<div class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}${guideClass}"><span>${showTimeLabel ? utils.escapeHtml(utils.minutesToLabel(minutes)) : ''}</span></div>`);
       dayKeys.forEach((dateKey) => {
         const slotKey = `${dateKey}|${minutes}`;
         const placement = placements.find((item) => item.dateKey === dateKey && Number(item.startMinutes) <= minutes && Number(item.endMinutes) > minutes) || null;
@@ -623,7 +669,7 @@
           if (hasLiveBreakFlag(placement)) subtitleBits.push('live break');
         }
         body.push(`
-          <button type="button" class="schedule-slot ${isWeekendDateKey(dateKey) ? 'weekend' : ''} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
+          <button type="button" class="schedule-slot ${isWeekendDateKey(dateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(dateKey)}" data-minutes="${minutes}">
             ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${subtitleBits.join(' · ')}</span></span>` : ''}
           </button>
         `);

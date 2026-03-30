@@ -895,6 +895,8 @@ button.small { padding: 7px 10px; }
 }
 .schedule-slot.selected { outline: 2px solid #7aaac8; outline-offset: -2px; }
 .schedule-slot.drag-target { outline: 2px dashed var(--pbs-blue-dark); outline-offset: -2px; background: #eef5fb; }
+.schedule-slot.guide-line-red { border-top: 2px solid rgba(191, 42, 51, 0.9); }
+.schedule-time-label.guide-line-red { border-top: 2px solid rgba(191, 42, 51, 0.9); }
 .schedule-placement {
   position: absolute;
   inset: 1px 1px auto 1px;
@@ -1176,11 +1178,43 @@ button.primary {
 
 .performance-table-wrap {
   max-height: 520px;
+  overflow-x: auto;
+}
+
+.programs-table.performance-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.performance-table th,
+.performance-table td {
+  padding: 7px 10px;
+  font-size: 0.92rem;
 }
 
 .performance-table td:first-child,
 .performance-table th:first-child {
-  min-width: 220px;
+  min-width: 120px;
+  width: 34%;
+}
+
+.performance-table td:nth-child(2),
+.performance-table th:nth-child(2),
+.performance-table td:nth-child(5),
+.performance-table th:nth-child(5) {
+  width: 12%;
+}
+
+.performance-table td:nth-child(3),
+.performance-table th:nth-child(3),
+.performance-table td:nth-child(4),
+.performance-table th:nth-child(4) {
+  width: 21%;
+}
+
+.performance-table td:not(:first-child),
+.performance-table th:not(:first-child) {
+  white-space: nowrap;
 }
 
 .performance-source-notes {
@@ -1990,7 +2024,8 @@ button.primary {
   .performance-main-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 10px; }
   .performance-chart { min-height: 280px !important; }
   .performance-explain-wrap, .performance-table-wrap, .import-preview-wrap { overflow-x: auto; }
-  .programs-table.performance-table, .programs-table.performance-explain-table, .programs-table.import-preview-table { min-width: 760px; }
+  .programs-table.performance-table { min-width: 540px; }
+  .programs-table.performance-explain-table, .programs-table.import-preview-table { min-width: 760px; }
   .schedule-sidebar { display: none; }
   .schedule-toolbar {
     display: grid !important;
