@@ -270,7 +270,7 @@
       air_time: airTime || '',
       dollars: dollars ?? '',
       pledges: pledges ?? '',
-      source_file_name: meta.fileName,
+      source_report_type: meta.target || '',
       drive_start_date: meta.driveStartDate || '',
       drive_end_date: meta.driveEndDate || ''
     };
@@ -514,6 +514,24 @@
     }
   }
 
+
+
+  async function buildSchedulerFromCurrentBatch(options = {}) {
+    if (!App.auth.canEdit()) {
+      setResultBanner('Scheduler creation is admin-only.', 'warn');
+      return;
+    }
+    const matchedRows = imp().airingsRows.filter((row) => row.match_method === 'nola' && row.program_id != null);
+    if (!matchedRows.length) {
+      setResultBanner('No matched imported airings are available for scheduler creation yet.', 'warn');
+      return;
+    }
+    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: matchedRows, rebuild: Boolean(options.rebuild) });
+    if (summary) {
+      setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.`);
+    }
+  }
+
   async function importToSupabase() {
     if (!App.auth.canEdit()) {
       setNotice('Direct import is admin-only. Export the normalized CSV if you need a handoff first.', 'warn');
@@ -546,7 +564,7 @@
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
       renderAll();
-      const success = `Imported ${utils.formatCount(summary.airings.written)} matched airings row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were skipped.`;
+      const success = `Imported ${utils.formatCount(summary.airings.written)} matched airings row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were skipped.`;
       setStatus(success);
       setResultBanner(success);
       setNotice(success);
@@ -596,7 +614,7 @@
     if (!els.importWarningList) return;
     const warnings = [...new Set(imp().warnings.filter(Boolean))];
     if (imp().lastImportResult) {
-      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows. Fundraiser rollups remain derived only.`);
+      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows, skipped ${utils.formatCount(imp().lastImportResult.airings.skippedDuplicates || 0)} duplicates, and skipped ${utils.formatCount(imp().lastImportResult.skippedUnmatched || 0)} unmatched rows. Fundraiser rollups remain derived only.`);
     }
     if (!warnings.length) {
       els.importWarningList.innerHTML = '';
@@ -671,6 +689,11 @@
       els.importSupabaseButton.disabled = !canImport;
       els.importSupabaseButton.title = canImport ? '' : 'Admin sign-in required for direct Supabase writes.';
     }
+    if (els.importBuildScheduleButton) {
+      const canBuild = Boolean(App.auth.canEdit() && imp().airingsRows.some((row) => row.match_method === 'nola' && row.program_id != null));
+      els.importBuildScheduleButton.disabled = !canBuild;
+      els.importBuildScheduleButton.title = canBuild ? '' : 'Load matched imported airings first, then sign in as admin.';
+    }
     setStatusPill(canImport ? 'Direct import enabled' : 'Preview / export mode', !canImport);
   }
 
@@ -720,6 +743,7 @@
       downloadCsv(`pledge-fundraiser-rollups-derived-${Date.now()}.csv`, imp().driveRows);
     });
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
+    els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
   }
 
   App.importsUi = {

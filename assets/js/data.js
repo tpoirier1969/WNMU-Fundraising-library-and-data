@@ -436,6 +436,50 @@
     return true;
   }
 
+
+  async function fetchExistingImportHashes(hashes = []) {
+    const wanted = [...new Set((Array.isArray(hashes) ? hashes : []).map((value) => String(value || '').trim()).filter(Boolean))];
+    if (!wanted.length) return new Set();
+    const found = new Set();
+    const chunkSize = 250;
+    for (let index = 0; index < wanted.length; index += chunkSize) {
+      const chunk = wanted.slice(index, index + chunkSize);
+      const { data, error } = await state.client
+        .from(constants.AIRINGS_TABLE)
+        .select('row_hash')
+        .in('row_hash', chunk);
+      if (error) throw error;
+      (data || []).forEach((row) => { if (row?.row_hash) found.add(String(row.row_hash)); });
+    }
+    return found;
+  }
+
+
+  function importNaturalKey(row = {}) {
+    return [
+      utils.normalizeLookupKey(row.nola_code),
+      utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
+      utils.normalizeText(row.air_time),
+      utils.normalizeText(row.drive_start_date),
+      utils.normalizeText(row.drive_end_date)
+    ].join('|').toLowerCase();
+  }
+
+  async function fetchExistingImportedNaturalKeys(rows = []) {
+    const wanted = new Set((Array.isArray(rows) ? rows : []).map((row) => importNaturalKey(row)).filter(Boolean));
+    if (!wanted.size) return new Set();
+    const existingRows = await fetchAllRows(constants.AIRINGS_TABLE);
+    const found = new Set();
+    (existingRows || []).forEach((row) => {
+      const key = importNaturalKey(row);
+      if (key && wanted.has(key)) found.add(key);
+    });
+    return found;
+  }
+
+  async function fetchImportedAirings() {
+    return fetchAllRows(constants.AIRINGS_TABLE);
+  }
   async function fetchPerformanceInputs() {
     const warnings = [];
     let airingRows = [];
@@ -497,13 +541,28 @@
 
   async function importNormalizedRows({ airingsRows = [], driveRows = [] } = {}) {
     const summary = {
-      airings: { attempted: airingsRows.length, written: 0, mode: 'skip' },
+      airings: { attempted: airingsRows.length, written: 0, skippedDuplicates: 0, mode: 'skip' },
       driveResults: { attempted: 0, written: 0, mode: 'derived' }
     };
 
+    const existingHashes = await fetchExistingImportHashes(airingsRows.map((row) => row?.row_hash));
+    const existingNaturalKeys = await fetchExistingImportedNaturalKeys(airingsRows);
+    const freshRows = airingsRows.filter((row) => {
+      const rowHash = String(row?.row_hash || '');
+      if (rowHash && existingHashes.has(rowHash)) return false;
+      const naturalKey = importNaturalKey(row);
+      if (naturalKey && existingNaturalKeys.has(naturalKey)) return false;
+      return true;
+    });
+    summary.airings.skippedDuplicates = Math.max(0, airingsRows.length - freshRows.length);
+    if (!freshRows.length) {
+      summary.airings.mode = 'duplicate-skip';
+      return summary;
+    }
+
     const chunkSize = 250;
-    for (let index = 0; index < airingsRows.length; index += chunkSize) {
-      const result = await writeImportChunk(constants.AIRINGS_TABLE, airingsRows.slice(index, index + chunkSize));
+    for (let index = 0; index < freshRows.length; index += chunkSize) {
+      const result = await writeImportChunk(constants.AIRINGS_TABLE, freshRows.slice(index, index + chunkSize));
       summary.airings.written += result.written;
       summary.airings.mode = result.mode;
     }
@@ -529,6 +588,7 @@
     upsertScheduleRemote,
     deleteScheduleRemote,
     fetchPerformanceInputs,
+    fetchImportedAirings,
     probeImportTables,
     importNormalizedRows
   };

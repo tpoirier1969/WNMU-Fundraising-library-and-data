@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.19.1</title>
+  <title>WNMU Pledge Program Library v0.20.1</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.19.1</span>
+            <span class="version-pill" id="version-flag">v0.20.1</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -211,6 +211,8 @@
               </label>
               <div class="filter-actions">
                 <button type="button" class="primary" id="schedule-generate-button">Build calendar</button>
+                <button type="button" class="ghost" id="schedule-build-from-imports-button">Build from imported reports</button>
+                <button type="button" class="ghost" id="schedule-rebuild-from-imports-button">Rebuild imported schedules</button>
               </div>
             </div>
           </section>
@@ -329,6 +331,7 @@
             </label>
             <div class="filter-actions filter-actions-inline import-actions-inline">
               <button type="button" class="primary" id="import-supabase-button">Import matched rows to Supabase</button>
+              <button type="button" class="ghost" id="import-build-schedule-button">Create scheduler entries</button>
               <button type="button" class="ghost" id="import-clear-button">Clear batch</button>
             </div>
           </div>
@@ -729,7 +732,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.19.1</div>
+      <div id="footer-version">v0.20.1</div>
     </footer>
   </div>
 </body>

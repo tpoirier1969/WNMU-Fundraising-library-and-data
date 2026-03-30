@@ -88,6 +88,178 @@
     };
   }
 
+
+
+  function importedRowDateKey(row = {}) {
+    return utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '';
+  }
+
+  function importedRowStartMinutes(row = {}) {
+    const direct = utils.normalizeText(row.air_time);
+    if (direct) {
+      const match = direct.match(/^(\d{1,2}):(\d{2})/);
+      if (match) return (Number(match[1]) * 60) + Number(match[2]);
+    }
+    const stamp = row.aired_at ? new Date(row.aired_at) : null;
+    if (stamp && !Number.isNaN(stamp.getTime())) return (stamp.getHours() * 60) + stamp.getMinutes();
+    return null;
+  }
+
+  function importedFundraiserLabel(row = {}) {
+    return utils.normalizeText(row.fundraiser_label)
+      || ((row.drive_start_date && row.drive_end_date) ? `Imported pledge ${utils.formatDate(row.drive_start_date)} – ${utils.formatDate(row.drive_end_date)}` : '')
+      || utils.normalizeText(row.source_file_name)
+      || 'Imported fundraiser';
+  }
+
+  function importedScheduleKey(row = {}) {
+    const startDate = utils.normalizeText(row.drive_start_date);
+    const endDate = utils.normalizeText(row.drive_end_date);
+    if (startDate || endDate) return ['range', startDate, endDate].join('|').toLowerCase();
+    const label = utils.normalizeLookupKey(row.fundraiser_label);
+    if (label) return ['label', label].join('|').toLowerCase();
+    return ['file', utils.normalizeLookupKey(row.source_file_name)].join('|').toLowerCase();
+  }
+
+  function scheduleIdentityKey(schedule = {}) {
+    const importedKey = utils.normalizeText(schedule?.meta?.importedFundraiserKey);
+    if (importedKey) return `imported|${importedKey}`.toLowerCase();
+    return [
+      utils.normalizeText(schedule.title),
+      utils.normalizeText(schedule.startDate),
+      utils.normalizeText(schedule.endDate)
+    ].join('|').toLowerCase();
+  }
+
+  function findProgramRowForImportedAiring(row = {}) {
+    const programId = String(row.pledge_program_id || row.program_id || '').trim();
+    if (programId) {
+      const byId = (state.rawRows || []).find((item) => String(derive.programId(item)) === programId);
+      if (byId) return byId;
+    }
+    const wantedNola = utils.normalizeLookupKey(row.nola_code);
+    if (wantedNola) {
+      return (state.rawRows || []).find((item) => utils.normalizeLookupKey(derive.nola(item)) === wantedNola) || null;
+    }
+    return null;
+  }
+
+  function buildPlacementFromImportedAiring(row = {}) {
+    const sourceRow = findProgramRowForImportedAiring(row);
+    const dateKey = importedRowDateKey(row);
+    const startMinutes = importedRowStartMinutes(row);
+    if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
+    const lengthMinutes = Number(row.program_minutes) || derive.runtimeMinutes(sourceRow) || derive.lengthBucket(sourceRow) || 30;
+    const endMinutes = Math.min(startMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES), 1440);
+    return {
+      id: utils.makeId('place'),
+      programId: derive.programId(sourceRow),
+      programTitle: derive.title(sourceRow),
+      lengthMinutes,
+      dateKey,
+      startMinutes,
+      endMinutes,
+      startSlotKey: `${dateKey}|${startMinutes}`,
+      liveBreakFlag: false,
+      liveBreakNotes: '',
+      isNonPledge: false,
+      sourceName: row.source_file_name || '',
+      sourceLabel: 'Imported report',
+      transferredToStation: false,
+      importedFromReport: true,
+      sourceAiringHash: row.row_hash || '',
+      sourceImportBatchId: row.import_batch_id || '',
+      importedFundraiserKey: importedScheduleKey(row),
+      fundraiserLabel: importedFundraiserLabel(row)
+    };
+  }
+
+  function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
+    const validRows = (Array.isArray(rows) ? rows : []).filter((row) => (row?.pledge_program_id || row?.program_id) && importedRowDateKey(row) && Number.isFinite(importedRowStartMinutes(row)));
+    const groups = new Map();
+    validRows.forEach((row) => {
+      const key = importedScheduleKey(row);
+      if (!groups.has(key)) groups.set(key, { rows: [], key, title: importedFundraiserLabel(row), startDate: utils.normalizeText(row.drive_start_date) || importedRowDateKey(row), endDate: utils.normalizeText(row.drive_end_date) || importedRowDateKey(row) });
+      const group = groups.get(key);
+      group.rows.push(row);
+      const dk = importedRowDateKey(row);
+      if (dk && (!group.startDate || dk < group.startDate)) group.startDate = dk;
+      if (dk && (!group.endDate || dk > group.endDate)) group.endDate = dk;
+    });
+
+    let createdSchedules = 0;
+    let updatedSchedules = 0;
+    let createdPlacements = 0;
+    let skippedPlacements = 0;
+    let firstScheduleId = '';
+
+    groups.forEach((group) => {
+      const identity = `imported|${group.key}`.toLowerCase();
+      let schedule = state.schedules.find((item) => scheduleIdentityKey(item) === identity) || null;
+      if (!schedule) {
+        schedule = state.schedules.find((item) => {
+          const sameRange = utils.normalizeText(item.startDate) === group.startDate && utils.normalizeText(item.endDate) === group.endDate;
+          const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
+          return sameRange && hasImportedPlacements;
+        }) || null;
+      }
+      if (!schedule) {
+        schedule = createScheduleRecord({ title: group.title, startDate: group.startDate, endDate: group.endDate, dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR });
+        state.schedules.unshift(schedule);
+        createdSchedules += 1;
+      } else {
+        updatedSchedules += 1;
+        if (rebuild) schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
+      }
+      schedule.meta = {
+        ...(schedule.meta || {}),
+        importedFundraiserKey: group.key,
+        importedFromReports: true,
+        importedDriveStartDate: group.startDate,
+        importedDriveEndDate: group.endDate
+      };
+      if (!firstScheduleId) firstScheduleId = schedule.id;
+      if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
+      const existingKeys = new Set((schedule.placements || []).map((placement) => placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`));
+      group.rows.forEach((row) => {
+        const placement = buildPlacementFromImportedAiring(row);
+        if (!placement) return;
+        const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
+        if (existingKeys.has(dedupeKey)) { skippedPlacements += 1; return; }
+        schedule.placements.push(placement);
+        existingKeys.add(dedupeKey);
+        createdPlacements += 1;
+      });
+    });
+
+    if (activateFirst && firstScheduleId) {
+      state.activeScheduleId = firstScheduleId;
+      const active = getActiveSchedule();
+      if (active) applyScheduleToView(active);
+    }
+
+    return {
+      schedulesCreated: createdSchedules,
+      schedulesUpdated: updatedSchedules,
+      placementsCreated: createdPlacements,
+      placementsSkipped: skippedPlacements,
+      fundraiserCount: groups.size
+    };
+  }
+
+  async function buildSchedulesFromImportedReports(options = {}) {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to build fundraiser calendars from imported reports.', 'warn'); return null; }
+    const rows = Array.isArray(options.rows) ? options.rows : await App.data.fetchImportedAirings();
+    const dirtySchedules = [];
+    const summary = mergeImportedRowsIntoSchedules(rows, { rebuild: Boolean(options.rebuild), activateFirst: options.activateFirst !== false, dirtySchedules });
+    for (const schedule of dirtySchedules) {
+      await persistSchedules(schedule);
+    }
+    renderAll();
+    setNotice(`Imported reports built ${utils.formatCount(summary.placementsCreated)} scheduler entries across ${utils.formatCount(summary.fundraiserCount)} fundraisers. ${utils.formatCount(summary.placementsSkipped)} duplicates were skipped. ${state.scheduleSyncMessage}`);
+    return summary;
+  }
+
   function applyScheduleToView(schedule) {
     if (!schedule) return;
     state.activeScheduleId = schedule.id;
@@ -1129,6 +1301,8 @@
     renderScheduleGrid,
     renderScheduleList,
     renderScheduledProgramDetails,
+    buildSchedulesFromImportedReports,
+    mergeImportedRowsIntoSchedules,
     closeScheduleModal
   };
 })();
