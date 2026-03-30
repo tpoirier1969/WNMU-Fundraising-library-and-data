@@ -23,6 +23,95 @@
     return `Fundraiser ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}`;
   }
 
+
+  function scheduleYearRange() {
+    const currentYear = new Date().getFullYear();
+    return { min: currentYear - 10, max: currentYear + 10 };
+  }
+
+  function scheduleDatePickerParts(prefix) {
+    if (prefix === 'fundraiser-start') {
+      return {
+        hidden: els.fundraiserStartInput,
+        month: els.fundraiserStartMonth,
+        day: els.fundraiserStartDay,
+        year: els.fundraiserStartYear
+      };
+    }
+    if (prefix === 'fundraiser-end') {
+      return {
+        hidden: els.fundraiserEndInput,
+        month: els.fundraiserEndMonth,
+        day: els.fundraiserEndDay,
+        year: els.fundraiserEndYear
+      };
+    }
+    return { hidden: null, month: null, day: null, year: null };
+  }
+
+  function scheduleDaysInMonth(year, month) {
+    const numericYear = Number(year);
+    const numericMonth = Number(month);
+    if (!Number.isInteger(numericYear) || !Number.isInteger(numericMonth) || numericMonth < 1 || numericMonth > 12) return 31;
+    return new Date(numericYear, numericMonth, 0).getDate();
+  }
+
+  function fillSelectOptions(select, options, currentValue = '') {
+    if (!select) return;
+    select.innerHTML = options.join('');
+    select.value = currentValue || '';
+  }
+
+  function populateScheduleDatePicker(prefix, isoDate = '') {
+    const { hidden, month, day, year } = scheduleDatePickerParts(prefix);
+    if (!(hidden && month && day && year)) return;
+    const match = String(isoDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const selectedYear = match ? match[1] : '';
+    const selectedMonth = match ? String(Number(match[2])) : '';
+    const selectedDay = match ? String(Number(match[3])) : '';
+    const yearRange = scheduleYearRange();
+    const monthOptions = ['<option value="">Month</option>'];
+    for (let value = 1; value <= 12; value += 1) {
+      const label = new Date(2000, value - 1, 1).toLocaleString(undefined, { month: 'short' });
+      monthOptions.push(`<option value="${value}">${utils.escapeHtml(label)}</option>`);
+    }
+    const yearOptions = ['<option value="">Year</option>'];
+    for (let value = yearRange.min; value <= yearRange.max; value += 1) {
+      yearOptions.push(`<option value="${value}">${value}</option>`);
+    }
+    fillSelectOptions(month, monthOptions, selectedMonth);
+    fillSelectOptions(year, yearOptions, selectedYear);
+    const maxDay = scheduleDaysInMonth(selectedYear || year.value, selectedMonth || month.value);
+    const dayOptions = ['<option value="">Day</option>'];
+    for (let value = 1; value <= maxDay; value += 1) dayOptions.push(`<option value="${value}">${value}</option>`);
+    const resolvedDay = selectedDay && Number(selectedDay) <= maxDay ? selectedDay : '';
+    fillSelectOptions(day, dayOptions, resolvedDay);
+    hidden.value = match && resolvedDay
+      ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(resolvedDay).padStart(2, '0')}`
+      : '';
+  }
+
+  function syncScheduleDatePicker(prefix, { dispatch = true } = {}) {
+    const { hidden, month, day, year } = scheduleDatePickerParts(prefix);
+    if (!(hidden && month && day && year)) return;
+    const maxDay = scheduleDaysInMonth(year.value, month.value);
+    const currentDay = Number(day.value || 0);
+    const dayOptions = ['<option value="">Day</option>'];
+    for (let value = 1; value <= maxDay; value += 1) dayOptions.push(`<option value="${value}">${value}</option>`);
+    fillSelectOptions(day, dayOptions, currentDay && currentDay <= maxDay ? String(currentDay) : '');
+    if (year.value && month.value && day.value) {
+      hidden.value = `${String(year.value).padStart(4, '0')}-${String(month.value).padStart(2, '0')}-${String(day.value).padStart(2, '0')}`;
+    } else {
+      hidden.value = '';
+    }
+    if (dispatch) hidden.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function setScheduleDatePickerDisabled(prefix, disabled) {
+    const { month, day, year } = scheduleDatePickerParts(prefix);
+    [month, day, year].forEach((el) => { if (el) el.disabled = disabled; });
+  }
+
   function normalizeScheduleWindow(schedule = {}) {
     const next = { ...schedule };
     const startMinutes = Number.isFinite(Number(next.dayStartMinutes)) ? Number(next.dayStartMinutes) : (Number(next.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
@@ -613,9 +702,11 @@
     if (!els.scheduleForm) return;
     const editable = canScheduleEdit();
     els.fundraiserTitleInput.value = state.scheduleDraft.title || '';
-    els.fundraiserStartInput.value = state.scheduleDraft.startDate || '';
-    els.fundraiserEndInput.value = state.scheduleDraft.endDate || '';
-    [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
+    populateScheduleDatePicker('fundraiser-start', state.scheduleDraft.startDate || '');
+    populateScheduleDatePicker('fundraiser-end', state.scheduleDraft.endDate || '');
+    [els.fundraiserTitleInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
+    setScheduleDatePickerDisabled('fundraiser-start', !editable);
+    setScheduleDatePickerDisabled('fundraiser-end', !editable);
     if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
 
@@ -1423,6 +1514,12 @@
     els.fundraiserTitleInput?.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); saveScheduleDraft(); } });
     els.fundraiserStartInput?.addEventListener('change', saveScheduleDraft);
     els.fundraiserEndInput?.addEventListener('change', saveScheduleDraft);
+    [els.fundraiserStartMonth, els.fundraiserStartDay, els.fundraiserStartYear].forEach((el) => {
+      el?.addEventListener('change', () => { syncScheduleDatePicker('fundraiser-start'); });
+    });
+    [els.fundraiserEndMonth, els.fundraiserEndDay, els.fundraiserEndYear].forEach((el) => {
+      el?.addEventListener('change', () => { syncScheduleDatePicker('fundraiser-end'); });
+    });
     els.scheduleList?.addEventListener('click', (event) => {
       const open = event.target.closest('[data-schedule-id]');
       if (open) {
