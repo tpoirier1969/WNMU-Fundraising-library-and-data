@@ -808,6 +808,39 @@
     }
   }
 
+
+  async function saveActiveScheduleDraft(options = {}) {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to edit fundraiser calendars.', 'warn'); return false; }
+    const schedule = getActiveSchedule();
+    if (!schedule) {
+      if (!options.silent) setNotice('Choose a fundraiser calendar first, or build a new one.', 'warn');
+      return false;
+    }
+    const startDate = els.fundraiserStartInput?.value || schedule.startDate || '';
+    const endDate = els.fundraiserEndInput?.value || schedule.endDate || '';
+    const title = (els.fundraiserTitleInput?.value || '').trim() || defaultScheduleTitle(startDate, endDate);
+    if (!startDate || !endDate) {
+      if (!options.silent) setNotice('A fundraiser needs both a start date and an end date.', 'warn');
+      return false;
+    }
+    if (new Date(`${endDate}T00:00:00`) < new Date(`${startDate}T00:00:00`)) {
+      if (!options.silent) setNotice('The fundraiser end date cannot be earlier than the start date.', 'warn');
+      return false;
+    }
+    schedule.title = title;
+    schedule.startDate = startDate;
+    schedule.endDate = endDate;
+    state.scheduleDraft.title = title;
+    state.scheduleDraft.startDate = startDate;
+    state.scheduleDraft.endDate = endDate;
+    await persistSchedules(schedule);
+    renderScheduleList();
+    renderScheduleForm();
+    renderScheduleGrid();
+    if (!options.silent) setNotice(`Saved fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
+    return true;
+  }
+
   async function createOrUpdateScheduleFromDraft() {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to build or edit fundraiser schedules.', 'warn'); return; }
     const startDate = els.fundraiserStartInput.value;
@@ -1163,6 +1196,14 @@
       els.fundraiserTitleInput?.focus();
     });
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });
+    els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: false, activateFirst: true }); });
+    els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: true, activateFirst: true }); });
+    const saveScheduleDraft = () => { void saveActiveScheduleDraft(); };
+    els.fundraiserTitleInput?.addEventListener('change', saveScheduleDraft);
+    els.fundraiserTitleInput?.addEventListener('blur', saveScheduleDraft);
+    els.fundraiserTitleInput?.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); saveScheduleDraft(); } });
+    els.fundraiserStartInput?.addEventListener('change', saveScheduleDraft);
+    els.fundraiserEndInput?.addEventListener('change', saveScheduleDraft);
     els.scheduleList?.addEventListener('click', (event) => {
       const open = event.target.closest('[data-schedule-id]');
       if (open) {
