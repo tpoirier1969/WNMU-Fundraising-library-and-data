@@ -5,6 +5,8 @@
   const scheduledDetailQueue = new Set();
   let scheduledDetailPumpActive = false;
   let scheduledDetailRerenderTimer = 0;
+  let cachedProgramLookupRows = null;
+  let cachedProgramLookup = null;
 
   function getActiveSchedule() {
     return derive.scheduleById(state.activeScheduleId);
@@ -190,21 +192,33 @@
     ].join('|').toLowerCase();
   }
 
+  function getProgramLookupCache() {
+    const rows = Array.isArray(state.rawRows) ? state.rawRows : [];
+    if (cachedProgramLookup && cachedProgramLookupRows === rows) return cachedProgramLookup;
+    const byProgramId = new Map();
+    const byNola = new Map();
+    const byTitle = new Map();
+    rows.forEach((item) => {
+      const programId = String(derive.programId(item) || '').trim();
+      if (programId && !byProgramId.has(programId)) byProgramId.set(programId, item);
+      const nolaKey = utils.normalizeLookupKey(derive.nola(item));
+      if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, item);
+      const titleKey = utils.normalizeLookupKey(derive.title(item));
+      if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, item);
+    });
+    cachedProgramLookupRows = rows;
+    cachedProgramLookup = { byProgramId, byNola, byTitle };
+    return cachedProgramLookup;
+  }
+
   function findProgramRowForImportedAiring(row = {}) {
+    const lookup = getProgramLookupCache();
     const programId = String(row.pledge_program_id || row.program_id || '').trim();
-    if (programId) {
-      const byId = (state.rawRows || []).find((item) => String(derive.programId(item)) === programId);
-      if (byId) return byId;
-    }
+    if (programId && lookup.byProgramId.has(programId)) return lookup.byProgramId.get(programId);
     const wantedNola = utils.normalizeLookupKey(row.nola_code);
-    if (wantedNola) {
-      const byNola = (state.rawRows || []).find((item) => utils.normalizeLookupKey(derive.nola(item)) === wantedNola) || null;
-      if (byNola) return byNola;
-    }
+    if (wantedNola && lookup.byNola.has(wantedNola)) return lookup.byNola.get(wantedNola);
     const wantedTitle = utils.normalizeLookupKey(row.program_title || row.title);
-    if (wantedTitle) {
-      return (state.rawRows || []).find((item) => utils.normalizeLookupKey(derive.title(item)) === wantedTitle) || null;
-    }
+    if (wantedTitle && lookup.byTitle.has(wantedTitle)) return lookup.byTitle.get(wantedTitle);
     return null;
   }
 
@@ -224,10 +238,12 @@
     };
   }
 
-  function buildPlacementFromImportedAiring(row = {}) {
-    const sourceRow = findProgramRowForImportedAiring(row);
-    const dateKey = importedRowDateKey(row);
-    const startMinutes = importedRowStartMinutes(row);
+  function buildPlacementFromImportedAiring(source = {}) {
+    const prepared = source && source.row ? source : null;
+    const row = prepared?.row || source;
+    const sourceRow = prepared?.sourceRow || findProgramRowForImportedAiring(row);
+    const dateKey = prepared?.dateKey || importedRowDateKey(row);
+    const startMinutes = Number.isFinite(prepared?.startMinutes) ? prepared.startMinutes : importedRowStartMinutes(row);
     if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
     const { lengthMinutes, correctedFromLibrary } = resolveImportedPlacementLength(row, sourceRow);
     const endMinutes = startMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES);
@@ -257,17 +273,23 @@
 
   function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
     const sourceRows = Array.isArray(rows) ? rows : [];
-    const validRows = sourceRows.filter((row) => findProgramRowForImportedAiring(row) && importedRowDateKey(row) && Number.isFinite(importedRowStartMinutes(row)));
-    const skippedRows = Math.max(0, sourceRows.length - validRows.length);
+    const preparedRows = sourceRows.map((row) => {
+      const sourceRow = findProgramRowForImportedAiring(row);
+      const dateKey = importedRowDateKey(row);
+      const startMinutes = importedRowStartMinutes(row);
+      if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
+      return { row, sourceRow, dateKey, startMinutes };
+    }).filter(Boolean);
+    const skippedRows = Math.max(0, sourceRows.length - preparedRows.length);
     const groups = new Map();
-    validRows.forEach((row) => {
+    preparedRows.forEach((prepared) => {
+      const { row, dateKey } = prepared;
       const key = importedScheduleKey(row);
-      if (!groups.has(key)) groups.set(key, { rows: [], key, title: importedFundraiserLabel(row), startDate: utils.normalizeText(row.drive_start_date) || importedRowDateKey(row), endDate: utils.normalizeText(row.drive_end_date) || importedRowDateKey(row) });
+      if (!groups.has(key)) groups.set(key, { rows: [], key, title: importedFundraiserLabel(row), startDate: utils.normalizeText(row.drive_start_date) || dateKey, endDate: utils.normalizeText(row.drive_end_date) || dateKey });
       const group = groups.get(key);
-      group.rows.push(row);
-      const dk = importedRowDateKey(row);
-      if (dk && (!group.startDate || dk < group.startDate)) group.startDate = dk;
-      if (dk && (!group.endDate || dk > group.endDate)) group.endDate = dk;
+      group.rows.push(prepared);
+      if (dateKey && (!group.startDate || dateKey < group.startDate)) group.startDate = dateKey;
+      if (dateKey && (!group.endDate || dateKey > group.endDate)) group.endDate = dateKey;
     });
 
     let createdSchedules = 0;
@@ -305,8 +327,8 @@
       if (!firstScheduleId) firstScheduleId = schedule.id;
       if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
       const existingKeys = new Set((schedule.placements || []).map((placement) => placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`));
-      group.rows.forEach((row) => {
-        const placement = buildPlacementFromImportedAiring(row);
+      group.rows.forEach((prepared) => {
+        const placement = buildPlacementFromImportedAiring(prepared);
         if (!placement) return;
         const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
         if (existingKeys.has(dedupeKey)) { skippedPlacements += 1; return; }
@@ -818,10 +840,12 @@
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(placement);
     });
+    const groupedEntries = [...grouped.entries()];
+    const autoLoadLimit = groupedEntries.length > 12 ? 6 : 12;
 
-    els.scheduleProgramDetails.innerHTML = [...grouped.entries()].map(([programId, occurrences]) => {
+    els.scheduleProgramDetails.innerHTML = groupedEntries.map(([programId, occurrences], entryIndex) => {
       const row = getProgramRowById(programId) || {};
-      loadScheduledDetail(programId);
+      if (entryIndex < autoLoadLimit) loadScheduledDetail(programId);
       const cache = state.scheduleDetailCache[programId];
       const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
       const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
@@ -843,7 +867,8 @@
           </label>
         `).join('');
       let breakHtml = '<div class="scheduled-program-note">Loading break detail…</div>';
-      if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
+      if (entryIndex >= autoLoadLimit && !cache?.loaded) breakHtml = '<div class="scheduled-program-note">Break detail deferred so large fundraisers open faster.</div>';
+      else if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
       else if (cache?.loaded) breakHtml = timingSummaryHtml(cache.detail);
       return `
         <article class="scheduled-program-card compact-program-card">
@@ -955,6 +980,29 @@
   }
 
 
+  async function persistScheduleMetadataOnly(schedule) {
+    if (state.scheduleStoreMode === 'remote' && state.client) {
+      try {
+        await state.client.from(constants.SCHEDULES_TABLE).upsert({
+          id: schedule.id,
+          title: schedule.title,
+          start_date: schedule.startDate,
+          end_date: schedule.endDate,
+          day_start_hour: Math.floor((schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60)) / 60),
+          day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60)
+        });
+        state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
+        return true;
+      } catch (error) {
+        console.warn('Remote schedule metadata save failed.', error);
+        state.scheduleStoreMode = 'local';
+        state.scheduleSyncMessage = `Remote save failed. Using this browser only. ${error.message || ''}`.trim();
+      }
+    }
+    utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
+    return false;
+  }
+
   async function saveActiveScheduleDraft(options = {}) {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to edit fundraiser calendars.', 'warn'); return false; }
     const schedule = getActiveSchedule();
@@ -990,7 +1038,8 @@
     state.scheduleDraft.endDate = endDate;
     state.scheduleDraft.dayStartMinutes = schedule.dayStartMinutes;
     state.scheduleDraft.dayEndMinutes = schedule.dayEndMinutes;
-    await persistSchedules(schedule);
+    if (!(titleChanged || dateRangeChanged || windowChanged)) return true;
+    await persistScheduleMetadataOnly(schedule);
     renderScheduleList();
     renderScheduleForm();
     if (dateRangeChanged || windowChanged) renderScheduleGrid();
