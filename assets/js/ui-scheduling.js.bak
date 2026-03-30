@@ -2,9 +2,6 @@
   const App = window.PledgeLib;
   const { state, constants, utils, derive } = App;
   const { els, setNotice } = App.dom;
-  const scheduledDetailQueue = new Set();
-  let scheduledDetailPumpActive = false;
-  let scheduledDetailRerenderTimer = 0;
 
   function getActiveSchedule() {
     return derive.scheduleById(state.activeScheduleId);
@@ -684,15 +681,6 @@
     const times = [];
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
-    const placementByDisplaySlot = new Map();
-    const placementStartByDisplaySlot = new Map();
-    placements.forEach((placement) => {
-      const startKey = `${placement.displayDateKey}|${placement.displayStartMinutes}`;
-      placementStartByDisplaySlot.set(startKey, placement);
-      for (let minutes = Number(placement.displayStartMinutes); minutes < Number(placement.displayEndMinutes); minutes += constants.DEFAULT_SLOT_MINUTES) {
-        placementByDisplaySlot.set(`${placement.displayDateKey}|${minutes}`, placement);
-      }
-    });
 
     const zoom = Math.min(2.8, Math.max(0.12, Number(state.scheduleView.zoom || 1)));
     const editable = canScheduleEdit();
@@ -727,9 +715,8 @@
         const actualDateKey = minutes >= 1440 ? utils.plusDays(displayDateKey, 1) : displayDateKey;
         const actualMinutes = minutes >= 1440 ? minutes - 1440 : minutes;
         const slotKey = `${actualDateKey}|${actualMinutes}`;
-        const displaySlotKey = `${displayDateKey}|${minutes}`;
-        const placement = placementByDisplaySlot.get(displaySlotKey) || null;
-        const isStart = placementStartByDisplaySlot.has(displaySlotKey);
+        const placement = placements.find((item) => item.displayDateKey === displayDateKey && Number(item.displayStartMinutes) <= minutes && Number(item.displayEndMinutes) > minutes) || null;
+        const isStart = placement && Number(placement.displayStartMinutes) === minutes;
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : ''].filter(Boolean).join(' ');
         const subtitleBits = [];
@@ -764,41 +751,16 @@
     return `<div class="scheduled-break-inline">${timings.slice(0, 12).map((row) => `<div class="scheduled-break-chip">${utils.escapeHtml(timingRowSummary(row).join(' · ') || 'Timing row')}</div>`).join('')}</div>`;
   }
 
-  function scheduleScheduledProgramDetailsRerender() {
-    window.clearTimeout(scheduledDetailRerenderTimer);
-    scheduledDetailRerenderTimer = window.setTimeout(() => {
-      scheduledDetailRerenderTimer = 0;
-      renderScheduledProgramDetails();
-    }, 60);
-  }
-
-  async function pumpScheduledDetailQueue() {
-    if (scheduledDetailPumpActive || !scheduledDetailQueue.size) return;
-    scheduledDetailPumpActive = true;
-    try {
-      while (scheduledDetailQueue.size) {
-        const batch = [...scheduledDetailQueue].slice(0, 2);
-        batch.forEach((programId) => scheduledDetailQueue.delete(programId));
-        await Promise.all(batch.map(async (programId) => {
-          try {
-            const detail = await App.data.fetchProgramDetail(programId);
-            state.scheduleDetailCache[programId] = { loading: false, loaded: true, detail };
-          } catch (error) {
-            state.scheduleDetailCache[programId] = { loading: false, loaded: true, error };
-          }
-        }));
-        scheduleScheduledProgramDetailsRerender();
-      }
-    } finally {
-      scheduledDetailPumpActive = false;
-    }
-  }
-
   function loadScheduledDetail(programId) {
     if (!programId || state.scheduleDetailCache[programId]?.loaded || state.scheduleDetailCache[programId]?.loading || !state.client) return;
     state.scheduleDetailCache[programId] = { loading: true, loaded: false };
-    scheduledDetailQueue.add(programId);
-    void pumpScheduledDetailQueue();
+    App.data.fetchProgramDetail(programId).then((detail) => {
+      state.scheduleDetailCache[programId] = { loading: false, loaded: true, detail };
+      renderScheduledProgramDetails();
+    }).catch((error) => {
+      state.scheduleDetailCache[programId] = { loading: false, loaded: true, error };
+      renderScheduledProgramDetails();
+    });
   }
 
   function renderScheduledProgramDetails() {
@@ -973,16 +935,11 @@
       if (!options.silent) setNotice('The fundraiser end date cannot be earlier than the start date.', 'warn');
       return false;
     }
-    const nextDayStartMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
-    const nextDayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
-    const titleChanged = schedule.title !== title;
-    const dateRangeChanged = schedule.startDate !== startDate || schedule.endDate !== endDate;
-    const windowChanged = Number(schedule.dayStartMinutes) !== nextDayStartMinutes || Number(schedule.dayEndMinutes) !== nextDayEndMinutes;
     schedule.title = title;
     schedule.startDate = startDate;
     schedule.endDate = endDate;
-    schedule.dayStartMinutes = nextDayStartMinutes;
-    schedule.dayEndMinutes = nextDayEndMinutes;
+    schedule.dayStartMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
+    schedule.dayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
     schedule.dayStartHour = Math.floor(schedule.dayStartMinutes / 60);
     schedule.dayEndHour = Math.floor(schedule.dayEndMinutes / 60);
     state.scheduleDraft.title = title;
@@ -993,11 +950,8 @@
     await persistSchedules(schedule);
     renderScheduleList();
     renderScheduleForm();
-    if (dateRangeChanged || windowChanged) renderScheduleGrid();
-    if (!options.silent) {
-      const actionLabel = titleChanged && !(dateRangeChanged || windowChanged) ? 'Renamed' : 'Saved';
-      setNotice(`${actionLabel} fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
-    }
+    renderScheduleGrid();
+    if (!options.silent) setNotice(`Saved fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
     return true;
   }
 
