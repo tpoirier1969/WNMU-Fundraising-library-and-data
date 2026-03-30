@@ -18,6 +18,27 @@
     return `Fundraiser ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}`;
   }
 
+  function normalizeScheduleWindow(schedule = {}) {
+    const next = { ...schedule };
+    const startMinutes = Number.isFinite(Number(next.dayStartMinutes)) ? Number(next.dayStartMinutes) : (Number(next.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
+    let endMinutes = Number.isFinite(Number(next.dayEndMinutes)) ? Number(next.dayEndMinutes) : (Number(next.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60);
+    if (endMinutes <= startMinutes) endMinutes += 1440;
+    const needsLegacyUpgrade = endMinutes <= 1440 || startMinutes < constants.DEFAULT_DAY_START_MINUTES;
+    next.dayStartMinutes = needsLegacyUpgrade ? constants.DEFAULT_DAY_START_MINUTES : startMinutes;
+    next.dayEndMinutes = needsLegacyUpgrade ? constants.DEFAULT_DAY_END_MINUTES : endMinutes;
+    next.dayStartHour = Math.floor(next.dayStartMinutes / 60);
+    next.dayEndHour = Math.floor(next.dayEndMinutes / 60);
+    return next;
+  }
+
+  function sortSchedulesNewestFirst(items = []) {
+    return [...items].sort((a, b) => {
+      const aKey = `${utils.normalizeText(a.endDate) || ''}|${utils.normalizeText(a.startDate) || ''}|${utils.normalizeText(a.createdAt) || ''}`;
+      const bKey = `${utils.normalizeText(b.endDate) || ''}|${utils.normalizeText(b.startDate) || ''}|${utils.normalizeText(b.createdAt) || ''}`;
+      return bKey.localeCompare(aKey);
+    });
+  }
+
   async function loadSchedules() {
     let loaded = [];
     if (state.client) {
@@ -36,7 +57,7 @@
       loaded = utils.storageGet(constants.SCHEDULE_STORAGE_KEY, []);
       if (!state.scheduleSyncMessage) state.scheduleSyncMessage = 'Fundraisers are saved only in this browser.';
     }
-    state.schedules = Array.isArray(loaded) ? loaded : [];
+    state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
     if (!state.activeScheduleId && state.schedules.length) state.activeScheduleId = state.schedules[0].id;
     if (getActiveSchedule()) applyScheduleToView(getActiveSchedule());
     renderScheduleList();
@@ -546,7 +567,8 @@
       if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || '0 fundraiser calendars yet.';
       return;
     }
-    els.scheduleList.innerHTML = state.schedules.map((schedule) => {
+    const orderedSchedules = sortSchedulesNewestFirst(state.schedules);
+    els.scheduleList.innerHTML = orderedSchedules.map((schedule) => {
       const active = schedule.id === state.activeScheduleId;
       const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
       return `
