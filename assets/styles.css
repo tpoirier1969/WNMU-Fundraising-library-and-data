@@ -1925,3 +1925,157 @@ button.primary {
 .schedule-day-head.weekend { background: linear-gradient(180deg, #ddebf6, #d2e4f2); }
 .schedule-slot.weekend { background: #f4f8fc; }
 .scheduled-data-chunk span:last-child { overflow-wrap: anywhere; }
+
+.mobile-mode-row {
+  display: none;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+.mobile-mode-button {
+  flex: 1 1 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #eef5f8;
+  color: var(--pbs-blue-dark);
+  font-weight: 800;
+}
+.mobile-mode-button.active {
+  background: linear-gradient(180deg, var(--pbs-blue-dark), var(--pbs-blue));
+  color: #fff;
+  border-color: transparent;
+}
+
+@media (max-width: 760px) {
+  .app-shell { padding: 8px; gap: 8px; }
+  .topbar {
+    padding: 8px 10px;
+    border-radius: 14px;
+    align-items: flex-start;
+    gap: 8px;
+    flex-direction: column;
+  }
+  .brand-logo { width: 42px; }
+  .brand-wrap { gap: 8px; align-items: flex-start; }
+  .brand-name { font-size: .85rem; }
+  #app-title { font-size: 1rem; }
+  .status-line { font-size: .72rem; line-height: 1.25; }
+  .build-meta { display: none !important; }
+  .topbar-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .topbar-actions button, .topbar-actions .role-chip { width: 100%; justify-content: center; }
+  .workspace-button-row-main { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .workspace-tab { padding: 10px 12px; font-size: .95rem; }
+  .mobile-mode-row { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .performance-mobile-modes.mobile-mode-row { grid-template-columns: repeat(3, 1fr); }
+  .controls, .list-panel, .performance-card, .performance-toolbar-card, .schedule-builder-card, .schedule-program-details-wrap {
+    border-radius: 14px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .list-meta { padding: 8px 10px; }
+  .list-title { font-size: .92rem; }
+  .list-summary { font-size: .76rem; }
+  .filter-row, .performance-toolbar-grid.expanded, .schedule-form { grid-template-columns: 1fr !important; display: grid; gap: 8px; }
+  .filter-actions-inline, .performance-actions-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .performance-toolbar-card .list-summary { margin-top: 2px; }
+  .performance-criteria-bar {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .performance-stat-grid { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .performance-stat-card { min-height: 0 !important; padding: 10px !important; }
+  .performance-stat-label { font-size: .74rem !important; }
+  .performance-stat-value { font-size: 1.5rem !important; }
+  .performance-main-grid { display: grid !important; grid-template-columns: 1fr !important; gap: 10px; }
+  .performance-chart { min-height: 280px !important; }
+  .performance-explain-wrap, .performance-table-wrap, .import-preview-wrap { overflow-x: auto; }
+  .programs-table.performance-table, .programs-table.performance-explain-table, .programs-table.import-preview-table { min-width: 760px; }
+  .schedule-sidebar { display: none; }
+  .schedule-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .schedule-toolbar-group { min-width: 0; justify-content: center; }
+  .schedule-toolbar-center { grid-column: 1 / -1; order: -1; }
+  #schedule-grid { overflow-x: auto; }
+  .schedule-grid { min-width: 0; }
+  .schedule-program-details-wrap { margin-top: 10px; }
+  .schedule-program-details { display: grid; gap: 10px; }
+  .schedule-program-details .schedule-program-card, .schedule-program-details .scheduled-detail-card { padding: 12px; }
+
+  [data-workspace-pane="library"][data-mobile-mode="filters"] .list-panel { display: none; }
+  [data-workspace-pane="library"][data-mobile-mode="programs"] .controls { display: none; }
+
+  [data-workspace-pane="performance"][data-mobile-mode="filters"] .performance-criteria-card,
+  [data-workspace-pane="performance"][data-mobile-mode="filters"] .performance-stat-grid,
+  [data-workspace-pane="performance"][data-mobile-mode="filters"] .performance-main-grid,
+  [data-workspace-pane="performance"][data-mobile-mode="filters"] .performance-explain-card,
+  [data-workspace-pane="performance"][data-mobile-mode="filters"] .performance-insights-card { display: none; }
+
+  [data-workspace-pane="performance"][data-mobile-mode="results"] .performance-toolbar-card,
+  [data-workspace-pane="performance"][data-mobile-mode="results"] .performance-explain-card,
+  [data-workspace-pane="performance"][data-mobile-mode="results"] .performance-insights-card { display: none; }
+
+  [data-workspace-pane="performance"][data-mobile-mode="explain"] .performance-toolbar-card,
+  [data-workspace-pane="performance"][data-mobile-mode="explain"] .performance-criteria-card,
+  [data-workspace-pane="performance"][data-mobile-mode="explain"] .performance-stat-grid,
+  [data-workspace-pane="performance"][data-mobile-mode="explain"] .performance-main-grid { display: none; }
+
+  [data-workspace-pane="scheduling"][data-mobile-mode="calendar"] .schedule-program-details-wrap { display: none; }
+  [data-workspace-pane="scheduling"][data-mobile-mode="details"] #schedule-grid,
+  [data-workspace-pane="scheduling"][data-mobile-mode="details"] .schedule-toolbar { display: none !important; }
+
+  .schedule-grid { --schedule-day-width: 160px !important; }
+}
+
+
+.performance-date-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 220px)) minmax(240px, 1fr);
+  gap: 10px;
+  margin: 12px 0 10px;
+  align-items: end;
+}
+.performance-date-actions { justify-self: end; }
+.performance-quick-filter-card {
+  border: 1px solid rgba(18,62,107,0.14);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(244,248,252,0.95);
+  margin-bottom: 12px;
+}
+.performance-quick-filter-head {
+  display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;
+}
+.list-title.tiny { font-size: .95rem; }
+.performance-quick-filter-row {
+  display:flex; flex-wrap:wrap; gap:8px;
+}
+.quick-filter-btn {
+  border: 1px solid rgba(18,62,107,0.16);
+  background: #fff;
+  color: #173a5e;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: .86rem;
+  cursor: pointer;
+}
+.quick-filter-btn.active {
+  background: #173a5e;
+  color: #fff;
+  border-color: #173a5e;
+}
+.quick-filter-btn:disabled { opacity: .45; cursor:not-allowed; }
+@media (max-width: 900px) {
+  .performance-date-row { grid-template-columns: 1fr 1fr; }
+  .performance-date-actions { grid-column: 1 / -1; justify-self: stretch; }
+}
+@media (max-width: 640px) {
+  .performance-date-row { grid-template-columns: 1fr; }
+  .performance-quick-filter-row { display:grid; grid-template-columns: 1fr 1fr; }
+  .quick-filter-btn { width: 100%; text-align: center; }
+}

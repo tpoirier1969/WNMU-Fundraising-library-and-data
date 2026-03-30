@@ -11,7 +11,7 @@
   const PREMIUM_KEYS = ['premium_summary', 'premiums', 'premium_notes', 'premium_offer', 'premium_description'];
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const DAY_ORDER = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time']);
+  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart']);
 
   function perf() { return state.performance; }
 
@@ -147,6 +147,32 @@
   function topicDisplayFromTokens(tokens = []) {
     if (!tokens.length) return 'Unspecified topic';
     return tokens.join(' · ');
+  }
+
+  function primaryTopicFrom(programRow, row) {
+    const direct = utils.normalizeText(programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, ''));
+    return direct || 'Unassigned';
+  }
+
+  function programDisplay(programRow, row) {
+    return utils.firstNonEmpty(programRow ? derive.title(programRow) : '', row?.program_title, row?.title, row?.name, 'Unknown title');
+  }
+
+  function weekpartLabel(record) {
+    const day = dayLabel(record);
+    if (day === 'Saturday' || day === 'Sunday') return 'Weekend';
+    if (DAY_ORDER.includes(day)) return 'Weekday';
+    return 'Unknown weekpart';
+  }
+
+  function daypartLabel(record) {
+    if (!record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown day-part';
+    const hour = record.when.getHours();
+    if (hour < 9) return 'Overnight / early morning';
+    if (hour < 17) return 'Daytime';
+    if (hour < 19) return 'Early evening';
+    if (hour < 23) return 'Prime time';
+    return 'Late night';
   }
 
   function topicMatches(record, filterValue) {
@@ -361,15 +387,13 @@
       record.nolaCode = record.nolaCode || (programRow ? derive.nola(programRow) : utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola, ''));
       record.signature = record.signature || signatureForProgram(programRow, row);
       if (!record.title || record.title === 'Unknown title') {
-        record.title = programRow ? derive.title(programRow) : utils.firstNonEmpty(row?.title, row?.program_title, row?.name, 'Unknown title');
+        record.title = programDisplay(programRow, row);
       }
-      const topicTokens = splitTopicTokens(
-        programRow ? derive.topicPrimary(programRow) : utils.firstNonEmpty(row?.topic_primary, row?.topic, ''),
-        programRow ? derive.topicSecondary(programRow) : utils.firstNonEmpty(row?.topic_secondary, row?.secondary_topic, '')
-      );
+      const primaryTopic = primaryTopicFrom(programRow, row);
+      const topicTokens = primaryTopic && primaryTopic !== 'Unassigned' ? [primaryTopic] : [];
       if (!record.topicTokens.length && topicTokens.length) record.topicTokens = topicTokens;
-      record.topicDisplay = record.topicTokens.length ? topicDisplayFromTokens(record.topicTokens) : record.topicDisplay;
-      record.topic = record.topicDisplay || 'Unspecified topic';
+      record.topicDisplay = record.topicTokens.length ? topicDisplayFromTokens(record.topicTokens) : primaryTopic;
+      record.topic = record.topicDisplay || 'Unassigned';
       const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, row?.distributor_name, 'Unspecified distributor');
       record.distributor = normalizeDistributor((!record.distributor || record.distributor === 'Unspecified distributor') ? distributor : record.distributor);
       record.premiums = record.premiums === 'No premium metadata' ? premiumLabel(row, programRow) : record.premiums;
@@ -487,11 +511,14 @@
 
   function criterionDisplayName(criterion = perf().criterion) {
     switch (criterion) {
+      case 'program': return 'Program';
       case 'date': return 'Date';
-      case 'day': return 'Day';
+      case 'day': return 'Day of week';
+      case 'daypart': return 'Day-part';
+      case 'weekpart': return 'Weekend vs weekday';
       case 'time': return 'Time';
-      case 'topic': return 'Topic';
-      case 'local_breaks': return 'Local breaks';
+      case 'topic': return 'Main topic';
+      case 'local_breaks': return 'Local cut-ins';
       case 'live_breaks': return 'Live breaks';
       case 'premiums': return 'Premium metadata';
       case 'distributor': return 'Distributor';
@@ -501,11 +528,14 @@
 
   function criterionLabel(record, criterion) {
     switch (criterion) {
+      case 'program': return record.title || 'Unknown title';
       case 'date': return record.date || 'Unknown date';
       case 'day': return record.day || 'Unknown day';
+      case 'daypart': return daypartLabel(record);
+      case 'weekpart': return weekpartLabel(record);
       case 'time': return record.time || 'Unknown time';
-      case 'topic': return record.topicDisplay || 'Unspecified topic';
-      case 'local_breaks': return record.localBreaks || 'No local breaks';
+      case 'topic': return record.topicDisplay || 'Unassigned';
+      case 'local_breaks': return record.localBreaks || 'No local cut-ins';
       case 'live_breaks': return record.liveBreaks || 'Unknown / not matched to schedule';
       case 'premiums': return record.premiums || 'No premium metadata';
       case 'distributor': return record.distributor || 'Unspecified distributor';
@@ -517,6 +547,8 @@
     if (criterion === 'date') return group.minTime || Number.MAX_SAFE_INTEGER;
     if (criterion === 'time') return group.minMinutes ?? Number.MAX_SAFE_INTEGER;
     if (criterion === 'day') return DAY_ORDER.indexOf(group.label);
+    if (criterion === 'weekpart') return group.label === 'Weekday' ? 0 : group.label === 'Weekend' ? 1 : 99;
+    if (criterion === 'daypart') return ['Overnight / early morning','Daytime','Early evening','Prime time','Late night','Unknown day-part'].indexOf(group.label);
     return group.label;
   }
 
@@ -547,7 +579,7 @@
   }
 
   function isLineFriendly(criterion) {
-    return ['date', 'day', 'time'].includes(criterion);
+    return ['date', 'day', 'time', 'daypart', 'weekpart'].includes(criterion);
   }
 
   function effectiveChartType() {
@@ -568,9 +600,13 @@
     const endDate = perf().endDate ? new Date(`${perf().endDate}T23:59:59`) : null;
     const criterion = perf().criterion;
     const sourceRecords = perf().records || [];
+    const selectedProgramKey = utils.normalizeLookupKey(perf().programFilter || '');
     const postFilter = sourceRecords.filter((record) => {
       if (perf().monthFilter !== '' && record.monthIndex !== Number(perf().monthFilter)) return false;
       if (perf().topicFilter && !topicMatches(record, perf().topicFilter)) return false;
+      if (selectedProgramKey && utils.normalizeLookupKey(record.programId || record.nolaCode || record.title) !== selectedProgramKey) return false;
+      if (perf().daypartScope && daypartLabel(record) !== perf().daypartScope) return false;
+      if (perf().weekpartScope && weekpartLabel(record) !== perf().weekpartScope) return false;
       if (startDate && (!(record.when instanceof Date) || record.when < startDate)) return false;
       if (endDate && (!(record.when instanceof Date) || record.when > endDate)) return false;
       return true;
@@ -662,25 +698,35 @@
 
   function buildBarSvg(groups) {
     const width = 940;
-    const left = 180;
-    const right = 24;
+    const height = 380;
+    const left = 56;
+    const right = 18;
     const top = 20;
-    const rowH = 42;
-    const height = Math.max(220, top + (groups.length * rowH) + 20);
+    const bottom = 116;
     const chartW = width - left - right;
+    const chartH = height - top - bottom;
     const max = Math.max(...groups.map((group) => metricValue(group)), 1);
+    const colW = chartW / Math.max(groups.length, 1);
+    const barW = Math.max(12, Math.min(56, colW * 0.65));
+    const ticks = [0, .25, .5, .75, 1].map((ratio) => ({ y: top + chartH - (ratio * chartH), value: max * ratio }));
+    const grid = ticks.map((tick) => `
+      <line x1="${left}" y1="${tick.y}" x2="${left + chartW}" y2="${tick.y}" stroke="#dce8f6" stroke-width="1"></line>
+      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(perf().metric === 'airings' ? utils.formatCount(Math.round(tick.value)) : utils.formatMoney(tick.value))}</text>
+    `).join('');
     const bars = groups.map((group, index) => {
-      const y = top + (index * rowH);
       const value = metricValue(group);
-      const barW = Math.max(2, Math.round((value / max) * chartW));
+      const h = Math.max(2, Math.round((value / max) * chartH));
+      const x = left + (index * colW) + ((colW - barW) / 2);
+      const y = top + chartH - h;
       const display = perf().metric === 'airings' ? utils.formatCount(value) : utils.formatMoney(value);
+      const label = String(group.label || '').length > 16 ? `${String(group.label).slice(0, 13)}…` : String(group.label || '');
       return `
-        <text x="${left - 12}" y="${y + 18}" font-size="12" text-anchor="end" fill="#14314f">${utils.escapeHtml(group.label)}</text>
-        <rect x="${left}" y="${y + 4}" width="${barW}" height="18" rx="6" fill="#123e6b"></rect>
-        <text x="${left + barW + 10}" y="${y + 18}" font-size="12" fill="#183a5f">${utils.escapeHtml(display)}</text>
+        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="#123e6b"></rect>
+        <text x="${x + barW / 2}" y="${y - 8}" font-size="11" text-anchor="middle" fill="#183a5f">${utils.escapeHtml(display)}</text>
+        <text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text>
       `;
     }).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">${bars}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">${grid}${bars}</svg>`;
   }
 
   function buildLineSvg(groups) {
@@ -731,7 +777,7 @@
     const svg = chartType === 'line' ? buildLineSvg(groups) : buildBarSvg(groups);
     const note = chartType === 'line'
       ? '<div class="performance-chart-note">Line chart works best for date, day, or time because those labels have a natural order.</div>'
-      : '<div class="performance-chart-note">Bar chart is the safer choice for categories like distributor, topic, break flags, and premium metadata.</div>';
+      : '<div class="performance-chart-note">Vertical bar chart is the safer choice for categories like program, topic, day-part, break flags, and premium metadata.</div>';
     els.performanceChart.innerHTML = `${svg}${note}`;
   }
 
@@ -837,22 +883,31 @@
   function collectTopicOptions() {
     const labels = new Map();
     (state.rawRows || []).forEach((row) => {
-      splitTopicTokens(derive.topicPrimary(row), derive.topicSecondary(row)).forEach((token) => {
-        const key = utils.normalizeLookupKey(token);
-        if (key && !labels.has(key)) labels.set(key, token);
-      });
+      const token = utils.normalizeText(derive.topicPrimary(row));
+      const key = utils.normalizeLookupKey(token);
+      if (key && !labels.has(key)) labels.set(key, token);
     });
     (perf().records || []).forEach((record) => {
-      (record.topicTokens || []).forEach((token) => {
-        const key = utils.normalizeLookupKey(token);
-        if (key && !labels.has(key)) labels.set(key, token);
-      });
+      const token = utils.normalizeText(record.topicDisplay || record.topic || '');
+      const key = utils.normalizeLookupKey(token);
+      if (key && token !== 'Unassigned' && !labels.has(key)) labels.set(key, token);
     });
     return [...labels.values()].sort((a, b) => utils.compareText(a, b));
   }
 
+  function collectProgramOptions() {
+    const labels = new Map();
+    (perf().records || []).forEach((record) => {
+      const key = utils.normalizeLookupKey(record.programId || record.nolaCode || record.title || '');
+      const label = utils.normalizeText(record.title || 'Unknown title');
+      if (key && label && !labels.has(key)) labels.set(key, label);
+    });
+    return [...labels.entries()].sort((a,b)=>utils.compareText(a[1], b[1])).map(([value,label])=>({ value, label }));
+  }
+
   function populateControls() {
-    renderSelectOptions(els.performanceTopicSelect, collectTopicOptions(), perf().topicFilter, 'All topics');
+    renderSelectOptions(els.performanceTopicSelect, collectTopicOptions(), perf().topicFilter, 'All main topics');
+    renderSelectOptions(els.performanceProgramSelect, collectProgramOptions(), perf().programFilter, 'All programs');
     if (els.performanceCriterionSelect) els.performanceCriterionSelect.value = perf().criterion;
     if (els.performanceMetricSelect) els.performanceMetricSelect.value = perf().metric;
     if (els.performanceChartTypeSelect) els.performanceChartTypeSelect.value = perf().chartType;
@@ -872,6 +927,8 @@
     }
     if (els.performanceMonthSelect) els.performanceMonthSelect.value = perf().monthFilter;
     if (els.performanceTopicSelect) els.performanceTopicSelect.value = perf().topicFilter;
+    if (els.performanceProgramSelect) els.performanceProgramSelect.value = perf().programFilter || '';
+    updateQuickFilterUi();
   }
 
   function renderAll() {
@@ -884,7 +941,14 @@
     renderChart(perf().groups);
     renderTable(perf().groups);
     renderNotes(records, perf().groups);
-    if (els.performanceChartTitle) els.performanceChartTitle.textContent = `${metricLabel()} by ${criterionDisplayName()}`;
+    if (els.performanceChartTitle) {
+      const focus = (() => {
+        if (!perf().programFilter) return '';
+        const opt = collectProgramOptions().find((entry) => entry.value === perf().programFilter);
+        return opt ? ` for ${opt.label}` : '';
+      })();
+      els.performanceChartTitle.textContent = `${metricLabel()} by ${criterionDisplayName()}${focus}`;
+    }
     if (els.performanceChartPill) els.performanceChartPill.textContent = perf().ready ? `${chartTypeLabel(effectiveChartType())} · ${criterionDisplayName()}` : 'Awaiting data';
     if (els.performanceTablePill) els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
     if (els.performanceNotesPill) els.performanceNotesPill.textContent = perf().lastLoadedAt ? `Loaded ${utils.formatDateTime(perf().lastLoadedAt)}` : 'Starter framework';
@@ -937,6 +1001,49 @@
     perf().analysisMeta = {};
   }
 
+
+  const QUICK_FILTERS = {
+    top_earners: { criterion: 'program', metric: 'total_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    best_average: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    prime_time: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: 'Prime time', weekpartScope: '' },
+    weak_returns: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', programFilter: '', labelFilter: '', daypartScope: '', weekpartScope: '' },
+    live_break_impact: { criterion: 'live_breaks', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    repeat_fatigue: { criterion: 'program', metric: 'airings', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    recent_momentum: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    weekend_weekday: { criterion: 'weekpart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    day_of_week: { criterion: 'day', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    daypart: { criterion: 'daypart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    best_daytime: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: 'Daytime', weekpartScope: '' }
+  };
+
+  function quickFiltersEnabled() {
+    return Boolean(perf().startDate && perf().endDate);
+  }
+
+  function updateQuickFilterUi() {
+    const enabled = quickFiltersEnabled();
+    const active = perf().quickFilter || '';
+    document.querySelectorAll('[data-performance-quick-filter]').forEach((button) => {
+      button.disabled = !enabled;
+      button.classList.toggle('active', button.dataset.performanceQuickFilter === active);
+    });
+    if (els.performanceQuickFilterPill) els.performanceQuickFilterPill.textContent = enabled ? (active ? active.replace(/_/g, ' ').replace(/\w/g, (c) => c.toUpperCase()) : 'Ready') : 'Set a date range first';
+  }
+
+  function applyQuickFilter(name) {
+    const cfg = QUICK_FILTERS[name];
+    if (!cfg || !quickFiltersEnabled()) return;
+    Object.assign(perf(), cfg, { quickFilter: name });
+    if (name === 'recent_momentum' && perf().endDate) {
+      const end = new Date(`${perf().endDate}T12:00:00`);
+      const start = new Date(end.getTime());
+      start.setDate(end.getDate() - 59);
+      perf().startDate = localDateKey(start);
+    }
+    renderAll();
+  }
+
   function exportChartSvg() {
     const svg = els.performanceChart?.querySelector('svg');
     if (!svg) {
@@ -956,17 +1063,26 @@
 
   function bindEvents() {
     const rerender = () => renderAll();
-    els.performanceCriterionSelect?.addEventListener('change', (event) => { perf().criterion = event.target.value || 'topic'; rerender(); });
-    els.performanceMetricSelect?.addEventListener('change', (event) => { perf().metric = event.target.value || 'avg_dollars'; rerender(); });
-    els.performanceChartTypeSelect?.addEventListener('change', (event) => { perf().chartType = event.target.value || 'auto'; rerender(); });
-    els.performanceTopnSelect?.addEventListener('change', (event) => { perf().topN = Number(event.target.value || 12); rerender(); });
-    els.performanceFilterInput?.addEventListener('input', (event) => { perf().labelFilter = event.target.value || ''; rerender(); });
-    els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; rerender(); });
-    els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; rerender(); });
-    els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; rerender(); });
-    els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; rerender(); });
+    els.performanceCriterionSelect?.addEventListener('change', (event) => { perf().criterion = event.target.value || 'topic'; perf().quickFilter = ''; rerender(); });
+    els.performanceMetricSelect?.addEventListener('change', (event) => { perf().metric = event.target.value || 'avg_dollars'; perf().quickFilter = ''; rerender(); });
+    els.performanceChartTypeSelect?.addEventListener('change', (event) => { perf().chartType = event.target.value || 'auto'; perf().quickFilter = ''; rerender(); });
+    els.performanceTopnSelect?.addEventListener('change', (event) => { perf().topN = Number(event.target.value || 12); perf().quickFilter = ''; rerender(); });
+    els.performanceFilterInput?.addEventListener('input', (event) => { perf().labelFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
+    els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().quickFilter = ''; rerender(); });
+    els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().quickFilter = ''; rerender(); });
+    els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; perf().quickFilter = ''; rerender(); });
+    els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
+    els.performanceProgramSelect?.addEventListener('change', (event) => {
+      perf().programFilter = event.target.value || '';
+      perf().quickFilter = '';
+      if (perf().programFilter && perf().criterion === 'program') perf().criterion = 'date';
+      rerender();
+    });
     els.performanceRefreshButton?.addEventListener('click', async () => { await refreshData(); renderAll(); });
     els.performanceExportButton?.addEventListener('click', exportChartSvg);
+    document.querySelectorAll('[data-performance-quick-filter]').forEach((button) => {
+      button.addEventListener('click', () => applyQuickFilter(button.dataset.performanceQuickFilter || ''));
+    });
   }
 
   App.performanceUi = { ensureReady, refreshData, renderAll, bindEvents, reset, populateControls };

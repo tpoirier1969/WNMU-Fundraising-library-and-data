@@ -3,25 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.18.4</title>
+  <title>WNMU Pledge Program Library v0.19.1</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.18.4">
+  <link rel="stylesheet" href="assets/styles.css?v=0.19.1">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.18.4"></script>
-  <script defer src="assets/js/dom.js?v=0.18.4"></script>
-  <script defer src="assets/js/data.js?v=0.18.4"></script>
-  <script defer src="assets/js/ui-list.js?v=0.18.4"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.18.4"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.18.4"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.18.4"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.18.4"></script>
-  <script defer src="assets/js/auth.js?v=0.18.4"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.18.4"></script>
-  <script defer src="assets/js/app.js?v=0.18.4"></script>
+  <script defer src="assets/js/core.js?v=0.19.1"></script>
+  <script defer src="assets/js/dom.js?v=0.19.1"></script>
+  <script defer src="assets/js/data.js?v=0.19.1"></script>
+  <script defer src="assets/js/ui-list.js?v=0.19.1"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.19.1"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.19.1"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.19.1"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.19.1"></script>
+  <script defer src="assets/js/auth.js?v=0.19.1"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.19.1"></script>
+  <script defer src="assets/js/app.js?v=0.19.1"></script>
 </head>
 <body>
 
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.18.4</span>
+            <span class="version-pill" id="version-flag">v0.19.1</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -446,7 +446,7 @@
             <div class="list-title">Pledge Performance comparisons</div>
             <div class="list-summary" id="performance-status">Open Pledge Performance to load the first comparison set.</div>
           </div>
-          <div class="performance-toolbar-grid expanded">
+          <div class="performance-date-row">
             <label class="filter-field narrow">
               <span class="filter-label">Start date</span>
               <input id="performance-start-date" type="date">
@@ -454,6 +454,40 @@
             <label class="filter-field narrow">
               <span class="filter-label">End date</span>
               <input id="performance-end-date" type="date">
+            </label>
+            <div class="filter-actions filter-actions-inline performance-actions-inline performance-date-actions">
+              <button type="button" class="ghost" id="performance-refresh-button">Refresh performance</button>
+              <button type="button" class="ghost" id="performance-export-button">Export chart (SVG)</button>
+            </div>
+          </div>
+          <div class="performance-quick-filter-card">
+            <div class="performance-quick-filter-head">
+              <div class="list-title tiny">Quick filters</div>
+              <span class="mini-chip" id="performance-quick-filter-pill">Set a date range first</span>
+            </div>
+            <div class="performance-quick-filter-row" id="performance-quick-filter-row">
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="top_earners">Top earners</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="best_average">Best average earners</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="prime_time">Prime time winners</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="weak_returns">Weak returns</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="live_break_impact">Live break impact</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="repeat_fatigue">Repeat fatigue</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Topic winners</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="recent_momentum">Recent momentum</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="weekend_weekday">Weekend vs weekday earnings</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="day_of_week">Day of week comparisons</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="daypart">Day-part comparisons</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="best_daytime">Best daytime performers</button>
+            </div>
+          </div>
+          <div class="performance-toolbar-grid expanded">
+            <label class="filter-field narrow">
+              <span class="filter-label">Main topic</span>
+              <select id="performance-topic-select"></select>
+            </label>
+            <label class="filter-field narrow">
+              <span class="filter-label">Program focus</span>
+              <select id="performance-program-select"></select>
             </label>
             <label class="filter-field narrow">
               <span class="filter-label">Fundraiser month</span>
@@ -474,17 +508,16 @@
               </select>
             </label>
             <label class="filter-field narrow">
-              <span class="filter-label">Topic</span>
-              <select id="performance-topic-select"></select>
-            </label>
-            <label class="filter-field narrow">
               <span class="filter-label">Compare by</span>
               <select id="performance-criterion-select">
+                <option value="program">Program</option>
                 <option value="date">Date</option>
-                <option value="day">Day</option>
+                <option value="day">Day of week</option>
+                <option value="daypart">Day-part</option>
+                <option value="weekpart">Weekend vs weekday</option>
                 <option value="time">Time</option>
                 <option value="topic" selected>Topic</option>
-                <option value="local_breaks">Local breaks</option>
+                <option value="local_breaks">Local cut-ins</option>
                 <option value="live_breaks">Live breaks</option>
                 <option value="premiums">Premium metadata</option>
                 <option value="distributor">Distributor</option>
@@ -503,7 +536,7 @@
               <select id="performance-chart-type-select">
                 <option value="auto" selected>Auto</option>
                 <option value="line">Line</option>
-                <option value="bar">Bar</option>
+                <option value="bar">Vertical bars</option>
               </select>
             </label>
             <label class="filter-field narrow">
@@ -520,10 +553,6 @@
               <span class="filter-label">Label contains</span>
               <input id="performance-filter-input" type="search" placeholder="Optional label filter, like Saturday, Music, or PBS">
             </label>
-            <div class="filter-actions filter-actions-inline performance-actions-inline">
-              <button type="button" class="ghost" id="performance-refresh-button">Refresh performance</button>
-              <button type="button" class="ghost" id="performance-export-button">Export chart (SVG)</button>
-            </div>
           </div>
         </section>
 
@@ -700,7 +729,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.18.4</div>
+      <div id="footer-version">v0.19.1</div>
     </footer>
   </div>
 </body>

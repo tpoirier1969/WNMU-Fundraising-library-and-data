@@ -146,6 +146,70 @@
     App.performanceUi?.bindEvents();
   }
 
+
+
+  function ensureMobileModeControls() {
+    const mobile = window.matchMedia('(max-width: 760px)').matches;
+    document.body.classList.toggle('phone-ui', mobile);
+
+    const libraryPane = document.querySelector('[data-workspace-pane="library"]');
+    if (libraryPane) {
+      let row = libraryPane.querySelector('.mobile-mode-row.library-mobile-modes');
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'mobile-mode-row library-mobile-modes';
+        row.innerHTML = '<button type="button" class="mobile-mode-button active" data-mobile-target="filters">Filters</button><button type="button" class="mobile-mode-button" data-mobile-target="programs">Programs</button>';
+        libraryPane.insertBefore(row, libraryPane.firstElementChild);
+        row.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-mobile-target]');
+          if (!button) return;
+          libraryPane.dataset.mobileMode = button.dataset.mobileTarget;
+          row.querySelectorAll('.mobile-mode-button').forEach((item) => item.classList.toggle('active', item === button));
+        });
+      }
+      if (!libraryPane.dataset.mobileMode) libraryPane.dataset.mobileMode = 'programs';
+      row.querySelectorAll('.mobile-mode-button').forEach((item) => item.classList.toggle('active', item.dataset.mobileTarget === libraryPane.dataset.mobileMode));
+    }
+
+    const performancePane = document.querySelector('[data-workspace-pane="performance"]');
+    if (performancePane) {
+      let row = performancePane.querySelector('.mobile-mode-row.performance-mobile-modes');
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'mobile-mode-row performance-mobile-modes';
+        row.innerHTML = '<button type="button" class="mobile-mode-button active" data-mobile-target="results">Results</button><button type="button" class="mobile-mode-button" data-mobile-target="filters">Filters</button><button type="button" class="mobile-mode-button" data-mobile-target="explain">Explain</button>';
+        performancePane.insertBefore(row, performancePane.firstElementChild);
+        row.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-mobile-target]');
+          if (!button) return;
+          performancePane.dataset.mobileMode = button.dataset.mobileTarget;
+          row.querySelectorAll('.mobile-mode-button').forEach((item) => item.classList.toggle('active', item === button));
+        });
+      }
+      if (!performancePane.dataset.mobileMode) performancePane.dataset.mobileMode = 'results';
+      row.querySelectorAll('.mobile-mode-button').forEach((item) => item.classList.toggle('active', item.dataset.mobileTarget === performancePane.dataset.mobileMode));
+    }
+
+    const schedulingPane = document.querySelector('[data-workspace-pane="scheduling"]');
+    if (schedulingPane) {
+      let row = schedulingPane.querySelector('.mobile-mode-row.scheduling-mobile-modes');
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'mobile-mode-row scheduling-mobile-modes';
+        row.innerHTML = '<button type="button" class="mobile-mode-button active" data-mobile-target="calendar">Calendar</button><button type="button" class="mobile-mode-button" data-mobile-target="details">Details</button>';
+        schedulingPane.insertBefore(row, schedulingPane.firstElementChild);
+        row.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-mobile-target]');
+          if (!button) return;
+          schedulingPane.dataset.mobileMode = button.dataset.mobileTarget;
+          row.querySelectorAll('.mobile-mode-button').forEach((item) => item.classList.toggle('active', item === button));
+        });
+      }
+      if (!schedulingPane.dataset.mobileMode) schedulingPane.dataset.mobileMode = 'calendar';
+      row.querySelectorAll('.mobile-mode-button').forEach((item) => item.classList.toggle('active', item.dataset.mobileTarget === schedulingPane.dataset.mobileMode));
+    }
+  }
+
   async function init() {
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
@@ -184,6 +248,8 @@
 
   window.addEventListener('DOMContentLoaded', () => {
     bindEvents();
+    ensureMobileModeControls();
+    window.addEventListener('resize', ensureMobileModeControls);
     void init();
   });
 })();
