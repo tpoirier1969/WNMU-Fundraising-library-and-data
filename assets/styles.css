@@ -2124,25 +2124,3 @@ button.primary {
   .performance-quick-filter-row { display:grid; grid-template-columns: 1fr 1fr; }
   .quick-filter-btn { width: 100%; text-align: center; }
 }
-
-.date-segment-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(72px, 0.8fr) minmax(92px, 0.95fr);
-  gap: 8px;
-}
-
-.date-segment-row select {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-}
-
-.date-segment-row select:disabled {
-  background: #eef3f8;
-  color: var(--muted);
-}
