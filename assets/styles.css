@@ -46,7 +46,9 @@ button.small { padding: 7px 10px; }
 
 .app-shell {
   padding: 10px 14px 14px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
   min-height: 100vh;
 }

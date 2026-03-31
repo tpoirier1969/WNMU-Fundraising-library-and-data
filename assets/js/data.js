@@ -44,14 +44,15 @@
   }
 
   async function probeSource(candidate) {
-    const { data, error, count } = await state.client
+    const { data, error } = await state.client
       .from(candidate.name)
-      .select('*', { count: 'exact', head: true });
+      .select('*')
+      .range(0, 0);
     return {
       ...candidate,
       okay: !error,
       error,
-      count: Number.isFinite(count) ? count : 0,
+      count: Array.isArray(data) ? data.length : 0,
       rows: data || []
     };
   }

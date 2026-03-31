@@ -21,7 +21,7 @@
       pane.classList.toggle('hidden', pane.dataset.workspacePane !== workspace.id);
     });
 
-    if (workspace.id === 'scheduling') App.schedulingUi?.renderAll();
+    if (workspace.id === 'scheduling') void App.schedulingUi?.ensureReady();
     if (workspace.id === 'imports') void App.importsUi?.ensureReady();
     if (workspace.id === 'performance') void App.performanceUi?.ensureReady();
   }

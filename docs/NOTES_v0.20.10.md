@@ -1,0 +1,4 @@
+- Startup triage build: only active workspace loads on boot.
+- Library source probing uses a one-row probe instead of exact counts.
+- Removed first-paint base-table supplement fetch when summary view is available.
+- Added lazy scheduler readiness and reduced top-shell stretching during empty-state load.

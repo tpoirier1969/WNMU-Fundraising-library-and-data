@@ -63,9 +63,15 @@
       if (!state.scheduleSyncMessage) state.scheduleSyncMessage = 'Fundraisers are saved only in this browser.';
     }
     state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
+    state.schedulingReady = true;
     if (!state.activeScheduleId && state.schedules.length) state.activeScheduleId = state.schedules[0].id;
     if (getActiveSchedule()) applyScheduleToView(getActiveSchedule());
     renderScheduleList();
+  }
+
+  async function ensureReady() {
+    if (!state.schedulingReady) await loadSchedules();
+    renderAll();
   }
 
   async function persistSchedules(schedule) {

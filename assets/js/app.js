@@ -19,22 +19,22 @@
     els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">Loading library…</td></tr>';
     try {
       await App.data.refreshRawRows();
-      await App.schedulingUi?.loadSchedules();
       App.listUi.buildFilterOptions();
       App.listUi.applyLibraryView();
       App.workspaceUi?.refreshScaffoldSummary();
-      App.schedulingUi?.renderAll();
-      if (state.performance?.ready) {
+
+      const activeWorkspace = options.workspace || state.activeWorkspace || 'library';
+      if (activeWorkspace === 'scheduling') {
+        await App.schedulingUi?.ensureReady();
+      } else if (activeWorkspace === 'imports' && state.imports?.ready) {
+        await App.importsUi?.refreshTableStatus({ silent: true });
+        App.importsUi?.renderAll();
+      } else if (activeWorkspace === 'performance' && state.performance?.ready) {
         await App.performanceUi?.refreshData({ silent: true });
         App.performanceUi?.populateControls();
         App.performanceUi?.renderAll();
-      } else {
-        App.performanceUi?.reset();
       }
-      if (state.imports?.ready) {
-        await App.importsUi?.refreshTableStatus({ silent: true });
-        App.importsUi?.renderAll();
-      }
+
       const probeStatus = App.data.getProbeStatusMessage();
       if (state.configVersionMismatch) {
         setBuildMeta(`${state.configVersionMismatch} ${probeStatus}`);
@@ -86,7 +86,7 @@
       button.addEventListener('click', () => App.listUi.setSort(button.dataset.sortField));
     });
     els.resetFiltersButton.addEventListener('click', () => { App.listUi.resetFilters(); App.listUi.applyLibraryView(); });
-    els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true }); });
+    els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace }); });
     els.libraryBody.addEventListener('click', (event) => {
       const trigger = event.target.closest('[data-open-id]');
       if (!trigger) return;
@@ -238,10 +238,7 @@
     setNotice(`Connected. Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
     await App.auth.initAuthRole();
     App.auth.bindAuthListener();
-    await App.schedulingUi?.loadSchedules();
-    App.schedulingUi?.renderAll();
-    await App.importsUi?.refreshTableStatus({ silent: true });
-    await refreshAll();
+    await refreshAll({ workspace: 'library' });
   }
 
   App.app = { init, refreshAll, bindEvents };
