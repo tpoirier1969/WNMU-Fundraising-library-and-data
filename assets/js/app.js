@@ -238,6 +238,13 @@
     setNotice(`Connected. Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
     await App.auth.initAuthRole();
     App.auth.bindAuthListener();
+
+    // Keep fundraiser data available across the app even when Scheduling is lazy-rendered.
+    // This restores the scheduler/import workflows without forcing a full scheduler paint during boot.
+    void App.schedulingUi?.loadSchedules().catch((error) => {
+      console.warn('Background fundraiser load failed.', error);
+    });
+
     await refreshAll({ workspace: 'library' });
   }
 

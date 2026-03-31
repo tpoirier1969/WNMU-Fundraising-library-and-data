@@ -1,0 +1,2 @@
+- Restored background fundraiser data loading while keeping scheduler UI lazy-rendered.
+- Repairs missing fundraiser list and build/rebuild paths introduced by the startup triage build.
