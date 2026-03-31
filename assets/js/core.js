@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.11',
+    APP_VERSION: 'v0.20.12',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -424,10 +424,13 @@ window.PledgeLib = window.PledgeLib || {};
       const start = new Date(`${startKey}T00:00:00`);
       const end = new Date(`${endKey}T00:00:00`);
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return results;
+      const maxDays = 400;
       const cursor = new Date(start);
-      while (cursor <= end) {
+      let steps = 0;
+      while (cursor <= end && steps < maxDays) {
         results.push(utils.dateKeyFromDate(cursor));
         cursor.setDate(cursor.getDate() + 1);
+        steps += 1;
       }
       return results;
     },

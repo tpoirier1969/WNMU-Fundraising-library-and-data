@@ -23,6 +23,23 @@
     return `Fundraiser ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}`;
   }
 
+
+  function getScheduleDateSpanInfo(schedule = {}) {
+    const startKey = utils.normalizeText(schedule?.startDate);
+    const endKey = utils.normalizeText(schedule?.endDate);
+    if (!startKey || !endKey) return { ok: false, reason: 'This fundraiser is missing a start or end date.', days: 0 };
+    const start = new Date(`${startKey}T00:00:00`);
+    const end = new Date(`${endKey}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      return { ok: false, reason: 'This fundraiser has an invalid date range.', days: 0 };
+    }
+    const days = Math.floor((end - start) / 86400000) + 1;
+    if (!Number.isFinite(days) || days > 400) {
+      return { ok: false, reason: `This fundraiser spans ${days} days, which is beyond the safe scheduler limit. Remove or fix it before opening.`, days };
+    }
+    return { ok: true, reason: '', days };
+  }
+
   function normalizeScheduleWindow(schedule = {}) {
     const next = { ...schedule };
     const startMinutes = Number.isFinite(Number(next.dayStartMinutes)) ? Number(next.dayStartMinutes) : (Number(next.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
@@ -64,8 +81,13 @@
     }
     state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
     state.schedulingReady = true;
-    if (!state.activeScheduleId && state.schedules.length) state.activeScheduleId = state.schedules[0].id;
-    if (getActiveSchedule()) applyScheduleToView(getActiveSchedule());
+    const activeSchedule = getActiveSchedule();
+    const activeInfo = activeSchedule ? getScheduleDateSpanInfo(activeSchedule) : null;
+    if (!state.activeScheduleId || !activeSchedule || !activeInfo?.ok) {
+      const firstSafeSchedule = state.schedules.find((item) => getScheduleDateSpanInfo(item).ok) || state.schedules[0] || null;
+      state.activeScheduleId = firstSafeSchedule?.id || '';
+    }
+    if (getActiveSchedule() && getScheduleDateSpanInfo(getActiveSchedule()).ok) applyScheduleToView(getActiveSchedule());
     renderScheduleList();
   }
 
@@ -600,13 +622,14 @@
     }
     const orderedSchedules = sortSchedulesNewestFirst(state.schedules);
     els.scheduleList.innerHTML = orderedSchedules.map((schedule) => {
+      const spanInfo = getScheduleDateSpanInfo(schedule);
       const active = schedule.id === state.activeScheduleId;
       const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
       return `
-        <div class="schedule-list-item ${active ? 'active' : ''}">
-          <button type="button" class="schedule-list-open" data-schedule-id="${utils.escapeHtml(schedule.id)}">
+        <div class="schedule-list-item ${active ? 'active' : ''}${spanInfo.ok ? '' : ' invalid'}">
+          <button type="button" class="schedule-list-open" data-schedule-id="${utils.escapeHtml(schedule.id)}" ${spanInfo.ok ? '' : 'data-invalid-schedule="true"'}>
             <span class="schedule-list-title">${utils.escapeHtml(schedule.title)}</span>
-            <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} scheduled blocks</span>
+            <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} scheduled blocks${spanInfo.ok ? '' : ' · INVALID DATE RANGE'}</span>
           </button>
           ${canScheduleEdit() ? `<button type="button" class="ghost tiny-button" data-delete-schedule-id="${utils.escapeHtml(schedule.id)}">Remove</button>` : ''}
         </div>
@@ -699,6 +722,16 @@
       els.scheduleEmpty.classList.remove('hidden');
       els.scheduleEditor.classList.add('hidden');
       els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
+      return;
+    }
+    const spanInfo = getScheduleDateSpanInfo(schedule);
+    if (!spanInfo.ok) {
+      els.scheduleEmpty.classList.remove('hidden');
+      els.scheduleEditor.classList.add('hidden');
+      if (els.scheduleEmpty) {
+        els.scheduleEmpty.innerHTML = `<div class="schedule-empty-title">This fundraiser cannot be opened safely.</div><div class="schedule-hint">${utils.escapeHtml(spanInfo.reason)}</div><div class="schedule-hint">Use the Remove button in the fundraiser list to delete it.</div>`;
+      }
+      els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Invalid fundraiser date range. Remove or repair this fundraiser before rendering the calendar.</div>';
       return;
     }
 
@@ -1432,9 +1465,13 @@
     els.scheduleList?.addEventListener('click', (event) => {
       const open = event.target.closest('[data-schedule-id]');
       if (open) {
-        state.activeScheduleId = open.dataset.scheduleId;
-        applyScheduleToView(getActiveSchedule());
+        const nextSchedule = state.schedules.find((item) => item.id === open.dataset.scheduleId) || null;
+        if (!nextSchedule) return;
+        state.activeScheduleId = nextSchedule.id;
+        const spanInfo = getScheduleDateSpanInfo(nextSchedule);
+        if (spanInfo.ok) applyScheduleToView(nextSchedule);
         renderAll();
+        if (!spanInfo.ok) setNotice(spanInfo.reason, 'warn');
         return;
       }
       const del = event.target.closest('[data-delete-schedule-id]');
