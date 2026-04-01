@@ -609,6 +609,7 @@
       if (perf().weekpartScope && weekpartLabel(record) !== perf().weekpartScope) return false;
       if (startDate && (!(record.when instanceof Date) || record.when < startDate)) return false;
       if (endDate && (!(record.when instanceof Date) || record.when > endDate)) return false;
+      if (perf().quickFilter === 'live_break_impact' && !record.scheduleMatched) return false;
       return true;
     });
 
@@ -649,7 +650,7 @@
       titles: [...group.titles].sort((a, b) => utils.compareText(a, b))
     }));
 
-    const sorted = grouped.sort((a, b) => {
+    let sorted = grouped.sort((a, b) => {
       if (effectiveChartType() === 'line' && isLineFriendly(criterion)) {
         const ak = criterionOrderKey(a, criterion);
         const bk = criterionOrderKey(b, criterion);
@@ -660,6 +661,30 @@
       if (diff !== 0) return diff;
       return utils.compareText(a.label, b.label);
     });
+
+    if (perf().quickFilter === 'weak_returns') {
+      sorted = sorted
+        .filter((group) => group.airingCount >= 2)
+        .sort((a, b) => {
+          const diff = metricValue(a) - metricValue(b);
+          if (diff !== 0) return diff;
+          return utils.compareText(a.label, b.label);
+        });
+    }
+    if (perf().quickFilter === 'live_break_impact') {
+      const order = { 'Live break': 0, 'No live break': 1 };
+      sorted = sorted
+        .filter((group) => ['Live break', 'No live break'].includes(group.label))
+        .sort((a, b) => {
+          const aOrder = order[a.label] ?? 99;
+          const bOrder = order[b.label] ?? 99;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+          return utils.compareText(a.label, b.label);
+        });
+    }
+    if (perf().quickFilter === 'repeat_fatigue') {
+      sorted = sorted.filter((group) => group.airingCount >= 2);
+    }
 
     const limit = Math.max(1, Number(perf().topN) || 12);
     const limited = limit >= 999 ? sorted : sorted.slice(0, limit);
@@ -811,6 +836,7 @@
     const end = perf().endDate ? utils.formatDate(perf().endDate) : 'Latest available';
     const month = perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month';
     const topic = perf().topicFilter || 'All topics';
+    const quick = quickFilterLabel() || 'None';
     const shape = perf().dataShape || {};
     const analysisMeta = perf().analysisMeta || {};
     const source = `Imported airings view · ${utils.formatCount(shape.airingRows || 0)} airings rows`;
@@ -818,6 +844,7 @@
       ['Date window', `${start} to ${end}`],
       ['Fundraiser month', month],
       ['Topic filter', topic],
+      ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
       ['Chart', chartTypeLabel(effectiveChartType())],
@@ -841,6 +868,7 @@
     const meta = perf().analysisMeta || {};
     const rows = [
       ['Date window', perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates', 'Only records whose usable date falls inside this window are included.'],
+      ['Quick filter', quickFilterLabel() || 'None', quickFilterExplanation() || 'No quick-filter-specific interpretation is active.'],
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
       ['Topic filter', perf().topicFilter || 'All topics', 'Checks both primary and secondary topic text from the library where available.'],
       ['Compare by', criterionDisplayName(), `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
@@ -897,12 +925,57 @@
 
   function collectProgramOptions() {
     const labels = new Map();
+    const addOption = (value, label) => {
+      const safeValue = utils.normalizeLookupKey(value || '');
+      const safeLabel = utils.normalizeText(label || '');
+      if (!safeValue || !safeLabel) return;
+      if (!labels.has(safeValue)) labels.set(safeValue, safeLabel);
+    };
     (perf().records || []).forEach((record) => {
-      const key = utils.normalizeLookupKey(record.programId || record.nolaCode || record.title || '');
-      const label = utils.normalizeText(record.title || 'Unknown title');
-      if (key && label && !labels.has(key)) labels.set(key, label);
+      addOption(record.programId || record.nolaCode || record.title || '', record.title || 'Unknown title');
+      addOption(record.title || '', record.title || 'Unknown title');
     });
-    return [...labels.entries()].sort((a,b)=>utils.compareText(a[1], b[1])).map(([value,label])=>({ value, label }));
+    (state.rawRows || []).forEach((row) => {
+      addOption(derive.programId(row) || derive.nola(row) || derive.title(row) || '', derive.title(row) || 'Unknown title');
+      addOption(derive.title(row) || '', derive.title(row) || 'Unknown title');
+    });
+    return [...labels.entries()]
+      .sort((a, b) => utils.compareText(a[1], b[1]))
+      .map(([value, label]) => ({ value, label }));
+  }
+
+  function quickFilterLabel(name = perf().quickFilter) {
+    const labels = {
+      top_earners: 'Top earners',
+      best_average: 'Best average earners',
+      prime_time: 'Prime time winners',
+      weak_returns: 'Weak returns',
+      live_break_impact: 'Live break impact',
+      repeat_fatigue: 'Repeat fatigue',
+      topic_winners: 'Topic winners',
+      recent_momentum: 'Recent momentum',
+      weekend_weekday: 'Weekend vs weekday earnings',
+      day_of_week: 'Day of week comparisons',
+      daypart: 'Day-part comparisons',
+      best_daytime: 'Best daytime performers'
+    };
+    return labels[name] || '';
+  }
+
+  function quickFilterExplanation(name = perf().quickFilter) {
+    const endText = perf().endDate ? utils.formatDate(perf().endDate) : 'the latest available date';
+    switch (name) {
+      case 'weak_returns':
+        return 'Sorted from the lowest average dollars per airing upward, so weak performers appear first instead of the strongest titles.';
+      case 'live_break_impact':
+        return 'Compares only rows that cleanly matched a schedule placement with a live-break flag. Unmatched rows are excluded so “Unknown” does not swamp the result.';
+      case 'repeat_fatigue':
+        return 'Shows only programs with at least 2 airings in the current filter window. Use it as a “repeated titles only” view, not a first-vs-repeat earnings delta yet.';
+      case 'recent_momentum':
+        return `“Recent” means the trailing 90 days ending on ${endText}. This is a recency-focused view, not yet a true prior-period momentum delta.`;
+      default:
+        return '';
+    }
   }
 
   function populateControls() {
@@ -959,7 +1032,8 @@
       : meta.lowConfidenceTemporal
         ? 'Small temporal sample — read it cautiously.'
         : `${utils.formatCount(records.length)} filtered rows.`;
-    setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}`, warn ? 'warn' : '');
+    const quickTail = quickFilterExplanation();
+    setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }
 
   async function refreshData(options = {}) {
@@ -1008,7 +1082,7 @@
     prime_time: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: 'Prime time', weekpartScope: '' },
     weak_returns: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', programFilter: '', labelFilter: '', daypartScope: '', weekpartScope: '' },
     live_break_impact: { criterion: 'live_breaks', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
-    repeat_fatigue: { criterion: 'program', metric: 'airings', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    repeat_fatigue: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     recent_momentum: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     weekend_weekday: { criterion: 'weekpart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
@@ -1028,7 +1102,7 @@
       button.disabled = !enabled;
       button.classList.toggle('active', button.dataset.performanceQuickFilter === active);
     });
-    if (els.performanceQuickFilterPill) els.performanceQuickFilterPill.textContent = enabled ? (active ? active.replace(/_/g, ' ').replace(/\w/g, (c) => c.toUpperCase()) : 'Ready') : 'Set a date range first';
+    if (els.performanceQuickFilterPill) els.performanceQuickFilterPill.textContent = enabled ? (active ? quickFilterLabel(active) : 'Ready') : 'Set a date range first';
   }
 
   function applyQuickFilter(name) {
@@ -1038,7 +1112,7 @@
     if (name === 'recent_momentum' && perf().endDate) {
       const end = new Date(`${perf().endDate}T12:00:00`);
       const start = new Date(end.getTime());
-      start.setDate(end.getDate() - 59);
+      start.setDate(end.getDate() - 89);
       perf().startDate = localDateKey(start);
     }
     renderAll();
