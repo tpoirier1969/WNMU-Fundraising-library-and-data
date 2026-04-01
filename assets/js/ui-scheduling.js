@@ -151,7 +151,13 @@
   }
 
   function scheduleBroadcastTotal(schedule = {}) {
-    return Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0;
+    const stored = Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0;
+    if (stored > 0) return stored;
+    const placementTotal = (Array.isArray(schedule?.placements) ? schedule.placements : []).reduce((sum, placement) => {
+      const dollars = Number(placement?.importedBroadcastDollars || 0) || 0;
+      return sum + dollars;
+    }, 0);
+    return placementTotal;
   }
 
   function scheduleGrandTotal(schedule = {}) {
@@ -413,7 +419,8 @@
       sourceAiringHash: row.row_hash || '',
       sourceImportBatchId: row.import_batch_id || '',
       importedFundraiserKey: importedScheduleKey(row),
-      fundraiserLabel: importedFundraiserLabel(row)
+      fundraiserLabel: importedFundraiserLabel(row),
+      importedBroadcastDollars: Number(row.dollars || 0) || 0
     };
   }
 
