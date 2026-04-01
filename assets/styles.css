@@ -2131,7 +2131,7 @@ button.primary {
 .schedule-invalid-actions .ghost { min-width: 0; }
 
 
-/* v0.20.14 performance filter usability */
+/* v0.20.15 performance filter usability */
 .performance-toolbar-grid .filter-field {
   min-width: 0;
 }

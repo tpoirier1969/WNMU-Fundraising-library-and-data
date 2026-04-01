@@ -178,9 +178,11 @@
     if (!select) return;
     const escapeHtml = App.utils.escapeHtml;
     const options = [`<option value="">${escapeHtml(placeholder)}</option>`];
-    values.forEach((value) => {
+    values.forEach((entry) => {
+      const value = entry && typeof entry === 'object' ? String(entry.value ?? '') : String(entry ?? '');
+      const label = entry && typeof entry === 'object' ? String(entry.label ?? entry.value ?? '') : String(entry ?? '');
       const selected = currentValue === value ? 'selected' : '';
-      options.push(`<option value="${escapeHtml(value)}" ${selected}>${escapeHtml(value)}</option>`);
+      options.push(`<option value="${escapeHtml(value)}" ${selected}>${escapeHtml(label)}</option>`);
     });
     select.innerHTML = options.join('');
   }

@@ -210,6 +210,113 @@
     return ['file', utils.normalizeLookupKey(row.source_file_name)].join('|').toLowerCase();
   }
 
+  const IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS = 14;
+  const IMPORTED_RANGE_SUSPICIOUS_SPAN_DAYS = 45;
+
+  function dateKeyToDate(dateKey = '') {
+    if (!dateKey) return null;
+    const stamp = new Date(`${dateKey}T12:00:00`);
+    return Number.isNaN(stamp.getTime()) ? null : stamp;
+  }
+
+  function daysBetweenDateKeys(a = '', b = '') {
+    const da = dateKeyToDate(a);
+    const db = dateKeyToDate(b);
+    if (!da || !db) return null;
+    return Math.round((db.getTime() - da.getTime()) / 86400000);
+  }
+
+  function labelIsSpecificFundraiser(label = '') {
+    const clean = utils.normalizeText(label);
+    if (!clean) return false;
+    const key = utils.normalizeLookupKey(clean);
+    if (!key) return false;
+    if (key.startsWith('imported pledge ')) return false;
+    if (key === 'imported fundraiser') return false;
+    if (key.endsWith('.csv') || key.endsWith('.xlsx') || key.endsWith('.xls')) return false;
+    return true;
+  }
+
+  function chooseImportedGroupSeed(row = {}) {
+    const label = utils.normalizeText(row.fundraiser_label);
+    if (labelIsSpecificFundraiser(label)) return ['label', utils.normalizeLookupKey(label)].join('|').toLowerCase();
+    const sourceFile = utils.normalizeLookupKey(row.source_file_name);
+    if (sourceFile) return ['file', sourceFile].join('|').toLowerCase();
+    return importedScheduleKey(row);
+  }
+
+  function formatClusterTitle(group = {}) {
+    const specificLabel = utils.normalizeText(group.rows?.find((entry) => labelIsSpecificFundraiser(entry.row?.fundraiser_label))?.row?.fundraiser_label || '');
+    if (specificLabel) return specificLabel;
+    const start = utils.normalizeText(group.startDate);
+    const end = utils.normalizeText(group.endDate);
+    if (start && end && start !== end) return `Imported pledge ${utils.formatDate(start)} – ${utils.formatDate(end)}`;
+    if (start) return `Imported pledge ${utils.formatDate(start)}`;
+    return utils.normalizeText(group.rows?.[0]?.row?.source_file_name) || 'Imported fundraiser';
+  }
+
+  function finalizeImportedCluster(seedKey, rows = []) {
+    const validRows = rows.filter(Boolean).sort((a, b) => {
+      const dateA = utils.normalizeText(a.dateKey || '');
+      const dateB = utils.normalizeText(b.dateKey || '');
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (Number(a.startMinutes) || 0) - (Number(b.startMinutes) || 0);
+    });
+    const startDate = validRows[0]?.dateKey || '';
+    const endDate = validRows[validRows.length - 1]?.dateKey || startDate;
+    const rowsHaveSpecificLabel = validRows.some((entry) => labelIsSpecificFundraiser(entry.row?.fundraiser_label));
+    const identityKey = rowsHaveSpecificLabel
+      ? ['cluster', seedKey].join('|').toLowerCase()
+      : ['cluster', seedKey, startDate, endDate].join('|').toLowerCase();
+    const group = { rows: validRows, key: identityKey, startDate, endDate, title: '' };
+    group.title = formatClusterTitle(group);
+    return group;
+  }
+
+  function buildImportedFundraiserGroups(preparedRows = []) {
+    const seeded = new Map();
+    preparedRows.forEach((prepared) => {
+      const seedKey = chooseImportedGroupSeed(prepared.row);
+      if (!seeded.has(seedKey)) seeded.set(seedKey, []);
+      seeded.get(seedKey).push(prepared);
+    });
+    const groups = [];
+    seeded.forEach((items, seedKey) => {
+      const sorted = [...items].sort((a, b) => {
+        const dateA = utils.normalizeText(a.dateKey || '');
+        const dateB = utils.normalizeText(b.dateKey || '');
+        if (dateA !== dateB) return dateA.localeCompare(dateB);
+        return (Number(a.startMinutes) || 0) - (Number(b.startMinutes) || 0);
+      });
+      if (!sorted.length) return;
+      const spanDays = daysBetweenDateKeys(sorted[0].dateKey, sorted[sorted.length - 1].dateKey);
+      const shouldCluster = !sorted.some((entry) => labelIsSpecificFundraiser(entry.row?.fundraiser_label))
+        || (Number.isFinite(spanDays) && spanDays > IMPORTED_RANGE_SUSPICIOUS_SPAN_DAYS);
+      if (!shouldCluster) {
+        groups.push(finalizeImportedCluster(seedKey, sorted));
+        return;
+      }
+      let cluster = [sorted[0]];
+      for (let index = 1; index < sorted.length; index += 1) {
+        const current = sorted[index];
+        const previous = sorted[index - 1];
+        const gapDays = daysBetweenDateKeys(previous.dateKey, current.dateKey);
+        if (Number.isFinite(gapDays) && gapDays > IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS) {
+          groups.push(finalizeImportedCluster(seedKey, cluster));
+          cluster = [current];
+          continue;
+        }
+        cluster.push(current);
+      }
+      if (cluster.length) groups.push(finalizeImportedCluster(seedKey, cluster));
+    });
+    return groups.sort((a, b) => {
+      const dateA = utils.normalizeText(a.startDate || '');
+      const dateB = utils.normalizeText(b.startDate || '');
+      return dateA.localeCompare(dateB);
+    });
+  }
+
   function scheduleIdentityKey(schedule = {}) {
     const importedKey = utils.normalizeText(schedule?.meta?.importedFundraiserKey);
     if (importedKey) return `imported|${importedKey}`.toLowerCase();
@@ -334,16 +441,7 @@
       return { row, sourceRow, dateKey, startMinutes };
     }).filter(Boolean);
     const skippedRows = Math.max(0, sourceRows.length - preparedRows.length);
-    const groups = new Map();
-    preparedRows.forEach((prepared) => {
-      const { row, dateKey } = prepared;
-      const key = importedScheduleKey(row);
-      if (!groups.has(key)) groups.set(key, { rows: [], key, title: importedFundraiserLabel(row), startDate: utils.normalizeText(row.drive_start_date) || dateKey, endDate: utils.normalizeText(row.drive_end_date) || dateKey });
-      const group = groups.get(key);
-      group.rows.push(prepared);
-      if (dateKey && (!group.startDate || dateKey < group.startDate)) group.startDate = dateKey;
-      if (dateKey && (!group.endDate || dateKey > group.endDate)) group.endDate = dateKey;
-    });
+    const groups = buildImportedFundraiserGroups(preparedRows);
 
     let createdSchedules = 0;
     let updatedSchedules = 0;
@@ -398,6 +496,7 @@
       if (active) applyScheduleToView(active);
     }
 
+    diagnostics.clusteredFundraisers = groups.length;
     return {
       schedulesCreated: createdSchedules,
       schedulesUpdated: updatedSchedules,
@@ -405,7 +504,7 @@
       placementsSkipped: skippedPlacements,
       skippedRows,
       correctedDurations,
-      fundraiserCount: groups.size,
+      fundraiserCount: groups.length,
       diagnostics
     };
   }
@@ -432,6 +531,7 @@
       if (diag.badTime) reasonBits.push(`${utils.formatCount(diag.badTime)} with a bad or missing air time`);
       if (reasonBits.length) noteBits.push(`Breakdown: ${reasonBits.join(', ')}.`);
     }
+    if (diag.clusteredFundraisers) noteBits.push(`${utils.formatCount(diag.clusteredFundraisers)} fundraiser clusters were identified from actual airing dates.`);
     if (summary.correctedDurations) noteBits.push(`${utils.formatCount(summary.correctedDurations)} durations were corrected from library runtimes.`);
     noteBits.push(state.scheduleSyncMessage);
     setNotice(noteBits.join(' '));
