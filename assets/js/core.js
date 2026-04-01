@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.18',
+    APP_VERSION: 'v0.20.20',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -147,7 +147,9 @@ window.PledgeLib = window.PledgeLib || {};
       dayStartHour: 7,
       dayEndHour: 31,
       dayStartMinutes: 420,
-      dayEndMinutes: 1830
+      dayEndMinutes: 1830,
+      onlineDollars: 0,
+      mailDollars: 0
     },
     scheduleView: {
       zoom: 1,
@@ -182,6 +184,8 @@ window.PledgeLib = window.PledgeLib || {};
       driveRows: [],
       warnings: [],
       tableStatus: [],
+      existingUnlinkedRows: [],
+      existingUnlinkedError: '',
       lastAnalyzedAt: '',
       lastImportedAt: '',
       lastImportResult: null,

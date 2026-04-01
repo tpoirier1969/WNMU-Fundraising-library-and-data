@@ -794,26 +794,26 @@ button.small { padding: 7px 10px; }
   align-items: center;
 }
 .schedule-list {
-  margin-top: 12px;
+  margin-top: 10px;
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 .schedule-list-item {
   text-align: left;
   border: 1px solid #d8e4ea;
   background: #fbfdfe;
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 10px;
+  padding: 6px 8px;
   display: grid;
-  gap: 4px;
+  gap: 2px;
   cursor: pointer;
 }
 .schedule-list-item.active {
   border-color: #8cb7d1;
   background: #eff7fc;
 }
-.schedule-list-title { font-weight: 800; color: var(--heading); }
-.schedule-list-meta, .schedule-list-empty { color: var(--muted); font-size: .92rem; }
+.schedule-list-title { font-weight: 800; color: var(--heading); font-size: .94rem; line-height: 1.15; }
+.schedule-list-meta, .schedule-list-empty { color: var(--muted); font-size: .76rem; line-height: 1.2; }
 .schedule-main { display: grid; gap: 14px; }
 .schedule-builder-card,
 .schedule-empty-state,
@@ -824,6 +824,28 @@ button.small { padding: 7px 10px; }
   grid-template-columns: minmax(220px, 1.3fr) repeat(2, minmax(150px, .8fr)) auto;
   gap: 12px;
   align-items: end;
+}
+.schedule-money-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.schedule-money-row input[readonly] {
+  background: #f5f9fc;
+  color: var(--heading);
+  font-weight: 700;
+}
+.schedule-fundraiser-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.schedule-fundraiser-summary .scheduled-data-chunk {
+  background: #f5f9fc;
+  border: 1px solid #d8e4ea;
 }
 .schedule-empty-state { color: var(--muted); }
 .schedule-editor { padding: 12px; display: grid; gap: 12px; }
@@ -973,9 +995,9 @@ button.primary {
   background: linear-gradient(135deg, var(--pbs-blue-dark), var(--pbs-blue));
   border-radius: 10px;
 }
-.schedule-list-item { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
-.schedule-list-open { flex:1; text-align:left; border:none; background:transparent; padding:0; display:grid; gap:4px; }
-.tiny-button { padding: 6px 8px; font-size: .78rem; border-radius: 10px; }
+.schedule-list-item { display:flex; justify-content:space-between; align-items:flex-start; gap:6px; }
+.schedule-list-open { flex:1; text-align:left; border:none; background:transparent; padding:0; display:grid; gap:2px; }
+.tiny-button { padding: 4px 6px; font-size: .72rem; border-radius: 8px; }
 .schedule-toolbar { flex-wrap: wrap; }
 .schedule-toolbar-center { min-width: 180px; justify-content: center; }
 .schedule-sub-label { font-size: .78rem; font-weight: 800; color: var(--pbs-blue-dark); text-transform: uppercase; letter-spacing: .05em; }
@@ -2021,7 +2043,7 @@ button.primary {
   .list-meta { padding: 8px 10px; }
   .list-title { font-size: .92rem; }
   .list-summary { font-size: .76rem; }
-  .filter-row, .performance-toolbar-grid.expanded, .schedule-form { grid-template-columns: 1fr !important; display: grid; gap: 8px; }
+  .filter-row, .performance-toolbar-grid.expanded, .schedule-form, .schedule-money-row, .schedule-fundraiser-summary { grid-template-columns: 1fr !important; display: grid; gap: 8px; }
   .filter-actions-inline, .performance-actions-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .performance-toolbar-card .list-summary { margin-top: 2px; }
   .performance-criteria-bar {
@@ -2185,3 +2207,24 @@ button.primary {
 }
 .performance-table-wrap { max-height: 460px; }
 #performance-program-select option { color: #10263d; }
+
+.import-unmatched-wrap select.import-manual-match-select {
+  min-width: 20rem;
+  max-width: 28rem;
+}
+
+.import-unmatched-table td {
+  vertical-align: top;
+}
+
+.import-apply-match-button {
+  white-space: nowrap;
+}
+.import-match-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.import-create-link-button {
+  white-space: nowrap;
+}

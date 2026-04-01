@@ -7,6 +7,59 @@
   function imp() { return state.imports; }
   function escape(value) { return utils.escapeHtml(utils.toDisplayText(value)); }
 
+  function isImportMatched(row) {
+    return Boolean(row && row.program_id != null && row.match_method !== 'ignored');
+  }
+
+  function getMatchedRows() {
+    return imp().airingsRows.filter((row) => isImportMatched(row));
+  }
+
+  function getUnmatchedRows() {
+    return imp().airingsRows.filter((row) => !isImportMatched(row));
+  }
+
+  function getMatchReason(row) {
+    if (!row) return '';
+    if (row.match_method === 'manual_library') return 'Matched manually in import review';
+    if (row.match_method === 'ignored') return row.match_reason || 'Ignored during import review';
+    return row.match_reason || 'No pledge-library match yet';
+  }
+
+  function buildLibraryProgramOptions() {
+    const seen = new Set();
+    return (state.rawRows || []).map((row) => {
+      const value = String(derive.programId(row) || '');
+      if (!value || seen.has(value)) return null;
+      seen.add(value);
+      const title = derive.title(row) || 'Untitled program';
+      const nola = derive.nola(row);
+      return { value, label: nola ? `${title} (${nola})` : title };
+    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+
+  function existingUnlinkedReason(row) {
+    const title = utils.normalizeText(row?.program_title || row?.title || row?.imported_program_title);
+    const nola = utils.normalizeText(row?.nola_code);
+    if (!title && !nola) return 'Missing program title and NOLA';
+    if (!title) return 'Missing imported title';
+    if (!nola) return 'Missing NOLA';
+    return 'No library link on imported airing';
+  }
+
+  function normalizeExistingUnlinkedRow(row = {}) {
+    return {
+      imported_program_title: utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '—',
+      nola_code: utils.normalizeText(row.nola_code) || '—',
+      air_date: utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '—',
+      air_time: utils.normalizeText(row.air_time) || '—',
+      dollars: Number.isFinite(Number(row.dollars)) ? Number(row.dollars) : null,
+      source_file_name: utils.normalizeText(row.source_file_name) || '—',
+      match_reason: existingUnlinkedReason(row)
+    };
+  }
+
   function setStatus(text, type = '') {
     if (!els.importStatus) return;
     els.importStatus.textContent = text;
@@ -366,7 +419,10 @@
         import_batch_id: imp().importBatchId || '',
         imported_by_email: state.userEmail || null,
         match_method: matchedProgram ? 'nola' : 'unmatched_nola',
+        match_reason: matchedProgram ? '' : `No pledge-library NOLA match for ${nola}.`,
         title_mismatch_flag: titleMismatch || false,
+        manual_match_program_id: null,
+        manual_match_label: '',
         row_hash: hashText(stableStringify(baseForHash)),
         raw_payload: mapped
       },
@@ -432,6 +488,7 @@
     imp().airingsRows = [];
     imp().driveRows = [];
     imp().warnings = [];
+    imp().existingUnlinkedError = '';
     imp().lastAnalyzedAt = new Date().toISOString();
     imp().lastImportResult = null;
     imp().importBatchId = utils.makeId('import');
@@ -510,22 +567,23 @@
       imp().airingsRows = [...deduped.values()];
       imp().driveRows = deriveRollups(imp().airingsRows);
 
-      const matchedCount = imp().airingsRows.filter((row) => row.match_method === 'nola').length;
-      const unmatchedCount = imp().airingsRows.length - matchedCount;
+      const matchedCount = getMatchedRows().length;
+      const unmatchedCount = getUnmatchedRows().length;
       if (imp().airingsRows.length) {
-        imp().warnings.unshift(`NOLA matched ${utils.formatCount(matchedCount)} imported airing rows to the pledge library. ${utils.formatCount(unmatchedCount)} rows stayed unmatched.`);
+        imp().warnings.unshift(`The importer matched ${utils.formatCount(matchedCount)} airing row${matchedCount === 1 ? '' : 's'} and left ${utils.formatCount(unmatchedCount)} row${unmatchedCount === 1 ? '' : 's'} unmatched for review.`);
       }
       if (imp().driveRows.length) {
         imp().warnings.unshift(`Derived ${utils.formatCount(imp().driveRows.length)} fundraiser rollups from imported airings. No separate money rows will be stored.`);
       }
 
       renderAll();
-      const matchedRows = imp().airingsRows.filter((row) => row.match_method === 'nola').length;
-      const skippedRows = imp().airingsRows.length - matchedRows;
+      const matchedRows = getMatchedRows().length;
+      const skippedRows = getUnmatchedRows().length;
       const legacyFiles = imp().fileSummaries.filter((item) => item.detectedFormat === 'legacy_pbs_break_report').length;
       const legacyNote = legacyFiles ? ` ${utils.formatCount(legacyFiles)} legacy PBS Break Report file${legacyFiles === 1 ? '' : 's'} detected.` : '';
-      setStatus(`Preview ready: ${utils.formatCount(matchedRows)} matched rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows will be skipped.${legacyNote}`);
-      setResultBanner(`Preview ready: ${utils.formatCount(matchedRows)} matched airing rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows will stay in preview only and will not be written to Supabase.${legacyNote}`);
+      const reimportNote = imp().lastImportResult ? ' Reimport is safe; duplicates are skipped.' : '';
+      setStatus(`Preview ready: ${utils.formatCount(matchedRows)} matched rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows need review in the table below.${legacyNote}${reimportNote}`);
+      setResultBanner(`Preview ready: ${utils.formatCount(matchedRows)} matched airing rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows need review below before import.${legacyNote}${reimportNote}`);
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Report analysis failed.';
@@ -603,7 +661,7 @@
       setResultBanner('Scheduler creation is admin-only.', 'warn');
       return;
     }
-    const matchedRows = imp().airingsRows.filter((row) => row.match_method === 'nola' && row.program_id != null);
+    const matchedRows = getMatchedRows();
     if (!matchedRows.length) {
       setResultBanner('No matched imported airings are available for scheduler creation yet.', 'warn');
       return;
@@ -630,17 +688,17 @@
       setResultBanner('There is nothing to import yet. Load a PBS Break Report CSV first.', 'warn');
       return;
     }
-    const matchedRows = imp().airingsRows.filter((row) => row.match_method === 'nola' && row.program_id != null);
+    const matchedRows = getMatchedRows();
     const unmatchedCount = imp().airingsRows.length - matchedRows.length;
     if (!matchedRows.length) {
-      const message = 'No matched rows are eligible for direct import yet. Fix the NOLAs or export the preview for manual review.';
+      const message = 'No matched rows are eligible for direct import yet. Resolve the unmatched rows in the review table or export the preview for manual review.';
       setStatus(message, 'warn');
       setNotice(message, 'warn');
       setResultBanner(message, 'warn');
       return;
     }
-    setStatus(`Importing ${utils.formatCount(matchedRows.length)} matched airing rows to Supabase…`);
-    setResultBanner(`Importing ${utils.formatCount(matchedRows.length)} matched airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be skipped.`);
+    setStatus(`Importing or reimporting ${utils.formatCount(matchedRows.length)} matched airing rows to Supabase…`);
+    setResultBanner(`Importing or reimporting ${utils.formatCount(matchedRows.length)} matched airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be skipped. Existing duplicates will be ignored automatically.`);
     try {
       const summary = await App.data.importNormalizedRows({
         airingsRows: matchedRows,
@@ -650,7 +708,7 @@
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
       renderAll();
-      const success = `Imported ${utils.formatCount(summary.airings.written)} matched airings row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were skipped.`;
+      const success = `Imported ${utils.formatCount(summary.airings.written)} matched airings row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were skipped.`;
       setStatus(success);
       setResultBanner(success);
       setNotice(success);
@@ -743,6 +801,130 @@
     `).join('');
   }
 
+  function applyManualMatch(rowHash, programId) {
+    const targetId = String(programId || '').trim();
+    if (!targetId) {
+      setNotice('Choose a pledge-library title before applying a manual match.', 'warn');
+      return;
+    }
+    const targetRow = (state.rawRows || []).find((row) => String(derive.programId(row) || '') === targetId);
+    if (!targetRow) {
+      setNotice('That program could not be found in the current pledge library.', 'warn');
+      return;
+    }
+    const airing = imp().airingsRows.find((row) => row.row_hash === rowHash);
+    if (!airing) return;
+    airing.program_id = derive.programId(targetRow) || null;
+    airing.pledge_program_id = airing.program_id;
+    airing.matched_library_title = derive.title(targetRow) || '';
+    airing.manual_match_program_id = airing.program_id;
+    airing.manual_match_label = derive.title(targetRow) || '';
+    airing.title = airing.matched_library_title || airing.imported_program_title || airing.title;
+    airing.program_title = airing.title;
+    airing.match_method = 'manual_library';
+    airing.match_reason = 'Matched manually from import review';
+    imp().driveRows = deriveRollups(imp().airingsRows);
+    renderAll();
+    setStatus(`Manual match applied for ${utils.toDisplayText(airing.imported_program_title || airing.nola_code || 'row')}. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport.`);
+    setResultBanner(`Manual match applied. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport. Existing duplicates will be skipped automatically.`);
+  }
+
+
+  async function createAndLinkNewProgram(rowHash) {
+    if (!App.auth.canEdit()) {
+      setNotice('Sign in as admin to create a new pledge title from an unmatched row.', 'warn');
+      return;
+    }
+    const airing = imp().airingsRows.find((row) => row.row_hash === rowHash);
+    if (!airing) return;
+    const title = utils.normalizeText(airing.imported_program_title || airing.title);
+    const nola = utils.normalizeText(airing.nola_code);
+    if (!title) {
+      setNotice('This unmatched row has no usable title, so a new library title cannot be created from it.', 'warn');
+      return;
+    }
+    if (!nola) {
+      setNotice('This unmatched row has no NOLA, so it cannot create a new pledge title yet.', 'warn');
+      return;
+    }
+    const existing = (state.rawRows || []).find((row) => utils.normalizeLookupKey(derive.nola(row)) === utils.normalizeLookupKey(nola));
+    if (existing) {
+      applyManualMatch(rowHash, derive.programId(existing));
+      return;
+    }
+    try {
+      setStatus(`Creating a new pledge-library title for ${utils.toDisplayText(title)}…`);
+      const response = await App.data.createProgram({ title, nola_code: nola });
+      if (response.error) throw response.error;
+      await App.data.refreshRawRows();
+      App.listUi?.buildFilterOptions?.();
+      const createdId = derive.programId(response.data || {});
+      applyManualMatch(rowHash, createdId);
+      setNotice(`Created ${title} and linked the unmatched row to it.`);
+    } catch (error) {
+      setNotice(`Could not create a new pledge title from that unmatched row. ${error?.message || error}`, 'warn');
+    }
+  }
+
+  function renderUnmatchedRows() {
+    if (els.importUnmatchedPill) els.importUnmatchedPill.textContent = `${utils.formatCount(getUnmatchedRows().length)} rows`;
+    const bodyEl = els.importUnmatchedBody;
+    if (!bodyEl) return;
+    const rows = getUnmatchedRows();
+    if (!rows.length) {
+      bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No unmatched rows right now.</td></tr>';
+      return;
+    }
+    const options = buildLibraryProgramOptions();
+    const optionHtml = ['<option value="">Select a pledge title…</option>']
+      .concat(options.map((entry) => `<option value="${escape(entry.value)}">${escape(entry.label)}</option>`))
+      .join('');
+    bodyEl.innerHTML = rows.slice(0, 50).map((row) => `
+      <tr>
+        <td>${escape(row.imported_program_title || row.title || '—')}</td>
+        <td>${escape(row.nola_code || '—')}</td>
+        <td>${escape(row.air_date || '—')}</td>
+        <td>${escape(row.air_time || '—')}</td>
+        <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
+        <td>${escape(getMatchReason(row))}</td>
+        <td>
+          <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
+        </td>
+        <td>
+          <div class="import-match-actions">
+            <button type="button" class="ghost import-apply-match-button" data-row-hash="${escape(row.row_hash)}">Apply</button>
+            <button type="button" class="ghost import-create-link-button" data-row-hash="${escape(row.row_hash)}">Create + link</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderExistingUnlinkedRows() {
+    if (els.importExistingUnlinkedPill) els.importExistingUnlinkedPill.textContent = `${utils.formatCount(imp().existingUnlinkedRows.length)} rows`;
+    const bodyEl = els.importExistingUnlinkedBody;
+    if (!bodyEl) return;
+    if (imp().existingUnlinkedError) {
+      bodyEl.innerHTML = `<tr><td colspan="6" class="placeholder-row">${escape(imp().existingUnlinkedError)}</td></tr>`;
+      return;
+    }
+    const rows = imp().existingUnlinkedRows || [];
+    if (!rows.length) {
+      bodyEl.innerHTML = '<tr><td colspan="6" class="placeholder-row">No existing unlinked imported airings found.</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = rows.slice(0, 50).map((row) => `
+      <tr>
+        <td>${escape(row.imported_program_title || '—')}</td>
+        <td>${escape(row.nola_code || '—')}</td>
+        <td>${escape(row.air_date || '—')}</td>
+        <td>${escape(row.air_time || '—')}</td>
+        <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
+        <td>${escape(row.source_file_name || '—')}</td>
+      </tr>
+    `).join('');
+  }
+
   function renderPreviews() {
     if (els.importAiringsPill) els.importAiringsPill.textContent = `${utils.formatCount(imp().airingsRows.length)} rows`;
     if (els.importDrivePill) els.importDrivePill.textContent = `${utils.formatCount(imp().driveRows.length)} derived rows`;
@@ -754,7 +936,7 @@
       { key: 'dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
       { key: 'pledge_count' },
       { key: 'program_minutes' },
-      { key: 'match_method' },
+      { key: 'match_method', format: (value, row) => value === 'manual_library' ? 'manual match' : (value === 'unmatched_nola' ? 'needs review' : value) },
       { key: 'matched_library_title' }
     ], 'No normalized airings rows yet.');
 
@@ -768,6 +950,9 @@
       { key: 'total_pledges' },
       { key: 'airing_count' }
     ], 'No derived fundraiser rollups yet.');
+
+    renderUnmatchedRows();
+    renderExistingUnlinkedRows();
   }
 
   function renderActions() {
@@ -777,7 +962,7 @@
       els.importSupabaseButton.title = canImport ? '' : 'Admin sign-in required for direct Supabase writes.';
     }
     if (els.importBuildScheduleButton) {
-      const canBuild = Boolean(App.auth.canEdit() && imp().airingsRows.some((row) => row.match_method === 'nola' && row.program_id != null));
+      const canBuild = Boolean(App.auth.canEdit() && getMatchedRows().length);
       els.importBuildScheduleButton.disabled = !canBuild;
       els.importBuildScheduleButton.title = canBuild ? '' : 'Load matched imported airings first, then sign in as admin.';
     }
@@ -819,7 +1004,7 @@
       setStatus('Table probe refreshed.');
     });
     els.importExportAiringsButton?.addEventListener('click', () => {
-      const matchedRows = imp().airingsRows.filter((row) => row.match_method === 'nola' && row.program_id != null);
+      const matchedRows = getMatchedRows();
       if (!matchedRows.length) {
         setNotice('There are no matched airings rows to export yet.', 'warn');
         return;
@@ -831,6 +1016,21 @@
     });
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
     els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
+    els.importUnmatchedBody?.addEventListener('click', (event) => {
+      const applyButton = event.target.closest('.import-apply-match-button');
+      if (applyButton) {
+        const rowHash = applyButton.getAttribute('data-row-hash') || '';
+        const select = els.importUnmatchedBody.querySelector(`.import-manual-match-select[data-row-hash="${rowHash}"]`);
+        const selectedProgramId = select?.value || '';
+        applyManualMatch(rowHash, selectedProgramId);
+        return;
+      }
+      const createButton = event.target.closest('.import-create-link-button');
+      if (createButton) {
+        const rowHash = createButton.getAttribute('data-row-hash') || '';
+        void createAndLinkNewProgram(rowHash);
+      }
+    });
   }
 
   App.importsUi = {

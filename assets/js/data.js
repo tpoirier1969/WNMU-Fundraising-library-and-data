@@ -425,7 +425,15 @@
       end_date: schedule.endDate,
       day_start_hour: Math.floor((schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60)) / 60),
       day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60),
-      schedule_data: { placements: schedule.placements || [], slotNotes: schedule.slotNotes || {}, dayStartMinutes: schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60), dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60) },
+      schedule_data: {
+        placements: schedule.placements || [],
+        slotNotes: schedule.slotNotes || {},
+        dayStartMinutes: schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60),
+        dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60),
+        onlineDollars: Number(schedule.onlineDollars || 0) || 0,
+        mailDollars: Number(schedule.mailDollars || 0) || 0,
+        meta: schedule.meta || {}
+      },
       updated_at: new Date().toISOString()
     };
     const { error } = await state.client.from(constants.SCHEDULES_TABLE).upsert(payload);
@@ -482,6 +490,14 @@
 
   async function fetchImportedAirings() {
     return fetchAllRows(constants.AIRINGS_TABLE);
+  }
+
+  async function fetchUnlinkedImportedAirings() {
+    const rows = await fetchAllRows(constants.AIRINGS_TABLE);
+    return (rows || []).filter((row) => {
+      const hasProgram = String(row?.program_id || row?.pledge_program_id || '').trim();
+      return !hasProgram;
+    });
   }
   async function fetchPerformanceInputs() {
     const warnings = [];
@@ -592,7 +608,9 @@
     deleteScheduleRemote,
     fetchPerformanceInputs,
     fetchImportedAirings,
+    fetchUnlinkedImportedAirings,
     probeImportTables,
-    importNormalizedRows
+    importNormalizedRows,
+    createProgram
   };
 })();

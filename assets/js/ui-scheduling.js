@@ -128,7 +128,7 @@
     renderAll();
   }
 
-  function createScheduleRecord({ title, startDate, endDate, dayStartHour, dayEndHour, dayStartMinutes, dayEndMinutes }) {
+  function createScheduleRecord({ title, startDate, endDate, dayStartHour, dayEndHour, dayStartMinutes, dayEndMinutes, onlineDollars = 0, mailDollars = 0, meta = {} }) {
     const resolvedStartMinutes = Number.isFinite(Number(dayStartMinutes)) ? Number(dayStartMinutes) : (Number(dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
     let resolvedEndMinutes = Number.isFinite(Number(dayEndMinutes)) ? Number(dayEndMinutes) : (Number(dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60);
     if (resolvedEndMinutes <= resolvedStartMinutes) resolvedEndMinutes += 1440;
@@ -143,8 +143,19 @@
       dayEndMinutes: resolvedEndMinutes,
       createdAt: new Date().toISOString(),
       placements: [],
-      slotNotes: {}
+      slotNotes: {},
+      onlineDollars: Number(onlineDollars || 0) || 0,
+      mailDollars: Number(mailDollars || 0) || 0,
+      meta: meta || {}
     };
+  }
+
+  function scheduleBroadcastTotal(schedule = {}) {
+    return Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0;
+  }
+
+  function scheduleGrandTotal(schedule = {}) {
+    return scheduleBroadcastTotal(schedule) + (Number(schedule?.onlineDollars || 0) || 0) + (Number(schedule?.mailDollars || 0) || 0);
   }
 
   function getScheduleWindow(source = {}) {
@@ -468,12 +479,14 @@
         updatedSchedules += 1;
         if (rebuild) schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
       }
+      const importedBroadcastTotalDollars = group.rows.reduce((sum, entry) => sum + (Number(entry?.row?.dollars || 0) || 0), 0);
       schedule.meta = {
         ...(schedule.meta || {}),
         importedFundraiserKey: group.key,
         importedFromReports: true,
         importedDriveStartDate: group.startDate,
-        importedDriveEndDate: group.endDate
+        importedDriveEndDate: group.endDate,
+        importedBroadcastTotalDollars
       };
       if (!firstScheduleId) firstScheduleId = schedule.id;
       if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
@@ -569,6 +582,8 @@
     state.scheduleDraft.endDate = schedule.endDate || '';
     state.scheduleDraft.dayStartMinutes = windowConfig.startMinutes;
     state.scheduleDraft.dayEndMinutes = windowConfig.endMinutes;
+    state.scheduleDraft.onlineDollars = Number(schedule.onlineDollars || 0) || 0;
+    state.scheduleDraft.mailDollars = Number(schedule.mailDollars || 0) || 0;
   }
 
   function visibleDateKeys(schedule) {
@@ -777,11 +792,12 @@
       const spanInfo = getScheduleDateSpanInfo(schedule);
       const active = schedule.id === state.activeScheduleId;
       const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
+      const totalRaised = scheduleGrandTotal(schedule);
       return `
         <div class="schedule-list-item ${active ? 'active' : ''}${spanInfo.ok ? '' : ' invalid'}">
           <button type="button" class="schedule-list-open" data-schedule-id="${utils.escapeHtml(schedule.id)}" ${spanInfo.ok ? '' : 'data-invalid-schedule="true"'}>
             <span class="schedule-list-title">${utils.escapeHtml(schedule.title)}</span>
-            <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} scheduled blocks${spanInfo.ok ? '' : ' · INVALID DATE RANGE'}</span>
+            <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} blocks · ${utils.escapeHtml(utils.formatMoney(totalRaised))}${spanInfo.ok ? '' : ' · INVALID DATE RANGE'}</span>
           </button>
           ${canScheduleEdit() ? `<button type="button" class="ghost tiny-button" data-delete-schedule-id="${utils.escapeHtml(schedule.id)}">Remove</button>` : ''}
         </div>
@@ -796,7 +812,12 @@
     els.fundraiserTitleInput.value = state.scheduleDraft.title || '';
     els.fundraiserStartInput.value = state.scheduleDraft.startDate || '';
     els.fundraiserEndInput.value = state.scheduleDraft.endDate || '';
-    [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
+    if (els.fundraiserOnlineInput) els.fundraiserOnlineInput.value = Number(state.scheduleDraft.onlineDollars || 0) || 0;
+    if (els.fundraiserMailInput) els.fundraiserMailInput.value = Number(state.scheduleDraft.mailDollars || 0) || 0;
+    const schedule = getActiveSchedule();
+    if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(scheduleBroadcastTotal(schedule || state.scheduleDraft || {}));
+    if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(schedule || state.scheduleDraft || {}));
+    [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
     if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
 
@@ -1019,13 +1040,14 @@
 
   function renderScheduledProgramDetails() {
     const schedule = getActiveSchedule();
+    const fundraiserSummaryHtml = schedule ? `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(scheduleBroadcastTotal(schedule)))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div></div>` : '';
     if (!schedule || !schedule.placements?.length) {
-      els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
+      els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml || '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
       return;
     }
     const pledgePlacements = annotatePlacements(schedule).filter((placement) => !placement.isNonPledge);
     if (!pledgePlacements.length) {
-      els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Only non-pledge markers are on this calendar right now. They stay on the calendar, but they do not appear in the pledge detail list below.</div>';
+      els.scheduleProgramDetails.innerHTML = `${fundraiserSummaryHtml}<div class="schedule-hint">Only non-pledge markers are on this calendar right now. They stay on the calendar, but they do not appear in the pledge detail list below.</div>`;
       return;
     }
     const grouped = new Map();
@@ -1037,7 +1059,7 @@
     const groupedEntries = [...grouped.entries()];
     const autoLoadLimit = groupedEntries.length > 12 ? 6 : 12;
 
-    els.scheduleProgramDetails.innerHTML = groupedEntries.map(([programId, occurrences], entryIndex) => {
+    els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences], entryIndex) => {
       const row = getProgramRowById(programId) || {};
       if (entryIndex < autoLoadLimit) loadScheduledDetail(programId);
       const cache = state.scheduleDetailCache[programId];
@@ -1183,7 +1205,16 @@
           start_date: schedule.startDate,
           end_date: schedule.endDate,
           day_start_hour: Math.floor((schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60)) / 60),
-          day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60)
+          day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60),
+          schedule_data: {
+            placements: schedule.placements || [],
+            slotNotes: schedule.slotNotes || {},
+            dayStartMinutes: schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60),
+            dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60),
+            onlineDollars: Number(schedule.onlineDollars || 0) || 0,
+            mailDollars: Number(schedule.mailDollars || 0) || 0,
+            meta: schedule.meta || {}
+          }
         });
         state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
         return true;
@@ -1217,9 +1248,12 @@
     }
     const nextDayStartMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
     const nextDayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
+    const nextOnlineDollars = Number(els.fundraiserOnlineInput?.value || 0) || 0;
+    const nextMailDollars = Number(els.fundraiserMailInput?.value || 0) || 0;
     const titleChanged = schedule.title !== title;
     const dateRangeChanged = schedule.startDate !== startDate || schedule.endDate !== endDate;
     const windowChanged = Number(schedule.dayStartMinutes) !== nextDayStartMinutes || Number(schedule.dayEndMinutes) !== nextDayEndMinutes;
+    const moneyChanged = Number(schedule.onlineDollars || 0) !== nextOnlineDollars || Number(schedule.mailDollars || 0) !== nextMailDollars;
     schedule.title = title;
     schedule.startDate = startDate;
     schedule.endDate = endDate;
@@ -1227,16 +1261,20 @@
     schedule.dayEndMinutes = nextDayEndMinutes;
     schedule.dayStartHour = Math.floor(schedule.dayStartMinutes / 60);
     schedule.dayEndHour = Math.floor(schedule.dayEndMinutes / 60);
+    schedule.onlineDollars = nextOnlineDollars;
+    schedule.mailDollars = nextMailDollars;
     state.scheduleDraft.title = title;
     state.scheduleDraft.startDate = startDate;
     state.scheduleDraft.endDate = endDate;
     state.scheduleDraft.dayStartMinutes = schedule.dayStartMinutes;
     state.scheduleDraft.dayEndMinutes = schedule.dayEndMinutes;
-    if (!(titleChanged || dateRangeChanged || windowChanged)) return true;
+    state.scheduleDraft.onlineDollars = nextOnlineDollars;
+    state.scheduleDraft.mailDollars = nextMailDollars;
+    if (!(titleChanged || dateRangeChanged || windowChanged || moneyChanged)) return true;
     await persistScheduleMetadataOnly(schedule);
     renderScheduleList();
     renderScheduleForm();
-    if (dateRangeChanged || windowChanged) renderScheduleGrid();
+    if (dateRangeChanged || windowChanged || moneyChanged) renderScheduleGrid();
     if (!options.silent) {
       const actionLabel = titleChanged && !(dateRangeChanged || windowChanged) ? 'Renamed' : 'Saved';
       setNotice(`${actionLabel} fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
@@ -1262,7 +1300,9 @@
       startDate,
       endDate,
       dayStartHour: constants.DEFAULT_DAY_START_HOUR,
-      dayEndHour: constants.DEFAULT_DAY_END_HOUR
+      dayEndHour: constants.DEFAULT_DAY_END_HOUR,
+      onlineDollars: Number(els.fundraiserOnlineInput?.value || 0) || 0,
+      mailDollars: Number(els.fundraiserMailInput?.value || 0) || 0
     });
     state.schedules.unshift(schedule);
     applyScheduleToView(schedule);
@@ -1604,7 +1644,7 @@
 
   function bindEvents() {
     els.newScheduleButton?.addEventListener('click', () => {
-      state.scheduleDraft = { title: '', startDate: '', endDate: '', dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES };
+      state.scheduleDraft = { title: '', startDate: '', endDate: '', dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES, onlineDollars: 0, mailDollars: 0 };
       renderScheduleForm();
       els.fundraiserTitleInput?.focus();
     });
@@ -1617,6 +1657,8 @@
     els.fundraiserTitleInput?.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); saveScheduleDraft(); } });
     els.fundraiserStartInput?.addEventListener('change', saveScheduleDraft);
     els.fundraiserEndInput?.addEventListener('change', saveScheduleDraft);
+    els.fundraiserOnlineInput?.addEventListener('change', saveScheduleDraft);
+    els.fundraiserMailInput?.addEventListener('change', saveScheduleDraft);
     els.scheduleList?.addEventListener('click', (event) => {
       const open = event.target.closest('[data-schedule-id]');
       if (open) {
