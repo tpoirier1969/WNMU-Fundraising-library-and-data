@@ -1207,7 +1207,7 @@ button.primary {
 
 .programs-table.performance-table {
   width: 100%;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .performance-table th,
@@ -2177,11 +2177,12 @@ button.primary {
 
 
 /* v0.20.17 performance cleanup */
-.programs-table.performance-table col.col-group { width: minmax(220px, 1fr); }
+.programs-table.performance-table col.col-group { width: auto; }
 .performance-table td:first-child,
 .performance-table th:first-child {
-  width: 34%;
-  min-width: 180px;
+  width: 26%;
+  max-width: 240px;
+  min-width: 120px;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -2189,17 +2190,23 @@ button.primary {
 .performance-table th:nth-child(2),
 .performance-table td:nth-child(5),
 .performance-table th:nth-child(5) {
-  width: 9%;
+  width: 8%;
+  max-width: 72px;
 }
 .performance-table td:nth-child(3),
-.performance-table th:nth-child(3),
+.performance-table th:nth-child(3) {
+  width: 12%;
+  max-width: 110px;
+}
 .performance-table td:nth-child(4),
 .performance-table th:nth-child(4) {
-  width: 15%;
+  width: 14%;
+  max-width: 132px;
 }
 .performance-table td,
 .performance-table th {
   vertical-align: top;
+  padding: 6px 8px;
 }
 .performance-table td:not(:first-child),
 .performance-table th:not(:first-child) {

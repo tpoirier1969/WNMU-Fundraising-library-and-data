@@ -743,10 +743,11 @@
       const h = Math.max(2, Math.round((value / max) * chartH));
       const x = left + (index * colW) + ((colW - barW) / 2);
       const y = top + chartH - h;
-      const display = perf().metric === 'airings' ? utils.formatCount(value) : utils.formatMoney(value);
+      const display = metricDisplay(group, { includeCount: true });
       const label = String(group.label || '').length > 16 ? `${String(group.label).slice(0, 13)}…` : String(group.label || '');
+      const title = `${group.label}: ${display} · ${utils.formatCount(group.titleCount)} titles`;
       return `
-        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="#123e6b"></rect>
+        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="#123e6b"><title>${utils.escapeHtml(title)}</title></rect>
         <text x="${x + barW / 2}" y="${y - 8}" font-size="11" text-anchor="middle" fill="#183a5f">${utils.escapeHtml(display)}</text>
         <text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text>
       `;
@@ -767,14 +768,14 @@
     const points = groups.map((group, index) => {
       const x = left + (groups.length <= 1 ? chartW / 2 : (index * chartW / (groups.length - 1)));
       const y = top + chartH - ((metricValue(group) / max) * chartH);
-      return { x, y, label: group.label, value: metricValue(group) };
+      return { x, y, label: group.label, value: metricValue(group), group };
     });
     const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({ y: top + chartH - (ratio * chartH), value: max * ratio }));
     const labels = points.map((point) => `<text x="${point.x}" y="${height - 18}" font-size="11" text-anchor="middle" fill="#526174">${utils.escapeHtml(point.label)}</text>`).join('');
     const dots = points.map((point) => `
-      <circle cx="${point.x}" cy="${point.y}" r="4" fill="#123e6b"></circle>
-      <text x="${point.x}" y="${point.y - 10}" font-size="11" text-anchor="middle" fill="#173a5e">${utils.escapeHtml(perf().metric === 'airings' ? utils.formatCount(point.value) : utils.formatMoney(point.value))}</text>
+      <circle cx="${point.x}" cy="${point.y}" r="4" fill="#123e6b"><title>${utils.escapeHtml(`${point.label}: ${metricDisplay(point.group, { includeCount: true })} · ${utils.formatCount(point.group.titleCount)} titles`)}</title></circle>
+      <text x="${point.x}" y="${point.y - 10}" font-size="11" text-anchor="middle" fill="#173a5e">${utils.escapeHtml(metricDisplay(point.group, { includeCount: true }))}</text>
     `).join('');
     const grid = yTicks.map((tick) => `
       <line x1="${left}" y1="${tick.y}" x2="${left + chartW}" y2="${tick.y}" stroke="#dce8f6" stroke-width="1"></line>
@@ -818,7 +819,7 @@
         <td>${utils.escapeHtml(group.label)}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
-        <td>${utils.escapeHtml(utils.formatMoney(group.avgDollars))}</td>
+        <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.titleCount))}</td>
       </tr>
     `).join('');

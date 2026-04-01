@@ -150,14 +150,70 @@
     };
   }
 
-  function scheduleBroadcastTotal(schedule = {}) {
-    const stored = Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0;
-    if (stored > 0) return stored;
-    const placementTotal = (Array.isArray(schedule?.placements) ? schedule.placements : []).reduce((sum, placement) => {
-      const dollars = Number(placement?.importedBroadcastDollars || 0) || 0;
-      return sum + dollars;
+  const importedBroadcastHydration = new Map();
+
+  function placementBroadcastTotal(schedule = {}) {
+    return (schedule?.placements || []).reduce((sum, placement) => {
+      const value = Number(placement?.importedBroadcastDollars);
+      return sum + (Number.isFinite(value) ? value : 0);
     }, 0);
-    return placementTotal;
+  }
+
+  function scheduleBroadcastTotal(schedule = {}) {
+    const metaTotal = Number(schedule?.meta?.importedBroadcastTotalDollars);
+    if (Number.isFinite(metaTotal) && metaTotal > 0) return metaTotal;
+    const placementTotal = placementBroadcastTotal(schedule);
+    return Number.isFinite(placementTotal) && placementTotal > 0 ? placementTotal : 0;
+  }
+
+  async function ensureScheduleBroadcastTotal(schedule) {
+    if (!schedule?.id) return;
+    if (scheduleBroadcastTotal(schedule) > 0) return;
+    if (!(schedule?.placements || []).some((placement) => placement.importedFromReport)) return;
+    if (importedBroadcastHydration.has(schedule.id)) return importedBroadcastHydration.get(schedule.id);
+    const task = (async () => {
+      try {
+        const importedRows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
+        if (!Array.isArray(importedRows) || !importedRows.length) return;
+        const placementHashes = new Set((schedule.placements || []).map((placement) => String(placement.sourceAiringHash || '')).filter(Boolean));
+        const importedKey = String(schedule?.meta?.importedFundraiserKey || '').toLowerCase();
+        const scheduleHashesTotal = importedRows.reduce((sum, row) => {
+          const hash = String(row?.row_hash || '');
+          if (placementHashes.size && placementHashes.has(hash)) return sum + (Number(row?.dollars || 0) || 0);
+          return sum;
+        }, 0);
+        let total = scheduleHashesTotal;
+        if (!(total > 0) && importedKey) {
+          total = importedRows.reduce((sum, row) => {
+            const rowKey = importedScheduleKey(row);
+            return rowKey === importedKey ? sum + (Number(row?.dollars || 0) || 0) : sum;
+          }, 0);
+        }
+        if (!(total > 0)) return;
+        schedule.meta = {
+          ...(schedule.meta || {}),
+          importedBroadcastTotalDollars: total
+        };
+        if ((schedule.placements || []).length) {
+          const byHash = new Map(importedRows.map((row) => [String(row?.row_hash || ''), Number(row?.dollars || 0) || 0]));
+          schedule.placements = (schedule.placements || []).map((placement) => {
+            if (Number.isFinite(Number(placement?.importedBroadcastDollars)) && Number(placement.importedBroadcastDollars) > 0) return placement;
+            const hydrated = byHash.get(String(placement?.sourceAiringHash || ''));
+            return Number.isFinite(hydrated) && hydrated > 0 ? { ...placement, importedBroadcastDollars: hydrated } : placement;
+          });
+        }
+        await persistSchedules(schedule);
+        renderScheduleList();
+        renderScheduleForm();
+        renderScheduledProgramDetails();
+      } catch (error) {
+        console.warn('Unable to hydrate imported broadcast total for schedule.', error);
+      } finally {
+        importedBroadcastHydration.delete(schedule.id);
+      }
+    })();
+    importedBroadcastHydration.set(schedule.id, task);
+    return task;
   }
 
   function scheduleGrandTotal(schedule = {}) {
@@ -416,11 +472,11 @@
       sourceLabel: 'Imported report',
       transferredToStation: false,
       importedFromReport: true,
+      importedBroadcastDollars: Number(row.dollars || 0) || 0,
       sourceAiringHash: row.row_hash || '',
       sourceImportBatchId: row.import_batch_id || '',
       importedFundraiserKey: importedScheduleKey(row),
-      fundraiserLabel: importedFundraiserLabel(row),
-      importedBroadcastDollars: Number(row.dollars || 0) || 0
+      fundraiserLabel: importedFundraiserLabel(row)
     };
   }
 
@@ -591,6 +647,7 @@
     state.scheduleDraft.dayEndMinutes = windowConfig.endMinutes;
     state.scheduleDraft.onlineDollars = Number(schedule.onlineDollars || 0) || 0;
     state.scheduleDraft.mailDollars = Number(schedule.mailDollars || 0) || 0;
+    void ensureScheduleBroadcastTotal(schedule);
   }
 
   function visibleDateKeys(schedule) {
@@ -1047,6 +1104,7 @@
 
   function renderScheduledProgramDetails() {
     const schedule = getActiveSchedule();
+    if (schedule) void ensureScheduleBroadcastTotal(schedule);
     const fundraiserSummaryHtml = schedule ? `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(scheduleBroadcastTotal(schedule)))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div></div>` : '';
     if (!schedule || !schedule.placements?.length) {
       els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml || '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
