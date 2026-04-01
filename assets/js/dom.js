@@ -124,6 +124,7 @@
     importDriveBody: document.getElementById('import-drive-body'),
     importUnmatchedPill: document.getElementById('import-unmatched-pill'),
     importUnmatchedBody: document.getElementById('import-unmatched-body'),
+    importApplyAllButton: document.getElementById('import-apply-all-button'),
     importExistingUnlinkedPill: document.getElementById('import-existing-unlinked-pill'),
     importExistingUnlinkedBody: document.getElementById('import-existing-unlinked-body'),
     performanceStatus: document.getElementById('performance-status'),

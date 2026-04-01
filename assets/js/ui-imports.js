@@ -801,32 +801,88 @@
     `).join('');
   }
 
-  function applyManualMatch(rowHash, programId) {
+  function unmatchedTitleGroupKey(row) {
+    return utils.normalizeLookupKey(row?.imported_program_title || row?.title || row?.nola_code || '');
+  }
+
+  function rowsForUnmatchedTitleGroup(rowOrHash) {
+    const sourceRow = typeof rowOrHash === 'string'
+      ? imp().airingsRows.find((row) => row.row_hash === rowOrHash)
+      : rowOrHash;
+    if (!sourceRow) return [];
+    const groupKey = unmatchedTitleGroupKey(sourceRow);
+    if (!groupKey) return sourceRow ? [sourceRow] : [];
+    return imp().airingsRows.filter((row) => unmatchedTitleGroupKey(row) === groupKey);
+  }
+
+  function syncPendingManualMatch(rowHash, programId) {
+    const targetId = String(programId || '').trim();
+    const rows = rowsForUnmatchedTitleGroup(rowHash);
+    rows.forEach((row) => {
+      row.pending_manual_match_program_id = targetId || '';
+      const targetRow = targetId
+        ? (state.rawRows || []).find((candidate) => String(derive.programId(candidate) || '') === targetId)
+        : null;
+      row.pending_manual_match_label = targetRow ? (derive.title(targetRow) || '') : '';
+    });
+  }
+
+  function applyManualMatchToGroup(rowHash, programId) {
     const targetId = String(programId || '').trim();
     if (!targetId) {
       setNotice('Choose a pledge-library title before applying a manual match.', 'warn');
-      return;
+      return 0;
     }
     const targetRow = (state.rawRows || []).find((row) => String(derive.programId(row) || '') === targetId);
     if (!targetRow) {
       setNotice('That program could not be found in the current pledge library.', 'warn');
-      return;
+      return 0;
     }
-    const airing = imp().airingsRows.find((row) => row.row_hash === rowHash);
-    if (!airing) return;
-    airing.program_id = derive.programId(targetRow) || null;
-    airing.pledge_program_id = airing.program_id;
-    airing.matched_library_title = derive.title(targetRow) || '';
-    airing.manual_match_program_id = airing.program_id;
-    airing.manual_match_label = derive.title(targetRow) || '';
-    airing.title = airing.matched_library_title || airing.imported_program_title || airing.title;
-    airing.program_title = airing.title;
-    airing.match_method = 'manual_library';
-    airing.match_reason = 'Matched manually from import review';
+    const rows = rowsForUnmatchedTitleGroup(rowHash);
+    if (!rows.length) return 0;
+    rows.forEach((airing) => {
+      airing.program_id = derive.programId(targetRow) || null;
+      airing.pledge_program_id = airing.program_id;
+      airing.matched_library_title = derive.title(targetRow) || '';
+      airing.manual_match_program_id = airing.program_id;
+      airing.manual_match_label = derive.title(targetRow) || '';
+      airing.pending_manual_match_program_id = '';
+      airing.pending_manual_match_label = '';
+      airing.title = airing.matched_library_title || airing.imported_program_title || airing.title;
+      airing.program_title = airing.title;
+      airing.match_method = 'manual_library';
+      airing.match_reason = 'Matched manually from import review';
+    });
     imp().driveRows = deriveRollups(imp().airingsRows);
     renderAll();
-    setStatus(`Manual match applied for ${utils.toDisplayText(airing.imported_program_title || airing.nola_code || 'row')}. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport.`);
-    setResultBanner(`Manual match applied. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport. Existing duplicates will be skipped automatically.`);
+    const label = utils.toDisplayText(rows[0]?.imported_program_title || rows[0]?.nola_code || 'row');
+    const count = rows.length;
+    setStatus(`Manual match applied for ${label}. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport.`);
+    setResultBanner(`Manual match applied. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated in that title group. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport. Existing duplicates will be skipped automatically.`);
+    return count;
+  }
+
+  function applyAllPendingMatches() {
+    const pendingRows = getUnmatchedRows().filter((row) => String(row.pending_manual_match_program_id || '').trim());
+    if (!pendingRows.length) {
+      setNotice('Stage one or more unmatched-title matches before using Apply All.', 'warn');
+      return;
+    }
+    const seen = new Set();
+    let updated = 0;
+    pendingRows.forEach((row) => {
+      const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
+      if (!groupKey || seen.has(groupKey)) return;
+      seen.add(groupKey);
+      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id);
+    });
+    if (updated) {
+      setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'}.`);
+    }
+  }
+
+  function applyManualMatch(rowHash, programId) {
+    return applyManualMatchToGroup(rowHash, programId);
   }
 
 
@@ -849,7 +905,8 @@
     }
     const existing = (state.rawRows || []).find((row) => utils.normalizeLookupKey(derive.nola(row)) === utils.normalizeLookupKey(nola));
     if (existing) {
-      applyManualMatch(rowHash, derive.programId(existing));
+      syncPendingManualMatch(rowHash, derive.programId(existing));
+      applyManualMatchToGroup(rowHash, derive.programId(existing));
       return;
     }
     try {
@@ -859,8 +916,9 @@
       await App.data.refreshRawRows();
       App.listUi?.buildFilterOptions?.();
       const createdId = derive.programId(response.data || {});
-      applyManualMatch(rowHash, createdId);
-      setNotice(`Created ${title} and linked the unmatched row to it.`);
+      syncPendingManualMatch(rowHash, createdId);
+      const linkedCount = applyManualMatchToGroup(rowHash, createdId);
+      setNotice(`Created ${title} and linked ${utils.formatCount(linkedCount)} row${linkedCount === 1 ? '' : 's'} from that unmatched title group.`);
     } catch (error) {
       setNotice(`Could not create a new pledge title from that unmatched row. ${error?.message || error}`, 'warn');
     }
@@ -876,10 +934,12 @@
       return;
     }
     const options = buildLibraryProgramOptions();
-    const optionHtml = ['<option value="">Select a pledge title…</option>']
-      .concat(options.map((entry) => `<option value="${escape(entry.value)}">${escape(entry.label)}</option>`))
-      .join('');
-    bodyEl.innerHTML = rows.slice(0, 50).map((row) => `
+    bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
+      const selectedProgramId = String(row.pending_manual_match_program_id || row.manual_match_program_id || '');
+      const optionHtml = ['<option value="">Select a pledge title…</option>']
+        .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
+        .join('');
+      return `
       <tr>
         <td>${escape(row.imported_program_title || row.title || '—')}</td>
         <td>${escape(row.nola_code || '—')}</td>
@@ -897,7 +957,8 @@
           </div>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function renderExistingUnlinkedRows() {
@@ -1016,12 +1077,21 @@
     });
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
     els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
+    els.importApplyAllButton?.addEventListener('click', () => { applyAllPendingMatches(); });
+    els.importUnmatchedBody?.addEventListener('change', (event) => {
+      const select = event.target.closest('.import-manual-match-select');
+      if (!select) return;
+      const rowHash = select.getAttribute('data-row-hash') || '';
+      syncPendingManualMatch(rowHash, select.value || '');
+      renderUnmatchedRows();
+    });
     els.importUnmatchedBody?.addEventListener('click', (event) => {
       const applyButton = event.target.closest('.import-apply-match-button');
       if (applyButton) {
         const rowHash = applyButton.getAttribute('data-row-hash') || '';
         const select = els.importUnmatchedBody.querySelector(`.import-manual-match-select[data-row-hash="${rowHash}"]`);
         const selectedProgramId = select?.value || '';
+        syncPendingManualMatch(rowHash, selectedProgramId);
         applyManualMatch(rowHash, selectedProgramId);
         return;
       }
