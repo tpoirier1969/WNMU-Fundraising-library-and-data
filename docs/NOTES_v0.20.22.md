@@ -1,0 +1,1 @@
+- Hotfix for import schema drift: when optional manual-match columns are missing from Supabase, the importer now prunes those fields and continues writing matched rows instead of failing the whole batch.
