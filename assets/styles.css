@@ -2154,7 +2154,7 @@ button.primary {
 }
 
 
-/* v0.20.16 performance cleanup */
+/* v0.20.17 performance cleanup */
 .programs-table.performance-table col.col-group { width: minmax(220px, 1fr); }
 .performance-table td:first-child,
 .performance-table th:first-child {

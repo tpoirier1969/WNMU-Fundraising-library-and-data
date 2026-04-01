@@ -43,7 +43,7 @@
     return counts[0]?.score ? counts[0] : { delimiter: ',', label: 'CSV' };
   }
 
-  function parseDelimited(text, delimiter) {
+  function parseCsvRows(text, delimiter) {
     const rows = [];
     let cell = '';
     let row = [];
@@ -66,8 +66,10 @@
         cell = '';
         continue;
       }
-      if (!inQuotes && (char === '\n' || char === '\r')) {
-        if (char === '\r' && next === '\n') i += 1;
+      if (!inQuotes && (char === '
+' || char === '')) {
+        if (char === '' && next === '
+') i += 1;
         row.push(cell);
         if (row.some((value) => utils.normalizeText(value))) rows.push(row);
         row = [];
@@ -78,9 +80,73 @@
     }
     row.push(cell);
     if (row.some((value) => utils.normalizeText(value))) rows.push(row);
+    return rows;
+  }
 
-    if (!rows.length) return { headers: [], records: [] };
-    const headers = rows[0].map((value, index) => utils.normalizeText(value) || `column_${index + 1}`);
+  function looksLikeHeaderRow(cells = []) {
+    const joined = cells.map((value) => keyify(value)).join(' ');
+    return /(station|air_date|air_time|program_title|nola|dollars|pledges|program_minutes|sustainers)/.test(joined);
+  }
+
+  function looksLikeLegacyBreakDataRow(cells = []) {
+    if (!cells.length) return false;
+    const station = utils.normalizeText(cells[0]);
+    const airDate = utils.normalizeText(cells[1]);
+    const nola = utils.normalizeText(cells[3]);
+    const title = utils.normalizeText(cells[4]);
+    return Boolean(station && airDate && nola && title && /^(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{6,8})$/.test(airDate));
+  }
+
+  function parseLegacyBreakReport(rows = []) {
+    const headers = ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Secondary Dollars', 'Pledges', 'Program Minutes', 'Sustainers'];
+    const records = [];
+    const diagnostics = {
+      detectedFormat: 'legacy_pbs_break_report',
+      embeddedHeaderRows: 0,
+      totalRowsSkipped: 0,
+      trailerRowsSkipped: 0,
+      rowsWithExtraColumns: 0,
+      rowsWithMissingColumns: 0
+    };
+    rows.forEach((cells) => {
+      const normalized = cells.map((value) => utils.normalizeText(value));
+      if (!normalized.some(Boolean)) return;
+      if (looksLikeHeaderRow(cells)) {
+        diagnostics.embeddedHeaderRows += 1;
+        return;
+      }
+      const hasOnlyTotals = normalized.filter(Boolean).length <= 2 && !utils.normalizeText(cells[3]) && !utils.normalizeText(cells[4]);
+      if (hasOnlyTotals) {
+        diagnostics.trailerRowsSkipped += 1;
+        return;
+      }
+      if (!looksLikeLegacyBreakDataRow(cells)) {
+        diagnostics.totalRowsSkipped += 1;
+        return;
+      }
+      if (cells.length > headers.length) diagnostics.rowsWithExtraColumns += 1;
+      if (cells.length < headers.length) diagnostics.rowsWithMissingColumns += 1;
+      const out = {};
+      headers.forEach((header, index) => {
+        out[header] = cells[index] ?? '';
+      });
+      records.push(out);
+    });
+    return { headers, records, diagnostics };
+  }
+
+  function parseDelimited(text, delimiter) {
+    const rows = parseCsvRows(text, delimiter);
+    if (!rows.length) return { headers: [], records: [], diagnostics: { detectedFormat: 'empty' } };
+
+    const firstRow = rows[0].map((value, index) => utils.normalizeText(value) || `column_${index + 1}`);
+    const secondRow = rows[1] || [];
+    const fileLooksLegacy = !looksLikeHeaderRow(rows[0]) && looksLikeLegacyBreakDataRow(rows[0]);
+    const hasEmbeddedHeader = rows.some((cells, index) => index > 0 && looksLikeHeaderRow(cells));
+    const shouldUseLegacy = fileLooksLegacy || (hasEmbeddedHeader && looksLikeLegacyBreakDataRow(secondRow));
+    if (shouldUseLegacy) return parseLegacyBreakReport(rows);
+
+    const headers = firstRow;
     const records = rows.slice(1).map((cells) => {
       const out = {};
       headers.forEach((header, index) => {
@@ -88,8 +154,9 @@
       });
       return out;
     }).filter((record) => Object.values(record).some((value) => utils.normalizeText(value)));
-    return { headers, records };
+    return { headers, records, diagnostics: { detectedFormat: 'headered_csv' } };
   }
+
 
   function keyify(value) {
     return utils.normalizeLookupKey(value).replace(/\s+/g, '_');
@@ -398,6 +465,20 @@
             if (result.row) normalized.push(result.row);
           });
 
+          const parseDiagnostics = parsed.diagnostics || {};
+          const summaryWarnings = [...new Set(fileWarnings)];
+          if (parseDiagnostics.detectedFormat === 'legacy_pbs_break_report') {
+            summaryWarnings.unshift('Detected legacy PBS Break Report CSV format.');
+          }
+          if (parseDiagnostics.embeddedHeaderRows) {
+            summaryWarnings.push(`${utils.formatCount(parseDiagnostics.embeddedHeaderRows)} embedded header row${parseDiagnostics.embeddedHeaderRows === 1 ? '' : 's'} skipped.`);
+          }
+          if (parseDiagnostics.trailerRowsSkipped) {
+            summaryWarnings.push(`${utils.formatCount(parseDiagnostics.trailerRowsSkipped)} trailer / totals row${parseDiagnostics.trailerRowsSkipped === 1 ? '' : 's'} skipped.`);
+          }
+          if (parseDiagnostics.totalRowsSkipped) {
+            summaryWarnings.push(`${utils.formatCount(parseDiagnostics.totalRowsSkipped)} malformed legacy row${parseDiagnostics.totalRowsSkipped === 1 ? '' : 's'} skipped.`);
+          }
           imp().fileSummaries.push({
             fileName: file.name,
             delimiter: delimiterInfo.label,
@@ -405,7 +486,8 @@
             parsedRows: parsed.records.length,
             target: 'airings',
             normalizedRows: normalized.length,
-            warnings: [...new Set(fileWarnings)].slice(0, 8)
+            detectedFormat: parseDiagnostics.detectedFormat || 'headered_csv',
+            warnings: summaryWarnings.slice(0, 10)
           });
           allAirings.push(...normalized);
         } catch (error) {
@@ -442,8 +524,10 @@
       renderAll();
       const matchedRows = imp().airingsRows.filter((row) => row.match_method === 'nola').length;
       const skippedRows = imp().airingsRows.length - matchedRows;
-      setStatus(`Preview ready: ${utils.formatCount(matchedRows)} matched rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows will be skipped.`);
-      setResultBanner(`Preview ready: ${utils.formatCount(matchedRows)} matched airing rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows will stay in preview only and will not be written to Supabase.`);
+      const legacyFiles = imp().fileSummaries.filter((item) => item.detectedFormat === 'legacy_pbs_break_report').length;
+      const legacyNote = legacyFiles ? ` ${utils.formatCount(legacyFiles)} legacy PBS Break Report file${legacyFiles === 1 ? '' : 's'} detected.` : '';
+      setStatus(`Preview ready: ${utils.formatCount(matchedRows)} matched rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows will be skipped.${legacyNote}`);
+      setResultBanner(`Preview ready: ${utils.formatCount(matchedRows)} matched airing rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows will stay in preview only and will not be written to Supabase.${legacyNote}`);
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Report analysis failed.';
@@ -631,13 +715,14 @@
     if (!els.importFileBody || !els.importFilePill) return;
     els.importFilePill.textContent = imp().fileSummaries.length ? `${utils.formatCount(imp().fileSummaries.length)} files` : 'No files';
     if (!imp().fileSummaries.length) {
-      els.importFileBody.innerHTML = '<tr><td colspan="7" class="placeholder-row">No reports analyzed yet.</td></tr>';
+      els.importFileBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No reports analyzed yet.</td></tr>';
       return;
     }
     els.importFileBody.innerHTML = imp().fileSummaries.map((item) => `
       <tr>
         <td>${escape(item.fileName)}</td>
         <td>${escape(item.delimiter)}</td>
+        <td>${escape(item.detectedFormat || 'headered_csv')}</td>
         <td>${escape(item.headerCount)}</td>
         <td>${escape(item.parsedRows)}</td>
         <td>${escape(item.target)}</td>
