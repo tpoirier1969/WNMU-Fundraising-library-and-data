@@ -66,10 +66,8 @@
         cell = '';
         continue;
       }
-      if (!inQuotes && (char === '
-' || char === '')) {
-        if (char === '' && next === '
-') i += 1;
+      if (!inQuotes && (char === '\n' || char === '\r')) {
+        if (char === '\r' && next === '\n') i += 1;
         row.push(cell);
         if (row.some((value) => utils.normalizeText(value))) rows.push(row);
         row = [];
