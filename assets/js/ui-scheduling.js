@@ -301,11 +301,36 @@
 
   function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
     const sourceRows = Array.isArray(rows) ? rows : [];
+    const diagnostics = {
+      inputRows: sourceRows.length,
+      eligibleRows: 0,
+      noLibraryMatch: 0,
+      badDate: 0,
+      badTime: 0,
+      droppedRows: []
+    };
     const preparedRows = sourceRows.map((row) => {
       const sourceRow = findProgramRowForImportedAiring(row);
       const dateKey = importedRowDateKey(row);
       const startMinutes = importedRowStartMinutes(row);
-      if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
+      const reasons = [];
+      if (!sourceRow) reasons.push('no_library_match');
+      if (!dateKey) reasons.push('bad_date');
+      if (!Number.isFinite(startMinutes)) reasons.push('bad_time');
+      if (reasons.length) {
+        if (reasons.includes('no_library_match')) diagnostics.noLibraryMatch += 1;
+        if (reasons.includes('bad_date')) diagnostics.badDate += 1;
+        if (reasons.includes('bad_time')) diagnostics.badTime += 1;
+        if (diagnostics.droppedRows.length < 12) diagnostics.droppedRows.push({
+          title: utils.normalizeText(row.program_title || row.title || 'Unknown title') || 'Unknown title',
+          sourceFile: utils.normalizeText(row.source_file_name || ''),
+          airDate: utils.normalizeText(row.air_date || row.drive_start_date || ''),
+          airTime: utils.normalizeText(row.air_time || ''),
+          reasons
+        });
+        return null;
+      }
+      diagnostics.eligibleRows += 1;
       return { row, sourceRow, dateKey, startMinutes };
     }).filter(Boolean);
     const skippedRows = Math.max(0, sourceRows.length - preparedRows.length);
@@ -380,7 +405,8 @@
       placementsSkipped: skippedPlacements,
       skippedRows,
       correctedDurations,
-      fundraiserCount: groups.size
+      fundraiserCount: groups.size,
+      diagnostics
     };
   }
 
@@ -397,10 +423,36 @@
       `Imported reports built ${utils.formatCount(summary.placementsCreated)} scheduler entries across ${utils.formatCount(summary.fundraiserCount)} fundraisers.`,
       `${utils.formatCount(summary.placementsSkipped)} duplicates were skipped.`
     ];
-    if (summary.skippedRows) noteBits.push(`${utils.formatCount(summary.skippedRows)} airings could not be placed automatically.`);
+    const diag = summary.diagnostics || {};
+    if (summary.skippedRows) {
+      noteBits.push(`${utils.formatCount(summary.skippedRows)} airings could not be placed automatically.`);
+      const reasonBits = [];
+      if (diag.noLibraryMatch) reasonBits.push(`${utils.formatCount(diag.noLibraryMatch)} without a library match`);
+      if (diag.badDate) reasonBits.push(`${utils.formatCount(diag.badDate)} with a bad or missing air date`);
+      if (diag.badTime) reasonBits.push(`${utils.formatCount(diag.badTime)} with a bad or missing air time`);
+      if (reasonBits.length) noteBits.push(`Breakdown: ${reasonBits.join(', ')}.`);
+    }
     if (summary.correctedDurations) noteBits.push(`${utils.formatCount(summary.correctedDurations)} durations were corrected from library runtimes.`);
     noteBits.push(state.scheduleSyncMessage);
     setNotice(noteBits.join(' '));
+    if (summary.skippedRows && diag.droppedRows?.length) {
+      const preview = diag.droppedRows.map((item) => ({
+        title: item.title,
+        air_date: item.airDate,
+        air_time: item.airTime,
+        reasons: item.reasons.join(', '),
+        source_file: item.sourceFile
+      }));
+      console.table(preview);
+      console.info('Build-from-import diagnostics', {
+        inputRows: diag.inputRows,
+        eligibleRows: diag.eligibleRows,
+        noLibraryMatch: diag.noLibraryMatch,
+        badDate: diag.badDate,
+        badTime: diag.badTime,
+        sampleDroppedRows: preview
+      });
+    }
     return summary;
   }
 
@@ -729,7 +781,10 @@
       els.scheduleEmpty.classList.remove('hidden');
       els.scheduleEditor.classList.add('hidden');
       if (els.scheduleEmpty) {
-        els.scheduleEmpty.innerHTML = `<div class="schedule-empty-title">This fundraiser cannot be opened safely.</div><div class="schedule-hint">${utils.escapeHtml(spanInfo.reason)}</div><div class="schedule-hint">Use the Remove button in the fundraiser list to delete it.</div>`;
+        const invalidDeleteHtml = canScheduleEdit()
+          ? `<div class="schedule-invalid-actions"><button type="button" class="ghost" data-delete-invalid-schedule-id="${utils.escapeHtml(schedule.id)}">Remove this fundraiser</button></div>`
+          : '<div class="schedule-hint">Sign in with edit access to remove this fundraiser.</div>';
+        els.scheduleEmpty.innerHTML = `<div class="schedule-empty-title">This fundraiser cannot be opened safely.</div><div class="schedule-hint">${utils.escapeHtml(spanInfo.reason)}</div>${invalidDeleteHtml}`;
       }
       els.scheduleProgramDetails.innerHTML = '<div class="schedule-hint">Invalid fundraiser date range. Remove or repair this fundraiser before rendering the calendar.</div>';
       return;
@@ -1474,9 +1529,10 @@
         if (!spanInfo.ok) setNotice(spanInfo.reason, 'warn');
         return;
       }
-      const del = event.target.closest('[data-delete-schedule-id]');
+      const del = event.target.closest('[data-delete-schedule-id], [data-delete-invalid-schedule-id]');
       if (del && window.confirm('Remove this fundraiser schedule?')) {
-        void deleteScheduleRecord(del.dataset.deleteScheduleId);
+        const scheduleId = del.dataset.deleteScheduleId || del.dataset.deleteInvalidScheduleId;
+        if (scheduleId) void deleteScheduleRecord(scheduleId);
       }
     });
     els.scheduleGrid?.addEventListener('click', (event) => {

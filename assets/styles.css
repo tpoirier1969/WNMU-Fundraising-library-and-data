@@ -2126,3 +2126,29 @@ button.primary {
   .performance-quick-filter-row { display:grid; grid-template-columns: 1fr 1fr; }
   .quick-filter-btn { width: 100%; text-align: center; }
 }
+
+.schedule-invalid-actions { margin-top: 10px; }
+.schedule-invalid-actions .ghost { min-width: 0; }
+
+
+/* v0.20.14 performance filter usability */
+.performance-toolbar-grid .filter-field {
+  min-width: 0;
+}
+.performance-toolbar-grid .filter-field select,
+.performance-toolbar-grid .filter-field input {
+  width: 100%;
+  min-width: 0;
+}
+.performance-toolbar-grid .filter-field:nth-child(2) {
+  min-width: 260px;
+}
+#performance-program-select {
+  min-width: 260px;
+}
+@media (max-width: 1100px) {
+  .performance-toolbar-grid .filter-field:nth-child(2),
+  #performance-program-select {
+    min-width: 0;
+  }
+}

@@ -528,7 +528,11 @@
     }
     const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: matchedRows, rebuild: Boolean(options.rebuild) });
     if (summary) {
-      setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.`);
+      const diag = summary.diagnostics || {};
+      const extra = summary.skippedRows
+        ? ` ${utils.formatCount(summary.skippedRows)} rows could not be placed${(diag.noLibraryMatch || diag.badDate || diag.badTime) ? ` (${utils.formatCount(diag.noLibraryMatch || 0)} no library match, ${utils.formatCount(diag.badDate || 0)} bad date, ${utils.formatCount(diag.badTime || 0)} bad time)` : ''}.`
+        : '';
+      setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.${extra}`);
     }
   }
 
