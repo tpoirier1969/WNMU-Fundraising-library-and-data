@@ -545,17 +545,60 @@
     );
   }
 
+  function extractMissingColumnName(errorLike) {
+    const message = String(errorLike?.message || errorLike || '');
+    const patterns = [
+      /Could not find the '([^']+)' column/i,
+      /column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i,
+      /schema cache.*'([^']+)' column/i
+    ];
+    for (const pattern of patterns) {
+      const match = message.match(pattern);
+      if (match?.[1]) return match[1];
+    }
+    return '';
+  }
+
+  function omitColumnFromRows(rows = [], columnName = '') {
+    if (!columnName) return rows;
+    return rows.map((row) => {
+      if (!(columnName in row)) return row;
+      const clone = { ...row };
+      delete clone[columnName];
+      return clone;
+    });
+  }
+
   async function writeImportChunk(tableName, rows) {
     if (!rows.length) return { written: 0, mode: 'skip' };
-    const payload = rows.map((row) => sanitizeImportRow(row));
-    let response = await state.client.from(tableName).upsert(payload, { onConflict: 'row_hash' });
-    if (!response.error) return { written: payload.length, mode: 'upsert' };
-    const message = response.error?.message || '';
-    if (/ON CONFLICT|constraint|row_hash|column .* does not exist|schema cache/i.test(message)) {
-      response = await state.client.from(tableName).insert(payload);
-      if (!response.error) return { written: payload.length, mode: 'insert' };
+    let payload = rows.map((row) => sanitizeImportRow(row));
+    let omittedColumns = [];
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      let response = await state.client.from(tableName).upsert(payload, { onConflict: 'row_hash' });
+      if (!response.error) return { written: payload.length, mode: omittedColumns.length ? `upsert-pruned:${omittedColumns.join(',')}` : 'upsert' };
+
+      const missingColumn = extractMissingColumnName(response.error);
+      if (missingColumn) {
+        payload = omitColumnFromRows(payload, missingColumn);
+        if (!omittedColumns.includes(missingColumn)) omittedColumns.push(missingColumn);
+        continue;
+      }
+
+      const message = response.error?.message || '';
+      if (/ON CONFLICT|constraint|row_hash|column .* does not exist|schema cache/i.test(message)) {
+        response = await state.client.from(tableName).insert(payload);
+        if (!response.error) return { written: payload.length, mode: omittedColumns.length ? `insert-pruned:${omittedColumns.join(',')}` : 'insert' };
+        const insertMissingColumn = extractMissingColumnName(response.error);
+        if (insertMissingColumn) {
+          payload = omitColumnFromRows(payload, insertMissingColumn);
+          if (!omittedColumns.includes(insertMissingColumn)) omittedColumns.push(insertMissingColumn);
+          continue;
+        }
+      }
+      throw response.error || new Error(`Import failed for ${tableName}.`);
     }
-    throw response.error || new Error(`Import failed for ${tableName}.`);
+    throw new Error(`Import failed for ${tableName}: incompatible schema columns (${omittedColumns.join(', ') || 'unknown'}).`);
   }
 
   async function importNormalizedRows({ airingsRows = [], driveRows = [] } = {}) {
