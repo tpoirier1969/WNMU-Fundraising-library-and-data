@@ -570,6 +570,26 @@
     }
   }
 
+  function metricDisplay(group, options = {}) {
+    const includeCount = !!options.includeCount;
+    const metric = options.metric || perf().metric;
+    let value;
+    switch (metric) {
+      case 'total_dollars':
+        value = utils.formatMoney(group.totalDollars);
+        break;
+      case 'airings':
+        value = utils.formatCount(group.airingCount);
+        break;
+      case 'avg_dollars':
+      default:
+        value = utils.formatMoney(group.avgDollars);
+        break;
+    }
+    if (!includeCount || metric === 'airings') return value;
+    return `${value} (${utils.formatCount(group.airingCount)})`;
+  }
+
   function chartTypeLabel(type) {
     switch (type) {
       case 'line': return 'Line chart';
