@@ -1438,8 +1438,8 @@
     const matchedCount = getMatchedRows().length;
     const missingTotals = filesMissingReportTotals();
     const needsTotals = missingTotals.length > 0;
-    const canImport = Boolean(canEdit && matchedCount && !needsTotals);
-    const canBuild = Boolean(canEdit && matchedCount && !needsTotals);
+    const canImport = Boolean(canEdit && matchedCount);
+    const canBuild = Boolean(canEdit && matchedCount);
     if (els.importSupabaseButton) {
       els.importSupabaseButton.disabled = !canImport;
       els.importSupabaseButton.title = !canEdit
@@ -1543,12 +1543,15 @@
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
     els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
     els.importApplyAllButton?.addEventListener('click', () => { applyAllPendingMatches(); });
-    els.importFileBody?.addEventListener('change', (event) => {
+    const syncReportTotalInput = (event) => {
       const input = event.target.closest('.import-report-total-input');
       if (!input) return;
       const fileKey = input.getAttribute('data-file-key') || '';
       setManualReportTotalForFile(fileKey, input.value || '');
-    });
+    };
+    els.importFileBody?.addEventListener('input', syncReportTotalInput);
+    els.importFileBody?.addEventListener('change', syncReportTotalInput);
+    els.importFileBody?.addEventListener('focusout', syncReportTotalInput);
     els.importFileBody?.addEventListener('keydown', (event) => {
       const input = event.target.closest('.import-report-total-input');
       if (!input || event.key !== 'Enter') return;
