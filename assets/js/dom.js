@@ -71,6 +71,7 @@
     fundraiserMailInput: document.getElementById('fundraiser-mail-input'),
     fundraiserBroadcastTotal: document.getElementById('fundraiser-broadcast-total'),
     fundraiserGrandTotal: document.getElementById('fundraiser-grand-total'),
+    fundraiserBroadcastDiagnostic: document.getElementById('fundraiser-broadcast-diagnostic'),
     scheduleGenerateButton: document.getElementById('schedule-generate-button'),
     scheduleBuildFromImportsButton: document.getElementById('schedule-build-from-imports-button'),
     scheduleRebuildFromImportsButton: document.getElementById('schedule-rebuild-from-imports-button'),

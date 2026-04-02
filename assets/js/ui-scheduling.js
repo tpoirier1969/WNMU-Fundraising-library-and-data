@@ -159,11 +159,22 @@
     }, 0);
   }
 
-  function scheduleBroadcastTotal(schedule = {}) {
+  function scheduleReportedBroadcastTotal(schedule = {}) {
+    const reportTotal = Number(schedule?.meta?.reportedBroadcastTotalDollars);
+    return Number.isFinite(reportTotal) && reportTotal > 0 ? reportTotal : 0;
+  }
+
+  function scheduleImportedAiringTotal(schedule = {}) {
     const metaTotal = Number(schedule?.meta?.importedBroadcastTotalDollars);
     if (Number.isFinite(metaTotal) && metaTotal > 0) return metaTotal;
     const placementTotal = placementBroadcastTotal(schedule);
     return Number.isFinite(placementTotal) && placementTotal > 0 ? placementTotal : 0;
+  }
+
+  function scheduleBroadcastTotal(schedule = {}) {
+    const reported = scheduleReportedBroadcastTotal(schedule);
+    if (reported > 0) return reported;
+    return scheduleImportedAiringTotal(schedule);
   }
 
   async function ensureScheduleBroadcastTotal(schedule) {
@@ -543,13 +554,26 @@
         if (rebuild) schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
       }
       const importedBroadcastTotalDollars = group.rows.reduce((sum, entry) => sum + (Number(entry?.row?.dollars || 0) || 0), 0);
+      const reportedBroadcastTotalDollars = (() => {
+        const byFile = new Map();
+        group.rows.forEach((entry) => {
+          const file = String(entry?.row?.source_file_name || '').trim();
+          const value = Number(entry?.row?.source_report_total_dollars);
+          if (!file || !Number.isFinite(value) || value <= 0) return;
+          if (!byFile.has(file)) byFile.set(file, value);
+        });
+        let total = 0;
+        byFile.forEach((value) => { total += value; });
+        return total;
+      })();
       schedule.meta = {
         ...(schedule.meta || {}),
         importedFundraiserKey: group.key,
         importedFromReports: true,
         importedDriveStartDate: group.startDate,
         importedDriveEndDate: group.endDate,
-        importedBroadcastTotalDollars
+        importedBroadcastTotalDollars,
+        reportedBroadcastTotalDollars
       };
       if (!firstScheduleId) firstScheduleId = schedule.id;
       if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
@@ -879,8 +903,19 @@
     if (els.fundraiserOnlineInput) els.fundraiserOnlineInput.value = Number(state.scheduleDraft.onlineDollars || 0) || 0;
     if (els.fundraiserMailInput) els.fundraiserMailInput.value = Number(state.scheduleDraft.mailDollars || 0) || 0;
     const schedule = getActiveSchedule();
-    if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(scheduleBroadcastTotal(schedule || state.scheduleDraft || {}));
-    if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(schedule || state.scheduleDraft || {}));
+    const working = schedule || state.scheduleDraft || {};
+    const broadcast = scheduleBroadcastTotal(working);
+    const imported = scheduleImportedAiringTotal(working);
+    if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(broadcast);
+    if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
+    if (els.fundraiserBroadcastDiagnostic) {
+      const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
+      const show = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
+      els.fundraiserBroadcastDiagnostic.classList.toggle('hidden', !show);
+      els.fundraiserBroadcastDiagnostic.innerHTML = show
+        ? `<span class="diag-chip">Imported airing total ${utils.escapeHtml(utils.formatMoney(imported))}</span><span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>`
+        : '';
+    }
     [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
     if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
@@ -1105,7 +1140,15 @@
   function renderScheduledProgramDetails() {
     const schedule = getActiveSchedule();
     if (schedule) void ensureScheduleBroadcastTotal(schedule);
-    const fundraiserSummaryHtml = schedule ? `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(scheduleBroadcastTotal(schedule)))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div></div>` : '';
+    const fundraiserSummaryHtml = (() => {
+      if (!schedule) return '';
+      const broadcast = scheduleBroadcastTotal(schedule);
+      const imported = scheduleImportedAiringTotal(schedule);
+      const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
+      const mismatch = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
+      const extra = mismatch ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Imported airing total</span><span>${utils.escapeHtml(utils.formatMoney(imported))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(utils.formatMoney(diff))}</span></div>` : '';
+      return `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(broadcast))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div>${extra}</div>`;
+    })();
     if (!schedule || !schedule.placements?.length) {
       els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml || '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
       return;

@@ -42,7 +42,7 @@ button.primary {
   border-color: transparent;
 }
 button:hover { transform: translateY(-1px); }
-button.small { padding: 7px 10px; }
+button.small { padding: 6px 7px; }
 
 .app-shell {
   padding: 10px 14px 14px;
@@ -160,6 +160,12 @@ button.small { padding: 7px 10px; }
 }
 .list-title { font-weight: 800; color: var(--pbs-blue-dark); font-size: .96rem; }
 .list-summary, .page-label { color: var(--muted); font-size: .82rem; }
+.list-sort-tools.compact-sort-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+#add-program-button { white-space: nowrap; }
+.schedule-broadcast-diagnostic { display:flex; gap:10px; flex-wrap:wrap; color: var(--muted); font-size: .8rem; }
+.schedule-broadcast-diagnostic .diag-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#f3f8fb; border:1px solid var(--border); }
+.schedule-broadcast-diagnostic .diag-chip.warn { background:#fff3ea; border-color: rgba(170,80,0,.24); color:#7a3d00; }
+
 .pager, .toolbar-actions { display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
 .table-wrap { overflow: auto; max-height: calc(100vh - 248px); }
 .programs-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1060px; }
@@ -1079,6 +1085,13 @@ button.primary {
 @media (max-width: 1180px) {
   .scheduled-program-line-bottom { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 }
+
+@media (min-width: 761px) {
+  html, body { height: 100%; overflow: hidden; }
+  .app-shell { height: 100vh; overflow: hidden; }
+  .workspace-pane { flex: 1 1 auto; min-height: 0; overflow: auto; margin-top: 12px; padding-right: 2px; }
+}
+
 @media (max-width: 760px) {
   .scheduled-program-line-bottom { grid-template-columns: 1fr; }
 }
@@ -1218,22 +1231,22 @@ button.primary {
 
 .performance-table td:first-child,
 .performance-table th:first-child {
-  min-width: 90px;
-  width: 28%;
+  min-width: 72px;
+  width: 22%;
 }
 
 .performance-table td:nth-child(2),
 .performance-table th:nth-child(2),
 .performance-table td:nth-child(5),
 .performance-table th:nth-child(5) {
-  width: 10%;
+  width: 8%;
 }
 
 .performance-table td:nth-child(3),
 .performance-table th:nth-child(3),
 .performance-table td:nth-child(4),
 .performance-table th:nth-child(4) {
-  width: 16%;
+  width: 11%;
 }
 
 .performance-table td:not(:first-child),
@@ -2264,7 +2277,7 @@ button.primary {
 }
 .import-unmatched-table th:nth-child(2),
 .import-unmatched-table td:nth-child(2) {
-  width: 10%;
+  width: 8%;
   white-space: nowrap;
 }
 .import-unmatched-table th:nth-child(3),
@@ -2278,7 +2291,7 @@ button.primary {
 }
 .import-unmatched-table th:nth-child(6),
 .import-unmatched-table td:nth-child(6) {
-  width: 16%;
+  width: 11%;
   max-width: 12rem;
 }
 .import-unmatched-table th:nth-child(7),
@@ -2287,7 +2300,7 @@ button.primary {
 }
 .import-unmatched-table th:nth-child(8),
 .import-unmatched-table td:nth-child(8) {
-  width: 16%;
+  width: 11%;
 }
 .import-unmatched-table td:first-child,
 .import-unmatched-table td:nth-child(6) {

@@ -248,7 +248,7 @@
   function renderDetail(program, timings, driveResults, exactAirings) {
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.remove('hidden');
-    els.detailTitle.textContent = state.detailCreateMode ? 'Add pledge program' : derive.title(program);
+    els.detailTitle.textContent = state.detailCreateMode ? 'Add Program' : derive.title(program);
     els.detailSubtitle.textContent = detailSubtitleHtml(program);
     renderLead(program);
     renderOverview(program, driveResults, exactAirings);
@@ -342,7 +342,7 @@
     els.detailModal.classList.toggle('create-mode', state.detailCreateMode);
     els.detailEditForm.classList.toggle('hidden', !state.detailEditMode);
     els.detailEditButton.classList.toggle('hidden', !canEdit() || state.detailEditMode || state.detailCreateMode);
-    if (els.detailFormHeading) els.detailFormHeading.textContent = state.detailCreateMode ? 'Add pledge program' : 'Edit program';
+    if (els.detailFormHeading) els.detailFormHeading.textContent = state.detailCreateMode ? 'Add Program' : 'Edit program';
     if (els.detailSaveButton) els.detailSaveButton.textContent = state.detailCreateMode ? 'Create program' : 'Save';
     if (!state.detailEditMode) return;
 
@@ -377,7 +377,7 @@
     state.currentDetailDriveResults = [];
     state.currentDetailAirings = [];
     openDetailModal();
-    els.detailTitle.textContent = 'Add pledge program';
+    els.detailTitle.textContent = 'Add Program';
     els.detailSubtitle.textContent = 'Create the library record now. NOLA is required because reports match by NOLA, not title.';
     if (els.detailProgramMeta) els.detailProgramMeta.innerHTML = '';
     if (els.detailProgramDescription) els.detailProgramDescription.innerHTML = '';

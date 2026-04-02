@@ -156,6 +156,7 @@
       embeddedHeaderRows: 0,
       totalRowsSkipped: 0,
       trailerRowsSkipped: 0,
+      trailerTotalsDollars: 0,
       rowsWithExtraColumns: 0,
       rowsWithMissingColumns: 0
     };
@@ -168,6 +169,8 @@
       }
       const hasOnlyTotals = normalized.filter(Boolean).length <= 2 && !utils.normalizeText(cells[3]) && !utils.normalizeText(cells[4]);
       if (hasOnlyTotals) {
+        const trailerMoney = parseMoney(cells[5] ?? cells[4] ?? cells[6]);
+        if (Number.isFinite(trailerMoney)) diagnostics.trailerTotalsDollars += trailerMoney;
         diagnostics.trailerRowsSkipped += 1;
         return;
       }
@@ -382,6 +385,8 @@
     const programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(program.*minutes|minutes)/i));
     const sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(sustainers)/i));
 
+    const reportTotalDollars = Number.isFinite(Number(meta.reportTotalDollars)) ? Number(meta.reportTotalDollars) : null;
+
     const baseForHash = {
       nola_code: nola,
       air_date: airDate || '',
@@ -414,6 +419,7 @@
         drive_start_date: meta.driveStartDate || null,
         drive_end_date: meta.driveEndDate || null,
         source_file_name: meta.fileName,
+        source_report_total_dollars: reportTotalDollars,
         source_report_type: meta.target,
         source_delimiter: meta.delimiterLabel,
         import_batch_id: imp().importBatchId || '',
@@ -510,6 +516,7 @@
             fileName: file.name,
             target: imp().targetMode === 'auto' ? guessTarget(parsed.headers, parsed.records, file.name) : imp().targetMode,
             delimiterLabel: delimiterInfo.label,
+            reportTotalDollars: Number.isFinite(Number(parsed?.diagnostics?.trailerTotalsDollars)) && Number(parsed.diagnostics.trailerTotalsDollars) > 0 ? Number(parsed.diagnostics.trailerTotalsDollars) : null,
             ...parseDateRangeFromFilename(file.name)
           };
 
@@ -530,6 +537,7 @@
           }
           if (parseDiagnostics.trailerRowsSkipped) {
             summaryWarnings.push(`${utils.formatCount(parseDiagnostics.trailerRowsSkipped)} trailer / totals row${parseDiagnostics.trailerRowsSkipped === 1 ? '' : 's'} skipped.`);
+            if (Number(parseDiagnostics.trailerTotalsDollars || 0) > 0) summaryWarnings.push(`Legacy report total detected: ${utils.formatMoney(Number(parseDiagnostics.trailerTotalsDollars || 0))}.`);
           }
           if (parseDiagnostics.totalRowsSkipped) {
             summaryWarnings.push(`${utils.formatCount(parseDiagnostics.totalRowsSkipped)} malformed legacy row${parseDiagnostics.totalRowsSkipped === 1 ? '' : 's'} skipped.`);

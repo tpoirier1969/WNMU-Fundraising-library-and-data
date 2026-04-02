@@ -973,7 +973,7 @@
       weak_returns: 'Weak returns',
       live_break_impact: 'Live break impact',
       repeat_fatigue: 'Repeat fatigue',
-      topic_winners: 'Topic winners',
+      topic_winners: 'Top Topics',
       recent_momentum: 'Recent momentum',
       weekend_weekday: 'Weekend vs weekday earnings',
       day_of_week: 'Day of week comparisons',
@@ -1001,7 +1001,6 @@
 
   function populateControls() {
     renderSelectOptions(els.performanceTopicSelect, collectTopicOptions(), perf().topicFilter, 'All main topics');
-    renderSelectOptions(els.performanceProgramSelect, collectProgramOptions(), perf().programFilter, 'All programs');
     if (els.performanceCriterionSelect) els.performanceCriterionSelect.value = perf().criterion;
     if (els.performanceMetricSelect) els.performanceMetricSelect.value = perf().metric;
     if (els.performanceChartTypeSelect) els.performanceChartTypeSelect.value = perf().chartType;
@@ -1021,7 +1020,6 @@
     }
     if (els.performanceMonthSelect) els.performanceMonthSelect.value = perf().monthFilter;
     if (els.performanceTopicSelect) els.performanceTopicSelect.value = perf().topicFilter;
-    if (els.performanceProgramSelect) els.performanceProgramSelect.value = perf().programFilter || '';
     updateQuickFilterUi();
   }
 
@@ -1037,9 +1035,7 @@
     renderNotes(records, perf().groups);
     if (els.performanceChartTitle) {
       const focus = (() => {
-        if (!perf().programFilter) return '';
-        const opt = collectProgramOptions().find((entry) => entry.value === perf().programFilter);
-        return opt ? ` for ${opt.label}` : '';
+        return '';
       })();
       els.performanceChartTitle.textContent = `${metricLabel()} by ${criterionDisplayName()}${focus}`;
     }

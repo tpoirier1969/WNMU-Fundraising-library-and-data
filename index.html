@@ -3,25 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.25</title>
+  <title>WNMU Pledge Program Library v0.20.26</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.25">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.26">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.25"></script>
-  <script defer src="assets/js/dom.js?v=0.20.25"></script>
-  <script defer src="assets/js/data.js?v=0.20.25"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.25"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.25"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.25"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.25"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.25"></script>
-  <script defer src="assets/js/auth.js?v=0.20.25"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.25"></script>
-  <script defer src="assets/js/app.js?v=0.20.25"></script>
+  <script defer src="assets/js/core.js?v=0.20.26"></script>
+  <script defer src="assets/js/dom.js?v=0.20.26"></script>
+  <script defer src="assets/js/data.js?v=0.20.26"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.26"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.26"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.26"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.26"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.26"></script>
+  <script defer src="assets/js/auth.js?v=0.20.26"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.26"></script>
+  <script defer src="assets/js/app.js?v=0.20.26"></script>
 </head>
 <body>
 
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.25</span>
+            <span class="version-pill" id="version-flag">v0.20.26</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -61,8 +61,7 @@
         <div class="role-chip" id="role-chip">Viewer</div>
         <button type="button" class="ghost" id="admin-button">Admin sign in</button>
         <button type="button" class="ghost hidden" id="logout-button">Sign out</button>
-        <button type="button" class="ghost hidden" id="add-program-button">Add pledge program</button>
-        <button type="button" class="ghost" id="refresh-button">Refresh</button>
+                <button type="button" class="ghost" id="refresh-button">Refresh</button>
       </div>
     </header>
 
@@ -75,7 +74,7 @@
       <div class="workspace-button-row workspace-button-row-main">
         <button type="button" class="workspace-tab active" data-workspace-button="library" aria-pressed="true">Program Library</button>
         <button type="button" class="workspace-tab" data-workspace-button="scheduling" aria-pressed="false">Pledge Scheduling</button>
-        <button type="button" class="workspace-tab" data-workspace-button="imports" aria-pressed="false">Report Imports</button>
+        <button type="button" class="workspace-tab" data-workspace-button="imports" aria-pressed="false">Import Pledge Report</button>
         <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Pledge Performance</button>
       </div>
     </section>
@@ -136,6 +135,7 @@
             <div class="list-summary" id="result-summary">Waiting on data…</div>
           </div>
           <div class="list-sort-tools compact-sort-tools">
+            <button type="button" class="ghost hidden" id="add-program-button">Add Program</button>
             <span class="sort-inline-note">Click a column heading to sort.</span>
             <label class="filter-label sort-label hidden" for="sort-field-select">Sort list by</label>
             <div class="sort-controls hidden">
@@ -232,6 +232,7 @@
                   <input id="fundraiser-grand-total" type="text" value="$0.00" readonly>
                 </label>
               </div>
+              <div id="fundraiser-broadcast-diagnostic" class="schedule-broadcast-diagnostic hidden"></div>
             </div>
           </section>
 
@@ -526,7 +527,7 @@
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="weak_returns">Weak returns</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="live_break_impact">Live break impact</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="repeat_fatigue">Repeat fatigue</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Topic winners</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Top Topics</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="recent_momentum">Recent momentum</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="weekend_weekday">Weekend vs weekday earnings</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="day_of_week">Day of week comparisons</button>
@@ -538,10 +539,6 @@
             <label class="filter-field narrow">
               <span class="filter-label">Main topic</span>
               <select id="performance-topic-select"></select>
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">Program focus</span>
-              <select id="performance-program-select"></select>
             </label>
             <label class="filter-field narrow">
               <span class="filter-label">Fundraiser month</span>
@@ -783,7 +780,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.25</div>
+      <div id="footer-version">v0.20.26</div>
     </footer>
   </div>
 </body>
