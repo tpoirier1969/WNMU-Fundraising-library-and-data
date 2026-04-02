@@ -328,6 +328,57 @@
     return ['file', utils.normalizeLookupKey(row.source_file_name)].join('|').toLowerCase();
   }
 
+  function importedNaturalKey(row = {}) {
+    return [
+      utils.normalizeLookupKey(row.nola_code || row.program_title || row.title || ''),
+      utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
+      utils.normalizeText(row.air_time) || '',
+      utils.normalizeText(row.drive_start_date) || '',
+      utils.normalizeText(row.drive_end_date) || ''
+    ].join('|').toLowerCase();
+  }
+
+  function importedRowFreshnessScore(row = {}) {
+    const stamps = [row.imported_at, row.created_at, row.updated_at]
+      .map((value) => {
+        const date = value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+      });
+    const stampScore = Math.max(0, ...stamps);
+    const batchScore = utils.normalizeText(row.import_batch_id || '').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    const matchScore = String(row.program_id || row.pledge_program_id || '').trim() ? 1000000 : 0;
+    const reportScore = Number(row.source_report_total_dollars || 0) > 0 ? 10000 : 0;
+    return stampScore + batchScore + matchScore + reportScore;
+  }
+
+  function choosePreferredImportedRow(existing = {}, candidate = {}) {
+    const existingScore = importedRowFreshnessScore(existing);
+    const candidateScore = importedRowFreshnessScore(candidate);
+    if (candidateScore !== existingScore) return candidateScore > existingScore ? candidate : existing;
+    return candidate;
+  }
+
+  function dedupeImportedRows(rows = []) {
+    const byNaturalKey = new Map();
+    const ordered = [];
+    let collapsed = 0;
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const naturalKey = importedNaturalKey(row);
+      const key = naturalKey || String(row?.row_hash || utils.makeId('importrow'));
+      if (!byNaturalKey.has(key)) {
+        byNaturalKey.set(key, row);
+        ordered.push(key);
+        return;
+      }
+      collapsed += 1;
+      byNaturalKey.set(key, choosePreferredImportedRow(byNaturalKey.get(key), row));
+    });
+    return {
+      rows: ordered.map((key) => byNaturalKey.get(key)).filter(Boolean),
+      collapsed
+    };
+  }
+
   const IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS = 14;
   const IMPORTED_RANGE_SUSPICIOUS_SPAN_DAYS = 45;
 
@@ -546,9 +597,11 @@
   }
 
   function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
-    const sourceRows = Array.isArray(rows) ? rows : [];
+    const deduped = dedupeImportedRows(Array.isArray(rows) ? rows : []);
+    const sourceRows = deduped.rows;
     const diagnostics = {
-      inputRows: sourceRows.length,
+      inputRows: Array.isArray(rows) ? rows.length : 0,
+      collapsedDuplicateImports: deduped.collapsed,
       eligibleRows: 0,
       noLibraryMatch: 0,
       badDate: 0,
@@ -622,7 +675,19 @@
         createdSchedules += 1;
       } else {
         updatedSchedules += 1;
-        if (rebuild) schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
+        if (rebuild) {
+          schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
+        } else {
+          schedule.placements = (schedule.placements || []).filter((placement) => {
+            if (!placement?.importedFromReport) return true;
+            const sameImportedKey = utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key);
+            const sameFile = groupFileKeys.has(utils.normalizeLookupKey(placement?.sourceName || ''));
+            const inGroupRange = placement?.dateKey && group.startDate && group.endDate
+              ? placement.dateKey >= group.startDate && placement.dateKey <= group.endDate
+              : false;
+            return !(sameImportedKey || (sameFile && inGroupRange));
+          });
+        }
       }
       const importedBroadcastTotalDollars = group.rows.reduce((sum, entry) => sum + (Number(entry?.row?.dollars || 0) || 0), 0);
       const reportedBroadcastTotalDollars = (() => {
@@ -631,7 +696,7 @@
           const file = String(entry?.row?.source_file_name || '').trim();
           const value = Number(entry?.row?.source_report_total_dollars);
           if (!file || !Number.isFinite(value) || value <= 0) return;
-          if (!byFile.has(file)) byFile.set(file, value);
+          byFile.set(file, Math.max(byFile.get(file) || 0, value));
         });
         let total = 0;
         byFile.forEach((value) => { total += value; });
@@ -723,6 +788,7 @@
       if (reasonBits.length) noteBits.push(`Breakdown: ${reasonBits.join(', ')}.`);
     }
     if (diag.clusteredFundraisers) noteBits.push(`${utils.formatCount(diag.clusteredFundraisers)} fundraiser clusters were identified from actual airing dates.`);
+    if (diag.collapsedDuplicateImports) noteBits.push(`${utils.formatCount(diag.collapsedDuplicateImports)} older imported duplicate row${diag.collapsedDuplicateImports === 1 ? '' : 's'} were collapsed before schedule build.`);
     if (summary.correctedDurations) noteBits.push(`${utils.formatCount(summary.correctedDurations)} durations were corrected from library runtimes.`);
     noteBits.push(state.scheduleSyncMessage);
     setNotice(noteBits.join(' '));

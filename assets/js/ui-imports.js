@@ -177,29 +177,37 @@
 
 
   function legacyTrailerMoneyTotal(cells = []) {
-    const candidateIndexes = [5, 6, 4, 7, 8];
+    const preferredIndexes = [5, 6, 4, 7, 8];
     const seen = new Set();
-    let total = 0;
-    candidateIndexes.forEach((index) => {
-      if (index >= cells.length) return;
-      const raw = cells[index];
-      const key = String(raw ?? '').trim();
-      if (!key || seen.has(`${index}|${key}`)) return;
-      seen.add(`${index}|${key}`);
+    const values = [];
+
+    const collectMoney = (raw, indexLabel) => {
+      const key = `${indexLabel}|${String(raw ?? '').trim()}`;
+      if (!String(raw ?? '').trim() || seen.has(key)) return;
+      seen.add(key);
       const money = parseMoney(raw);
-      if (Number.isFinite(money)) total += money;
+      if (Number.isFinite(money) && money > 0) values.push(money);
+    };
+
+    preferredIndexes.forEach((index) => {
+      if (index >= cells.length) return;
+      collectMoney(cells[index], index);
     });
-    return total > 0 ? total : 0;
+
+    cells.forEach((value, index) => collectMoney(value, `all-${index}`));
+    if (!values.length) return 0;
+    return Math.max(...values);
   }
 
   function looksLikeLegacyTrailerRow(cells = []) {
     const normalized = cells.map((value) => utils.normalizeText(value));
     if (!normalized.some(Boolean)) return false;
     const joined = normalized.join(' ').toLowerCase();
-    const hasTotalWord = /(total|totals|grand total|report total)/.test(joined);
+    const hasTotalWord = /\b(total|totals|grand total|report total|broadcast total)\b/.test(joined);
     const missingProgramIdentity = !utils.normalizeText(cells[3]) && !utils.normalizeText(cells[4]);
     const fewValues = normalized.filter(Boolean).length <= 4;
-    return Boolean(missingProgramIdentity && (hasTotalWord || fewValues) && legacyTrailerMoneyTotal(cells) > 0);
+    const hasTrailerShape = hasTotalWord || (missingProgramIdentity && fewValues);
+    return Boolean(hasTrailerShape && legacyTrailerMoneyTotal(cells) > 0 && !looksLikeLegacyBreakDataRow(cells));
   }
 
   function parseLegacyBreakReport(rows = []) {

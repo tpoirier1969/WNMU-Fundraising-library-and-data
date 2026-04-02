@@ -372,6 +372,18 @@
   }
 
   async function createProgram(payload) {
+    const attempts = [
+      payload,
+      { ...payload, created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null },
+      { ...payload, created_by: state.userEmail || null, updated_by: state.userEmail || null },
+      { ...payload, workspace_key: 'default', created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null }
+    ];
+    for (const attempt of attempts) {
+      const response = await state.client.from(constants.BASE_TABLE).insert(attempt).select('*').single();
+      if (!response.error) return response;
+      const message = String(response.error?.message || '');
+      if (!/row-level security|violates row-level security|permission denied/i.test(message)) return response;
+    }
     return state.client.from(constants.BASE_TABLE).insert(payload).select('*').single();
   }
 

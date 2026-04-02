@@ -14,6 +14,15 @@
     return App.auth.canEdit();
   }
 
+
+  function friendlyCreateError(error) {
+    const message = String(error?.message || error || '');
+    if (/row-level security|violates row-level security|permission denied|new row violates/i.test(message)) {
+      return 'Supabase is blocking new-title inserts on pledge_programs_v2. The app can read and probably update, but INSERT is still denied by RLS. Run the included SQL patch for pledge_programs_v2 insert/update policies, then try again.';
+    }
+    return message || 'Something went sideways while saving this title.';
+  }
+
   function blankProgram() {
     return {
       title: '',
@@ -481,7 +490,11 @@
 
     if (state.detailCreateMode) {
       const response = await App.data.createProgram(payload);
-      if (response.error) throw response.error;
+      if (response.error) {
+        const friendly = friendlyCreateError(response.error);
+        setDetailNotice(friendly, 'bad');
+        throw new Error(friendly);
+      }
       const createdId = derive.programId(response.data || {});
       await App.app.refreshAll();
       if (createdId) {

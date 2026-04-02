@@ -2315,7 +2315,7 @@ button.primary {
   padding: 0.3rem 0.55rem;
 }
 
-/* v0.20.28 import and scheduler fit pass */
+/* v0.20.29 import width and scheduler cleanup pass */
 .schedule-money-row-primary {
   grid-template-columns: repeat(4, minmax(120px, 1fr));
 }
@@ -2437,4 +2437,53 @@ button.primary {
   .schedule-money-row-secondary {
     grid-template-columns: 1fr !important;
   }
+}
+
+
+/* v0.20.29 import pane width clamp */
+[data-workspace-pane="imports"] {
+  overflow-x: hidden;
+}
+.import-shell,
+.import-shell > section,
+.import-shell > .performance-card,
+.import-shell > .import-toolbar-card,
+.import-preview-grid,
+.import-preview-grid > article,
+.import-toolbar-grid,
+.import-target-field,
+.import-actions-inline,
+.import-advanced-tools {
+  min-width: 0;
+  max-width: 100%;
+}
+.import-shell > section,
+.import-preview-grid > article,
+.import-toolbar-card {
+  box-sizing: border-box;
+}
+.import-toolbar-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.72fr) minmax(0, 1.08fr);
+}
+.import-target-field select,
+.import-target-field .field-help,
+.import-actions-inline button {
+  min-width: 0;
+}
+.import-actions-inline button {
+  font-size: 0.88rem;
+}
+.import-file-table,
+.import-preview-table,
+.import-unmatched-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.import-file-table th,
+.import-file-table td,
+.import-preview-table th,
+.import-preview-table td,
+.import-unmatched-table th,
+.import-unmatched-table td {
+  overflow-wrap: anywhere;
 }
