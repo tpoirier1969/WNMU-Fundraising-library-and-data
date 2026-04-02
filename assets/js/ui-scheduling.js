@@ -177,9 +177,28 @@
     return scheduleImportedAiringTotal(schedule);
   }
 
+  function scheduleBroadcastDifference(schedule = {}) {
+    const broadcast = scheduleBroadcastTotal(schedule);
+    const imported = scheduleImportedAiringTotal(schedule);
+    return Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
+  }
+
+  function placementSignature(placement = {}, importedKey = '') {
+    const titleKey = utils.normalizeLookupKey(placement?.programTitle || '');
+    return [
+      utils.normalizeText(placement?.programId),
+      titleKey,
+      utils.normalizeText(placement?.dateKey),
+      String(Number(placement?.startMinutes || 0) || 0),
+      utils.normalizeText(importedKey || placement?.importedFundraiserKey || '')
+    ].join('|').toLowerCase();
+  }
+
   async function ensureScheduleBroadcastTotal(schedule) {
     if (!schedule?.id) return;
-    if (scheduleBroadcastTotal(schedule) > 0) return;
+    const alreadyHasImported = scheduleImportedAiringTotal(schedule) > 0;
+    const alreadyHasReported = scheduleReportedBroadcastTotal(schedule) > 0;
+    if (alreadyHasImported && alreadyHasReported) return;
     if (!(schedule?.placements || []).some((placement) => placement.importedFromReport)) return;
     if (importedBroadcastHydration.has(schedule.id)) return importedBroadcastHydration.get(schedule.id);
     const task = (async () => {
@@ -194,16 +213,31 @@
           return sum;
         }, 0);
         let total = scheduleHashesTotal;
+        let reportedTotal = 0;
         if (!(total > 0) && importedKey) {
           total = importedRows.reduce((sum, row) => {
             const rowKey = importedScheduleKey(row);
             return rowKey === importedKey ? sum + (Number(row?.dollars || 0) || 0) : sum;
           }, 0);
         }
-        if (!(total > 0)) return;
+        const placementFiles = new Set((schedule.placements || []).map((placement) => utils.normalizeLookupKey(placement?.sourceName || '')).filter(Boolean));
+        const reportedByFile = new Map();
+        importedRows.forEach((row) => {
+          const rowHash = String(row?.row_hash || '');
+          const rowFileKey = utils.normalizeLookupKey(row?.source_file_name || '');
+          const rowKey = importedScheduleKey(row);
+          const belongs = (placementHashes.size && placementHashes.has(rowHash)) || (importedKey && rowKey === importedKey) || (rowFileKey && placementFiles.has(rowFileKey));
+          if (!belongs) return;
+          const value = Number(row?.source_report_total_dollars || 0) || 0;
+          if (!(value > 0) || !rowFileKey) return;
+          reportedByFile.set(rowFileKey, Math.max(reportedByFile.get(rowFileKey) || 0, value));
+        });
+        reportedByFile.forEach((value) => { reportedTotal += value; });
+        if (!(total > 0) && !(reportedTotal > 0)) return;
         schedule.meta = {
           ...(schedule.meta || {}),
-          importedBroadcastTotalDollars: total
+          importedBroadcastTotalDollars: total > 0 ? total : Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0,
+          reportedBroadcastTotalDollars: reportedTotal > 0 ? reportedTotal : Number(schedule?.meta?.reportedBroadcastTotalDollars || 0) || 0
         };
         if ((schedule.placements || []).length) {
           const byHash = new Map(importedRows.map((row) => [String(row?.row_hash || ''), Number(row?.dollars || 0) || 0]));
@@ -402,7 +436,8 @@
   }
 
   function scheduleIdentityKey(schedule = {}) {
-    const importedKey = utils.normalizeText(schedule?.meta?.importedFundraiserKey);
+    const importedKey = utils.normalizeText(schedule?.meta?.importedFundraiserKey)
+      || utils.normalizeText(schedule?.placements?.find((placement) => placement?.importedFromReport && placement?.importedFundraiserKey)?.importedFundraiserKey);
     if (importedKey) return `imported|${importedKey}`.toLowerCase();
     return [
       utils.normalizeText(schedule.title),
@@ -410,6 +445,25 @@
       utils.normalizeText(schedule.endDate)
     ].join('|').toLowerCase();
   }
+
+  function scheduleImportedFileKeys(schedule = {}) {
+    return new Set((schedule?.placements || [])
+      .filter((placement) => placement?.importedFromReport)
+      .map((placement) => utils.normalizeLookupKey(placement?.sourceName || ''))
+      .filter(Boolean));
+  }
+
+  function groupImportedFileKeys(group = {}) {
+    return new Set((group?.rows || [])
+      .map((entry) => utils.normalizeLookupKey(entry?.row?.source_file_name || ''))
+      .filter(Boolean));
+  }
+
+  function datesOverlap(startA = '', endA = '', startB = '', endB = '') {
+    if (!(startA && endA && startB && endB)) return false;
+    return !(endA < startB || endB < startA);
+  }
+
 
   function getProgramLookupCache() {
     const rows = Array.isArray(state.rawRows) ? state.rawRows : [];
@@ -537,12 +591,29 @@
 
     groups.forEach((group) => {
       const identity = `imported|${group.key}`.toLowerCase();
+      const groupFileKeys = groupImportedFileKeys(group);
       let schedule = state.schedules.find((item) => scheduleIdentityKey(item) === identity) || null;
+      if (!schedule) {
+        schedule = state.schedules.find((item) => {
+          const importedPlacement = (item.placements || []).find((placement) => placement?.importedFromReport && utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key));
+          return Boolean(importedPlacement);
+        }) || null;
+      }
       if (!schedule) {
         schedule = state.schedules.find((item) => {
           const sameRange = utils.normalizeText(item.startDate) === group.startDate && utils.normalizeText(item.endDate) === group.endDate;
           const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
           return sameRange && hasImportedPlacements;
+        }) || null;
+      }
+      if (!schedule) {
+        schedule = state.schedules.find((item) => {
+          const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
+          if (!hasImportedPlacements) return false;
+          if (!datesOverlap(utils.normalizeText(item.startDate), utils.normalizeText(item.endDate), group.startDate, group.endDate)) return false;
+          const itemFileKeys = scheduleImportedFileKeys(item);
+          if (!itemFileKeys.size || !groupFileKeys.size) return false;
+          return [...groupFileKeys].some((key) => itemFileKeys.has(key));
         }) || null;
       }
       if (!schedule) {
@@ -578,13 +649,33 @@
       if (!firstScheduleId) firstScheduleId = schedule.id;
       if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
       const existingKeys = new Set((schedule.placements || []).map((placement) => placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`));
+      const existingSignatureMap = new Map((schedule.placements || []).filter((placement) => placement?.importedFromReport).map((placement, index) => [placementSignature(placement, group.key), index]));
       group.rows.forEach((prepared) => {
         const placement = buildPlacementFromImportedAiring(prepared);
         if (!placement) return;
         const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
+        const signature = placementSignature(placement, group.key);
         if (existingKeys.has(dedupeKey)) { skippedPlacements += 1; return; }
+        if (existingSignatureMap.has(signature)) {
+          const existingIndex = existingSignatureMap.get(signature);
+          const existingPlacement = schedule.placements[existingIndex];
+          if (existingPlacement) {
+            schedule.placements[existingIndex] = {
+              ...existingPlacement,
+              ...placement,
+              id: existingPlacement.id || placement.id,
+              transferredToStation: Boolean(existingPlacement.transferredToStation),
+              importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
+              sourceAiringHash: placement.sourceAiringHash || existingPlacement.sourceAiringHash || ''
+            };
+            if (placement.sourceAiringHash) existingKeys.add(placement.sourceAiringHash);
+            skippedPlacements += 1;
+            return;
+          }
+        }
         schedule.placements.push(placement);
         existingKeys.add(dedupeKey);
+        existingSignatureMap.set(signature, schedule.placements.length - 1);
         createdPlacements += 1;
         if (placement.durationCorrectedFromLibrary) correctedDurations += 1;
       });
@@ -907,23 +998,18 @@
     const broadcast = scheduleBroadcastTotal(working);
     const reportTotal = scheduleReportedBroadcastTotal(working);
     const imported = scheduleImportedAiringTotal(working);
-    const hasImportedComparison = reportTotal > 0 || imported > 0;
-    const diff = reportTotal > 0 && imported > 0
-      ? Math.round(((reportTotal || 0) - (imported || 0)) * 100) / 100
-      : null;
+    const diff = scheduleBroadcastDifference(working);
     if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(broadcast);
-    if (els.fundraiserReportTotal) els.fundraiserReportTotal.value = reportTotal > 0 ? utils.formatMoney(reportTotal) : '—';
-    if (els.fundraiserImportTotal) els.fundraiserImportTotal.value = imported > 0 ? utils.formatMoney(imported) : '—';
-    if (els.fundraiserDifferenceTotal) els.fundraiserDifferenceTotal.value = diff == null ? '—' : utils.formatMoney(diff);
+    if (els.fundraiserReportTotal) els.fundraiserReportTotal.value = utils.formatMoney(reportTotal);
+    if (els.fundraiserImportTotal) els.fundraiserImportTotal.value = utils.formatMoney(imported);
+    if (els.fundraiserImportDifference) els.fundraiserImportDifference.value = utils.formatMoney(diff);
     if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
-    document.querySelectorAll('.schedule-import-money-field').forEach((node) => {
-      node.classList.toggle('hidden', !hasImportedComparison);
-    });
     if (els.fundraiserBroadcastDiagnostic) {
-      const show = diff != null && Math.abs(diff) >= 0.01;
+      const show = reportTotal > 0 || imported > 0;
+      const mismatch = show && Math.abs(diff) >= 0.01;
       els.fundraiserBroadcastDiagnostic.classList.toggle('hidden', !show);
       els.fundraiserBroadcastDiagnostic.innerHTML = show
-        ? `<span class="diag-chip">Report total ${utils.escapeHtml(utils.formatMoney(reportTotal))}</span><span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span><span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>`
+        ? `${reportTotal > 0 ? `<span class="diag-chip">Report total ${utils.escapeHtml(utils.formatMoney(reportTotal))}</span>` : ''}${imported > 0 ? `<span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span>` : ''}${mismatch ? `<span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>` : ''}`
         : '';
     }
     [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
@@ -1147,36 +1233,16 @@
     void pumpScheduledDetailQueue();
   }
 
-  function fundraiserProgramFinancials(schedule = {}) {
-    const byProgram = new Map();
-    annotatePlacements(schedule).filter((placement) => !placement.isNonPledge).forEach((placement) => {
-      const key = String(placement.programId || placement.programTitle || placement.id || '');
-      if (!key) return;
-      if (!byProgram.has(key)) {
-        byProgram.set(key, { dollars: 0, airingCount: 0 });
-      }
-      const bucket = byProgram.get(key);
-      bucket.airingCount += 1;
-      bucket.dollars += Number(placement.importedBroadcastDollars || 0) || 0;
-    });
-    return byProgram;
-  }
-
   function renderScheduledProgramDetails() {
     const schedule = getActiveSchedule();
     if (schedule) void ensureScheduleBroadcastTotal(schedule);
     const fundraiserSummaryHtml = (() => {
       if (!schedule) return '';
       const broadcast = scheduleBroadcastTotal(schedule);
-      const reportTotal = scheduleReportedBroadcastTotal(schedule);
       const imported = scheduleImportedAiringTotal(schedule);
-      const diff = reportTotal > 0 && imported > 0
-        ? Math.round(((reportTotal || 0) - (imported || 0)) * 100) / 100
-        : null;
-      const showImportMath = reportTotal > 0 || imported > 0;
-      const extra = showImportMath
-        ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Report total</span><span>${utils.escapeHtml(reportTotal > 0 ? utils.formatMoney(reportTotal) : '—')}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Import total</span><span>${utils.escapeHtml(imported > 0 ? utils.formatMoney(imported) : '—')}</span></div><div class="scheduled-data-chunk ${diff != null && Math.abs(diff) >= 0.01 ? 'warn-chunk' : ''}"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(diff == null ? '—' : utils.formatMoney(diff))}</span></div>`
-        : '';
+      const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
+      const mismatch = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
+      const extra = mismatch ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Imported airing total</span><span>${utils.escapeHtml(utils.formatMoney(imported))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(utils.formatMoney(diff))}</span></div>` : '';
       return `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(broadcast))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div>${extra}</div>`;
     })();
     if (!schedule || !schedule.placements?.length) {
@@ -1194,13 +1260,7 @@
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(placement);
     });
-    const financialsByProgram = fundraiserProgramFinancials(schedule);
-    const groupedEntries = [...grouped.entries()].sort((a, b) => {
-      const totalA = Number(financialsByProgram.get(a[0])?.dollars || 0) || 0;
-      const totalB = Number(financialsByProgram.get(b[0])?.dollars || 0) || 0;
-      if (totalA !== totalB) return totalB - totalA;
-      return utils.compareText(a[1]?.[0]?.programTitle || '', b[1]?.[0]?.programTitle || '');
-    });
+    const groupedEntries = [...grouped.entries()];
     const autoLoadLimit = groupedEntries.length > 12 ? 6 : 12;
 
     els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences], entryIndex) => {
@@ -1218,9 +1278,10 @@
       const historicalTotalDisplay = computedHistoricalTotal > 0 ? utils.formatMoney(computedHistoricalTotal) : 'Pending report import';
       const historicalAvgDisplay = avgPerFundraiser > 0 ? utils.formatMoney(avgPerFundraiser) : 'Pending report import';
       const fundraiserCountDisplay = fundraiserCount > 0 ? utils.formatCount(fundraiserCount) : '—';
-      const currentFundraiserDollars = Number(financialsByProgram.get(programId)?.dollars || 0) || 0;
-      const currentFundraiserAirings = Number(financialsByProgram.get(programId)?.airingCount || occurrences.length || 0) || 0;
-      const currentFundraiserAvg = currentFundraiserAirings > 0 ? (currentFundraiserDollars / currentFundraiserAirings) : 0;
+      const currentFundraiserDollars = occurrences.reduce((sum, item) => sum + (Number(item.importedBroadcastDollars || 0) || 0), 0);
+      const currentFundraiserAvg = occurrences.length ? (currentFundraiserDollars / occurrences.length) : 0;
+      const currentFundraiserDisplay = currentFundraiserDollars > 0 ? utils.formatMoney(currentFundraiserDollars) : '—';
+      const currentFundraiserAvgDisplay = currentFundraiserAvg > 0 ? utils.formatMoney(currentFundraiserAvg) : '—';
       const scheduledRows = occurrences
         .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
         .map((item) => `
@@ -1243,9 +1304,8 @@
           </div>
           <div class="scheduled-program-line scheduled-program-line-bottom">
             <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
-            <div class="scheduled-data-chunk emphasis"><span class="mini-label inline">This fundraiser $</span><span>${utils.escapeHtml(utils.formatMoney(currentFundraiserDollars))}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Imported airings</span><span>${utils.escapeHtml(utils.formatCount(currentFundraiserAirings))}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Avg / airing here</span><span>${utils.escapeHtml(currentFundraiserDollars > 0 ? utils.formatMoney(currentFundraiserAvg) : '—')}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">This fundraiser $</span><span>${utils.escapeHtml(currentFundraiserDisplay)}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">This fundraiser avg / airing</span><span>${utils.escapeHtml(currentFundraiserAvgDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span></div>
             <div class="scheduled-data-chunk scheduled-break-chunk"><span class="mini-label inline">Break detail</span>${breakHtml}</div>

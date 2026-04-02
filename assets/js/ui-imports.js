@@ -26,9 +26,23 @@
     return row.match_reason || 'No pledge-library match yet';
   }
 
-  function buildLibraryProgramOptions() {
+  function optionRankForNeed(entry = {}, unmatchedNeedle = '') {
+    const wanted = utils.normalizeLookupKey(unmatchedNeedle);
+    if (!wanted) return { score: 99, tie: entry.sortLabel || entry.label || '' };
+    const titleKey = entry.titleKey || '';
+    const nolaKey = entry.nolaKey || '';
+    if (titleKey === wanted || nolaKey === wanted) return { score: 0, tie: entry.sortLabel || entry.label || '' };
+    if (titleKey.startsWith(wanted)) return { score: 1, tie: entry.sortLabel || entry.label || '' };
+    if (wanted.length >= 4 && titleKey.includes(wanted)) return { score: 2, tie: entry.sortLabel || entry.label || '' };
+    const wantedPrefix = wanted.slice(0, Math.min(6, wanted.length));
+    if (wantedPrefix && titleKey.startsWith(wantedPrefix)) return { score: 3, tie: entry.sortLabel || entry.label || '' };
+    if (wantedPrefix && titleKey.includes(wantedPrefix)) return { score: 4, tie: entry.sortLabel || entry.label || '' };
+    return { score: 99, tie: entry.sortLabel || entry.label || '' };
+  }
+
+  function buildLibraryProgramOptions(unmatchedNeedle = '') {
     const seen = new Set();
-    return (state.rawRows || []).map((row) => {
+    const options = (state.rawRows || []).map((row) => {
       const value = String(derive.programId(row) || '');
       if (!value || seen.has(value)) return null;
       seen.add(value);
@@ -36,47 +50,19 @@
       const nola = derive.nola(row);
       return {
         value,
-        title,
-        nola,
+        label: nola ? `${title} (${nola})` : title,
+        sortLabel: `${title} ${nola || ''}`.trim().toLowerCase(),
         titleKey: utils.normalizeLookupKey(title),
-        label: nola ? `${title} (${nola})` : title
+        nolaKey: utils.normalizeLookupKey(nola)
       };
-    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
-  }
-
-  function scoreManualMatchOption(option, row) {
-    const wantedTitle = utils.normalizeLookupKey(row?.imported_program_title || row?.title || '');
-    if (!wantedTitle) return 99;
-    const optionTitle = utils.normalizeLookupKey(option?.title || option?.label || '');
-    const optionNola = utils.normalizeLookupKey(option?.nola || '');
-    if (!optionTitle) return 99;
-    if (optionTitle == wantedTitle) return 0;
-    if (optionTitle.startsWith(wantedTitle)) return 1;
-    if (wantedTitle.startsWith(optionTitle)) return 2;
-    const wantedWords = wantedTitle.split(' ').filter(Boolean);
-    const optionWords = optionTitle.split(' ').filter(Boolean);
-    const wantedPrefix = wantedWords.slice(0, 3).join(' ');
-    const optionPrefix = optionWords.slice(0, 3).join(' ');
-    if (wantedPrefix && optionPrefix && wantedPrefix === optionPrefix) return 3;
-    const wantedHead = wantedTitle.slice(0, 6);
-    const optionHead = optionTitle.slice(0, 6);
-    if (wantedHead && optionHead && wantedHead === optionHead) return 4;
-    if (optionTitle.includes(wantedTitle) || wantedTitle.includes(optionTitle)) return 5;
-    const wantedTokens = wantedWords.filter((token) => token.length >= 4);
-    if (wantedTokens.length && wantedTokens.some((token) => optionTitle.includes(token))) return 6;
-    if (optionNola && optionNola === utils.normalizeLookupKey(row?.nola_code || '')) return 7;
-    return 99;
-  }
-
-  function buildRowScopedProgramOptions(row, options = []) {
-    const ranked = options.map((option) => ({ ...option, score: scoreManualMatchOption(option, row) }));
-    const likely = ranked.filter((option) => option.score < 99).sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      return a.label.localeCompare(b.label);
+    }).filter(Boolean);
+    options.sort((a, b) => {
+      const ar = optionRankForNeed(a, unmatchedNeedle);
+      const br = optionRankForNeed(b, unmatchedNeedle);
+      if (ar.score != br.score) return ar.score - br.score;
+      return ar.tie.localeCompare(br.tie);
     });
-    const likelyValues = new Set(likely.map((option) => option.value));
-    const rest = ranked.filter((option) => !likelyValues.has(option.value)).sort((a, b) => a.label.localeCompare(b.label));
-    return { likely: likely.slice(0, 12), all: rest };
+    return options;
   }
 
 
@@ -189,6 +175,33 @@
     return Boolean(station && airDate && nola && title && /^(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{6,8})$/.test(airDate));
   }
 
+
+  function legacyTrailerMoneyTotal(cells = []) {
+    const candidateIndexes = [5, 6, 4, 7, 8];
+    const seen = new Set();
+    let total = 0;
+    candidateIndexes.forEach((index) => {
+      if (index >= cells.length) return;
+      const raw = cells[index];
+      const key = String(raw ?? '').trim();
+      if (!key || seen.has(`${index}|${key}`)) return;
+      seen.add(`${index}|${key}`);
+      const money = parseMoney(raw);
+      if (Number.isFinite(money)) total += money;
+    });
+    return total > 0 ? total : 0;
+  }
+
+  function looksLikeLegacyTrailerRow(cells = []) {
+    const normalized = cells.map((value) => utils.normalizeText(value));
+    if (!normalized.some(Boolean)) return false;
+    const joined = normalized.join(' ').toLowerCase();
+    const hasTotalWord = /(total|totals|grand total|report total)/.test(joined);
+    const missingProgramIdentity = !utils.normalizeText(cells[3]) && !utils.normalizeText(cells[4]);
+    const fewValues = normalized.filter(Boolean).length <= 4;
+    return Boolean(missingProgramIdentity && (hasTotalWord || fewValues) && legacyTrailerMoneyTotal(cells) > 0);
+  }
+
   function parseLegacyBreakReport(rows = []) {
     const headers = ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Secondary Dollars', 'Pledges', 'Program Minutes', 'Sustainers'];
     const records = [];
@@ -208,10 +221,9 @@
         diagnostics.embeddedHeaderRows += 1;
         return;
       }
-      const hasOnlyTotals = normalized.filter(Boolean).length <= 2 && !utils.normalizeText(cells[3]) && !utils.normalizeText(cells[4]);
-      if (hasOnlyTotals) {
-        const trailerMoney = parseMoney(cells[5] ?? cells[4] ?? cells[6]);
-        if (Number.isFinite(trailerMoney)) diagnostics.trailerTotalsDollars += trailerMoney;
+      if (looksLikeLegacyTrailerRow(cells)) {
+        const trailerMoney = legacyTrailerMoneyTotal(cells);
+        if (Number.isFinite(trailerMoney) && trailerMoney > 0) diagnostics.trailerTotalsDollars = Math.max(Number(diagnostics.trailerTotalsDollars || 0), trailerMoney);
         diagnostics.trailerRowsSkipped += 1;
         return;
       }
@@ -421,7 +433,11 @@
     const airedAt = composeDateTime(airDateRaw, airTimeRaw);
 
     const station = utils.normalizeText(firstMatching(mapped, ['station'], /(station)/i));
-    const dollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(dollars|contribution|revenue|gross|amount)/i));
+    const primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
+    const secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(secondary.*dollars|secondary.*amount)/i));
+    const dollars = Number.isFinite(primaryDollars) || Number.isFinite(secondaryDollars)
+      ? (Number(primaryDollars || 0) + Number(secondaryDollars || 0))
+      : null;
     const pledges = parseInteger(firstMatching(mapped, ['pledges'], /(pledges|pledge_count)/i));
     const programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(program.*minutes|minutes)/i));
     const sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(sustainers)/i));
@@ -453,6 +469,8 @@
         air_date: airDate || null,
         air_time: airTime || null,
         dollars: Number.isFinite(dollars) ? dollars : null,
+        dollars_primary: Number.isFinite(primaryDollars) ? primaryDollars : null,
+        dollars_secondary: Number.isFinite(secondaryDollars) ? secondaryDollars : null,
         pledge_count: Number.isFinite(pledges) ? pledges : null,
         program_minutes: Number.isFinite(programMinutes) ? programMinutes : null,
         sustainer_count: Number.isFinite(sustainers) ? sustainers : null,
@@ -982,13 +1000,11 @@
       bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No unmatched rows right now.</td></tr>';
       return;
     }
-    const options = buildLibraryProgramOptions();
     bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
+      const options = buildLibraryProgramOptions(row.imported_program_title || row.title || row.nola_code || '');
       const selectedProgramId = String(row.pending_manual_match_program_id || row.manual_match_program_id || '');
-      const scoped = buildRowScopedProgramOptions(row, options);
       const optionHtml = ['<option value="">Select a pledge title…</option>']
-        .concat(scoped.likely.length ? [`<optgroup label="Likely matches">${scoped.likely.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`).join('')}</optgroup>`] : [])
-        .concat(scoped.all.length ? [`<optgroup label="All pledge titles">${scoped.all.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`).join('')}</optgroup>`] : [])
+        .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
         .join('');
       return `
       <tr>
@@ -1099,6 +1115,16 @@
     renderAll();
   }
 
+  function normalizeDroppedFiles(fileList) {
+    return [...(fileList || [])].filter(Boolean);
+  }
+
+  async function handleImportedFiles(files = []) {
+    const usable = normalizeDroppedFiles(files);
+    if (!usable.length) return;
+    await analyzeFiles(usable);
+  }
+
   function bindEvents() {
     els.importTargetSelect?.addEventListener('change', async (event) => {
       imp().targetMode = event.target.value || 'auto';
@@ -1106,43 +1132,30 @@
       else renderAll();
     });
     els.importFileInput?.addEventListener('change', async (event) => {
-      const files = [...(event.target.files || [])];
+      const files = normalizeDroppedFiles(event.target.files);
       if (!files.length) return;
-      await analyzeFiles(files);
+      await handleImportedFiles(files);
     });
-    const importDropZone = els.importDropZone;
-    if (importDropZone) {
-      const openPicker = () => els.importFileInput?.click();
-      const setDropActive = (active) => importDropZone.classList.toggle('drag-over', Boolean(active));
-      importDropZone.addEventListener('click', openPicker);
-      importDropZone.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openPicker();
-        }
-      });
-      ['dragenter', 'dragover'].forEach((name) => {
-        importDropZone.addEventListener(name, (event) => {
-          event.preventDefault();
-          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-          setDropActive(true);
-        });
-      });
-      ['dragleave', 'dragend'].forEach((name) => {
-        importDropZone.addEventListener(name, (event) => {
-          event.preventDefault();
-          if (name === 'dragleave' && importDropZone.contains(event.relatedTarget)) return;
-          setDropActive(false);
-        });
-      });
-      importDropZone.addEventListener('drop', async (event) => {
-        event.preventDefault();
-        setDropActive(false);
-        const files = [...(event.dataTransfer?.files || [])];
-        if (!files.length) return;
-        await analyzeFiles(files);
-      });
-    }
+    els.importDropZone?.addEventListener('dragenter', (event) => {
+      event.preventDefault();
+      els.importDropZone.classList.add('drag-over');
+    });
+    els.importDropZone?.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      els.importDropZone.classList.add('drag-over');
+    });
+    els.importDropZone?.addEventListener('dragleave', (event) => {
+      event.preventDefault();
+      const nextTarget = event.relatedTarget;
+      if (nextTarget && els.importDropZone.contains(nextTarget)) return;
+      els.importDropZone.classList.remove('drag-over');
+    });
+    els.importDropZone?.addEventListener('drop', (event) => {
+      event.preventDefault();
+      els.importDropZone.classList.remove('drag-over');
+      void handleImportedFiles(event.dataTransfer?.files || []);
+    });
     els.importClearButton?.addEventListener('click', clearBatch);
     els.importRefreshButton?.addEventListener('click', async () => {
       await refreshTableStatus();

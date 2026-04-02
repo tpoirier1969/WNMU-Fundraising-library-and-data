@@ -413,7 +413,10 @@
       createdAt: row.created_at || '',
       updatedAt: row.updated_at || '',
       placements: Array.isArray(row.schedule_data?.placements) ? row.schedule_data.placements : [],
-      slotNotes: row.schedule_data?.slotNotes || {}
+      slotNotes: row.schedule_data?.slotNotes || {},
+      onlineDollars: Number(row.schedule_data?.onlineDollars || 0) || 0,
+      mailDollars: Number(row.schedule_data?.mailDollars || 0) || 0,
+      meta: row.schedule_data?.meta || {}
     }));
   }
 
