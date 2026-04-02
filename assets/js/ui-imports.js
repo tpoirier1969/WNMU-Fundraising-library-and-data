@@ -4,11 +4,47 @@
   const { state, utils, derive } = App;
   const { els, setNotice } = App.dom;
 
+  const IMPORT_MATCH_RULES_STORAGE_KEY = App.constants.IMPORT_MATCH_RULES_STORAGE_KEY || 'wnmuPledgeImportMatchRulesV1';
+  const IMPORT_REPORT_TOTALS_STORAGE_KEY = App.constants.IMPORT_REPORT_TOTALS_STORAGE_KEY || 'wnmuPledgeImportReportTotalsV1';
+  const IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS = 14;
+
   function imp() { return state.imports; }
   function escape(value) { return utils.escapeHtml(utils.toDisplayText(value)); }
 
+  function fileKeyForMeta(file, explicitIndex = 0) {
+    const raw = `${utils.normalizeText(file?.name || '')}|${Number(file?.size || 0)}|${Number(file?.lastModified || 0)}|${explicitIndex}`;
+    return utils.makeId ? `file-${Math.abs(hashText(raw))}` : raw;
+  }
+
+  function fileSummaryByKey(fileKey = '') {
+    return imp().fileSummaries.find((item) => item.fileKey === fileKey) || null;
+  }
+
+  function importTitleKey(title = '') {
+    return utils.normalizeLookupKey(title || '');
+  }
+
+  function importStationKey(station = '') {
+    return utils.normalizeLookupKey(station || '') || '*';
+  }
+
+  function isNonSpecificTitle(title = '') {
+    const key = importTitleKey(title).replace(/[^a-z0-9]+/g, ' ').trim();
+    return key === 'non specific pledges' || key.endsWith('non specific pledges');
+  }
+
+  function isNonSpecificNola(nola = '') {
+    return utils.normalizeLookupKey(nola || '').replace(/\s+/g, '') === 'nspl';
+  }
+
+  function isNonSpecificRow(row = {}) {
+    return Boolean(row?.is_non_specific || isNonSpecificNola(row?.nola_code) || isNonSpecificTitle(row?.imported_program_title || row?.title));
+  }
+
   function isImportMatched(row) {
-    return Boolean(row && row.program_id != null && row.match_method !== 'ignored');
+    if (!row || row.match_method === 'ignored') return false;
+    if (isNonSpecificRow(row)) return true;
+    return Boolean(String(row.program_id || row.pledge_program_id || '').trim());
   }
 
   function getMatchedRows() {
@@ -19,9 +55,61 @@
     return imp().airingsRows.filter((row) => !isImportMatched(row));
   }
 
+  function getStoredAliasRules() {
+    return Array.isArray(imp().aliasRules) ? imp().aliasRules : [];
+  }
+
+  function saveStoredAliasRules(rules = []) {
+    imp().aliasRules = Array.isArray(rules) ? rules : [];
+    utils.storageSet(IMPORT_MATCH_RULES_STORAGE_KEY, imp().aliasRules);
+  }
+
+  function aliasRuleKey(station = '', importedTitle = '') {
+    return `${importStationKey(station)}|${importTitleKey(importedTitle)}`;
+  }
+
+  function findAliasRuleForRow(row = {}) {
+    const key = aliasRuleKey(row.station, row.imported_program_title || row.program_title || row.title);
+    return getStoredAliasRules().find((rule) => aliasRuleKey(rule.station, rule.importedTitle) === key && rule.active !== false) || null;
+  }
+
+  function storeAliasRule({ station = '', importedTitle = '', targetProgram = null }) {
+    if (!targetProgram || !importedTitle) return null;
+    const rules = getStoredAliasRules().slice();
+    const nextRule = {
+      id: utils.makeId('importrule'),
+      station,
+      importedTitle,
+      importedTitleKey: importTitleKey(importedTitle),
+      targetProgramId: String(derive.programId(targetProgram) || '').trim(),
+      targetProgramTitle: derive.title(targetProgram) || importedTitle,
+      targetProgramNola: derive.nola(targetProgram) || '',
+      active: true,
+      updatedAt: new Date().toISOString()
+    };
+    const existingIndex = rules.findIndex((rule) => aliasRuleKey(rule.station, rule.importedTitle) === aliasRuleKey(station, importedTitle));
+    if (existingIndex >= 0) nextRule.id = rules[existingIndex].id || nextRule.id;
+    if (existingIndex >= 0) rules.splice(existingIndex, 1, nextRule);
+    else rules.push(nextRule);
+    saveStoredAliasRules(rules);
+    return nextRule;
+  }
+
+  function storedReportTotals() {
+    return imp().reportTotalsByFile && typeof imp().reportTotalsByFile === 'object' ? imp().reportTotalsByFile : {};
+  }
+
+  function saveStoredReportTotals(nextMap = {}) {
+    imp().reportTotalsByFile = { ...nextMap };
+    utils.storageSet(IMPORT_REPORT_TOTALS_STORAGE_KEY, imp().reportTotalsByFile);
+  }
+
   function getMatchReason(row) {
     if (!row) return '';
     if (row.match_method === 'manual_library') return 'Matched manually in import review';
+    if (row.match_method === 'saved_title_rule') return 'Matched from a saved “always equals this” rule';
+    if (row.match_method === 'title_exact') return 'Matched by exact imported title';
+    if (row.match_method === 'non_specific') return 'Non-specific broadcast row';
     if (row.match_method === 'ignored') return row.match_reason || 'Ignored during import review';
     return row.match_reason || 'No pledge-library match yet';
   }
@@ -34,7 +122,7 @@
     if (titleKey === wanted || nolaKey === wanted) return { score: 0, tie: entry.sortLabel || entry.label || '' };
     if (titleKey.startsWith(wanted)) return { score: 1, tie: entry.sortLabel || entry.label || '' };
     if (wanted.length >= 4 && titleKey.includes(wanted)) return { score: 2, tie: entry.sortLabel || entry.label || '' };
-    const wantedPrefix = wanted.slice(0, Math.min(6, wanted.length));
+    const wantedPrefix = wanted.slice(0, Math.min(10, wanted.length));
     if (wantedPrefix && titleKey.startsWith(wantedPrefix)) return { score: 3, tie: entry.sortLabel || entry.label || '' };
     if (wantedPrefix && titleKey.includes(wantedPrefix)) return { score: 4, tie: entry.sortLabel || entry.label || '' };
     return { score: 99, tie: entry.sortLabel || entry.label || '' };
@@ -403,14 +491,23 @@
     };
   }
 
-  function buildLibraryNolaIndex() {
+  function buildLibraryLookup() {
     const rows = state.rawRows || [];
     const byNola = new Map();
+    const titleBuckets = new Map();
     rows.forEach((row) => {
       const nolaKey = utils.normalizeLookupKey(derive.nola(row));
       if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, row);
+      const titleKey = utils.normalizeLookupKey(derive.title(row));
+      if (!titleKey) return;
+      if (!titleBuckets.has(titleKey)) titleBuckets.set(titleKey, []);
+      titleBuckets.get(titleKey).push(row);
     });
-    return byNola;
+    const byUniqueTitle = new Map();
+    titleBuckets.forEach((items, key) => {
+      if (items.length === 1) byUniqueTitle.set(key, items[0]);
+    });
+    return { byNola, byUniqueTitle };
   }
 
   function guessTarget(headers = [], rows = [], fileName = '') {
@@ -421,18 +518,48 @@
     return hasAiringShape ? 'airings' : 'airings';
   }
 
-  function normalizeAiringRow(row, meta, nolaIndex) {
+  function computeImportRowHash(row = {}) {
+    const baseForHash = {
+      station: utils.normalizeText(row.station) || '',
+      imported_program_title: utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '',
+      nola_code: utils.normalizeText(row.nola_code) || '',
+      air_date: utils.normalizeText(row.air_date) || '',
+      air_time: utils.normalizeText(row.air_time) || '',
+      dollars: Number(row.dollars || 0) || 0,
+      pledges: Number(row.pledge_count || 0) || 0,
+      drive_start_date: utils.normalizeText(row.drive_start_date) || '',
+      drive_end_date: utils.normalizeText(row.drive_end_date) || '',
+      source_file_name: utils.normalizeText(row.source_file_name) || ''
+    };
+    return hashText(stableStringify(baseForHash));
+  }
+
+  function findProgramForImport({ importedTitle = '', nola = '', station = '' }, libraryLookup) {
+    const nolaKey = utils.normalizeLookupKey(nola);
+    if (nolaKey && libraryLookup.byNola.has(nolaKey)) {
+      return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: '' };
+    }
+    const aliasRule = findAliasRuleForRow({ station, imported_program_title: importedTitle, nola_code: nola });
+    if (aliasRule) {
+      const target = (state.rawRows || []).find((row) => String(derive.programId(row) || '').trim() === String(aliasRule.targetProgramId || '').trim()) || null;
+      if (target) {
+        return { program: target, matchMethod: 'saved_title_rule', matchReason: 'Matched from a saved import-title rule.' };
+      }
+    }
+    const titleKey = importTitleKey(importedTitle);
+    if (titleKey && libraryLookup.byUniqueTitle.has(titleKey)) {
+      return { program: libraryLookup.byUniqueTitle.get(titleKey), matchMethod: 'title_exact', matchReason: 'Matched by exact imported title.' };
+    }
+    return { program: null, matchMethod: 'unmatched', matchReason: nola ? `No pledge-library match found for NOLA ${nola}.` : 'No pledge-library match found for that imported title.' };
+  }
+
+  function normalizeAiringRow(row, meta, libraryLookup) {
     const mapped = mapRowKeys(row);
     const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'title', 'program', 'show_title'], /(program|show|title)/i));
     const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|program_code|episode_code)/i));
-    if (!nola) {
-      return { row: null, warning: `Skipped one row in ${meta.fileName} because it had no NOLA.` };
+    if (!nola && !importedTitle) {
+      return { row: null, warning: `Skipped one row in ${meta.fileName} because it had neither a usable title nor a NOLA.` };
     }
-
-    const matchedProgram = nolaIndex.get(utils.normalizeLookupKey(nola)) || null;
-    const matchedLibraryTitle = matchedProgram ? derive.title(matchedProgram) : '';
-    const matchedProgramId = matchedProgram ? derive.programId(matchedProgram) : '';
-    const titleMismatch = matchedProgram && importedTitle && utils.normalizeLookupKey(importedTitle) !== utils.normalizeLookupKey(matchedLibraryTitle);
 
     const airDateRaw = firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(air.*date|broadcast.*date|date$)/i);
     const airTimeRaw = firstMatching(mapped, ['air_time', 'time', 'broadcast_time'], /(air.*time|broadcast.*time|time$)/i);
@@ -449,60 +576,154 @@
     const pledges = parseInteger(firstMatching(mapped, ['pledges'], /(pledges|pledge_count)/i));
     const programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(program.*minutes|minutes)/i));
     const sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(sustainers)/i));
-
+    const isNonSpecific = isNonSpecificNola(nola) || isNonSpecificTitle(importedTitle);
     const reportTotalDollars = Number.isFinite(Number(meta.reportTotalDollars)) ? Number(meta.reportTotalDollars) : null;
 
-    const baseForHash = {
-      nola_code: nola,
-      air_date: airDate || '',
-      air_time: airTime || '',
-      dollars: dollars ?? '',
-      pledges: pledges ?? '',
-      source_report_type: meta.target || '',
-      drive_start_date: meta.driveStartDate || '',
-      drive_end_date: meta.driveEndDate || ''
-    };
+    let matchedProgram = null;
+    let matchMethod = 'unmatched';
+    let matchReason = '';
+    if (isNonSpecific) {
+      matchMethod = 'non_specific';
+      matchReason = 'Non-specific broadcast row';
+    } else {
+      const match = findProgramForImport({ importedTitle, nola, station }, libraryLookup);
+      matchedProgram = match.program || null;
+      matchMethod = match.matchMethod;
+      matchReason = match.matchReason;
+    }
+    const matchedLibraryTitle = matchedProgram ? derive.title(matchedProgram) : '';
+    const matchedProgramId = matchedProgram ? derive.programId(matchedProgram) : '';
+    const titleMismatch = matchedProgram && importedTitle && utils.normalizeLookupKey(importedTitle) !== utils.normalizeLookupKey(matchedLibraryTitle);
 
-    return {
-      row: {
-        program_id: matchedProgramId || null,
-        pledge_program_id: matchedProgramId || null,
-        title: matchedLibraryTitle || importedTitle || null,
-        program_title: matchedLibraryTitle || importedTitle || null,
-        imported_program_title: importedTitle || null,
-        matched_library_title: matchedLibraryTitle || null,
-        nola_code: nola || null,
-        station: station || null,
-        aired_at: airedAt || null,
-        air_date: airDate || null,
-        air_time: airTime || null,
-        dollars: Number.isFinite(dollars) ? dollars : null,
-        dollars_primary: Number.isFinite(primaryDollars) ? primaryDollars : null,
-        dollars_secondary: Number.isFinite(secondaryDollars) ? secondaryDollars : null,
-        pledge_count: Number.isFinite(pledges) ? pledges : null,
-        program_minutes: Number.isFinite(programMinutes) ? programMinutes : null,
-        sustainer_count: Number.isFinite(sustainers) ? sustainers : null,
-        fundraiser_label: meta.fundraiserLabel || null,
-        drive_start_date: meta.driveStartDate || null,
-        drive_end_date: meta.driveEndDate || null,
-        source_file_name: meta.fileName,
-        source_report_total_dollars: reportTotalDollars,
-        source_report_type: meta.target,
-        source_delimiter: meta.delimiterLabel,
-        import_batch_id: imp().importBatchId || '',
-        imported_by_email: state.userEmail || null,
-        match_method: matchedProgram ? 'nola' : 'unmatched_nola',
-        match_reason: matchedProgram ? '' : `No pledge-library NOLA match for ${nola}.`,
-        title_mismatch_flag: titleMismatch || false,
-        manual_match_program_id: null,
-        manual_match_label: '',
-        row_hash: hashText(stableStringify(baseForHash)),
-        raw_payload: mapped
-      },
-      warning: matchedProgram
-        ? (titleMismatch ? `NOLA ${nola} matched library title “${matchedLibraryTitle}” while the report carried abbreviated title “${importedTitle}”. Imported using the library title.` : '')
-        : `NOLA ${nola} from ${meta.fileName} did not match any title in the pledge library.`
+    const normalizedRow = {
+      program_id: matchedProgramId || null,
+      pledge_program_id: matchedProgramId || null,
+      title: matchedLibraryTitle || importedTitle || null,
+      program_title: matchedLibraryTitle || importedTitle || null,
+      imported_program_title: importedTitle || null,
+      matched_library_title: matchedLibraryTitle || null,
+      nola_code: nola || null,
+      station: station || null,
+      aired_at: airedAt || null,
+      air_date: airDate || null,
+      air_time: airTime || null,
+      dollars: Number.isFinite(dollars) ? dollars : null,
+      dollars_primary: Number.isFinite(primaryDollars) ? primaryDollars : null,
+      dollars_secondary: Number.isFinite(secondaryDollars) ? secondaryDollars : null,
+      pledge_count: Number.isFinite(pledges) ? pledges : null,
+      program_minutes: Number.isFinite(programMinutes) ? programMinutes : null,
+      sustainer_count: Number.isFinite(sustainers) ? sustainers : null,
+      fundraiser_label: meta.fundraiserLabel || null,
+      drive_start_date: meta.driveStartDate || null,
+      drive_end_date: meta.driveEndDate || null,
+      source_file_name: meta.fileName,
+      source_file_key: meta.fileKey || '',
+      source_report_total_dollars: reportTotalDollars,
+      source_report_type: meta.target,
+      source_delimiter: meta.delimiterLabel,
+      import_batch_id: imp().importBatchId || '',
+      imported_by_email: state.userEmail || null,
+      is_non_specific: isNonSpecific,
+      match_method: isNonSpecific ? 'non_specific' : (matchedProgram ? matchMethod : 'unmatched_nola'),
+      match_reason: isNonSpecific ? 'Non-specific broadcast row' : (matchedProgram ? matchReason : matchReason || `No pledge-library match found for ${nola || importedTitle || 'that row'}.`),
+      title_mismatch_flag: titleMismatch || false,
+      pending_persist_match_rule: false,
+      manual_match_program_id: null,
+      manual_match_label: '',
+      raw_payload: mapped
     };
+    normalizedRow.row_hash = computeImportRowHash(normalizedRow);
+
+    const warning = isNonSpecific
+      ? ''
+      : matchedProgram
+        ? (titleMismatch ? `Imported title “${importedTitle}” matched library title “${matchedLibraryTitle}”. Imported using the library title.` : '')
+        : `${nola || importedTitle} from ${meta.fileName} did not match any title in the pledge library.`;
+
+    return { row: normalizedRow, warning };
+  }
+
+  function dateKeyDistance(a = '', b = '') {
+    if (!(a && b)) return Number.POSITIVE_INFINITY;
+    const da = new Date(`${a}T12:00:00`);
+    const db = new Date(`${b}T12:00:00`);
+    if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return Number.POSITIVE_INFINITY;
+    return Math.abs(Math.round((db.getTime() - da.getTime()) / 86400000));
+  }
+
+  function clusterDateKeys(dateKeys = []) {
+    const sorted = [...new Set((dateKeys || []).filter(Boolean))].sort();
+    if (!sorted.length) return [];
+    const groups = [];
+    let current = [sorted[0]];
+    for (let index = 1; index < sorted.length; index += 1) {
+      const next = sorted[index];
+      const previous = current[current.length - 1];
+      const gap = dateKeyDistance(previous, next);
+      if (Number.isFinite(gap) && gap > IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS) {
+        groups.push({ startDate: current[0], endDate: current[current.length - 1], dates: current.slice() });
+        current = [next];
+      } else {
+        current.push(next);
+      }
+    }
+    if (current.length) groups.push({ startDate: current[0], endDate: current[current.length - 1], dates: current.slice() });
+    return groups;
+  }
+
+  function activityDateForRow(row = {}) {
+    return utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '';
+  }
+
+  function rowHasFundraisingActivity(row = {}) {
+    const dollars = Number(row.dollars || 0) || 0;
+    const pledges = Number(row.pledge_count || 0) || 0;
+    return dollars > 0 || pledges > 0;
+  }
+
+  function assignDriveRangesForFile(rows = [], summary = null) {
+    const datedRows = rows.filter(Boolean);
+    const dateKeys = datedRows.map((row) => activityDateForRow(row)).filter(Boolean);
+    const activityDates = datedRows.filter((row) => rowHasFundraisingActivity(row)).map((row) => activityDateForRow(row)).filter(Boolean);
+    const clusters = clusterDateKeys(activityDates.length ? activityDates : dateKeys);
+    const fallbackStart = dateKeys.slice().sort()[0] || '';
+    const fallbackEnd = dateKeys.slice().sort().slice(-1)[0] || fallbackStart;
+    const resolvedClusters = clusters.length ? clusters : [{ startDate: fallbackStart, endDate: fallbackEnd, dates: [fallbackStart].filter(Boolean) }];
+    datedRows.forEach((row) => {
+      const rowDate = activityDateForRow(row);
+      let cluster = resolvedClusters.find((entry) => rowDate && rowDate >= entry.startDate && rowDate <= entry.endDate) || null;
+      if (!cluster) {
+        cluster = resolvedClusters.slice().sort((a, b) => {
+          const distA = Math.min(dateKeyDistance(rowDate, a.startDate), dateKeyDistance(rowDate, a.endDate));
+          const distB = Math.min(dateKeyDistance(rowDate, b.startDate), dateKeyDistance(rowDate, b.endDate));
+          return distA - distB;
+        })[0] || null;
+      }
+      row.drive_start_date = cluster?.startDate || fallbackStart || row.drive_start_date || null;
+      row.drive_end_date = cluster?.endDate || fallbackEnd || row.drive_end_date || null;
+      row.fundraiser_label = (row.drive_start_date && row.drive_end_date)
+        ? `Imported pledge ${utils.formatDate(row.drive_start_date)} – ${utils.formatDate(row.drive_end_date)}`
+        : (summary?.fileName || row.source_file_name || 'Imported fundraiser');
+      row.source_report_total_dollars = Number.isFinite(Number(summary?.reportTotalDollarsInput)) && Number(summary.reportTotalDollarsInput) > 0
+        ? Number(summary.reportTotalDollarsInput)
+        : (Number.isFinite(Number(summary?.detectedReportTotalDollars)) && Number(summary.detectedReportTotalDollars) > 0 ? Number(summary.detectedReportTotalDollars) : null);
+      row.row_hash = computeImportRowHash(row);
+    });
+    if (summary) {
+      summary.fundraiserClusterCount = resolvedClusters.length;
+      summary.detectedStartDate = resolvedClusters[0]?.startDate || fallbackStart || '';
+      summary.detectedEndDate = resolvedClusters[resolvedClusters.length - 1]?.endDate || fallbackEnd || '';
+      summary.programSpecificTotalDollars = datedRows.filter((row) => !isNonSpecificRow(row)).reduce((sum, row) => sum + (Number(row.dollars || 0) || 0), 0);
+      summary.nonSpecificTotalDollars = datedRows.filter((row) => isNonSpecificRow(row)).reduce((sum, row) => sum + (Number(row.dollars || 0) || 0), 0);
+      summary.combinedTotalDollars = Number(summary.programSpecificTotalDollars || 0) + Number(summary.nonSpecificTotalDollars || 0);
+    }
+    return resolvedClusters;
+  }
+
+  function updateFileSummaryReconciliation(summary = null) {
+    if (!summary) return;
+    const reportTotal = Number(summary.reportTotalDollarsInput || 0) || 0;
+    summary.reportDifferenceDollars = reportTotal > 0 ? Math.round((reportTotal - Number(summary.combinedTotalDollars || 0)) * 100) / 100 : null;
   }
 
   function deriveRollups(airingsRows = []) {
@@ -569,30 +790,61 @@
     renderAll();
     setStatus(`Analyzing ${utils.formatCount(files.length)} file${files.length === 1 ? '' : 's'}…`);
 
-    const nolaIndex = buildLibraryNolaIndex();
+    const libraryLookup = buildLibraryLookup();
+    const savedTotals = storedReportTotals();
 
     try {
       const allAirings = [];
-      for (const file of files) {
+      for (const [fileIndex, file] of files.entries()) {
         const fileWarnings = [];
         try {
           const text = await readFileText(file);
           const delimiterInfo = detectDelimiter(text);
           const parsed = parseDelimited(text, delimiterInfo.delimiter);
+          const fileKey = fileKeyForMeta(file, fileIndex);
+          const detectedReportTotalDollars = Number.isFinite(Number(parsed?.diagnostics?.trailerTotalsDollars)) && Number(parsed.diagnostics.trailerTotalsDollars) > 0
+            ? Number(parsed.diagnostics.trailerTotalsDollars)
+            : null;
+          const storedTotal = Number(savedTotals[fileKey] || 0) || 0;
           const meta = {
             fileName: file.name,
+            fileKey,
             target: imp().targetMode === 'auto' ? guessTarget(parsed.headers, parsed.records, file.name) : imp().targetMode,
             delimiterLabel: delimiterInfo.label,
-            reportTotalDollars: Number.isFinite(Number(parsed?.diagnostics?.trailerTotalsDollars)) && Number(parsed.diagnostics.trailerTotalsDollars) > 0 ? Number(parsed.diagnostics.trailerTotalsDollars) : null,
+            reportTotalDollars: storedTotal > 0 ? storedTotal : detectedReportTotalDollars,
             ...parseDateRangeFromFilename(file.name)
           };
 
           const normalized = [];
           parsed.records.forEach((record) => {
-            const result = normalizeAiringRow(record, meta, nolaIndex);
+            const result = normalizeAiringRow(record, meta, libraryLookup);
             if (result.warning) fileWarnings.push(result.warning);
             if (result.row) normalized.push(result.row);
           });
+
+          const fileSummary = {
+            fileKey,
+            fileName: file.name,
+            delimiter: delimiterInfo.label,
+            headerCount: parsed.headers.length,
+            parsedRows: parsed.records.length,
+            target: 'airings',
+            normalizedRows: normalized.length,
+            detectedFormat: parsed?.diagnostics?.detectedFormat || 'headered_csv',
+            warnings: [],
+            detectedReportTotalDollars,
+            reportTotalDollarsInput: storedTotal > 0 ? storedTotal : (detectedReportTotalDollars || ''),
+            programSpecificTotalDollars: 0,
+            nonSpecificTotalDollars: 0,
+            combinedTotalDollars: 0,
+            reportDifferenceDollars: null,
+            fundraiserClusterCount: 0,
+            detectedStartDate: '',
+            detectedEndDate: ''
+          };
+
+          assignDriveRangesForFile(normalized, fileSummary);
+          updateFileSummaryReconciliation(fileSummary);
 
           const parseDiagnostics = parsed.diagnostics || {};
           const summaryWarnings = [...new Set(fileWarnings)];
@@ -609,26 +861,33 @@
           if (parseDiagnostics.totalRowsSkipped) {
             summaryWarnings.push(`${utils.formatCount(parseDiagnostics.totalRowsSkipped)} malformed legacy row${parseDiagnostics.totalRowsSkipped === 1 ? '' : 's'} skipped.`);
           }
-          imp().fileSummaries.push({
-            fileName: file.name,
-            delimiter: delimiterInfo.label,
-            headerCount: parsed.headers.length,
-            parsedRows: parsed.records.length,
-            target: 'airings',
-            normalizedRows: normalized.length,
-            detectedFormat: parseDiagnostics.detectedFormat || 'headered_csv',
-            warnings: summaryWarnings.slice(0, 10)
-          });
+          if (!(Number(fileSummary.reportTotalDollarsInput || 0) > 0)) {
+            summaryWarnings.unshift('Enter the report total from the original report before importing this file.');
+          }
+          if (Number.isFinite(Number(fileSummary.reportDifferenceDollars)) && Math.abs(Number(fileSummary.reportDifferenceDollars)) >= 0.01) {
+            summaryWarnings.unshift(`Reconciliation difference currently ${utils.formatMoney(Number(fileSummary.reportDifferenceDollars || 0))}.`);
+          }
+          fileSummary.warnings = summaryWarnings.slice(0, 12);
+          imp().fileSummaries.push(fileSummary);
           allAirings.push(...normalized);
         } catch (error) {
           const message = error?.message || String(error);
           imp().fileSummaries.push({
+            fileKey: fileKeyForMeta(file, fileIndex),
             fileName: file.name,
             delimiter: '—',
             headerCount: 0,
             parsedRows: 0,
             target: 'airings',
             normalizedRows: 0,
+            detectedFormat: 'unreadable',
+            programSpecificTotalDollars: 0,
+            nonSpecificTotalDollars: 0,
+            combinedTotalDollars: 0,
+            reportDifferenceDollars: null,
+            fundraiserClusterCount: 0,
+            detectedStartDate: '',
+            detectedEndDate: '',
             warnings: [message]
           });
           imp().warnings.push(message);
@@ -637,6 +896,7 @@
 
       const deduped = new Map();
       allAirings.forEach((row) => {
+        row.row_hash = computeImportRowHash(row);
         if (!deduped.has(row.row_hash)) deduped.set(row.row_hash, row);
       });
       imp().airingsRows = [...deduped.values()];
@@ -644,21 +904,20 @@
 
       const matchedCount = getMatchedRows().length;
       const unmatchedCount = getUnmatchedRows().length;
+      const eligibleRows = matchedCount;
+      const missingReportTotals = imp().fileSummaries.filter((item) => item.normalizedRows && !(Number(item.reportTotalDollarsInput || 0) > 0)).length;
       if (imp().airingsRows.length) {
-        imp().warnings.unshift(`The importer matched ${utils.formatCount(matchedCount)} airing row${matchedCount === 1 ? '' : 's'} and left ${utils.formatCount(unmatchedCount)} row${unmatchedCount === 1 ? '' : 's'} unmatched for review.`);
+        imp().warnings.unshift(`The importer has ${utils.formatCount(eligibleRows)} eligible row${eligibleRows === 1 ? '' : 's'} ready for import and ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} still needing review.`);
       }
-      if (imp().driveRows.length) {
-        imp().warnings.unshift(`Derived ${utils.formatCount(imp().driveRows.length)} fundraiser rollups from imported airings. No separate money rows will be stored.`);
+      if (missingReportTotals) {
+        imp().warnings.unshift(`${utils.formatCount(missingReportTotals)} file${missingReportTotals === 1 ? '' : 's'} still need a report total entered before import.`);
       }
-
       renderAll();
-      const matchedRows = getMatchedRows().length;
-      const skippedRows = getUnmatchedRows().length;
       const legacyFiles = imp().fileSummaries.filter((item) => item.detectedFormat === 'legacy_pbs_break_report').length;
       const legacyNote = legacyFiles ? ` ${utils.formatCount(legacyFiles)} legacy PBS Break Report file${legacyFiles === 1 ? '' : 's'} detected.` : '';
-      const reimportNote = imp().lastImportResult ? ' Reimport is safe; duplicates are skipped.' : '';
-      setStatus(`Preview ready: ${utils.formatCount(matchedRows)} matched rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows need review in the table below.${legacyNote}${reimportNote}`);
-      setResultBanner(`Preview ready: ${utils.formatCount(matchedRows)} matched airing rows can be imported. ${utils.formatCount(skippedRows)} unmatched rows need review below before import.${legacyNote}${reimportNote}`);
+      const totalsNote = missingReportTotals ? ` Enter the report total for ${utils.formatCount(missingReportTotals)} file${missingReportTotals === 1 ? '' : 's'} before importing.` : ' Report totals are ready for reconciliation.';
+      setStatus(`Preview ready: ${utils.formatCount(eligibleRows)} eligible rows can be imported. ${utils.formatCount(unmatchedCount)} unmatched rows need review.${legacyNote}${totalsNote}`);
+      setResultBanner(`Preview ready: ${utils.formatCount(eligibleRows)} eligible airing rows can be imported. ${utils.formatCount(unmatchedCount)} unmatched rows still need review.${legacyNote}${totalsNote}`);
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Report analysis failed.';
@@ -668,6 +927,42 @@
     } finally {
       imp().loading = false;
     }
+  }
+
+
+  function filesMissingReportTotals() {
+    return imp().fileSummaries.filter((item) => Number(item.normalizedRows || 0) > 0 && !(Number(item.reportTotalDollarsInput || 0) > 0));
+  }
+
+  function hasMissingReportTotals() {
+    return filesMissingReportTotals().length > 0;
+  }
+
+  function updateRowsForFileSummary(summary = null) {
+    if (!summary?.fileKey) return;
+    const rows = imp().airingsRows.filter((row) => row.source_file_key === summary.fileKey);
+    assignDriveRangesForFile(rows, summary);
+    updateFileSummaryReconciliation(summary);
+    imp().driveRows = deriveRollups(imp().airingsRows);
+  }
+
+  function setManualReportTotalForFile(fileKey = '', rawValue = '') {
+    const summary = fileSummaryByKey(fileKey);
+    if (!summary) return;
+    const parsed = parseMoney(rawValue);
+    summary.reportTotalDollarsInput = Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : '';
+    const totals = { ...storedReportTotals() };
+    if (summary.reportTotalDollarsInput) totals[fileKey] = summary.reportTotalDollarsInput;
+    else delete totals[fileKey];
+    saveStoredReportTotals(totals);
+    updateRowsForFileSummary(summary);
+    renderAll();
+    const diff = Number(summary.reportDifferenceDollars || 0) || 0;
+    const message = summary.reportTotalDollarsInput
+      ? `Stored report total ${utils.formatMoney(summary.reportTotalDollarsInput)} for ${summary.fileName}.${Math.abs(diff) >= 0.01 ? ` Difference currently ${utils.formatMoney(diff)}.` : ' Import now reconciles exactly.'}`
+      : `Cleared the report total for ${summary.fileName}.`;
+    setStatus(message, Math.abs(diff) >= 0.01 ? 'warn' : '');
+    setResultBanner(message, Math.abs(diff) >= 0.01 ? 'warn' : '');
   }
 
   function clearBatch() {
@@ -736,6 +1031,10 @@
       setResultBanner('Scheduler creation is admin-only.', 'warn');
       return;
     }
+    if (hasMissingReportTotals()) {
+      setResultBanner(`Enter the report total for ${utils.formatCount(filesMissingReportTotals().length)} file${filesMissingReportTotals().length === 1 ? '' : 's'} before creating scheduler entries.`, 'warn');
+      return;
+    }
     const matchedRows = getMatchedRows();
     if (!matchedRows.length) {
       setResultBanner('No matched imported airings are available for scheduler creation yet.', 'warn');
@@ -756,6 +1055,14 @@
       setNotice('Direct import is admin-only. Export the normalized CSV if you need a handoff first.', 'warn');
       setStatus('Direct import is admin-only.', 'warn');
       setResultBanner('Direct import is admin-only. Sign in as an admin before writing matched rows to Supabase.', 'warn');
+      return;
+    }
+    if (hasMissingReportTotals()) {
+      const count = filesMissingReportTotals().length;
+      const message = `Enter the report total for ${utils.formatCount(count)} file${count === 1 ? '' : 's'} before importing.`;
+      setStatus(message, 'warn');
+      setNotice(message, 'warn');
+      setResultBanner(message, 'warn');
       return;
     }
     if (!imp().airingsRows.length) {
@@ -846,21 +1153,31 @@
     if (!els.importFileBody || !els.importFilePill) return;
     els.importFilePill.textContent = imp().fileSummaries.length ? `${utils.formatCount(imp().fileSummaries.length)} files` : 'No files';
     if (!imp().fileSummaries.length) {
-      els.importFileBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No reports analyzed yet.</td></tr>';
+      els.importFileBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">No reports analyzed yet.</td></tr>';
       return;
     }
-    els.importFileBody.innerHTML = imp().fileSummaries.map((item) => `
+    els.importFileBody.innerHTML = imp().fileSummaries.map((item) => {
+      const diff = Number(item.reportDifferenceDollars || 0);
+      const diffWarn = Number.isFinite(diff) && Math.abs(diff) >= 0.01;
+      const reportValue = Number(item.reportTotalDollarsInput || 0) > 0 ? utils.formatMoney(item.reportTotalDollarsInput) : '';
+      const dateRange = item.detectedStartDate && item.detectedEndDate
+        ? `${utils.formatDate(item.detectedStartDate)} – ${utils.formatDate(item.detectedEndDate)}${Number(item.fundraiserClusterCount || 0) > 1 ? ` (${utils.formatCount(item.fundraiserClusterCount)} clusters)` : ''}`
+        : '—';
+      return `
       <tr>
         <td>${escape(item.fileName)}</td>
-        <td>${escape(item.delimiter)}</td>
-        <td>${escape(item.detectedFormat || 'headered_csv')}</td>
-        <td>${escape(item.headerCount)}</td>
         <td>${escape(item.parsedRows)}</td>
-        <td>${escape(item.target)}</td>
         <td>${escape(item.normalizedRows)}</td>
-        <td>${escape(item.warnings.join(' | ') || '—')}</td>
+        <td>${escape(utils.formatMoney(item.programSpecificTotalDollars || 0))}</td>
+        <td>${escape(utils.formatMoney(item.nonSpecificTotalDollars || 0))}</td>
+        <td>${escape(utils.formatMoney(item.combinedTotalDollars || 0))}</td>
+        <td><input type="text" class="import-report-total-input" data-file-key="${escape(item.fileKey || '')}" value="${escape(reportValue)}" placeholder="$0.00"></td>
+        <td class="${diffWarn ? 'import-diff-warn' : ''}">${item.reportDifferenceDollars == null ? '—' : escape(utils.formatMoney(item.reportDifferenceDollars))}</td>
+        <td>${escape(dateRange)}</td>
+        <td>${escape((item.warnings || []).join(' | ') || '—')}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function renderPreviewRows(rows, bodyEl, columns, emptyMessage) {
@@ -902,7 +1219,14 @@
     });
   }
 
-  function applyManualMatchToGroup(rowHash, programId) {
+  function syncPersistMatchRule(rowHash, shouldPersist = false) {
+    const rows = rowsForUnmatchedTitleGroup(rowHash);
+    rows.forEach((row) => {
+      row.pending_persist_match_rule = Boolean(shouldPersist);
+    });
+  }
+
+  function applyManualMatchToGroup(rowHash, programId, options = {}) {
     const targetId = String(programId || '').trim();
     if (!targetId) {
       setNotice('Choose a pledge-library title before applying a manual match.', 'warn');
@@ -915,6 +1239,7 @@
     }
     const rows = rowsForUnmatchedTitleGroup(rowHash);
     if (!rows.length) return 0;
+    const shouldPersist = options.persistRule ?? rows.some((row) => Boolean(row.pending_persist_match_rule));
     rows.forEach((airing) => {
       airing.program_id = derive.programId(targetRow) || null;
       airing.pledge_program_id = airing.program_id;
@@ -927,13 +1252,17 @@
       airing.program_title = airing.title;
       airing.match_method = 'manual_library';
       airing.match_reason = 'Matched manually from import review';
+      airing.pending_persist_match_rule = Boolean(shouldPersist);
+      airing.row_hash = computeImportRowHash(airing);
     });
+    if (shouldPersist) storeAliasRule({ station: rows[0]?.station || '', importedTitle: rows[0]?.imported_program_title || rows[0]?.title || '', targetProgram: targetRow });
     imp().driveRows = deriveRollups(imp().airingsRows);
     renderAll();
     const label = utils.toDisplayText(rows[0]?.imported_program_title || rows[0]?.nola_code || 'row');
     const count = rows.length;
-    setStatus(`Manual match applied for ${label}. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport.`);
-    setResultBanner(`Manual match applied. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated in that title group. ${utils.formatCount(getMatchedRows().length)} rows are now ready to import or reimport. Existing duplicates will be skipped automatically.`);
+    const persistNote = shouldPersist ? ' Future imports will auto-match this title.' : '';
+    setStatus(`Manual match applied for ${label}. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated.${persistNote}`);
+    setResultBanner(`Manual match applied. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated in that title group.${persistNote} Existing duplicates will be skipped automatically.`);
     return count;
   }
 
@@ -949,7 +1278,7 @@
       const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
       if (!groupKey || seen.has(groupKey)) return;
       seen.add(groupKey);
-      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id);
+      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: Boolean(row.pending_persist_match_rule) });
     });
     if (updated) {
       setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'}.`);
@@ -992,7 +1321,7 @@
       App.listUi?.buildFilterOptions?.();
       const createdId = derive.programId(response.data || {});
       syncPendingManualMatch(rowHash, createdId);
-      const linkedCount = applyManualMatchToGroup(rowHash, createdId);
+      const linkedCount = applyManualMatchToGroup(rowHash, createdId, { persistRule: rowsForUnmatchedTitleGroup(rowHash).some((row) => Boolean(row.pending_persist_match_rule)) });
       setNotice(`Created ${title} and linked ${utils.formatCount(linkedCount)} row${linkedCount === 1 ? '' : 's'} from that unmatched title group.`);
     } catch (error) {
       setNotice(`Could not create a new pledge title from that unmatched row. ${error?.message || error}`, 'warn');
@@ -1005,7 +1334,7 @@
     if (!bodyEl) return;
     const rows = getUnmatchedRows();
     if (!rows.length) {
-      bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No unmatched rows right now.</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="9" class="placeholder-row">No unmatched rows right now.</td></tr>';
       return;
     }
     bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
@@ -1024,6 +1353,12 @@
         <td>${escape(getMatchReason(row))}</td>
         <td>
           <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
+        </td>
+        <td>
+          <label class="import-rule-check">
+            <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule ? 'checked' : ''}>
+            <span>Always</span>
+          </label>
         </td>
         <td>
           <div class="import-match-actions">
@@ -1072,7 +1407,14 @@
       { key: 'dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
       { key: 'pledge_count' },
       { key: 'program_minutes' },
-      { key: 'match_method', format: (value, row) => value === 'manual_library' ? 'manual match' : (value === 'unmatched_nola' ? 'needs review' : value) },
+      { key: 'match_method', format: (value, row) => {
+        if (value === 'manual_library') return 'manual match';
+        if (value === 'saved_title_rule') return 'saved rule';
+        if (value === 'title_exact') return 'exact title';
+        if (value === 'non_specific') return 'non-specific';
+        if (value === 'unmatched_nola') return 'needs review';
+        return value;
+      } },
       { key: 'matched_library_title' }
     ], 'No normalized airings rows yet.');
 
@@ -1092,17 +1434,33 @@
   }
 
   function renderActions() {
-    const canImport = App.auth.canEdit();
+    const canEdit = App.auth.canEdit();
+    const matchedCount = getMatchedRows().length;
+    const missingTotals = filesMissingReportTotals();
+    const needsTotals = missingTotals.length > 0;
+    const canImport = Boolean(canEdit && matchedCount && !needsTotals);
+    const canBuild = Boolean(canEdit && matchedCount && !needsTotals);
     if (els.importSupabaseButton) {
       els.importSupabaseButton.disabled = !canImport;
-      els.importSupabaseButton.title = canImport ? '' : 'Admin sign-in required for direct Supabase writes.';
+      els.importSupabaseButton.title = !canEdit
+        ? 'Admin sign-in required for direct Supabase writes.'
+        : (needsTotals
+          ? `Enter the report total for ${utils.formatCount(missingTotals.length)} file${missingTotals.length === 1 ? '' : 's'} first.`
+          : (matchedCount ? '' : 'Load matched imported airings first.'));
     }
     if (els.importBuildScheduleButton) {
-      const canBuild = Boolean(App.auth.canEdit() && getMatchedRows().length);
       els.importBuildScheduleButton.disabled = !canBuild;
-      els.importBuildScheduleButton.title = canBuild ? '' : 'Load matched imported airings first, then sign in as admin.';
+      els.importBuildScheduleButton.title = !canEdit
+        ? 'Admin sign-in required for scheduler writes.'
+        : (needsTotals
+          ? `Enter the report total for ${utils.formatCount(missingTotals.length)} file${missingTotals.length === 1 ? '' : 's'} first.`
+          : (matchedCount ? '' : 'Load matched imported airings first, then sign in as admin.'));
     }
-    setStatusPill(canImport ? 'Direct import enabled' : 'Preview / export mode', !canImport);
+    if (needsTotals) {
+      setStatusPill(`Reconciliation required · ${utils.formatCount(missingTotals.length)} file${missingTotals.length === 1 ? '' : 's'}`, true);
+      return;
+    }
+    setStatusPill(canEdit ? 'Direct import enabled' : 'Preview / export mode', !canEdit);
   }
 
   function renderAll() {
@@ -1117,6 +1475,8 @@
 
   async function ensureReady() {
     if (!imp().ready) {
+      imp().aliasRules = utils.storageGet(IMPORT_MATCH_RULES_STORAGE_KEY, []);
+      imp().reportTotalsByFile = utils.storageGet(IMPORT_REPORT_TOTALS_STORAGE_KEY, {});
       await refreshTableStatus({ silent: true });
       imp().ready = true;
     }
@@ -1183,7 +1543,28 @@
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
     els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
     els.importApplyAllButton?.addEventListener('click', () => { applyAllPendingMatches(); });
+    els.importFileBody?.addEventListener('change', (event) => {
+      const input = event.target.closest('.import-report-total-input');
+      if (!input) return;
+      const fileKey = input.getAttribute('data-file-key') || '';
+      setManualReportTotalForFile(fileKey, input.value || '');
+    });
+    els.importFileBody?.addEventListener('keydown', (event) => {
+      const input = event.target.closest('.import-report-total-input');
+      if (!input || event.key !== 'Enter') return;
+      event.preventDefault();
+      const fileKey = input.getAttribute('data-file-key') || '';
+      setManualReportTotalForFile(fileKey, input.value || '');
+      input.blur();
+    });
     els.importUnmatchedBody?.addEventListener('change', (event) => {
+      const ruleToggle = event.target.closest('.import-persist-match-check');
+      if (ruleToggle) {
+        const rowHash = ruleToggle.getAttribute('data-row-hash') || '';
+        syncPersistMatchRule(rowHash, Boolean(ruleToggle.checked));
+        renderUnmatchedRows();
+        return;
+      }
       const select = event.target.closest('.import-manual-match-select');
       if (!select) return;
       const rowHash = select.getAttribute('data-row-hash') || '';

@@ -374,17 +374,26 @@
   async function createProgram(payload) {
     const attempts = [
       payload,
+      { ...payload, source_row_number: 0 },
       { ...payload, created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null },
+      { ...payload, created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null, source_row_number: 0 },
       { ...payload, created_by: state.userEmail || null, updated_by: state.userEmail || null },
-      { ...payload, workspace_key: 'default', created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null }
+      { ...payload, created_by: state.userEmail || null, updated_by: state.userEmail || null, source_row_number: 0 },
+      { ...payload, workspace_key: 'default', created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null },
+      { ...payload, workspace_key: 'default', created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null, source_row_number: 0 }
     ];
+    let lastResponse = null;
     for (const attempt of attempts) {
       const response = await state.client.from(constants.BASE_TABLE).insert(attempt).select('*').single();
+      lastResponse = response;
       if (!response.error) return response;
       const message = String(response.error?.message || '');
-      if (!/row-level security|violates row-level security|permission denied/i.test(message)) return response;
+      if (/source_row_number/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
+        continue;
+      }
+      if (!/row-level security|violates row-level security|permission denied|source_row_number/i.test(message)) return response;
     }
-    return state.client.from(constants.BASE_TABLE).insert(payload).select('*').single();
+    return lastResponse || state.client.from(constants.BASE_TABLE).insert(payload).select('*').single();
   }
 
 

@@ -2487,3 +2487,57 @@ button.primary {
 .import-unmatched-table td {
   overflow-wrap: anywhere;
 }
+
+/* v0.20.30 import reconciliation + persistent match rules */
+.import-review-note {
+  margin-top: 0.35rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.import-report-total-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 8.5rem;
+  padding: 0.32rem 0.48rem;
+  border-radius: 8px;
+  border: 1px solid rgba(18, 62, 107, 0.18);
+  font: inherit;
+  background: #fff;
+}
+.import-diff-warn {
+  color: #9b2c2c;
+  font-weight: 700;
+}
+.import-rule-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+.import-rule-check input {
+  margin: 0;
+}
+.import-file-table th:nth-child(1),
+.import-file-table td:nth-child(1) { width: 16%; }
+.import-file-table th:nth-child(2),
+.import-file-table td:nth-child(2),
+.import-file-table th:nth-child(3),
+.import-file-table td:nth-child(3) { width: 6%; white-space: nowrap; }
+.import-file-table th:nth-child(4),
+.import-file-table td:nth-child(4),
+.import-file-table th:nth-child(5),
+.import-file-table td:nth-child(5),
+.import-file-table th:nth-child(6),
+.import-file-table td:nth-child(6),
+.import-file-table th:nth-child(7),
+.import-file-table td:nth-child(7),
+.import-file-table th:nth-child(8),
+.import-file-table td:nth-child(8) { width: 8%; white-space: nowrap; }
+.import-file-table th:nth-child(9),
+.import-file-table td:nth-child(9) { width: 14%; }
+.import-file-table th:nth-child(10),
+.import-file-table td:nth-child(10) { width: 16%; }
+.import-unmatched-table th:nth-child(8),
+.import-unmatched-table td:nth-child(8) { width: 8%; }
+.import-unmatched-table th:nth-child(9),
+.import-unmatched-table td:nth-child(9) { width: 14%; }

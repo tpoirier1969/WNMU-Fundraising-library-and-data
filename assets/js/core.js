@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.29',
+    APP_VERSION: 'v0.20.30',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -57,6 +57,8 @@ window.PledgeLib = window.PledgeLib || {};
       { id: 'performance', label: 'Pledge Performance', live: true }
     ],
     SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV2',
+    IMPORT_MATCH_RULES_STORAGE_KEY: 'wnmuPledgeImportMatchRulesV1',
+    IMPORT_REPORT_TOTALS_STORAGE_KEY: 'wnmuPledgeImportReportTotalsV1',
     SCHEDULES_TABLE: 'pledge_fundraiser_schedules',
     NON_PLEDGE_SOURCE_CANDIDATES: (() => {
       const raw = cfg.NON_PLEDGE_SOURCE_CANDIDATES;
@@ -190,6 +192,8 @@ window.PledgeLib = window.PledgeLib || {};
       lastImportedAt: '',
       lastImportResult: null,
       importBatchId: '',
+      aliasRules: [],
+      reportTotalsByFile: {},
       error: ''
     },
 

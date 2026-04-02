@@ -159,14 +159,60 @@
     }, 0);
   }
 
+  function importedRowIsNonSpecific(row = {}) {
+    const titleKey = utils.normalizeLookupKey(row?.imported_program_title || row?.program_title || row?.title || '').replace(/[^a-z0-9]+/g, ' ').trim();
+    const nolaKey = utils.normalizeLookupKey(row?.nola_code || '').replace(/\s+/g, '');
+    return Boolean(row?.is_non_specific) || nolaKey === 'nspl' || titleKey === 'non specific pledges' || titleKey.endsWith('non specific pledges');
+  }
+
+  function summarizeImportedRows(rows = []) {
+    let importedBroadcastTotalDollars = 0;
+    let importedProgramSpecificBroadcastTotalDollars = 0;
+    let importedNonSpecificBroadcastTotalDollars = 0;
+    const byFile = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((entry) => {
+      const row = entry?.row || entry || {};
+      const dollars = Number(row?.dollars || 0) || 0;
+      importedBroadcastTotalDollars += dollars;
+      if (importedRowIsNonSpecific(row)) importedNonSpecificBroadcastTotalDollars += dollars;
+      else importedProgramSpecificBroadcastTotalDollars += dollars;
+      const file = String(row?.source_file_name || '').trim();
+      const value = Number(row?.source_report_total_dollars);
+      if (!file || !Number.isFinite(value) || value <= 0) return;
+      byFile.set(file, Math.max(byFile.get(file) || 0, value));
+    });
+    let reportedBroadcastTotalDollars = 0;
+    byFile.forEach((value) => { reportedBroadcastTotalDollars += value; });
+    return {
+      importedBroadcastTotalDollars,
+      importedProgramSpecificBroadcastTotalDollars,
+      importedNonSpecificBroadcastTotalDollars,
+      reportedBroadcastTotalDollars
+    };
+  }
+
   function scheduleReportedBroadcastTotal(schedule = {}) {
     const reportTotal = Number(schedule?.meta?.reportedBroadcastTotalDollars);
     return Number.isFinite(reportTotal) && reportTotal > 0 ? reportTotal : 0;
   }
 
+  function scheduleImportedProgramSpecificTotal(schedule = {}) {
+    const metaTotal = Number(schedule?.meta?.importedProgramSpecificBroadcastTotalDollars);
+    if (Number.isFinite(metaTotal) && metaTotal > 0) return metaTotal;
+    const placementTotal = placementBroadcastTotal(schedule);
+    return Number.isFinite(placementTotal) && placementTotal > 0 ? placementTotal : 0;
+  }
+
+  function scheduleImportedNonSpecificTotal(schedule = {}) {
+    const metaTotal = Number(schedule?.meta?.importedNonSpecificBroadcastTotalDollars);
+    return Number.isFinite(metaTotal) && metaTotal > 0 ? metaTotal : 0;
+  }
+
   function scheduleImportedAiringTotal(schedule = {}) {
     const metaTotal = Number(schedule?.meta?.importedBroadcastTotalDollars);
     if (Number.isFinite(metaTotal) && metaTotal > 0) return metaTotal;
+    const detailedTotal = scheduleImportedProgramSpecificTotal(schedule) + scheduleImportedNonSpecificTotal(schedule);
+    if (Number.isFinite(detailedTotal) && detailedTotal > 0) return detailedTotal;
     const placementTotal = placementBroadcastTotal(schedule);
     return Number.isFinite(placementTotal) && placementTotal > 0 ? placementTotal : 0;
   }
@@ -207,37 +253,21 @@
         if (!Array.isArray(importedRows) || !importedRows.length) return;
         const placementHashes = new Set((schedule.placements || []).map((placement) => String(placement.sourceAiringHash || '')).filter(Boolean));
         const importedKey = String(schedule?.meta?.importedFundraiserKey || '').toLowerCase();
-        const scheduleHashesTotal = importedRows.reduce((sum, row) => {
-          const hash = String(row?.row_hash || '');
-          if (placementHashes.size && placementHashes.has(hash)) return sum + (Number(row?.dollars || 0) || 0);
-          return sum;
-        }, 0);
-        let total = scheduleHashesTotal;
-        let reportedTotal = 0;
-        if (!(total > 0) && importedKey) {
-          total = importedRows.reduce((sum, row) => {
-            const rowKey = importedScheduleKey(row);
-            return rowKey === importedKey ? sum + (Number(row?.dollars || 0) || 0) : sum;
-          }, 0);
-        }
         const placementFiles = new Set((schedule.placements || []).map((placement) => utils.normalizeLookupKey(placement?.sourceName || '')).filter(Boolean));
-        const reportedByFile = new Map();
-        importedRows.forEach((row) => {
+        const belongingRows = importedRows.filter((row) => {
           const rowHash = String(row?.row_hash || '');
           const rowFileKey = utils.normalizeLookupKey(row?.source_file_name || '');
           const rowKey = importedScheduleKey(row);
-          const belongs = (placementHashes.size && placementHashes.has(rowHash)) || (importedKey && rowKey === importedKey) || (rowFileKey && placementFiles.has(rowFileKey));
-          if (!belongs) return;
-          const value = Number(row?.source_report_total_dollars || 0) || 0;
-          if (!(value > 0) || !rowFileKey) return;
-          reportedByFile.set(rowFileKey, Math.max(reportedByFile.get(rowFileKey) || 0, value));
+          return (placementHashes.size && placementHashes.has(rowHash)) || (importedKey && rowKey === importedKey) || (rowFileKey && placementFiles.has(rowFileKey));
         });
-        reportedByFile.forEach((value) => { reportedTotal += value; });
-        if (!(total > 0) && !(reportedTotal > 0)) return;
+        const totals = summarizeImportedRows(belongingRows);
+        if (!(totals.importedBroadcastTotalDollars > 0) && !(totals.reportedBroadcastTotalDollars > 0)) return;
         schedule.meta = {
           ...(schedule.meta || {}),
-          importedBroadcastTotalDollars: total > 0 ? total : Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0,
-          reportedBroadcastTotalDollars: reportedTotal > 0 ? reportedTotal : Number(schedule?.meta?.reportedBroadcastTotalDollars || 0) || 0
+          importedBroadcastTotalDollars: totals.importedBroadcastTotalDollars > 0 ? totals.importedBroadcastTotalDollars : Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0,
+          importedProgramSpecificBroadcastTotalDollars: totals.importedProgramSpecificBroadcastTotalDollars > 0 ? totals.importedProgramSpecificBroadcastTotalDollars : Number(schedule?.meta?.importedProgramSpecificBroadcastTotalDollars || 0) || 0,
+          importedNonSpecificBroadcastTotalDollars: totals.importedNonSpecificBroadcastTotalDollars > 0 ? totals.importedNonSpecificBroadcastTotalDollars : Number(schedule?.meta?.importedNonSpecificBroadcastTotalDollars || 0) || 0,
+          reportedBroadcastTotalDollars: totals.reportedBroadcastTotalDollars > 0 ? totals.reportedBroadcastTotalDollars : Number(schedule?.meta?.reportedBroadcastTotalDollars || 0) || 0
         };
         if ((schedule.placements || []).length) {
           const byHash = new Map(importedRows.map((row) => [String(row?.row_hash || ''), Number(row?.dollars || 0) || 0]));
@@ -608,32 +638,40 @@
       badTime: 0,
       droppedRows: []
     };
-    const preparedRows = sourceRows.map((row) => {
-      const sourceRow = findProgramRowForImportedAiring(row);
-      const dateKey = importedRowDateKey(row);
-      const startMinutes = importedRowStartMinutes(row);
+    const groupedRows = sourceRows.map((row) => ({
+      row,
+      sourceRow: importedRowIsNonSpecific(row) ? null : findProgramRowForImportedAiring(row),
+      dateKey: importedRowDateKey(row) || utils.normalizeText(row.drive_start_date || row.drive_end_date || ''),
+      startMinutes: Number.isFinite(importedRowStartMinutes(row)) ? importedRowStartMinutes(row) : 0,
+      isNonSpecific: importedRowIsNonSpecific(row)
+    })).filter((entry) => entry.dateKey);
+    groupedRows.forEach((entry) => {
+      if (entry.isNonSpecific) return;
       const reasons = [];
-      if (!sourceRow) reasons.push('no_library_match');
-      if (!dateKey) reasons.push('bad_date');
-      if (!Number.isFinite(startMinutes)) reasons.push('bad_time');
+      if (!entry.sourceRow) reasons.push('no_library_match');
+      if (!entry.dateKey) reasons.push('bad_date');
+      if (!Number.isFinite(importedRowStartMinutes(entry.row))) reasons.push('bad_time');
       if (reasons.length) {
         if (reasons.includes('no_library_match')) diagnostics.noLibraryMatch += 1;
         if (reasons.includes('bad_date')) diagnostics.badDate += 1;
         if (reasons.includes('bad_time')) diagnostics.badTime += 1;
         if (diagnostics.droppedRows.length < 12) diagnostics.droppedRows.push({
-          title: utils.normalizeText(row.program_title || row.title || 'Unknown title') || 'Unknown title',
-          sourceFile: utils.normalizeText(row.source_file_name || ''),
-          airDate: utils.normalizeText(row.air_date || row.drive_start_date || ''),
-          airTime: utils.normalizeText(row.air_time || ''),
+          title: utils.normalizeText(entry.row.program_title || entry.row.title || 'Unknown title') || 'Unknown title',
+          sourceFile: utils.normalizeText(entry.row.source_file_name || ''),
+          airDate: utils.normalizeText(entry.row.air_date || entry.row.drive_start_date || ''),
+          airTime: utils.normalizeText(entry.row.air_time || ''),
           reasons
         });
-        return null;
+        return;
       }
       diagnostics.eligibleRows += 1;
-      return { row, sourceRow, dateKey, startMinutes };
-    }).filter(Boolean);
-    const skippedRows = Math.max(0, sourceRows.length - preparedRows.length);
-    const groups = buildImportedFundraiserGroups(preparedRows);
+    });
+    const preparedRows = groupedRows.filter((entry) => !entry.isNonSpecific && entry.sourceRow && entry.dateKey && Number.isFinite(importedRowStartMinutes(entry.row))).map((entry) => ({
+      ...entry,
+      startMinutes: importedRowStartMinutes(entry.row)
+    }));
+    const skippedRows = Math.max(0, sourceRows.length - preparedRows.length - groupedRows.filter((entry) => entry.isNonSpecific).length);
+    const groups = buildImportedFundraiserGroups(groupedRows);
 
     let createdSchedules = 0;
     let updatedSchedules = 0;
@@ -689,33 +727,24 @@
           });
         }
       }
-      const importedBroadcastTotalDollars = group.rows.reduce((sum, entry) => sum + (Number(entry?.row?.dollars || 0) || 0), 0);
-      const reportedBroadcastTotalDollars = (() => {
-        const byFile = new Map();
-        group.rows.forEach((entry) => {
-          const file = String(entry?.row?.source_file_name || '').trim();
-          const value = Number(entry?.row?.source_report_total_dollars);
-          if (!file || !Number.isFinite(value) || value <= 0) return;
-          byFile.set(file, Math.max(byFile.get(file) || 0, value));
-        });
-        let total = 0;
-        byFile.forEach((value) => { total += value; });
-        return total;
-      })();
+      const scheduleableRows = group.rows.filter((entry) => !entry?.isNonSpecific && entry?.sourceRow && entry?.dateKey && Number.isFinite(importedRowStartMinutes(entry.row)));
+      const totals = summarizeImportedRows(group.rows);
       schedule.meta = {
         ...(schedule.meta || {}),
         importedFundraiserKey: group.key,
         importedFromReports: true,
         importedDriveStartDate: group.startDate,
         importedDriveEndDate: group.endDate,
-        importedBroadcastTotalDollars,
-        reportedBroadcastTotalDollars
+        importedBroadcastTotalDollars: totals.importedBroadcastTotalDollars,
+        importedProgramSpecificBroadcastTotalDollars: totals.importedProgramSpecificBroadcastTotalDollars,
+        importedNonSpecificBroadcastTotalDollars: totals.importedNonSpecificBroadcastTotalDollars,
+        reportedBroadcastTotalDollars: totals.reportedBroadcastTotalDollars
       };
       if (!firstScheduleId) firstScheduleId = schedule.id;
       if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
       const existingKeys = new Set((schedule.placements || []).map((placement) => placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`));
       const existingSignatureMap = new Map((schedule.placements || []).filter((placement) => placement?.importedFromReport).map((placement, index) => [placementSignature(placement, group.key), index]));
-      group.rows.forEach((prepared) => {
+      scheduleableRows.forEach((prepared) => {
         const placement = buildPlacementFromImportedAiring(prepared);
         if (!placement) return;
         const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
@@ -1064,6 +1093,8 @@
     const broadcast = scheduleBroadcastTotal(working);
     const reportTotal = scheduleReportedBroadcastTotal(working);
     const imported = scheduleImportedAiringTotal(working);
+    const importedProgramSpecific = scheduleImportedProgramSpecificTotal(working);
+    const importedNonSpecific = scheduleImportedNonSpecificTotal(working);
     const diff = scheduleBroadcastDifference(working);
     if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(broadcast);
     if (els.fundraiserReportTotal) els.fundraiserReportTotal.value = utils.formatMoney(reportTotal);
@@ -1075,7 +1106,7 @@
       const mismatch = show && Math.abs(diff) >= 0.01;
       els.fundraiserBroadcastDiagnostic.classList.toggle('hidden', !show);
       els.fundraiserBroadcastDiagnostic.innerHTML = show
-        ? `${reportTotal > 0 ? `<span class="diag-chip">Report total ${utils.escapeHtml(utils.formatMoney(reportTotal))}</span>` : ''}${imported > 0 ? `<span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span>` : ''}${mismatch ? `<span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>` : ''}`
+        ? `${reportTotal > 0 ? `<span class="diag-chip">Report total ${utils.escapeHtml(utils.formatMoney(reportTotal))}</span>` : ''}${imported > 0 ? `<span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span>` : ''}${importedProgramSpecific > 0 ? `<span class="diag-chip">Program-specific ${utils.escapeHtml(utils.formatMoney(importedProgramSpecific))}</span>` : ''}${importedNonSpecific > 0 ? `<span class="diag-chip">Non-specific ${utils.escapeHtml(utils.formatMoney(importedNonSpecific))}</span>` : ''}${mismatch ? `<span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>` : ''}`
         : '';
     }
     [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
@@ -1306,9 +1337,11 @@
       if (!schedule) return '';
       const broadcast = scheduleBroadcastTotal(schedule);
       const imported = scheduleImportedAiringTotal(schedule);
+      const importedProgramSpecific = scheduleImportedProgramSpecificTotal(schedule);
+      const importedNonSpecific = scheduleImportedNonSpecificTotal(schedule);
       const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
       const mismatch = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
-      const extra = mismatch ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Imported airing total</span><span>${utils.escapeHtml(utils.formatMoney(imported))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(utils.formatMoney(diff))}</span></div>` : '';
+      const extra = `${imported > 0 ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Imported total</span><span>${utils.escapeHtml(utils.formatMoney(imported))}</span></div>` : ''}${importedProgramSpecific > 0 ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Program-specific</span><span>${utils.escapeHtml(utils.formatMoney(importedProgramSpecific))}</span></div>` : ''}${importedNonSpecific > 0 ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Non-specific</span><span>${utils.escapeHtml(utils.formatMoney(importedNonSpecific))}</span></div>` : ''}${mismatch ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(utils.formatMoney(diff))}</span></div>` : ''}`;
       return `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(broadcast))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div>${extra}</div>`;
     })();
     if (!schedule || !schedule.placements?.length) {
