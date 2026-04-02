@@ -905,15 +905,25 @@
     const schedule = getActiveSchedule();
     const working = schedule || state.scheduleDraft || {};
     const broadcast = scheduleBroadcastTotal(working);
+    const reportTotal = scheduleReportedBroadcastTotal(working);
     const imported = scheduleImportedAiringTotal(working);
+    const hasImportedComparison = reportTotal > 0 || imported > 0;
+    const diff = reportTotal > 0 && imported > 0
+      ? Math.round(((reportTotal || 0) - (imported || 0)) * 100) / 100
+      : null;
     if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(broadcast);
+    if (els.fundraiserReportTotal) els.fundraiserReportTotal.value = reportTotal > 0 ? utils.formatMoney(reportTotal) : '—';
+    if (els.fundraiserImportTotal) els.fundraiserImportTotal.value = imported > 0 ? utils.formatMoney(imported) : '—';
+    if (els.fundraiserDifferenceTotal) els.fundraiserDifferenceTotal.value = diff == null ? '—' : utils.formatMoney(diff);
     if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
+    document.querySelectorAll('.schedule-import-money-field').forEach((node) => {
+      node.classList.toggle('hidden', !hasImportedComparison);
+    });
     if (els.fundraiserBroadcastDiagnostic) {
-      const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
-      const show = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
+      const show = diff != null && Math.abs(diff) >= 0.01;
       els.fundraiserBroadcastDiagnostic.classList.toggle('hidden', !show);
       els.fundraiserBroadcastDiagnostic.innerHTML = show
-        ? `<span class="diag-chip">Imported airing total ${utils.escapeHtml(utils.formatMoney(imported))}</span><span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>`
+        ? `<span class="diag-chip">Report total ${utils.escapeHtml(utils.formatMoney(reportTotal))}</span><span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span><span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>`
         : '';
     }
     [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
@@ -1137,16 +1147,36 @@
     void pumpScheduledDetailQueue();
   }
 
+  function fundraiserProgramFinancials(schedule = {}) {
+    const byProgram = new Map();
+    annotatePlacements(schedule).filter((placement) => !placement.isNonPledge).forEach((placement) => {
+      const key = String(placement.programId || placement.programTitle || placement.id || '');
+      if (!key) return;
+      if (!byProgram.has(key)) {
+        byProgram.set(key, { dollars: 0, airingCount: 0 });
+      }
+      const bucket = byProgram.get(key);
+      bucket.airingCount += 1;
+      bucket.dollars += Number(placement.importedBroadcastDollars || 0) || 0;
+    });
+    return byProgram;
+  }
+
   function renderScheduledProgramDetails() {
     const schedule = getActiveSchedule();
     if (schedule) void ensureScheduleBroadcastTotal(schedule);
     const fundraiserSummaryHtml = (() => {
       if (!schedule) return '';
       const broadcast = scheduleBroadcastTotal(schedule);
+      const reportTotal = scheduleReportedBroadcastTotal(schedule);
       const imported = scheduleImportedAiringTotal(schedule);
-      const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
-      const mismatch = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
-      const extra = mismatch ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Imported airing total</span><span>${utils.escapeHtml(utils.formatMoney(imported))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(utils.formatMoney(diff))}</span></div>` : '';
+      const diff = reportTotal > 0 && imported > 0
+        ? Math.round(((reportTotal || 0) - (imported || 0)) * 100) / 100
+        : null;
+      const showImportMath = reportTotal > 0 || imported > 0;
+      const extra = showImportMath
+        ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Report total</span><span>${utils.escapeHtml(reportTotal > 0 ? utils.formatMoney(reportTotal) : '—')}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Import total</span><span>${utils.escapeHtml(imported > 0 ? utils.formatMoney(imported) : '—')}</span></div><div class="scheduled-data-chunk ${diff != null && Math.abs(diff) >= 0.01 ? 'warn-chunk' : ''}"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(diff == null ? '—' : utils.formatMoney(diff))}</span></div>`
+        : '';
       return `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(broadcast))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div>${extra}</div>`;
     })();
     if (!schedule || !schedule.placements?.length) {
@@ -1164,7 +1194,13 @@
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(placement);
     });
-    const groupedEntries = [...grouped.entries()];
+    const financialsByProgram = fundraiserProgramFinancials(schedule);
+    const groupedEntries = [...grouped.entries()].sort((a, b) => {
+      const totalA = Number(financialsByProgram.get(a[0])?.dollars || 0) || 0;
+      const totalB = Number(financialsByProgram.get(b[0])?.dollars || 0) || 0;
+      if (totalA !== totalB) return totalB - totalA;
+      return utils.compareText(a[1]?.[0]?.programTitle || '', b[1]?.[0]?.programTitle || '');
+    });
     const autoLoadLimit = groupedEntries.length > 12 ? 6 : 12;
 
     els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences], entryIndex) => {
@@ -1182,6 +1218,9 @@
       const historicalTotalDisplay = computedHistoricalTotal > 0 ? utils.formatMoney(computedHistoricalTotal) : 'Pending report import';
       const historicalAvgDisplay = avgPerFundraiser > 0 ? utils.formatMoney(avgPerFundraiser) : 'Pending report import';
       const fundraiserCountDisplay = fundraiserCount > 0 ? utils.formatCount(fundraiserCount) : '—';
+      const currentFundraiserDollars = Number(financialsByProgram.get(programId)?.dollars || 0) || 0;
+      const currentFundraiserAirings = Number(financialsByProgram.get(programId)?.airingCount || occurrences.length || 0) || 0;
+      const currentFundraiserAvg = currentFundraiserAirings > 0 ? (currentFundraiserDollars / currentFundraiserAirings) : 0;
       const scheduledRows = occurrences
         .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
         .map((item) => `
@@ -1204,6 +1243,9 @@
           </div>
           <div class="scheduled-program-line scheduled-program-line-bottom">
             <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
+            <div class="scheduled-data-chunk emphasis"><span class="mini-label inline">This fundraiser $</span><span>${utils.escapeHtml(utils.formatMoney(currentFundraiserDollars))}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Imported airings</span><span>${utils.escapeHtml(utils.formatCount(currentFundraiserAirings))}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Avg / airing here</span><span>${utils.escapeHtml(currentFundraiserDollars > 0 ? utils.formatMoney(currentFundraiserAvg) : '—')}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span></div>
             <div class="scheduled-data-chunk scheduled-break-chunk"><span class="mini-label inline">Break detail</span>${breakHtml}</div>

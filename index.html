@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.26</title>
+  <title>WNMU Pledge Program Library v0.20.27</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.26</span>
+            <span class="version-pill" id="version-flag">v0.20.27</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -219,6 +219,18 @@
                   <span class="filter-label">Broadcast $</span>
                   <input id="fundraiser-broadcast-total" type="text" value="$0.00" readonly>
                 </label>
+                <label class="filter-field narrow schedule-import-money-field">
+                  <span class="filter-label">Report total</span>
+                  <input id="fundraiser-report-total" type="text" value="—" readonly>
+                </label>
+                <label class="filter-field narrow schedule-import-money-field">
+                  <span class="filter-label">Import total</span>
+                  <input id="fundraiser-import-total" type="text" value="—" readonly>
+                </label>
+                <label class="filter-field narrow schedule-import-money-field">
+                  <span class="filter-label">Difference</span>
+                  <input id="fundraiser-difference-total" type="text" value="—" readonly>
+                </label>
                 <label class="filter-field narrow">
                   <span class="filter-label">Online $</span>
                   <input id="fundraiser-online-input" type="number" min="0" step="0.01" placeholder="0.00">
@@ -335,6 +347,10 @@
           </div>
           <div class="list-summary" id="import-status">Choose one PBS Break Report CSV to analyze, then import only the rows that match a pledge-library NOLA.</div>
           <div id="import-result-banner" class="import-result-banner hidden" aria-live="polite"></div>
+          <div id="import-drop-zone" class="import-drop-zone" tabindex="0" role="button" aria-label="Drop pledge report files here or click to choose files">
+            <div class="import-drop-zone-title">Drop report files here</div>
+            <div class="import-drop-zone-copy">or click to browse for CSV, TSV, or delimited exports</div>
+          </div>
           <div class="import-toolbar-grid">
             <label class="filter-field import-file-field">
               <span class="filter-label">Report file</span>
@@ -780,7 +796,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.26</div>
+      <div id="footer-version">v0.20.27</div>
     </footer>
   </div>
 </body>

@@ -34,8 +34,49 @@
       seen.add(value);
       const title = derive.title(row) || 'Untitled program';
       const nola = derive.nola(row);
-      return { value, label: nola ? `${title} (${nola})` : title };
+      return {
+        value,
+        title,
+        nola,
+        titleKey: utils.normalizeLookupKey(title),
+        label: nola ? `${title} (${nola})` : title
+      };
     }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  function scoreManualMatchOption(option, row) {
+    const wantedTitle = utils.normalizeLookupKey(row?.imported_program_title || row?.title || '');
+    if (!wantedTitle) return 99;
+    const optionTitle = utils.normalizeLookupKey(option?.title || option?.label || '');
+    const optionNola = utils.normalizeLookupKey(option?.nola || '');
+    if (!optionTitle) return 99;
+    if (optionTitle == wantedTitle) return 0;
+    if (optionTitle.startsWith(wantedTitle)) return 1;
+    if (wantedTitle.startsWith(optionTitle)) return 2;
+    const wantedWords = wantedTitle.split(' ').filter(Boolean);
+    const optionWords = optionTitle.split(' ').filter(Boolean);
+    const wantedPrefix = wantedWords.slice(0, 3).join(' ');
+    const optionPrefix = optionWords.slice(0, 3).join(' ');
+    if (wantedPrefix && optionPrefix && wantedPrefix === optionPrefix) return 3;
+    const wantedHead = wantedTitle.slice(0, 6);
+    const optionHead = optionTitle.slice(0, 6);
+    if (wantedHead && optionHead && wantedHead === optionHead) return 4;
+    if (optionTitle.includes(wantedTitle) || wantedTitle.includes(optionTitle)) return 5;
+    const wantedTokens = wantedWords.filter((token) => token.length >= 4);
+    if (wantedTokens.length && wantedTokens.some((token) => optionTitle.includes(token))) return 6;
+    if (optionNola && optionNola === utils.normalizeLookupKey(row?.nola_code || '')) return 7;
+    return 99;
+  }
+
+  function buildRowScopedProgramOptions(row, options = []) {
+    const ranked = options.map((option) => ({ ...option, score: scoreManualMatchOption(option, row) }));
+    const likely = ranked.filter((option) => option.score < 99).sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      return a.label.localeCompare(b.label);
+    });
+    const likelyValues = new Set(likely.map((option) => option.value));
+    const rest = ranked.filter((option) => !likelyValues.has(option.value)).sort((a, b) => a.label.localeCompare(b.label));
+    return { likely: likely.slice(0, 12), all: rest };
   }
 
 
@@ -944,8 +985,10 @@
     const options = buildLibraryProgramOptions();
     bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
       const selectedProgramId = String(row.pending_manual_match_program_id || row.manual_match_program_id || '');
+      const scoped = buildRowScopedProgramOptions(row, options);
       const optionHtml = ['<option value="">Select a pledge title…</option>']
-        .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
+        .concat(scoped.likely.length ? [`<optgroup label="Likely matches">${scoped.likely.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`).join('')}</optgroup>`] : [])
+        .concat(scoped.all.length ? [`<optgroup label="All pledge titles">${scoped.all.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`).join('')}</optgroup>`] : [])
         .join('');
       return `
       <tr>
@@ -1067,6 +1110,39 @@
       if (!files.length) return;
       await analyzeFiles(files);
     });
+    const importDropZone = els.importDropZone;
+    if (importDropZone) {
+      const openPicker = () => els.importFileInput?.click();
+      const setDropActive = (active) => importDropZone.classList.toggle('drag-over', Boolean(active));
+      importDropZone.addEventListener('click', openPicker);
+      importDropZone.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openPicker();
+        }
+      });
+      ['dragenter', 'dragover'].forEach((name) => {
+        importDropZone.addEventListener(name, (event) => {
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+          setDropActive(true);
+        });
+      });
+      ['dragleave', 'dragend'].forEach((name) => {
+        importDropZone.addEventListener(name, (event) => {
+          event.preventDefault();
+          if (name === 'dragleave' && importDropZone.contains(event.relatedTarget)) return;
+          setDropActive(false);
+        });
+      });
+      importDropZone.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        setDropActive(false);
+        const files = [...(event.dataTransfer?.files || [])];
+        if (!files.length) return;
+        await analyzeFiles(files);
+      });
+    }
     els.importClearButton?.addEventListener('click', clearBatch);
     els.importRefreshButton?.addEventListener('click', async () => {
       await refreshTableStatus();
