@@ -706,8 +706,9 @@
       sorted = sorted.filter((group) => group.airingCount >= 2);
     }
 
+    const usesTemporalAxis = TEMPORAL_CRITERIA.has(criterion);
     const limit = Math.max(1, Number(perf().topN) || 12);
-    const limited = limit >= 999 ? sorted : sorted.slice(0, limit);
+    const limited = usesTemporalAxis ? sorted : (limit >= 999 ? sorted : sorted.slice(0, limit));
     perf().filteredRecords = records;
     perf().groups = limited;
     perf().analysisMeta = {
@@ -1004,7 +1005,12 @@
     if (els.performanceCriterionSelect) els.performanceCriterionSelect.value = perf().criterion;
     if (els.performanceMetricSelect) els.performanceMetricSelect.value = perf().metric;
     if (els.performanceChartTypeSelect) els.performanceChartTypeSelect.value = perf().chartType;
-    if (els.performanceTopnSelect) els.performanceTopnSelect.value = String(perf().topN);
+    if (els.performanceTopnSelect) {
+      els.performanceTopnSelect.value = String(perf().topN);
+      const usesTemporalAxis = TEMPORAL_CRITERIA.has(perf().criterion);
+      els.performanceTopnSelect.disabled = usesTemporalAxis;
+      els.performanceTopnSelect.title = usesTemporalAxis ? 'All groups are shown for date/day/time comparisons.' : '';
+    }
     if (els.performanceFilterInput) els.performanceFilterInput.value = perf().labelFilter || '';
     const oldestDate = perf().dataShape?.oldestDate || '';
     const newestDate = perf().dataShape?.newestDate || '';
