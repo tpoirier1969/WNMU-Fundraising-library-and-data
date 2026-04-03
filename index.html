@@ -3,25 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.43</title>
+  <title>WNMU Pledge Program Library v0.20.44</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.43">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.44">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.43"></script>
-  <script defer src="assets/js/dom.js?v=0.20.43"></script>
-  <script defer src="assets/js/data.js?v=0.20.43"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.43"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.43"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.43"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.43"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.43"></script>
-  <script defer src="assets/js/auth.js?v=0.20.43"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.43"></script>
-  <script defer src="assets/js/app.js?v=0.20.43"></script>
+  <script defer src="assets/js/core.js?v=0.20.44"></script>
+  <script defer src="assets/js/dom.js?v=0.20.44"></script>
+  <script defer src="assets/js/data.js?v=0.20.44"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.44"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.44"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.44"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.44"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.44"></script>
+  <script defer src="assets/js/auth.js?v=0.20.44"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.44"></script>
+  <script defer src="assets/js/app.js?v=0.20.44"></script>
 </head>
 <body>
 
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.43</span>
+            <span class="version-pill" id="version-flag">v0.20.44</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -616,6 +616,7 @@
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="live_break_impact">Live break impact</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="repeat_fatigue">Repeat fatigue</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Top Topics</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_time_performance">Topic Time Performance</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="recent_momentum">Recent momentum</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="weekend_weekday">Weekend vs weekday earnings</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="day_of_week">Day of week comparisons</button>
@@ -655,6 +656,7 @@
                 <option value="daypart">Day-part</option>
                 <option value="weekpart">Weekend vs weekday</option>
                 <option value="time">Time</option>
+                <option value="topic_time">Topic time slot</option>
                 <option value="topic" selected>Topic</option>
                 <option value="local_breaks">Local cut-ins</option>
                 <option value="live_breaks">Live breaks</option>

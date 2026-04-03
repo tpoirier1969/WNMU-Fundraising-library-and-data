@@ -1552,13 +1552,30 @@
   async function saveActiveScheduleDraft(options = {}) {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to edit fundraiser calendars.', 'warn'); return false; }
     const schedule = getActiveSchedule();
+    const nextDayStartMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
+    const nextDayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
+    const nextOnlineDollars = Number(els.fundraiserOnlineInput?.value || 0) || 0;
+    const nextMailDollars = Number(els.fundraiserMailInput?.value || 0) || 0;
+    const fallbackStartDate = schedule?.startDate || state.scheduleDraft.startDate || '';
+    const fallbackEndDate = schedule?.endDate || state.scheduleDraft.endDate || '';
+    const startDate = els.fundraiserStartInput?.value || fallbackStartDate;
+    const endDate = els.fundraiserEndInput?.value || fallbackEndDate;
+    const rawTitle = (els.fundraiserTitleInput?.value || '').trim();
+    const title = rawTitle || defaultScheduleTitle(startDate, endDate);
+
     if (!schedule) {
-      if (!options.silent) setNotice('Choose a fundraiser calendar first, or build a new one.', 'warn');
-      return false;
+      state.scheduleDraft.title = rawTitle;
+      state.scheduleDraft.startDate = startDate;
+      state.scheduleDraft.endDate = endDate;
+      state.scheduleDraft.dayStartMinutes = nextDayStartMinutes;
+      state.scheduleDraft.dayEndMinutes = nextDayEndMinutes;
+      state.scheduleDraft.dayStartHour = Math.floor(nextDayStartMinutes / 60);
+      state.scheduleDraft.dayEndHour = Math.floor(nextDayEndMinutes / 60);
+      state.scheduleDraft.onlineDollars = nextOnlineDollars;
+      state.scheduleDraft.mailDollars = nextMailDollars;
+      return true;
     }
-    const startDate = els.fundraiserStartInput?.value || schedule.startDate || '';
-    const endDate = els.fundraiserEndInput?.value || schedule.endDate || '';
-    const title = (els.fundraiserTitleInput?.value || '').trim() || defaultScheduleTitle(startDate, endDate);
+
     if (!startDate || !endDate) {
       if (!options.silent) setNotice('A fundraiser needs both a start date and an end date.', 'warn');
       return false;
@@ -1567,10 +1584,6 @@
       if (!options.silent) setNotice('The fundraiser end date cannot be earlier than the start date.', 'warn');
       return false;
     }
-    const nextDayStartMinutes = Number(state.scheduleView.dayStartMinutes ?? (state.scheduleView.dayStartHour * 60));
-    const nextDayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
-    const nextOnlineDollars = Number(els.fundraiserOnlineInput?.value || 0) || 0;
-    const nextMailDollars = Number(els.fundraiserMailInput?.value || 0) || 0;
     const titleChanged = schedule.title !== title;
     const dateRangeChanged = schedule.startDate !== startDate || schedule.endDate !== endDate;
     const windowChanged = Number(schedule.dayStartMinutes) !== nextDayStartMinutes || Number(schedule.dayEndMinutes) !== nextDayEndMinutes;
@@ -1589,6 +1602,8 @@
     state.scheduleDraft.endDate = endDate;
     state.scheduleDraft.dayStartMinutes = schedule.dayStartMinutes;
     state.scheduleDraft.dayEndMinutes = schedule.dayEndMinutes;
+    state.scheduleDraft.dayStartHour = schedule.dayStartHour;
+    state.scheduleDraft.dayEndHour = schedule.dayEndHour;
     state.scheduleDraft.onlineDollars = nextOnlineDollars;
     state.scheduleDraft.mailDollars = nextMailDollars;
     if (!(titleChanged || dateRangeChanged || windowChanged || moneyChanged)) return true;
@@ -1965,8 +1980,25 @@
 
   function bindEvents() {
     els.newScheduleButton?.addEventListener('click', () => {
-      state.scheduleDraft = { title: '', startDate: '', endDate: '', dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES, onlineDollars: 0, mailDollars: 0 };
-      renderScheduleForm();
+      state.activeScheduleId = '';
+      state.selectedScheduleSlot = null;
+      state.selectedScheduleProgram = null;
+      state.scheduleDraft = {
+        title: '',
+        startDate: '',
+        endDate: '',
+        dayStartHour: constants.DEFAULT_DAY_START_HOUR,
+        dayEndHour: constants.DEFAULT_DAY_END_HOUR,
+        dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES,
+        dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES,
+        onlineDollars: 0,
+        mailDollars: 0
+      };
+      state.scheduleView.dayStartMinutes = constants.DEFAULT_DAY_START_MINUTES;
+      state.scheduleView.dayEndMinutes = constants.DEFAULT_DAY_END_MINUTES;
+      state.scheduleView.dayStartHour = constants.DEFAULT_DAY_START_HOUR;
+      state.scheduleView.dayEndHour = constants.DEFAULT_DAY_END_HOUR;
+      renderAll();
       els.fundraiserTitleInput?.focus();
     });
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });

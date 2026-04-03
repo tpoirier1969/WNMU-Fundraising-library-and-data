@@ -11,7 +11,7 @@
   const PREMIUM_KEYS = ['premium_summary', 'premiums', 'premium_notes', 'premium_offer', 'premium_description'];
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const DAY_ORDER = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart']);
+  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart', 'topic_time']);
 
   function perf() { return state.performance; }
 
@@ -111,6 +111,26 @@
     const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
     const bucketMinutes = Math.floor(minutes / 30) * 30;
     return utils.minutesToLabel(bucketMinutes);
+  }
+
+  function hourBucketLabel(record) {
+    if (!record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown hour';
+    const minutes = record.when.getHours() * 60;
+    return utils.minutesToLabel(minutes);
+  }
+
+  function topicTimeLabel(record) {
+    const day = dayLabel(record);
+    const hour = hourBucketLabel(record);
+    if (day === 'Unknown day' || hour === 'Unknown hour') return 'Unknown topic time slot';
+    return `${day} · ${hour}`;
+  }
+
+  function topicTimeSortKey(record) {
+    if (!record?.hasDate || !record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return Number.MAX_SAFE_INTEGER;
+    const dayIndex = DAY_ORDER.indexOf(dayLabel(record));
+    const hour = record.when.getHours();
+    return ((dayIndex < 0 ? 99 : dayIndex) * 24) + hour;
   }
 
   function dayLabel(record) {
@@ -404,6 +424,9 @@
       record.day = dayLabel(record);
       record.date = dateLabel(record);
       record.time = timeBucketLabel(record);
+      record.hour = hourBucketLabel(record);
+      record.topicTime = topicTimeLabel(record);
+      record.topicTimeSortKey = topicTimeSortKey(record);
       record.monthIndex = record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when.getMonth() : null;
     }
 
@@ -471,8 +494,11 @@
       topicDisplay: record.topicDisplay || 'Unspecified topic',
       topic: record.topicDisplay || 'Unspecified topic',
       time: timeBucketLabel(record),
+      hour: hourBucketLabel(record),
       day: dayLabel(record),
-      date: dateLabel(record)
+      date: dateLabel(record),
+      topicTime: topicTimeLabel(record),
+      topicTimeSortKey: topicTimeSortKey(record)
     }));
 
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
@@ -518,6 +544,7 @@
       case 'daypart': return 'Day-part';
       case 'weekpart': return 'Weekend vs weekday';
       case 'time': return 'Time';
+      case 'topic_time': return 'Topic time slot';
       case 'topic': return 'Main topic';
       case 'local_breaks': return 'Local cut-ins';
       case 'live_breaks': return 'Live breaks';
@@ -535,6 +562,7 @@
       case 'daypart': return daypartLabel(record);
       case 'weekpart': return weekpartLabel(record);
       case 'time': return record.time || 'Unknown time';
+      case 'topic_time': return record.topicTime || 'Unknown topic time slot';
       case 'topic': return record.topicDisplay || 'Unassigned';
       case 'local_breaks': return record.localBreaks || 'No local cut-ins';
       case 'live_breaks': return record.liveBreaks || 'Unknown / not matched to schedule';
@@ -548,6 +576,7 @@
     if (criterion === 'date') return group.minTime || Number.MAX_SAFE_INTEGER;
     if (criterion === 'time') return group.minMinutes ?? Number.MAX_SAFE_INTEGER;
     if (criterion === 'day') return DAY_ORDER.indexOf(group.label);
+    if (criterion === 'topic_time') return group.topicTimeSortKey ?? Number.MAX_SAFE_INTEGER;
     if (criterion === 'weekpart') return group.label === 'Weekday' ? 0 : group.label === 'Weekend' ? 1 : 99;
     if (criterion === 'daypart') return ['Overnight / early morning','Daytime','Early evening','Prime time','Late night','Unknown day-part'].indexOf(group.label);
     return group.label;
@@ -611,6 +640,7 @@
 
   function temporalEligibility(record, criterion) {
     if (criterion === 'time') return record.hasExplicitTime && !record.estimatedOnly;
+    if (criterion === 'topic_time') return record.hasDate && record.hasExplicitTime && !record.estimatedOnly;
     if (criterion === 'date' || criterion === 'day') return record.hasDate && !record.estimatedOnly;
     return true;
   }
@@ -647,7 +677,7 @@
     records.forEach((record) => {
       const label = criterionLabel(record, criterion);
       if (!groups.has(label)) {
-        groups.set(label, { label, airingCount: 0, totalDollars: 0, moneyCount: 0, avgDollars: 0, titles: new Set(), minTime: null, minMinutes: null });
+        groups.set(label, { label, airingCount: 0, totalDollars: 0, moneyCount: 0, avgDollars: 0, titles: new Set(), minTime: null, minMinutes: null, topicTimeSortKey: null, dayIndex: null, hourOfDay: null });
       }
       const group = groups.get(label);
       group.airingCount += 1;
@@ -656,11 +686,17 @@
         group.moneyCount += 1;
       }
       group.titles.add(record.title || 'Unknown title');
+      if (Number.isFinite(record.topicTimeSortKey)) {
+        group.topicTimeSortKey = group.topicTimeSortKey == null ? record.topicTimeSortKey : Math.min(group.topicTimeSortKey, record.topicTimeSortKey);
+      }
       if (record.when instanceof Date && !Number.isNaN(record.when.getTime())) {
         const ts = record.when.getTime();
         group.minTime = group.minTime == null ? ts : Math.min(group.minTime, ts);
         const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
         group.minMinutes = group.minMinutes == null ? minutes : Math.min(group.minMinutes, minutes);
+        const dayIndex = DAY_ORDER.indexOf(dayLabel(record));
+        if (dayIndex >= 0) group.dayIndex = group.dayIndex == null ? dayIndex : Math.min(group.dayIndex, dayIndex);
+        group.hourOfDay = group.hourOfDay == null ? record.when.getHours() : Math.min(group.hourOfDay, record.when.getHours());
       }
     });
 
@@ -811,6 +847,45 @@
     </svg>`;
   }
 
+  function buildTopicTimeHeatmap(groups) {
+    const ordered = [...groups]
+      .filter((group) => Number.isFinite(group.dayIndex) && Number.isFinite(group.hourOfDay))
+      .sort((a, b) => {
+        const aKey = (groupKey => ((groupKey.dayIndex ?? 99) * 24) + (groupKey.hourOfDay ?? 99))(a);
+        const bKey = (groupKey => ((groupKey.dayIndex ?? 99) * 24) + (groupKey.hourOfDay ?? 99))(b);
+        return aKey - bKey;
+      });
+    if (!ordered.length) {
+      return '<div class="performance-chart-empty">Topic Time Performance needs rows with both a real air date and a real air time.</div>';
+    }
+    const hourSet = new Set(ordered.map((group) => group.hourOfDay));
+    const hours = [...hourSet].sort((a, b) => a - b);
+    const matrix = new Map();
+    ordered.forEach((group) => {
+      matrix.set(`${group.dayIndex}|${group.hourOfDay}`, group);
+    });
+    const maxMetric = Math.max(...ordered.map((group) => metricValue(group)), 1);
+    const header = hours.map((hour) => `<div class="topic-time-header-cell">${utils.escapeHtml(utils.minutesToLabel(hour * 60))}</div>`).join('');
+    const rows = DAY_ORDER.map((day, dayIndex) => {
+      const cells = hours.map((hour) => {
+        const group = matrix.get(`${dayIndex}|${hour}`) || null;
+        if (!group) return '<div class="topic-time-cell empty">—</div>';
+        const intensity = Math.max(0.12, Math.min(0.92, metricValue(group) / maxMetric));
+        const alpha = intensity.toFixed(3);
+        const title = `${group.label}: ${metricDisplay(group, { includeCount: true })}`;
+        return `<div class="topic-time-cell" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(metricDisplay(group))}</span><small>${utils.escapeHtml(utils.formatCount(group.airingCount))}</small></div>`;
+      }).join('');
+      return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(day)}</div>${cells}</div>`;
+    }).join('');
+    return `
+      <div class="topic-time-heatmap-wrap">
+        <div class="topic-time-header"><div class="topic-time-corner">Day / hour</div>${header}</div>
+        <div class="topic-time-grid">${rows}</div>
+      </div>
+      <div class="performance-chart-note">Each filled cell is one day-and-hour slot for the current topic filter. Darker cells indicate stronger ${utils.escapeHtml(metricLabel().toLowerCase())}.</div>
+    `;
+  }
+
   function renderChart(groups) {
     if (!els.performanceChart) return;
     if (!groups.length) {
@@ -819,6 +894,10 @@
         ? 'No reliable date/time-backed events match this filter yet. Day/date/time analytics need imported airing/report data or clean matched airings rows.'
         : 'No comparison groups match this filter yet.';
       els.performanceChart.innerHTML = `<div class="performance-chart-empty">${utils.escapeHtml(msg)}</div>`;
+      return;
+    }
+    if (perf().criterion === 'topic_time') {
+      els.performanceChart.innerHTML = buildTopicTimeHeatmap(groups);
       return;
     }
     const chartType = effectiveChartType();
@@ -870,7 +949,7 @@
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
-      ['Chart', chartTypeLabel(effectiveChartType())],
+      ['Chart', perf().criterion === 'topic_time' ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
       ['Confidence', confidenceLabel()],
       ['Source basis', source],
       ['Filtered rows', utils.formatCount(records.length)]
@@ -893,8 +972,8 @@
       ['Date window', perf().useAllDates ? 'All available dates' : (perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates'), 'Only records whose usable date falls inside this window are included.'],
       ['Quick filter', quickFilterLabel() || 'None', quickFilterExplanation() || 'No quick-filter-specific interpretation is active.'],
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
-      ['Topic filter', perf().topicFilter || 'All topics', 'Checks both primary and secondary topic text from the library where available.'],
-      ['Compare by', criterionDisplayName(), `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
+      ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : 'Checks both primary and secondary topic text from the library where available.'],
+      ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one day-and-hour slot. The chart becomes a weekly heatmap so the strongest slots stand out fast.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized events used in the comparison.'],
       ['Source basis', 'Imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows. Fundraiser totals are derived later from those same rows instead of being stored a second time.`],
       ['Temporal confidence', confidenceLabel(), meta.noTemporalSupport ? 'Day/date/time comparisons do not have enough trustworthy airing-date evidence for this filter yet.' : meta.lowConfidenceTemporal ? 'There are some temporal matches, but the sample is small enough that the result can wobble.' : 'This comparison has enough temporal support to be usable, but still read the airing count.'],
@@ -922,6 +1001,14 @@
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
     if (meta.noTemporalSupport) notes.push('Day/date/time views are intentionally cautious now: weak unmatched rows are excluded, and if nothing trustworthy remains the comparison is marked unavailable instead of pretending to know.');
+    if (perf().criterion === 'topic_time') {
+      if (perf().topicFilter) {
+        const best = [...groups].sort((a, b) => metricValue(b) - metricValue(a))[0];
+        if (best) notes.push(`${perf().topicFilter} is currently strongest at ${best.label} based on ${utils.formatCount(best.airingCount)} airing${best.airingCount === 1 ? '' : 's'} in the active filter window.`);
+      } else {
+        notes.push('Topic Time Performance is most useful with a main topic selected. Without that, it blends all topics into one weekly pattern.');
+      }
+    }
     if (perf().warnings?.length) notes.push(...perf().warnings);
     els.performanceSourceNotes.innerHTML = `
       <ul class="performance-note-list">
@@ -976,6 +1063,7 @@
       live_break_impact: 'Live break impact',
       repeat_fatigue: 'Repeat fatigue',
       topic_winners: 'Top Topics',
+      topic_time_performance: 'Topic Time Performance',
       recent_momentum: 'Recent momentum',
       weekend_weekday: 'Weekend vs weekday earnings',
       day_of_week: 'Day of week comparisons',
@@ -996,6 +1084,10 @@
         return 'Shows only programs with at least 2 airings in the current filter window. Use it as a “repeated titles only” view, not a first-vs-repeat earnings delta yet.';
       case 'recent_momentum':
         return `“Recent” means the trailing 90 days ending on ${endText}. This is a recency-focused view, not yet a true prior-period momentum delta.`;
+      case 'topic_time_performance':
+        return perf().topicFilter
+          ? 'This view ranks day/hour slots for the selected main topic and also draws a weekly heatmap so you can see when that topic performs best.'
+          : 'Pick a main topic to make this view useful. Without a topic filter, the heatmap blends every topic together.';
       default:
         return '';
     }
@@ -1044,12 +1136,13 @@
     renderTable(perf().groups);
     renderNotes(records, perf().groups);
     if (els.performanceChartTitle) {
-      const focus = (() => {
-        return '';
-      })();
+      const focus = perf().criterion === 'topic_time' && perf().topicFilter ? ` · ${perf().topicFilter}` : '';
       els.performanceChartTitle.textContent = `${metricLabel()} by ${criterionDisplayName()}${focus}`;
     }
-    if (els.performanceChartPill) els.performanceChartPill.textContent = perf().ready ? `${chartTypeLabel(effectiveChartType())} · ${criterionDisplayName()}` : 'Awaiting data';
+    if (els.performanceChartPill) {
+      const vizLabel = perf().criterion === 'topic_time' ? 'Heatmap' : chartTypeLabel(effectiveChartType());
+      els.performanceChartPill.textContent = perf().ready ? `${vizLabel} · ${criterionDisplayName()}` : 'Awaiting data';
+    }
     if (els.performanceTablePill) els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
     if (els.performanceNotesPill) els.performanceNotesPill.textContent = perf().lastLoadedAt ? `Loaded ${utils.formatDateTime(perf().lastLoadedAt)}` : 'Starter framework';
     const meta = perf().analysisMeta || {};
@@ -1111,6 +1204,7 @@
     live_break_impact: { criterion: 'live_breaks', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     repeat_fatigue: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
+    topic_time_performance: { criterion: 'topic_time', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     recent_momentum: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     weekend_weekday: { criterion: 'weekpart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
     day_of_week: { criterion: 'day', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daypartScope: '', weekpartScope: '' },
