@@ -371,13 +371,20 @@
     return state.client.from(constants.BASE_TABLE).update(payload).eq('id', programId);
   }
 
+  function buildManualSourceRowNumber() {
+    const base = Number(Date.now() % 2147483000);
+    const noise = Math.floor(Math.random() * 997);
+    return -1 * ((base + noise) % 2147483000 || 1);
+  }
+
   async function createProgram(payload) {
-    const attempts = [payload];
     const hasSourceRowNumber = Object.prototype.hasOwnProperty.call(payload, 'source_row_number');
     const hasWorkspaceKey = Object.prototype.hasOwnProperty.call(payload, 'workspace_key');
-    if (!hasSourceRowNumber) attempts.push({ ...payload, source_row_number: 0 });
+    const attempts = [{ ...payload }];
+
     if (!hasWorkspaceKey) attempts.push({ ...payload, workspace_key: 'default' });
-    if (!hasSourceRowNumber && !hasWorkspaceKey) attempts.push({ ...payload, source_row_number: 0, workspace_key: 'default' });
+    if (!hasSourceRowNumber) attempts.push({ ...payload, source_row_number: buildManualSourceRowNumber() });
+    if (!hasSourceRowNumber && !hasWorkspaceKey) attempts.push({ ...payload, workspace_key: 'default', source_row_number: buildManualSourceRowNumber() });
 
     let lastResponse = null;
     for (const attempt of attempts) {
@@ -385,8 +392,14 @@
       lastResponse = response;
       if (!response.error) return response;
       const message = String(response.error?.message || '');
-      if (/source_row_number/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) continue;
       if (/workspace_key/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'workspace_key')) continue;
+      if (/source_row_number/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) continue;
+      if (/source_row_number/i.test(message) && /duplicate key value|unique constraint/i.test(message) && Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
+        const retryAttempt = { ...attempt, source_row_number: buildManualSourceRowNumber() };
+        const retryResponse = await state.client.from(constants.BASE_TABLE).insert(retryAttempt).select('*').single();
+        lastResponse = retryResponse;
+        if (!retryResponse.error) return retryResponse;
+      }
       return response;
     }
     return lastResponse || state.client.from(constants.BASE_TABLE).insert(payload).select('*').single();
