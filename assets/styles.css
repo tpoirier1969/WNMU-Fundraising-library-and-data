@@ -2479,6 +2479,10 @@ button.primary {
   width: 100%;
   table-layout: fixed;
 }
+.import-file-table {
+  table-layout: auto;
+  min-width: 112rem;
+}
 .import-file-table th,
 .import-file-table td,
 .import-preview-table th,
@@ -2517,26 +2521,39 @@ button.primary {
 .import-rule-check input {
   margin: 0;
 }
+.import-file-table th,
+.import-file-table td {
+  vertical-align: top;
+}
 .import-file-table th:nth-child(1),
-.import-file-table td:nth-child(1) { width: 16%; }
+.import-file-table td:nth-child(1) { min-width: 20rem; }
 .import-file-table th:nth-child(2),
 .import-file-table td:nth-child(2),
 .import-file-table th:nth-child(3),
-.import-file-table td:nth-child(3) { width: 6%; white-space: nowrap; }
+.import-file-table td:nth-child(3) { min-width: 7rem; white-space: nowrap; }
 .import-file-table th:nth-child(4),
 .import-file-table td:nth-child(4),
 .import-file-table th:nth-child(5),
-.import-file-table td:nth-child(5),
+.import-file-table td:nth-child(5) { min-width: 6rem; white-space: nowrap; }
 .import-file-table th:nth-child(6),
 .import-file-table td:nth-child(6),
 .import-file-table th:nth-child(7),
 .import-file-table td:nth-child(7),
 .import-file-table th:nth-child(8),
-.import-file-table td:nth-child(8) { width: 8%; white-space: nowrap; }
-.import-file-table th:nth-child(9),
-.import-file-table td:nth-child(9) { width: 14%; }
+.import-file-table td:nth-child(8),
 .import-file-table th:nth-child(10),
-.import-file-table td:nth-child(10) { width: 16%; }
+.import-file-table td:nth-child(10) { min-width: 8.5rem; white-space: nowrap; }
+.import-file-table th:nth-child(9),
+.import-file-table td:nth-child(9) { min-width: 13rem; }
+.import-file-table th:nth-child(11),
+.import-file-table td:nth-child(11) { min-width: 16rem; }
+.import-file-table th:nth-child(12),
+.import-file-table td:nth-child(12) {
+  min-width: 22rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .import-unmatched-table th:nth-child(8),
 .import-unmatched-table td:nth-child(8) { width: 8%; }
 .import-unmatched-table th:nth-child(9),

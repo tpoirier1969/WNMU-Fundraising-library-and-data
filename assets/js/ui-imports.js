@@ -307,7 +307,13 @@
   }
 
   function parseLegacyBreakReport(rows = []) {
-    const headers = ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Secondary Dollars', 'Pledges', 'Program Minutes', 'Sustainers'];
+    const headerLikeRows = rows.filter((cells) => looksLikeHeaderRow(cells));
+    const headerMentionsSecondary = headerLikeRows.some((cells) => cells.map((value) => keyify(value)).join(' ').includes('secondary_dollars'));
+    const dataRowLengths = rows.filter((cells) => !looksLikeHeaderRow(cells) && cells.some((value) => utils.normalizeText(value))).map((cells) => cells.length);
+    const maxDataColumns = dataRowLengths.length ? Math.max(...dataRowLengths) : 0;
+    const headers = (headerMentionsSecondary || maxDataColumns >= 10)
+      ? ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Secondary Dollars', 'Pledges', 'Program Minutes', 'Sustainers']
+      : ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Pledges', 'Program Minutes', 'Sustainers'];
     const records = [];
     const diagnostics = {
       detectedFormat: 'legacy_pbs_break_report',
@@ -356,6 +362,25 @@
     const hasEmbeddedHeader = rows.some((cells, index) => index > 0 && looksLikeHeaderRow(cells));
     const shouldUseLegacy = fileLooksLegacy || (hasEmbeddedHeader && looksLikeLegacyBreakDataRow(secondRow));
     if (shouldUseLegacy) return parseLegacyBreakReport(rows);
+
+    const exactHeaderSet = new Set(firstRow.map((value) => keyify(value)));
+    const looksStandardBreakHeader = exactHeaderSet.has('station')
+      && exactHeaderSet.has('air_date')
+      && exactHeaderSet.has('air_time')
+      && exactHeaderSet.has('nola')
+      && (exactHeaderSet.has('program_title') || exactHeaderSet.has('program_name'))
+      && exactHeaderSet.has('dollars');
+    if (looksStandardBreakHeader) {
+      const headers = firstRow;
+      const records = rows.slice(1).map((cells) => {
+        const out = {};
+        headers.forEach((header, index) => {
+          out[header] = cells[index] ?? '';
+        });
+        return out;
+      }).filter((record) => Object.values(record).some((value) => utils.normalizeText(value)));
+      return { headers, records, diagnostics: { detectedFormat: 'headered_csv' } };
+    }
 
     const headers = firstRow;
     const records = rows.slice(1).map((cells) => {
@@ -425,6 +450,56 @@
     return Number.isFinite(num) ? Math.trunc(num) : null;
   }
 
+  function extractImportedFields(record = {}) {
+    const mapped = mapRowKeys(record);
+    const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'program_name', 'title', 'program', 'show_title'], /(program(_name|_title)?|show(_title)?|title)/i));
+    const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(^nola$|nola_code|program_nola|program_code|episode_code)/i));
+    const airDateRaw = firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(^air_date$|broadcast_date|date$)/i);
+    const airTimeRaw = firstMatching(mapped, ['air_time', 'time', 'broadcast_time'], /(^air_time$|broadcast_time|time$)/i);
+    const station = utils.normalizeText(firstMatching(mapped, ['station'], /(^station$)/i));
+
+    let primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
+    let secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(^secondary_dollars$|^secondary_amount$|secondary.*dollars|secondary.*amount)/i));
+    let pledges = parseInteger(firstMatching(mapped, ['pledges', 'pledge_count'], /(^pledges$|^pledge_count$)/i));
+    let programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(^program_minutes$|^minutes$)/i));
+    let sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(^sustainers$)/i));
+
+    const looksShiftedLegacyWithoutSecondary = Object.prototype.hasOwnProperty.call(mapped, 'secondary_dollars')
+      && Object.prototype.hasOwnProperty.call(mapped, 'pledges')
+      && Object.prototype.hasOwnProperty.call(mapped, 'program_minutes')
+      && !Object.prototype.hasOwnProperty.call(mapped, 'program_name')
+      && (!Object.prototype.hasOwnProperty.call(mapped, 'sustainers') || utils.isBlank(mapped.sustainers))
+      && parseInteger(mapped.secondary_dollars) != null
+      && parseInteger(mapped.pledges) != null
+      && parseInteger(mapped.program_minutes) != null;
+
+    if (looksShiftedLegacyWithoutSecondary) {
+      secondaryDollars = null;
+      pledges = parseInteger(mapped.secondary_dollars);
+      programMinutes = parseInteger(mapped.pledges);
+      sustainers = parseInteger(mapped.program_minutes);
+    }
+
+    const dollars = Number.isFinite(primaryDollars) || Number.isFinite(secondaryDollars)
+      ? (Number(primaryDollars || 0) + Number(secondaryDollars || 0))
+      : null;
+
+    return {
+      mapped,
+      importedTitle,
+      nola,
+      airDateRaw,
+      airTimeRaw,
+      station,
+      primaryDollars,
+      secondaryDollars,
+      dollars,
+      pledges,
+      programMinutes,
+      sustainers
+    };
+  }
+
   function summarizeRawParsedRecords(records = []) {
     const summary = {
       rawFileTotalDollars: 0,
@@ -434,22 +509,15 @@
       parsedNonSpecificRows: 0
     };
     (Array.isArray(records) ? records : []).forEach((record) => {
-      const mapped = mapRowKeys(record);
-      const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'title', 'program', 'show_title'], /(program|show|title)/i));
-      const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|program_code|episode_code)/i));
-      const primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
-      const secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(secondary.*dollars|secondary.*amount)/i));
-      const dollars = Number.isFinite(primaryDollars) || Number.isFinite(secondaryDollars)
-        ? (Number(primaryDollars || 0) + Number(secondaryDollars || 0))
-        : null;
-      if (!Number.isFinite(dollars)) return;
+      const extracted = extractImportedFields(record);
+      if (!Number.isFinite(extracted.dollars)) return;
       summary.parsedAiringRows += 1;
-      summary.rawFileTotalDollars += dollars;
-      if (isNonSpecificNola(nola) || isNonSpecificTitle(importedTitle)) {
+      summary.rawFileTotalDollars += extracted.dollars;
+      if (isNonSpecificNola(extracted.nola) || isNonSpecificTitle(extracted.importedTitle)) {
         summary.parsedNonSpecificRows += 1;
-        summary.rawNonSpecificTotalDollars += dollars;
+        summary.rawNonSpecificTotalDollars += extracted.dollars;
       } else {
-        summary.rawProgramSpecificTotalDollars += dollars;
+        summary.rawProgramSpecificTotalDollars += extracted.dollars;
       }
     });
     return summary;
@@ -460,17 +528,13 @@
       .filter((entry) => entry && Number.isInteger(entry.sourceIndex))
       .map((entry) => [entry.sourceIndex, entry]));
     return (Array.isArray(records) ? records : []).map((record, index) => {
-      const mapped = mapRowKeys(record);
-      const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'title', 'program', 'show_title'], /(program|show|title)/i));
-      const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|program_code|episode_code)/i));
-      const airDate = parseDateish(firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(air.*date|broadcast.*date|date$)/i));
-      const airTime = parseTimeish(firstMatching(mapped, ['air_time', 'time', 'broadcast_time'], /(air.*time|broadcast.*time|time$)/i));
-      const primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
-      const secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(secondary.*dollars|secondary.*amount)/i));
-      const dollars = Number.isFinite(primaryDollars) || Number.isFinite(secondaryDollars)
-        ? (Number(primaryDollars || 0) + Number(secondaryDollars || 0))
-        : null;
-      const pledges = parseInteger(firstMatching(mapped, ['pledges'], /(pledges|pledge_count)/i));
+      const extracted = extractImportedFields(record);
+      const importedTitle = extracted.importedTitle;
+      const nola = extracted.nola;
+      const airDate = parseDateish(extracted.airDateRaw);
+      const airTime = parseTimeish(extracted.airTimeRaw);
+      const dollars = extracted.dollars;
+      const pledges = extracted.pledges;
       const normalizedEntry = normalizedBySourceIndex.get(index) || null;
       const normalizedRow = normalizedEntry?.row || null;
       const rawBucket = !Number.isFinite(dollars)
@@ -682,28 +746,26 @@
   }
 
   function normalizeAiringRow(row, meta, libraryLookup) {
-    const mapped = mapRowKeys(row);
-    const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'title', 'program', 'show_title'], /(program|show|title)/i));
-    const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|program_code|episode_code)/i));
+    const extracted = extractImportedFields(row);
+    const importedTitle = extracted.importedTitle;
+    const nola = extracted.nola;
     if (!nola && !importedTitle) {
       return { row: null, warning: `Skipped one row in ${meta.fileName} because it had neither a usable title nor a NOLA.` };
     }
 
-    const airDateRaw = firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(air.*date|broadcast.*date|date$)/i);
-    const airTimeRaw = firstMatching(mapped, ['air_time', 'time', 'broadcast_time'], /(air.*time|broadcast.*time|time$)/i);
+    const airDateRaw = extracted.airDateRaw;
+    const airTimeRaw = extracted.airTimeRaw;
     const airDate = parseDateish(airDateRaw);
     const airTime = parseTimeish(airTimeRaw);
     const airedAt = composeDateTime(airDateRaw, airTimeRaw);
 
-    const station = utils.normalizeText(firstMatching(mapped, ['station'], /(station)/i));
-    const primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
-    const secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(secondary.*dollars|secondary.*amount)/i));
-    const dollars = Number.isFinite(primaryDollars) || Number.isFinite(secondaryDollars)
-      ? (Number(primaryDollars || 0) + Number(secondaryDollars || 0))
-      : null;
-    const pledges = parseInteger(firstMatching(mapped, ['pledges'], /(pledges|pledge_count)/i));
-    const programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(program.*minutes|minutes)/i));
-    const sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(sustainers)/i));
+    const station = extracted.station;
+    const primaryDollars = extracted.primaryDollars;
+    const secondaryDollars = extracted.secondaryDollars;
+    const dollars = extracted.dollars;
+    const pledges = extracted.pledges;
+    const programMinutes = extracted.programMinutes;
+    const sustainers = extracted.sustainers;
     const isNonSpecific = isNonSpecificNola(nola) || isNonSpecificTitle(importedTitle);
     const reportTotalDollars = Number.isFinite(Number(meta.reportTotalDollars)) ? Number(meta.reportTotalDollars) : null;
 
