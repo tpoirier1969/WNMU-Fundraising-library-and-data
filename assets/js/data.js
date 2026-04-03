@@ -372,26 +372,22 @@
   }
 
   async function createProgram(payload) {
-    const attempts = [
-      payload,
-      { ...payload, source_row_number: 0 },
-      { ...payload, created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null },
-      { ...payload, created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null, source_row_number: 0 },
-      { ...payload, created_by: state.userEmail || null, updated_by: state.userEmail || null },
-      { ...payload, created_by: state.userEmail || null, updated_by: state.userEmail || null, source_row_number: 0 },
-      { ...payload, workspace_key: 'default', created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null },
-      { ...payload, workspace_key: 'default', created_by_email: state.userEmail || null, updated_by_email: state.userEmail || null, source_row_number: 0 }
-    ];
+    const attempts = [payload];
+    const hasSourceRowNumber = Object.prototype.hasOwnProperty.call(payload, 'source_row_number');
+    const hasWorkspaceKey = Object.prototype.hasOwnProperty.call(payload, 'workspace_key');
+    if (!hasSourceRowNumber) attempts.push({ ...payload, source_row_number: 0 });
+    if (!hasWorkspaceKey) attempts.push({ ...payload, workspace_key: 'default' });
+    if (!hasSourceRowNumber && !hasWorkspaceKey) attempts.push({ ...payload, source_row_number: 0, workspace_key: 'default' });
+
     let lastResponse = null;
     for (const attempt of attempts) {
       const response = await state.client.from(constants.BASE_TABLE).insert(attempt).select('*').single();
       lastResponse = response;
       if (!response.error) return response;
       const message = String(response.error?.message || '');
-      if (/source_row_number/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
-        continue;
-      }
-      if (!/row-level security|violates row-level security|permission denied|source_row_number/i.test(message)) return response;
+      if (/source_row_number/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) continue;
+      if (/workspace_key/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'workspace_key')) continue;
+      return response;
     }
     return lastResponse || state.client.from(constants.BASE_TABLE).insert(payload).select('*').single();
   }

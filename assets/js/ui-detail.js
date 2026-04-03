@@ -17,6 +17,9 @@
 
   function friendlyCreateError(error) {
     const message = String(error?.message || error || '');
+    if (/created_by_email|updated_by_email|created_by|updated_by/i.test(message)) {
+      return 'The app tried to send audit columns that do not belong in pledge_programs_v2. That was an app bug, not a valid program field.';
+    }
     if (/row-level security|violates row-level security|permission denied|new row violates/i.test(message)) {
       return 'Supabase is blocking new-title inserts on pledge_programs_v2. The app can read and probably update, but INSERT is still denied by RLS. Run the included SQL patch for pledge_programs_v2 insert/update policies, then try again.';
     }
