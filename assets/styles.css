@@ -2541,3 +2541,34 @@ button.primary {
 .import-unmatched-table td:nth-child(8) { width: 8%; }
 .import-unmatched-table th:nth-child(9),
 .import-unmatched-table td:nth-child(9) { width: 14%; }
+
+
+.import-accounting-wrap {
+  max-height: min(42vh, 520px);
+}
+.import-accounting-table th,
+.import-accounting-table td {
+  font-size: 0.82rem;
+}
+.import-accounting-table th:nth-child(1),
+.import-accounting-table td:nth-child(1) { width: 12%; }
+.import-accounting-table th:nth-child(2),
+.import-accounting-table td:nth-child(2),
+.import-accounting-table th:nth-child(3),
+.import-accounting-table td:nth-child(3),
+.import-accounting-table th:nth-child(4),
+.import-accounting-table td:nth-child(4),
+.import-accounting-table th:nth-child(7),
+.import-accounting-table td:nth-child(7),
+.import-accounting-table th:nth-child(8),
+.import-accounting-table td:nth-child(8),
+.import-accounting-table th:nth-child(9),
+.import-accounting-table td:nth-child(9),
+.import-accounting-table th:nth-child(10),
+.import-accounting-table td:nth-child(10),
+.import-accounting-table th:nth-child(11),
+.import-accounting-table td:nth-child(11) { white-space: nowrap; }
+.import-accounting-table th:nth-child(5),
+.import-accounting-table td:nth-child(5),
+.import-accounting-table th:nth-child(12),
+.import-accounting-table td:nth-child(12) { width: 18%; }

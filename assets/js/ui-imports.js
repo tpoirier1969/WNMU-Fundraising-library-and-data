@@ -455,6 +455,96 @@
     return summary;
   }
 
+  function buildRawAccountingRows(records = [], normalizedEntries = [], meta = {}) {
+    const normalizedBySourceIndex = new Map((Array.isArray(normalizedEntries) ? normalizedEntries : [])
+      .filter((entry) => entry && Number.isInteger(entry.sourceIndex))
+      .map((entry) => [entry.sourceIndex, entry]));
+    return (Array.isArray(records) ? records : []).map((record, index) => {
+      const mapped = mapRowKeys(record);
+      const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'title', 'program', 'show_title'], /(program|show|title)/i));
+      const nola = utils.normalizeText(firstMatching(mapped, ['nola_code', 'nola', 'program_nola'], /(nola|program_code|episode_code)/i));
+      const airDate = parseDateish(firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(air.*date|broadcast.*date|date$)/i));
+      const airTime = parseTimeish(firstMatching(mapped, ['air_time', 'time', 'broadcast_time'], /(air.*time|broadcast.*time|time$)/i));
+      const primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
+      const secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(secondary.*dollars|secondary.*amount)/i));
+      const dollars = Number.isFinite(primaryDollars) || Number.isFinite(secondaryDollars)
+        ? (Number(primaryDollars || 0) + Number(secondaryDollars || 0))
+        : null;
+      const pledges = parseInteger(firstMatching(mapped, ['pledges'], /(pledges|pledge_count)/i));
+      const normalizedEntry = normalizedBySourceIndex.get(index) || null;
+      const normalizedRow = normalizedEntry?.row || null;
+      const rawBucket = !Number.isFinite(dollars)
+        ? 'no_dollars'
+        : ((isNonSpecificNola(nola) || isNonSpecificTitle(importedTitle)) ? 'non_specific' : 'program_specific');
+      const normalizedState = normalizedRow ? 'yes' : 'no';
+      const matchState = normalizedRow
+        ? (isNonSpecificRow(normalizedRow) ? 'non-specific' : (isImportMatched(normalizedRow) ? 'matched' : 'unmatched'))
+        : 'skipped';
+      const notes = [];
+      if (!Number.isFinite(dollars)) notes.push('No parseable dollars value');
+      if (normalizedRow && Number.isFinite(dollars) && Math.abs((Number(normalizedRow.dollars || 0) || 0) - dollars) >= 0.01) notes.push(`Normalized dollars ${utils.formatMoney(Number(normalizedRow.dollars || 0) || 0)}`);
+      if (normalizedEntry?.warning) notes.push(normalizedEntry.warning);
+      if (normalizedRow && normalizedRow.match_reason && !isImportMatched(normalizedRow) && !isNonSpecificRow(normalizedRow)) notes.push(normalizedRow.match_reason);
+      return {
+        fileKey: meta.fileKey || '',
+        fileName: meta.fileName || '',
+        sourceRowNumber: index + 2,
+        airDate: airDate || '',
+        airTime: airTime || '',
+        importedTitle: importedTitle || '',
+        nola: nola || '',
+        dollars: Number.isFinite(dollars) ? dollars : null,
+        pledges: Number.isFinite(pledges) ? pledges : null,
+        rawBucket,
+        rawCounted: Number.isFinite(dollars),
+        normalized: normalizedState,
+        matchState,
+        note: notes.join(' | '),
+        normalizedRowHash: normalizedRow?.row_hash || '',
+        normalizedDollars: normalizedRow && Number.isFinite(Number(normalizedRow.dollars)) ? Number(normalizedRow.dollars) : null
+      };
+    }).filter((entry) => entry.rawCounted || entry.normalized === 'yes' || entry.note);
+  }
+
+  function buildAccountingSummaryRows() {
+    const perFile = new Map();
+    (imp().fileSummaries || []).forEach((summary) => {
+      perFile.set(summary.fileKey, {
+        fileKey: summary.fileKey,
+        fileName: summary.fileName,
+        rawTotalDollars: Number(summary.rawFileTotalDollars || 0) || 0,
+        rawNonSpecificDollars: Number(summary.rawNonSpecificTotalDollars || 0) || 0,
+        normalizedTotalDollars: 0,
+        matchedTotalDollars: 0,
+        unmatchedTotalDollars: 0
+      });
+    });
+    (imp().airingsRows || []).forEach((row) => {
+      const fileKey = row.source_file_key || '';
+      if (!perFile.has(fileKey)) {
+        perFile.set(fileKey, {
+          fileKey,
+          fileName: row.source_file_name || fileKey || 'Imported file',
+          rawTotalDollars: 0,
+          rawNonSpecificDollars: 0,
+          normalizedTotalDollars: 0,
+          matchedTotalDollars: 0,
+          unmatchedTotalDollars: 0
+        });
+      }
+      const bucket = perFile.get(fileKey);
+      const dollars = Number(row.dollars || 0) || 0;
+      bucket.normalizedTotalDollars += dollars;
+      if (isImportMatched(row)) bucket.matchedTotalDollars += dollars;
+      else bucket.unmatchedTotalDollars += dollars;
+    });
+    return [...perFile.values()].map((item) => ({
+      ...item,
+      rawVsNormalizedDifference: Math.round((Number(item.rawTotalDollars || 0) - Number(item.normalizedTotalDollars || 0)) * 100) / 100,
+      rawVsMatchedDifference: Math.round((Number(item.rawTotalDollars || 0) - Number(item.matchedTotalDollars || 0)) * 100) / 100
+    })).sort((a, b) => String(a.fileName || '').localeCompare(String(b.fileName || '')));
+  }
+
   function parseDateish(value) {
     const text = utils.normalizeText(value);
     if (!text) return '';
@@ -821,6 +911,10 @@
     imp().airingsRows = [];
     imp().driveRows = [];
     imp().warnings = [];
+    imp().rawAccountingRows = [];
+    imp().rawAccountingSummaries = [];
+    imp().rawAccountingRows = [];
+    imp().rawAccountingSummaries = [];
     imp().existingUnlinkedError = '';
     imp().lastAnalyzedAt = new Date().toISOString();
     imp().lastImportResult = null;
@@ -856,8 +950,10 @@
           };
 
           const normalized = [];
-          parsed.records.forEach((record) => {
+          const normalizedEntries = [];
+          parsed.records.forEach((record, recordIndex) => {
             const result = normalizeAiringRow(record, meta, libraryLookup);
+            normalizedEntries.push({ sourceIndex: recordIndex, row: result.row || null, warning: result.warning || '' });
             if (result.warning) fileWarnings.push(result.warning);
             if (result.row) normalized.push(result.row);
           });
@@ -883,11 +979,13 @@
             reportDifferenceDollars: null,
             fundraiserClusterCount: 0,
             detectedStartDate: '',
-            detectedEndDate: ''
+            detectedEndDate: '',
+            accountingRows: []
           };
 
           assignDriveRangesForFile(normalized, fileSummary);
           updateFileSummaryReconciliation(fileSummary);
+          fileSummary.accountingRows = buildRawAccountingRows(parsed.records, normalizedEntries, { fileKey, fileName: file.name });
 
           const parseDiagnostics = parsed.diagnostics || {};
           const summaryWarnings = [...new Set(fileWarnings)];
@@ -912,6 +1010,7 @@
           }
           fileSummary.warnings = summaryWarnings.slice(0, 12);
           imp().fileSummaries.push(fileSummary);
+          imp().rawAccountingRows.push(...(fileSummary.accountingRows || []));
           allAirings.push(...normalized);
         } catch (error) {
           const message = error?.message || String(error);
@@ -947,6 +1046,7 @@
       });
       imp().airingsRows = [...deduped.values()];
       imp().driveRows = deriveRollups(imp().airingsRows);
+      imp().rawAccountingSummaries = buildAccountingSummaryRows();
 
       const matchedCount = getMatchedRows().length;
       const unmatchedCount = getUnmatchedRows().length;
@@ -1003,6 +1103,7 @@
     assignDriveRangesForFile(rows, summary);
     updateFileSummaryReconciliation(summary);
     imp().driveRows = deriveRollups(imp().airingsRows);
+    imp().rawAccountingSummaries = buildAccountingSummaryRows();
   }
 
   function setManualReportTotalForFile(fileKey = '', rawValue = '') {
@@ -1030,6 +1131,8 @@
     imp().airingsRows = [];
     imp().driveRows = [];
     imp().warnings = [];
+    imp().rawAccountingRows = [];
+    imp().rawAccountingSummaries = [];
     imp().error = '';
     imp().lastAnalyzedAt = '';
     imp().lastImportResult = null;
@@ -1257,6 +1360,56 @@
     }).join('');
   }
 
+
+  function renderAccountingLedger() {
+    if (els.importAccountingPill) els.importAccountingPill.textContent = imp().rawAccountingRows.length ? `${utils.formatCount(imp().rawAccountingRows.length)} rows` : 'No rows';
+    if (els.importAccountingSummaryBody) {
+      const summaries = imp().rawAccountingSummaries || [];
+      if (!summaries.length) {
+        els.importAccountingSummaryBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No accounting ledger yet.</td></tr>';
+      } else {
+        els.importAccountingSummaryBody.innerHTML = summaries.map((item) => {
+          const diffNorm = Number(item.rawVsNormalizedDifference || 0);
+          const diffMatch = Number(item.rawVsMatchedDifference || 0);
+          return `
+          <tr>
+            <td>${escape(item.fileName || 'Imported file')}</td>
+            <td>${escape(utils.formatMoney(item.rawTotalDollars || 0))}</td>
+            <td>${escape(utils.formatMoney(item.normalizedTotalDollars || 0))}</td>
+            <td>${escape(utils.formatMoney(item.matchedTotalDollars || 0))}</td>
+            <td>${escape(utils.formatMoney(item.unmatchedTotalDollars || 0))}</td>
+            <td>${escape(utils.formatMoney(item.rawNonSpecificDollars || 0))}</td>
+            <td class="${Math.abs(diffNorm) >= 0.01 ? 'import-diff-warn' : ''}">${escape(utils.formatMoney(diffNorm || 0))}</td>
+            <td class="${Math.abs(diffMatch) >= 0.01 ? 'import-diff-warn' : ''}">${escape(utils.formatMoney(diffMatch || 0))}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+    if (els.importAccountingBody) {
+      const rows = (imp().rawAccountingRows || []).filter((row) => row.rawCounted || row.note || row.matchState === 'unmatched');
+      if (!rows.length) {
+        els.importAccountingBody.innerHTML = '<tr><td colspan="12" class="placeholder-row">No accounting ledger yet.</td></tr>';
+      } else {
+        els.importAccountingBody.innerHTML = rows.slice(0, 250).map((row) => `
+          <tr>
+            <td>${escape(row.fileName || 'Imported file')}</td>
+            <td>${escape(row.sourceRowNumber)}</td>
+            <td>${escape(row.airDate || '—')}</td>
+            <td>${escape(row.airTime || '—')}</td>
+            <td>${escape(row.importedTitle || '—')}</td>
+            <td>${escape(row.nola || '—')}</td>
+            <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
+            <td>${row.pledges == null ? '—' : escape(row.pledges)}</td>
+            <td>${escape(row.rawBucket || '—')}</td>
+            <td>${escape(row.normalized || 'no')}</td>
+            <td>${escape(row.matchState || '—')}</td>
+            <td>${escape(row.note || '—')}</td>
+          </tr>
+        `).join('');
+      }
+    }
+  }
+
   function renderPreviewRows(rows, bodyEl, columns, emptyMessage) {
     if (!bodyEl) return;
     if (!rows.length) {
@@ -1334,6 +1487,7 @@
     });
     if (shouldPersist) storeAliasRule({ station: rows[0]?.station || '', importedTitle: rows[0]?.imported_program_title || rows[0]?.title || '', targetProgram: targetRow });
     imp().driveRows = deriveRollups(imp().airingsRows);
+    imp().rawAccountingSummaries = buildAccountingSummaryRows();
     renderAll();
     const label = utils.toDisplayText(rows[0]?.imported_program_title || rows[0]?.nola_code || 'row');
     const count = rows.length;
@@ -1557,6 +1711,7 @@
     renderTableStatus();
     renderWarnings();
     renderFileAudit();
+    renderAccountingLedger();
     renderPreviews();
     renderActions();
   }
