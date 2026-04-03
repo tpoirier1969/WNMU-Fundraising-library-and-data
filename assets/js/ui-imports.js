@@ -258,8 +258,9 @@
   }
 
   function looksLikeHeaderRow(cells = []) {
-    const joined = cells.map((value) => keyify(value)).join(' ');
-    return /(station|air_date|air_time|program_title|nola|dollars|pledges|program_minutes|sustainers)/.test(joined);
+    const tokens = (Array.isArray(cells) ? cells : []).map((value) => keyify(value));
+    const exactHeaderMatches = tokens.filter((token) => ['station', 'air_date', 'air_time', 'program_title', 'program_name', 'nola', 'dollars', 'pledges', 'program_minutes', 'sustainers'].includes(token)).length;
+    return exactHeaderMatches >= 4;
   }
 
   function looksLikeLegacyBreakDataRow(cells = []) {
@@ -357,12 +358,6 @@
     if (!rows.length) return { headers: [], records: [], diagnostics: { detectedFormat: 'empty' } };
 
     const firstRow = rows[0].map((value, index) => utils.normalizeText(value) || `column_${index + 1}`);
-    const secondRow = rows[1] || [];
-    const fileLooksLegacy = !looksLikeHeaderRow(rows[0]) && looksLikeLegacyBreakDataRow(rows[0]);
-    const hasEmbeddedHeader = rows.some((cells, index) => index > 0 && looksLikeHeaderRow(cells));
-    const shouldUseLegacy = fileLooksLegacy || (hasEmbeddedHeader && looksLikeLegacyBreakDataRow(secondRow));
-    if (shouldUseLegacy) return parseLegacyBreakReport(rows);
-
     const exactHeaderSet = new Set(firstRow.map((value) => keyify(value)));
     const looksStandardBreakHeader = exactHeaderSet.has('station')
       && exactHeaderSet.has('air_date')
@@ -381,6 +376,12 @@
       }).filter((record) => Object.values(record).some((value) => utils.normalizeText(value)));
       return { headers, records, diagnostics: { detectedFormat: 'headered_csv' } };
     }
+
+    const secondRow = rows[1] || [];
+    const fileLooksLegacy = !looksLikeHeaderRow(rows[0]) && looksLikeLegacyBreakDataRow(rows[0]);
+    const hasEmbeddedHeader = rows.some((cells, index) => index > 0 && looksLikeHeaderRow(cells));
+    const shouldUseLegacy = fileLooksLegacy || (hasEmbeddedHeader && looksLikeLegacyBreakDataRow(secondRow));
+    if (shouldUseLegacy) return parseLegacyBreakReport(rows);
 
     const headers = firstRow;
     const records = rows.slice(1).map((cells) => {

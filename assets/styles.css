@@ -2481,7 +2481,8 @@ button.primary {
 }
 .import-file-table {
   table-layout: auto;
-  min-width: 112rem;
+  width: max-content;
+  min-width: 132rem;
 }
 .import-file-table th,
 .import-file-table td,
@@ -2493,6 +2494,41 @@ button.primary {
 }
 
 /* v0.20.34 import reconciliation + persistent match rules */
+
+.import-file-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+}
+.import-file-table {
+  width: max-content;
+  min-width: 176rem;
+}
+.import-file-table th:nth-child(1),
+.import-file-table td:nth-child(1) { min-width: 20rem; width: 20rem; }
+.import-file-table th:nth-child(2),
+.import-file-table td:nth-child(2) { min-width: 6rem; width: 6rem; }
+.import-file-table th:nth-child(3),
+.import-file-table td:nth-child(3) { min-width: 10rem; width: 10rem; }
+.import-file-table th:nth-child(4),
+.import-file-table td:nth-child(4),
+.import-file-table th:nth-child(5),
+.import-file-table td:nth-child(5) { min-width: 6rem; width: 6rem; }
+.import-file-table th:nth-child(6),
+.import-file-table td:nth-child(6),
+.import-file-table th:nth-child(7),
+.import-file-table td:nth-child(7),
+.import-file-table th:nth-child(8),
+.import-file-table td:nth-child(8),
+.import-file-table th:nth-child(10),
+.import-file-table td:nth-child(10) { min-width: 8rem; width: 8rem; }
+.import-file-table th:nth-child(9),
+.import-file-table td:nth-child(9) { min-width: 12rem; width: 12rem; }
+.import-file-table th:nth-child(11),
+.import-file-table td:nth-child(11) { min-width: 14rem; width: 14rem; }
+.import-file-table th:nth-child(12),
+.import-file-table td:nth-child(12) { min-width: 34rem; width: 34rem; white-space: normal; }
+.import-file-table td:nth-child(12) { overflow-wrap: anywhere; word-break: break-word; }
+
 .import-review-note {
   margin-top: 0.35rem;
   font-size: 0.88rem;
@@ -2546,10 +2582,14 @@ button.primary {
 .import-file-table th:nth-child(9),
 .import-file-table td:nth-child(9) { min-width: 13rem; }
 .import-file-table th:nth-child(11),
-.import-file-table td:nth-child(11) { min-width: 16rem; }
+.import-file-table td:nth-child(11) {
+  min-width: 18rem;
+  white-space: normal;
+}
 .import-file-table th:nth-child(12),
 .import-file-table td:nth-child(12) {
-  min-width: 22rem;
+  min-width: 28rem;
+  max-width: 36rem;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
