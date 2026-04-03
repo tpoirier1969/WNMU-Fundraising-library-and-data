@@ -1091,24 +1091,26 @@
     const schedule = getActiveSchedule();
     const working = schedule || state.scheduleDraft || {};
     const broadcast = scheduleBroadcastTotal(working);
-    const reportTotal = scheduleReportedBroadcastTotal(working);
     const imported = scheduleImportedAiringTotal(working);
     const importedProgramSpecific = scheduleImportedProgramSpecificTotal(working);
     const importedNonSpecific = scheduleImportedNonSpecificTotal(working);
     const diff = scheduleBroadcastDifference(working);
+    const importedPledges = scheduleImportedPledgesTotal(working);
     if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(broadcast);
-    if (els.fundraiserReportTotal) els.fundraiserReportTotal.value = utils.formatMoney(reportTotal);
+    if (els.fundraiserPledgesTotal) els.fundraiserPledgesTotal.value = utils.formatCount(importedPledges);
     if (els.fundraiserImportTotal) els.fundraiserImportTotal.value = utils.formatMoney(imported);
     if (els.fundraiserImportDifference) els.fundraiserImportDifference.value = utils.formatMoney(diff);
     if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
     if (els.fundraiserBroadcastDiagnostic) {
-      const show = reportTotal > 0 || imported > 0;
+      const show = imported > 0;
       const mismatch = show && Math.abs(diff) >= 0.01;
       els.fundraiserBroadcastDiagnostic.classList.toggle('hidden', !show);
       els.fundraiserBroadcastDiagnostic.innerHTML = show
-        ? `${reportTotal > 0 ? `<span class="diag-chip">Report total ${utils.escapeHtml(utils.formatMoney(reportTotal))}</span>` : ''}${imported > 0 ? `<span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span>` : ''}${importedProgramSpecific > 0 ? `<span class="diag-chip">Program-specific ${utils.escapeHtml(utils.formatMoney(importedProgramSpecific))}</span>` : ''}${importedNonSpecific > 0 ? `<span class="diag-chip">Non-specific ${utils.escapeHtml(utils.formatMoney(importedNonSpecific))}</span>` : ''}${mismatch ? `<span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>` : ''}`
+        ? `${imported > 0 ? `<span class="diag-chip">Import total ${utils.escapeHtml(utils.formatMoney(imported))}</span>` : ''}${importedProgramSpecific > 0 ? `<span class="diag-chip">Program-specific ${utils.escapeHtml(utils.formatMoney(importedProgramSpecific))}</span>` : ''}${importedNonSpecific > 0 ? `<span class="diag-chip">Non-specific ${utils.escapeHtml(utils.formatMoney(importedNonSpecific))}</span>` : ''}${importedPledges > 0 ? `<span class="diag-chip">Pledges ${utils.escapeHtml(utils.formatCount(importedPledges))}</span>` : ''}${mismatch ? `<span class="diag-chip warn">Difference ${utils.escapeHtml(utils.formatMoney(diff))}</span>` : ''}`
         : '';
     }
+    const builderTitle = document.getElementById('schedule-builder-title');
+    if (builderTitle) builderTitle.textContent = working.title || state.scheduleDraft.title || 'New fundraiser';
     [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
     if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
@@ -1342,7 +1344,7 @@
       const diff = Math.round(((broadcast || 0) - (imported || 0)) * 100) / 100;
       const mismatch = broadcast > 0 && imported > 0 && Math.abs(diff) >= 0.01;
       const extra = `${imported > 0 ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Imported total</span><span>${utils.escapeHtml(utils.formatMoney(imported))}</span></div>` : ''}${importedProgramSpecific > 0 ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Program-specific</span><span>${utils.escapeHtml(utils.formatMoney(importedProgramSpecific))}</span></div>` : ''}${importedNonSpecific > 0 ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Non-specific</span><span>${utils.escapeHtml(utils.formatMoney(importedNonSpecific))}</span></div>` : ''}${mismatch ? `<div class="scheduled-data-chunk"><span class="mini-label inline">Difference</span><span>${utils.escapeHtml(utils.formatMoney(diff))}</span></div>` : ''}`;
-      return `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(broadcast))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div>${extra}</div>`;
+      return `<div class="schedule-fundraiser-summary"><div class="scheduled-data-chunk"><span class="mini-label inline">Broadcast $</span><span>${utils.escapeHtml(utils.formatMoney(broadcast))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Online $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.onlineDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Mail $</span><span>${utils.escapeHtml(utils.formatMoney(Number(schedule.mailDollars || 0) || 0))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Pledges</span><span>${utils.escapeHtml(utils.formatCount(scheduleImportedPledgesTotal(schedule)))}</span></div><div class="scheduled-data-chunk"><span class="mini-label inline">Total raised</span><span>${utils.escapeHtml(utils.formatMoney(scheduleGrandTotal(schedule)))}</span></div>${extra}</div>`;
     })();
     if (!schedule || !schedule.placements?.length) {
       els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml || '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';

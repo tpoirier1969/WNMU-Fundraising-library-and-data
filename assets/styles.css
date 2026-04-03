@@ -2629,3 +2629,10 @@ button.primary {
 .import-accounting-table td:nth-child(5),
 .import-accounting-table th:nth-child(12),
 .import-accounting-table td:nth-child(12) { width: 18%; }
+
+.performance-date-row-secondary { margin-top: -0.35rem; }
+.performance-all-dates-toggle { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.92rem; }
+.import-actions-bottom { margin-top: 0.85rem; justify-content: flex-end; }
+.import-file-details summary { cursor: pointer; }
+.import-file-details-list { margin-top: 0.35rem; display: grid; gap: 0.35rem; white-space: normal; min-width: 20rem; }
+.import-file-detail-line { line-height: 1.35; }

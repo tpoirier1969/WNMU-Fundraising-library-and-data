@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.40</title>
+  <title>WNMU Pledge Program Library v0.20.41</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.40</span>
+            <span class="version-pill" id="version-flag">v0.20.41</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -192,8 +192,8 @@
           <section class="schedule-builder-card">
             <div class="schedule-builder-head">
               <div>
-                <h3>Schedule a fundraiser</h3>
-                <p class="muted">Start with the fundraiser date range. The calendar below uses 30-minute increments only.</p>
+                <h3 id="schedule-builder-title">New fundraiser</h3>
+                <p class="muted">Fundraiser dates and imported totals live here. The calendar below uses 30-minute increments only.</p>
               </div>
             </div>
             <div class="schedule-form" id="schedule-form">
@@ -220,8 +220,8 @@
                   <input id="fundraiser-broadcast-total" type="text" value="$0.00" readonly>
                 </label>
                 <label class="filter-field narrow">
-                  <span class="filter-label">Report total</span>
-                  <input id="fundraiser-report-total" type="text" value="$0.00" readonly>
+                  <span class="filter-label">Pledges</span>
+                  <input id="fundraiser-pledges-total" type="text" value="0" readonly>
                 </label>
                 <label class="filter-field narrow">
                   <span class="filter-label">Import total</span>
@@ -343,12 +343,12 @@
           <div class="performance-card-head">
             <div>
               <h3>Start importing pledge reports</h3>
-              <p class="muted">Load PBS Break Report CSV exports, let the app normalize the airings, enter the report total shown in the original report, then export or push the reconciled import set into Supabase. Fundraiser periods are inferred from actual fundraising activity.</p>
+              <p class="muted">Load PBS Break Report CSV exports, let the app normalize the airings, then export or push the reconciled import set into Supabase. Fundraiser periods are inferred from actual fundraising activity.</p>
             </div>
             <span class="mini-chip" id="import-status-pill">Starter importer</span>
           </div>
-          <div class="list-summary" id="import-status">Choose one or more PBS Break Report CSV files to analyze, then reconcile each file with its report total before importing.</div>
-          <div class="muted import-review-note">Each imported file needs a Report Total entered from the original report. That number is treated as the authoritative broadcast total for reconciliation.</div>
+          <div class="list-summary" id="import-status">Choose one or more PBS Break Report CSV files to analyze, then review the raw totals and import to Supabase.</div>
+          <div class="muted import-review-note">The CSV dollars column is treated as the source of truth for fundraiser totals. Non-specific dollars are calculated automatically.</div>
           <div id="import-result-banner" class="import-result-banner hidden" aria-live="polite"></div>
           <div class="import-toolbar-grid">
             <div class="filter-field import-file-field">
@@ -416,16 +416,19 @@
                   <th>Raw program $</th>
                   <th>Raw non-specific $</th>
                   <th>Raw file total $</th>
-                  <th>Report total (you enter)</th>
                   <th>Difference</th>
                   <th>Fundraiser dates</th>
-                  <th>Warnings</th>
+                  <th>Issues</th>
+                  <th>Details</th>
                 </tr>
               </thead>
               <tbody id="import-file-body">
                 <tr><td colspan="12" class="placeholder-row">No reports analyzed yet.</td></tr>
               </tbody>
             </table>
+          </div>
+          <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
+            <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
           </div>
 
         </section>
@@ -565,6 +568,10 @@
               </tbody>
             </table>
           </div>
+          <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
+            <button type="button" class="ghost import-apply-all-trigger">Apply all staged matches</button>
+            <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
+          </div>
         </section>
       </section>
     </section>
@@ -589,6 +596,12 @@
               <button type="button" class="ghost" id="performance-refresh-button">Refresh performance</button>
               <button type="button" class="ghost" id="performance-export-button">Export chart (SVG)</button>
             </div>
+          </div>
+          <div class="performance-date-row performance-date-row-secondary">
+            <label class="checkbox-inline performance-all-dates-toggle">
+              <input id="performance-use-all-dates" type="checkbox">
+              <span>Use all available dates</span>
+            </label>
           </div>
           <div class="performance-quick-filter-card">
             <div class="performance-quick-filter-head">
@@ -685,7 +698,7 @@
         <section class="performance-card performance-criteria-card">
           <div class="performance-card-head">
             <h3>Current analysis criteria</h3>
-            <span class="mini-chip">Read this first</span>
+            
           </div>
           <div id="performance-criteria-bar" class="performance-criteria-bar"></div>
         </section>
@@ -855,7 +868,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.40</div>
+      <div id="footer-version">v0.20.41</div>
     </footer>
   </div>
 </body>

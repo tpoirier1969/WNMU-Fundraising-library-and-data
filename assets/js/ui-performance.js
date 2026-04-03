@@ -504,6 +504,7 @@
     };
     if (!perf().startDate && oldestDate) perf().startDate = oldestDate;
     if (!perf().endDate && newestDate) perf().endDate = newestDate;
+    if (typeof perf().useAllDates !== 'boolean') perf().useAllDates = false;
     perf().warnings = warnings;
     perf().records = records;
     perf().lastLoadedAt = new Date().toISOString();
@@ -616,8 +617,8 @@
 
   function filterAndGroupRecords() {
     const labelFilter = utils.normalizeLookupKey(perf().labelFilter || '');
-    const startDate = perf().startDate ? new Date(`${perf().startDate}T00:00:00`) : null;
-    const endDate = perf().endDate ? new Date(`${perf().endDate}T23:59:59`) : null;
+    const startDate = perf().useAllDates ? null : (perf().startDate ? new Date(`${perf().startDate}T00:00:00`) : null);
+    const endDate = perf().useAllDates ? null : (perf().endDate ? new Date(`${perf().endDate}T23:59:59`) : null);
     const criterion = perf().criterion;
     const sourceRecords = perf().records || [];
     const selectedProgramKey = utils.normalizeLookupKey(perf().programFilter || '');
@@ -854,8 +855,8 @@
   }
 
   function buildCriteriaSummary(records) {
-    const start = perf().startDate ? utils.formatDate(perf().startDate) : 'Earliest available';
-    const end = perf().endDate ? utils.formatDate(perf().endDate) : 'Latest available';
+    const start = perf().useAllDates ? 'Earliest available' : (perf().startDate ? utils.formatDate(perf().startDate) : 'Earliest available');
+    const end = perf().useAllDates ? 'Latest available' : (perf().endDate ? utils.formatDate(perf().endDate) : 'Latest available');
     const month = perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month';
     const topic = perf().topicFilter || 'All topics';
     const quick = quickFilterLabel() || 'None';
@@ -863,7 +864,7 @@
     const analysisMeta = perf().analysisMeta || {};
     const source = `Imported airings view · ${utils.formatCount(shape.airingRows || 0)} airings rows`;
     perf().criteriaSummary = [
-      ['Date window', `${start} to ${end}`],
+      ['Date window', perf().useAllDates ? 'All available dates' : `${start} to ${end}`],
       ['Fundraiser month', month],
       ['Topic filter', topic],
       ['Quick filter', quick],
@@ -889,7 +890,7 @@
     if (!els.performanceExplainBody) return;
     const meta = perf().analysisMeta || {};
     const rows = [
-      ['Date window', perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates', 'Only records whose usable date falls inside this window are included.'],
+      ['Date window', perf().useAllDates ? 'All available dates' : (perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates'), 'Only records whose usable date falls inside this window are included.'],
       ['Quick filter', quickFilterLabel() || 'None', quickFilterExplanation() || 'No quick-filter-specific interpretation is active.'],
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
       ['Topic filter', perf().topicFilter || 'All topics', 'Checks both primary and secondary topic text from the library where available.'],
@@ -1012,17 +1013,20 @@
       els.performanceTopnSelect.title = usesTemporalAxis ? 'All groups are shown for date/day/time comparisons.' : '';
     }
     if (els.performanceFilterInput) els.performanceFilterInput.value = perf().labelFilter || '';
+    if (els.performanceUseAllDates) els.performanceUseAllDates.checked = Boolean(perf().useAllDates);
     const oldestDate = perf().dataShape?.oldestDate || '';
     const newestDate = perf().dataShape?.newestDate || '';
     if (els.performanceStartDate) {
       els.performanceStartDate.min = oldestDate || '';
       els.performanceStartDate.max = newestDate || '';
       els.performanceStartDate.value = perf().startDate || oldestDate || '';
+      els.performanceStartDate.disabled = Boolean(perf().useAllDates);
     }
     if (els.performanceEndDate) {
       els.performanceEndDate.min = oldestDate || '';
       els.performanceEndDate.max = newestDate || '';
       els.performanceEndDate.value = perf().endDate || newestDate || '';
+      els.performanceEndDate.disabled = Boolean(perf().useAllDates);
     }
     if (els.performanceMonthSelect) els.performanceMonthSelect.value = perf().monthFilter;
     if (els.performanceTopicSelect) els.performanceTopicSelect.value = perf().topicFilter;
@@ -1115,7 +1119,7 @@
   };
 
   function quickFiltersEnabled() {
-    return Boolean(perf().startDate && perf().endDate);
+    return Boolean(perf().useAllDates || (perf().startDate && perf().endDate));
   }
 
   function updateQuickFilterUi() {
@@ -1165,8 +1169,9 @@
     els.performanceChartTypeSelect?.addEventListener('change', (event) => { perf().chartType = event.target.value || 'auto'; perf().quickFilter = ''; rerender(); });
     els.performanceTopnSelect?.addEventListener('change', (event) => { perf().topN = Number(event.target.value || 12); perf().quickFilter = ''; rerender(); });
     els.performanceFilterInput?.addEventListener('input', (event) => { perf().labelFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
-    els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().quickFilter = ''; rerender(); });
-    els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().quickFilter = ''; rerender(); });
+    els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().useAllDates = false; perf().quickFilter = ''; rerender(); });
+    els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().useAllDates = false; perf().quickFilter = ''; rerender(); });
+    els.performanceUseAllDates?.addEventListener('change', (event) => { perf().useAllDates = Boolean(event.target.checked); perf().quickFilter = ''; rerender(); });
     els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; perf().quickFilter = ''; rerender(); });
     els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
     els.performanceProgramSelect?.addEventListener('change', (event) => {

@@ -895,9 +895,7 @@
       row.fundraiser_label = (row.drive_start_date && row.drive_end_date)
         ? `Imported pledge ${utils.formatDate(row.drive_start_date)} – ${utils.formatDate(row.drive_end_date)}`
         : (summary?.fileName || row.source_file_name || 'Imported fundraiser');
-      row.source_report_total_dollars = Number.isFinite(Number(summary?.reportTotalDollarsInput)) && Number(summary.reportTotalDollarsInput) > 0
-        ? Number(summary.reportTotalDollarsInput)
-        : (Number.isFinite(Number(summary?.detectedReportTotalDollars)) && Number(summary.detectedReportTotalDollars) > 0 ? Number(summary.detectedReportTotalDollars) : null);
+      row.source_report_total_dollars = Number(summary?.rawFileTotalDollars || 0) || null;
       row.row_hash = computeImportRowHash(row);
     });
     if (summary) {
@@ -913,9 +911,9 @@
 
   function updateFileSummaryReconciliation(summary = null) {
     if (!summary) return;
-    const reportTotal = Number(summary.reportTotalDollarsInput || 0) || 0;
     const rawTotal = Number(summary.rawFileTotalDollars || 0) || 0;
-    summary.reportDifferenceDollars = reportTotal > 0 ? Math.round((reportTotal - rawTotal) * 100) / 100 : null;
+    summary.reportTotalDollarsInput = rawTotal;
+    summary.reportDifferenceDollars = 0;
   }
 
   function deriveRollups(airingsRows = []) {
@@ -1032,7 +1030,7 @@
             detectedFormat: parsed?.diagnostics?.detectedFormat || 'headered_csv',
             warnings: [],
             detectedReportTotalDollars,
-            reportTotalDollarsInput: storedTotal > 0 ? storedTotal : (detectedReportTotalDollars || ''),
+            reportTotalDollarsInput: Number(rawMoneySummary.rawFileTotalDollars || 0) || 0,
             rawProgramSpecificTotalDollars: Number(rawMoneySummary.rawProgramSpecificTotalDollars || 0),
             rawNonSpecificTotalDollars: Number(rawMoneySummary.rawNonSpecificTotalDollars || 0),
             rawFileTotalDollars: Number(rawMoneySummary.rawFileTotalDollars || 0),
@@ -1064,12 +1062,6 @@
           }
           if (parseDiagnostics.totalRowsSkipped) {
             summaryWarnings.push(`${utils.formatCount(parseDiagnostics.totalRowsSkipped)} malformed legacy row${parseDiagnostics.totalRowsSkipped === 1 ? '' : 's'} skipped.`);
-          }
-          if (!(Number(fileSummary.reportTotalDollarsInput || 0) > 0)) {
-            summaryWarnings.unshift('Enter the report total from the original report before importing this file.');
-          }
-          if (Number.isFinite(Number(fileSummary.reportDifferenceDollars)) && Math.abs(Number(fileSummary.reportDifferenceDollars)) >= 0.01) {
-            summaryWarnings.unshift(`Raw CSV total differs from entered report total by ${utils.formatMoney(Number(fileSummary.reportDifferenceDollars || 0))}.`);
           }
           fileSummary.warnings = summaryWarnings.slice(0, 12);
           imp().fileSummaries.push(fileSummary);
@@ -1114,22 +1106,17 @@
       const matchedCount = getMatchedRows().length;
       const unmatchedCount = getUnmatchedRows().length;
       const importableRows = imp().airingsRows.length;
-      const missingReportTotals = imp().fileSummaries.filter((item) => item.normalizedRows && !(Number(item.reportTotalDollarsInput || 0) > 0)).length;
+      const missingReportTotals = 0;
       const unreconciledFiles = filesWithReconciliationDifferences();
       if (imp().airingsRows.length) {
         imp().warnings.unshift(`The importer has ${utils.formatCount(importableRows)} raw row${importableRows === 1 ? '' : 's'} ready for import, ${utils.formatCount(matchedCount)} matched row${matchedCount === 1 ? '' : 's'} ready for scheduling, and ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} still needing review.`);
       }
-      if (missingReportTotals) {
-        imp().warnings.unshift(`${utils.formatCount(missingReportTotals)} file${missingReportTotals === 1 ? '' : 's'} still need a report total entered before import.`);
-      }
       renderAll();
       const legacyFiles = imp().fileSummaries.filter((item) => item.detectedFormat === 'legacy_pbs_break_report').length;
       const legacyNote = legacyFiles ? ` ${utils.formatCount(legacyFiles)} legacy PBS Break Report file${legacyFiles === 1 ? '' : 's'} detected.` : '';
-      const totalsNote = missingReportTotals
-        ? ` Enter the report total for ${utils.formatCount(missingReportTotals)} file${missingReportTotals === 1 ? '' : 's'} before importing.`
-        : (unreconciledFiles.length
-          ? ` Raw CSV totals still differ from the entered report totals for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}.`
-          : ' Raw CSV totals reconcile exactly with the entered report totals.');
+      const totalsNote = unreconciledFiles.length
+        ? ` Raw CSV totals still show differences for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}.`
+        : ' Raw CSV totals reconcile exactly.';
       setStatus(`Preview ready: ${utils.formatCount(importableRows)} raw rows can be imported. ${utils.formatCount(matchedCount)} matched rows are schedulable and ${utils.formatCount(unmatchedCount)} rows still need review.${legacyNote}${totalsNote}`);
       setResultBanner(`Preview ready: ${utils.formatCount(importableRows)} raw airing rows can be imported. ${utils.formatCount(matchedCount)} matched rows are schedulable and ${utils.formatCount(unmatchedCount)} unmatched rows still need review.${legacyNote}${totalsNote}`);
     } catch (error) {
@@ -1145,7 +1132,7 @@
 
 
   function filesMissingReportTotals() {
-    return imp().fileSummaries.filter((item) => Number(item.normalizedRows || 0) > 0 && !(Number(item.reportTotalDollarsInput || 0) > 0));
+    return [];
   }
 
   function hasMissingReportTotals() {
@@ -1170,6 +1157,7 @@
   }
 
   function setManualReportTotalForFile(fileKey = '', rawValue = '') {
+    return;
     const summary = fileSummaryByKey(fileKey);
     if (!summary) return;
     const parsed = parseMoney(rawValue);
@@ -1256,10 +1244,6 @@
       setResultBanner('Scheduler creation is admin-only.', 'warn');
       return;
     }
-    if (hasMissingReportTotals()) {
-      setResultBanner(`Enter the report total for ${utils.formatCount(filesMissingReportTotals().length)} file${filesMissingReportTotals().length === 1 ? '' : 's'} before creating scheduler entries.`, 'warn');
-      return;
-    }
     if (filesWithReconciliationDifferences().length) {
       setResultBanner(`Fix the raw CSV reconciliation difference for ${utils.formatCount(filesWithReconciliationDifferences().length)} file${filesWithReconciliationDifferences().length === 1 ? '' : 's'} before creating scheduler entries.`, 'warn');
       return;
@@ -1286,14 +1270,6 @@
       setNotice('Direct import is admin-only. Export the normalized CSV if you need a handoff first.', 'warn');
       setStatus('Direct import is admin-only.', 'warn');
       setResultBanner('Direct import is admin-only. Sign in as an admin before writing matched rows to Supabase.', 'warn');
-      return;
-    }
-    if (hasMissingReportTotals()) {
-      const count = filesMissingReportTotals().length;
-      const message = `Enter the report total for ${utils.formatCount(count)} file${count === 1 ? '' : 's'} before importing.`;
-      setStatus(message, 'warn');
-      setNotice(message, 'warn');
-      setResultBanner(message, 'warn');
       return;
     }
     if (filesWithReconciliationDifferences().length) {
@@ -1731,36 +1707,23 @@
     const canEdit = App.auth.canEdit();
     const allRowCount = Array.isArray(imp().airingsRows) ? imp().airingsRows.length : 0;
     const matchedCount = getMatchedRows().length;
-    const missingTotals = filesMissingReportTotals();
     const unreconciledFiles = filesWithReconciliationDifferences();
-    const needsTotals = missingTotals.length > 0;
     const hasDiffs = unreconciledFiles.length > 0;
     const canImport = Boolean(canEdit && allRowCount);
     const canBuild = Boolean(canEdit && matchedCount);
+    document.querySelectorAll('.import-supabase-trigger').forEach((button) => {
+      button.disabled = !canImport;
+      button.title = !canEdit ? 'Admin sign-in required for direct Supabase writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (allRowCount ? '' : 'Load imported airings first.'));
+    });
     if (els.importSupabaseButton) {
       els.importSupabaseButton.disabled = !canImport;
-      els.importSupabaseButton.title = !canEdit
-        ? 'Admin sign-in required for direct Supabase writes.'
-        : (needsTotals
-          ? `Enter the report total for ${utils.formatCount(missingTotals.length)} file${missingTotals.length === 1 ? '' : 's'} first.`
-          : (hasDiffs
-            ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
-            : (allRowCount ? '' : 'Load imported airings first.')));
+      els.importSupabaseButton.title = !canEdit ? 'Admin sign-in required for direct Supabase writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (allRowCount ? '' : 'Load imported airings first.'));
     }
     if (els.importBuildScheduleButton) {
       els.importBuildScheduleButton.disabled = !canBuild;
-      els.importBuildScheduleButton.title = !canEdit
-        ? 'Admin sign-in required for scheduler writes.'
-        : (needsTotals
-          ? `Enter the report total for ${utils.formatCount(missingTotals.length)} file${missingTotals.length === 1 ? '' : 's'} first.`
-          : (hasDiffs
-            ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
-            : (matchedCount ? '' : 'Load matched imported airings first, then sign in as admin.')));
+      els.importBuildScheduleButton.title = !canEdit ? 'Admin sign-in required for scheduler writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (matchedCount ? '' : 'Load matched imported airings first, then sign in as admin.'));
     }
-    if (needsTotals) {
-      setStatusPill(`Report totals required · ${utils.formatCount(missingTotals.length)} file${missingTotals.length === 1 ? '' : 's'}`, true);
-      return;
-    }
+    document.querySelectorAll('.import-apply-all-trigger').forEach((button) => { button.disabled = !getUnmatchedRows().length; });
     if (hasDiffs) {
       setStatusPill(`Reconcile raw CSV totals · ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}`, true);
       return;
@@ -1849,6 +1812,8 @@
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
     els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
     els.importApplyAllButton?.addEventListener('click', () => { applyAllPendingMatches(); });
+    document.querySelectorAll('.import-supabase-trigger').forEach((button) => button.addEventListener('click', () => { void importToSupabase(); }));
+    document.querySelectorAll('.import-apply-all-trigger').forEach((button) => button.addEventListener('click', () => { applyAllPendingMatches(); }));
     const syncReportTotalInput = (event) => {
       const input = event.target.closest('.import-report-total-input');
       if (!input) return;
