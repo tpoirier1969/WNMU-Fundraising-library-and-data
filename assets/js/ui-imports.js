@@ -1171,7 +1171,7 @@
         <td>${escape(utils.formatMoney(item.programSpecificTotalDollars || 0))}</td>
         <td>${escape(utils.formatMoney(item.nonSpecificTotalDollars || 0))}</td>
         <td>${escape(utils.formatMoney(item.combinedTotalDollars || 0))}</td>
-        <td><input type="text" class="import-report-total-input" data-file-key="${escape(item.fileKey || '')}" value="${escape(reportValue)}" placeholder="$0.00"></td>
+        <td><div class="import-report-total-cell"><div class="mini-label">Enter full report total</div><input type="text" class="import-report-total-input" data-file-key="${escape(item.fileKey || '')}" value="${escape(reportValue)}" placeholder="Full total" title="Enter the full report total from the original report. The app calculates Non-specific dollars automatically."></div></td>
         <td class="${diffWarn ? 'import-diff-warn' : ''}">${item.reportDifferenceDollars == null ? '—' : escape(utils.formatMoney(item.reportDifferenceDollars))}</td>
         <td>${escape(dateRange)}</td>
         <td>${escape((item.warnings || []).join(' | ') || '—')}</td>

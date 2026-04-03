@@ -564,8 +564,16 @@
   }
 
   function sanitizeImportRow(row = {}) {
+    const uiOnlyKeys = new Set([
+      'pending_persist_match_rule',
+      'pending_manual_match_program_id',
+      'pending_manual_match_label',
+      'manual_match_label'
+    ]);
     return Object.fromEntries(
-      Object.entries(row).map(([key, value]) => [key, value === undefined ? null : value])
+      Object.entries(row)
+        .filter(([key]) => !uiOnlyKeys.has(key))
+        .map(([key, value]) => [key, value === undefined ? null : value])
     );
   }
 
@@ -597,8 +605,10 @@
     if (!rows.length) return { written: 0, mode: 'skip' };
     let payload = rows.map((row) => sanitizeImportRow(row));
     let omittedColumns = [];
+    let safety = 0;
 
-    for (let attempt = 0; attempt < 4; attempt += 1) {
+    while (safety < 12) {
+      safety += 1;
       let response = await state.client.from(tableName).upsert(payload, { onConflict: 'row_hash' });
       if (!response.error) return { written: payload.length, mode: omittedColumns.length ? `upsert-pruned:${omittedColumns.join(',')}` : 'upsert' };
 
