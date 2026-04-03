@@ -2488,7 +2488,7 @@ button.primary {
   overflow-wrap: anywhere;
 }
 
-/* v0.20.32 import reconciliation + persistent match rules */
+/* v0.20.33 import reconciliation + persistent match rules */
 .import-review-note {
   margin-top: 0.35rem;
   font-size: 0.88rem;

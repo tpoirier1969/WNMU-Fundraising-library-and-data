@@ -55,6 +55,14 @@
     return imp().airingsRows.filter((row) => !isImportMatched(row));
   }
 
+  function sumRowDollars(rows = []) {
+    return (Array.isArray(rows) ? rows : []).reduce((sum, row) => sum + (Number(row?.dollars || 0) || 0), 0);
+  }
+
+  function getUnmatchedDollarTotal() {
+    return sumRowDollars(getUnmatchedRows());
+  }
+
   function getStoredAliasRules() {
     return Array.isArray(imp().aliasRules) ? imp().aliasRules : [];
   }
@@ -1035,16 +1043,18 @@
       setResultBanner(`Enter the report total for ${utils.formatCount(filesMissingReportTotals().length)} file${filesMissingReportTotals().length === 1 ? '' : 's'} before creating scheduler entries.`, 'warn');
       return;
     }
+    const allRows = Array.isArray(imp().airingsRows) ? imp().airingsRows.slice() : [];
     const matchedRows = getMatchedRows();
-    if (!matchedRows.length) {
-      setResultBanner('No matched imported airings are available for scheduler creation yet.', 'warn');
+    const unmatchedDollarTotal = getUnmatchedDollarTotal();
+    if (!allRows.length) {
+      setResultBanner('No imported airings are available for scheduler creation yet.', 'warn');
       return;
     }
-    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: matchedRows, rebuild: Boolean(options.rebuild) });
+    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: allRows, rebuild: Boolean(options.rebuild) });
     if (summary) {
       const diag = summary.diagnostics || {};
       const extra = summary.skippedRows
-        ? ` ${utils.formatCount(summary.skippedRows)} rows could not be placed${(diag.noLibraryMatch || diag.badDate || diag.badTime) ? ` (${utils.formatCount(diag.noLibraryMatch || 0)} no library match, ${utils.formatCount(diag.badDate || 0)} bad date, ${utils.formatCount(diag.badTime || 0)} bad time)` : ''}.`
+        ? ` ${utils.formatCount(summary.skippedRows)} rows could not be placed${(diag.noLibraryMatch || diag.badDate || diag.badTime) ? ` (${utils.formatCount(diag.noLibraryMatch || 0)} no library match, ${utils.formatCount(diag.badDate || 0)} bad date, ${utils.formatCount(diag.badTime || 0)} bad time)` : ''}, but their dollars still remain in fundraiser totals${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`
         : '';
       setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.${extra}`);
     }
@@ -1070,27 +1080,29 @@
       setResultBanner('There is nothing to import yet. Load a PBS Break Report CSV first.', 'warn');
       return;
     }
+    const allRows = Array.isArray(imp().airingsRows) ? imp().airingsRows.slice() : [];
     const matchedRows = getMatchedRows();
-    const unmatchedCount = imp().airingsRows.length - matchedRows.length;
-    if (!matchedRows.length) {
-      const message = 'No matched rows are eligible for direct import yet. Resolve the unmatched rows in the review table or export the preview for manual review.';
+    const unmatchedCount = allRows.length - matchedRows.length;
+    const unmatchedDollarTotal = getUnmatchedDollarTotal();
+    if (!allRows.length) {
+      const message = 'No imported rows are available for direct import yet. Load a PBS Break Report CSV first.';
       setStatus(message, 'warn');
       setNotice(message, 'warn');
       setResultBanner(message, 'warn');
       return;
     }
-    setStatus(`Importing or reimporting ${utils.formatCount(matchedRows.length)} matched airing rows to Supabase…`);
-    setResultBanner(`Importing or reimporting ${utils.formatCount(matchedRows.length)} matched airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be skipped. Existing duplicates will be ignored automatically.`);
+    setStatus(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows to Supabase…`);
+    setResultBanner(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be imported without a library link so their dollars still count toward fundraiser totals${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}. Existing duplicates will be ignored automatically.`);
     try {
       const summary = await App.data.importNormalizedRows({
-        airingsRows: matchedRows,
+        airingsRows: allRows,
         driveRows: []
       });
-      imp().lastImportResult = { ...summary, skippedUnmatched: unmatchedCount };
+      imp().lastImportResult = { ...summary, skippedUnmatched: 0, unmatchedImported: unmatchedCount };
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
       renderAll();
-      const success = `Imported ${utils.formatCount(summary.airings.written)} matched airings row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were skipped.`;
+      const success = `Imported ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
       setStatus(success);
       setResultBanner(success);
       setNotice(success);
@@ -1140,7 +1152,7 @@
     if (!els.importWarningList) return;
     const warnings = [...new Set(imp().warnings.filter(Boolean))];
     if (imp().lastImportResult) {
-      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows, skipped ${utils.formatCount(imp().lastImportResult.airings.skippedDuplicates || 0)} duplicates, and skipped ${utils.formatCount(imp().lastImportResult.skippedUnmatched || 0)} unmatched rows. Fundraiser rollups remain derived only.`);
+      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows, skipped ${utils.formatCount(imp().lastImportResult.airings.skippedDuplicates || 0)} duplicates, and imported ${utils.formatCount(imp().lastImportResult.unmatchedImported || 0)} unmatched rows without a library link so their dollars still count. Fundraiser rollups remain derived only.`);
     }
     if (!warnings.length) {
       els.importWarningList.innerHTML = '';
