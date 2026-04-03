@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fishing Logbook v10.33.1</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<link rel="icon" type="image/svg+xml" href="fishing-icon.svg">
+<link rel="apple-touch-icon" href="fishing-icon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="map"></div>
+<div id="topBadge" class="glass">Fishing Logbook v10.33.1</div>
+<div id="buildNotice" class="noticeBanner">This app is still being built. Glitches are expected for now, but most issues should be corrected within a few hours.</div>
+<div id="statusBadge" class="glass hidden">Ready.</div>
+
+<div id="floatingActions">
+  <button id="anglerSetupBtn" class="pill">Angler Setup</button>
+  <button id="addLogBtn" class="pill primary">Add Log</button>
+  <button id="reviewBtn" class="pill">Review</button>
+  <button id="filterBtn" class="pill">Filters</button>
+  <button id="cloudBtn" class="pill">Sync Cloud</button>
+  <button id="predictBtn" class="pill">Prediction</button>
+</div>
+
+<div id="logSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head">
+    <div><h2>New Fishing Log</h2><p>Now supports a broader Midwest species list and phone-based spot marking.</p></div>
+    <button id="closeLogSheetBtn" class="sheetClose" type="button">Close</button>
+  </div>
+
+  <form id="logForm" autocomplete="off" novalidate>
+    <div class="section">
+      <div class="section-title">Location</div>
+      <div class="helper-box" id="waterLookupStatus">Tap Add Log to use your phone location, or pick a spot on the map.</div>
+      <div class="location-actions">
+        <button type="button" id="useDeviceLocationBtn" class="secondaryBtn">Use My Location</button>
+        <button type="button" id="pickOnMapBtn" class="secondaryBtn">Pick on Map</button>
+      </div>
+      <div id="locationSummary" class="helper-box hidden"></div>
+      <div class="form-grid two">
+        <label>Date<input type="date" id="date" name="date" required></label>
+        <label>Time of Day
+          <select id="timeOfDay" name="timeOfDay" required>
+            <option>Dawn</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>Evening</option><option>Night</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-grid two">
+        <label>Body of Water<input type="text" id="waterName" name="waterName" list="waterNameSuggestionsList" required><datalist id="waterNameSuggestionsList"></datalist></label>
+        <label>Waypoint / Spot Name<input type="text" id="waypointName" name="waypointName" placeholder="Optional"></label>
+      </div>
+      <div class="form-grid two">
+        <label>Water Type
+          <select id="waterType" name="waterType" required>
+            <option value="">Choose one</option>
+            <option>Stream</option>
+            <option>River</option>
+            <option>Pond</option>
+            <option>Lake</option>
+            <option>Great Lake</option>
+          </select>
+        </label>
+        <label>Sharing Preview<input type="text" id="sharePreview" name="sharePreview" readonly placeholder="Set up your angler settings first."></label>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Conditions</div>
+      <div class="form-grid four">
+        <label>Sky
+          <select id="skyCondition" name="skyCondition" required>
+            <option value="">Choose one</option><option>Clear</option><option>Cloudy</option><option>Rain</option><option>Night</option>
+          </select>
+        </label>
+        <label>Air Temp (°F)<input type="number" id="airTemp" name="airTemp"></label>
+        <label>Water Temp (°F)<input type="number" id="waterTemp" name="waterTemp"></label>
+        <label>Water Conditions
+          <select id="waterCondition" name="waterCondition" required>
+            <option value="">Choose one</option><option>Low</option><option>Average</option><option>High</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-grid four">
+        <label>Water Clarity
+          <select id="waterClarity" name="waterClarity" required>
+            <option value="">Choose one</option><option>Clear</option><option>Stained</option><option>Muddy</option>
+          </select>
+        </label>
+        <label>Depth Zone
+          <select id="depthZone" name="depthZone" required>
+            <option value="">Choose one</option><option>Surface</option><option>Mid-Column</option><option>Bottom</option>
+          </select>
+        </label>
+        <label>Presentation Style
+          <select id="presentationStyle" name="presentationStyle" required>
+            <option value="">Choose one</option><option>Dead Drift</option><option>Swing</option><option>Strip</option><option>Twitch</option><option>Jig</option><option>Under Bobber</option><option>Bottom Bounce</option><option>Trolling</option><option>Static</option>
+          </select>
+        </label>
+        <label>Structure Type
+          <select id="structureType" name="structureType" required>
+            <option value="">Choose one</option><option>Pool</option><option>Riffle</option><option>Run</option><option>Seam</option><option>Undercut Bank</option><option>Logjam</option><option>Weed Edge</option><option>Rocky Bank</option><option>Current Break</option><option>Drop-off</option><option>Inlet / Outlet</option><option>Open Water</option><option>Shoreline</option>
+          </select>
+        </label>
+      </div>
+      <label>Hatches<input type="text" id="hatches" name="hatches" placeholder="Hex, caddis, bwo, none..."></label>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Bait</div>
+      <div class="form-grid three">
+        <label>Bait Type
+          <select id="baitType" name="baitType" required>
+            <option value="">Choose one</option><option>Fly</option><option>Lure</option><option>Live Bait</option>
+          </select>
+        </label>
+        <label id="subtypeWrap">Subtype
+          <select id="baitSubtype" name="baitSubtype"><option value="">Choose one</option></select>
+        </label>
+        <label id="sizeWrap">Fly Size
+          <select id="baitSize" name="baitSize"><option value="">Choose one</option></select>
+        </label>
+      </div>
+
+      <div id="nameWrap" class="typeahead-wrap">
+        <label id="nameLabel">Name
+          <input type="text" id="baitName" name="baitName" placeholder="Choose bait type first...">
+        </label>
+        <div id="nameSuggestions" class="suggestions hidden"></div>
+      </div>
+
+      <div class="helper-box" id="baitHelper">Choose bait type first.</div>
+
+      <div class="form-grid three">
+        <label id="mainColorWrap">Lure Color
+          <select id="mainColor" name="mainColor">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label id="additionalColorWrap">Additional Lure Color
+          <select id="additionalColor" name="additionalColor">
+            <option value="">None</option>
+          </select>
+        </label>
+        <label>Speed
+          <select id="retrieveSpeed" name="retrieveSpeed">
+            <option value="">Optional</option><option>Slow</option><option>Medium</option><option>Fast</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Fish</div>
+      <div class="form-grid four">
+        <label>Species
+          <select id="species" name="species" required>
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label>Size (inches)<input type="number" id="sizeInches" name="sizeInches" min="0" step="0.25" required></label>
+        <label>Weight<input type="text" id="weight" name="weight" placeholder="Optional"></label>
+        <label>Quantity<input type="number" id="quantity" name="quantity" min="1" step="1" value="1" required></label>
+      </div>
+      <label>Notes<textarea id="notes" name="notes" rows="3" placeholder="Anything worth remembering."></textarea></label>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Sharing</div>
+      <div class="helper-box" id="sharingSummaryBox">All logs are shared. Use Angler Setup to choose whether your name is shown and whether location is shared by water type or body of water name.</div>
+    </div>
+
+    <div class="button-row">
+      <button type="button" id="clearSpotBtn" class="secondaryBtn">Clear Spot</button>
+      <button type="submit" id="saveBtn" class="primaryBtn">Save Log</button>
+    </div>
+  </form>
+</div>
+
+<div id="anglerSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Angler Setup</h2><p>Set your public name and location-sharing depth once. Every new log on this device inherits it.</p></div><button id="closeAnglerSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <form id="anglerForm" autocomplete="off" novalidate>
+    <div class="section">
+      <div class="section-title">Identity</div>
+      <div class="form-grid two">
+        <label>Angler Name<input type="text" id="anglerNameInput" name="anglerNameInput" placeholder="Your display name" required></label>
+        <label>Sync Key<input type="text" id="anglerKeyInput" name="anglerKeyInput" placeholder="Use same key on other devices"></label>
+      </div>
+      <div class="location-actions">
+        <button type="button" id="generateAnglerKeyBtn" class="secondaryBtn">Generate / Refresh Key</button>
+        <button type="button" id="copyAnglerKeyBtn" class="secondaryBtn">Copy Sync Key</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Sharing Defaults</div>
+      <div class="form-grid two">
+        <label>Share Name Publicly
+          <select id="shareAnglerNameInput" name="shareAnglerNameInput">
+            <option value="Yes">Yes</option>
+            <option value="No">Anonymous</option>
+          </select>
+        </label>
+        <label>Location Sharing Depth
+          <select id="locationShareLevelInput" name="locationShareLevelInput">
+            <option value="Water Type Only">Water Type Only</option>
+            <option value="Body of Water Name">Body of Water Name</option>
+          </select>
+        </label>
+      </div>
+      <div class="helper-box" id="anglerPreviewBox">Shared as Anonymous · Water Type Only</div>
+    </div>
+
+    <div class="button-row">
+      <button type="submit" id="saveAnglerSettingsBtn" class="primaryBtn">Save Angler Settings</button>
+    </div>
+  </form>
+</div>
+
+<div id="reviewSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Review Logs</h2><p id="reviewSubcopy">Saved logs stay tucked away until you want them.</p></div><button id="closeReviewSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div id="cloudSummary" class="helper-box">Local-only mode. Add Supabase details in supabase-config.js to share logs across devices.</div>
+  <div id="statsGrid" class="statsGrid"></div>
+  <div id="entryCount" class="entryCount"></div>
+  <div id="entryList" class="entryList"></div>
+</div>
+
+
+<div id="predictSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Prediction Input</h2><p>Capture future prediction variables now. No recommendation engine yet.</p></div><button id="closePredictSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div class="helper-box">Dormant for now. This just defines the future prediction inputs.</div>
+  <form id="predictForm" autocomplete="off" novalidate>
+    <div class="section">
+      <div class="section-title">Trip Context</div>
+      <div class="form-grid two"><label>Date<input type="date" id="predictDate"></label><label>Time of Day<select id="predictTimeOfDay"><option value="">Choose one</option><option>Dawn</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></label></div>
+      <div class="form-grid two"><label>Body of Water<input type="text" id="predictWaterName" placeholder="Optional"></label><label>Water Type<select id="predictWaterType"><option value="">Choose one</option><option>Stream</option><option>River</option><option>Pond</option><option>Lake</option><option>Great Lake</option></select></label></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Targeting</div>
+      <div class="form-grid three"><label>Species<select id="predictSpecies"><option value="">Choose one</option></select></label><label>Presentation Style<select id="predictPresentationStyle"><option value="">Choose one</option><option>Dead Drift</option><option>Swing</option><option>Strip</option><option>Twitch</option><option>Jig</option><option>Under Bobber</option><option>Bottom Bounce</option><option>Trolling</option><option>Static</option></select></label><label>Bait Type<select id="predictBaitType"><option value="">Choose one</option><option>Fly</option><option>Lure</option><option>Live Bait</option><option>Cut Bait</option></select></label></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Conditions</div>
+      <div class="form-grid four"><label>Sky<select id="predictSky"><option value="">Choose one</option><option>Clear</option><option>Cloudy</option><option>Rain</option><option>Night</option></select></label><label>Air Temp (°F)<input type="number" id="predictAirTemp"></label><label>Water Temp (°F)<input type="number" id="predictWaterTemp"></label><label>Water Clarity<select id="predictWaterClarity"><option value="">Choose one</option><option>Clear</option><option>Stained</option><option>Muddy</option></select></label></div>
+      <div class="form-grid four"><label>Depth Zone<select id="predictDepthZone"><option value="">Choose one</option><option>Surface</option><option>Mid-Column</option><option>Bottom</option></select></label><label>Structure<select id="predictStructureType"><option value="">Choose one</option><option>Pool</option><option>Riffle</option><option>Run</option><option>Seam</option><option>Undercut Bank</option><option>Logjam</option><option>Weed Edge</option><option>Rocky Bank</option><option>Current Break</option><option>Drop-off</option><option>Inlet / Outlet</option><option>Open Water</option><option>Shoreline</option></select></label><label>Wind<input type="text" id="predictWind" placeholder="Optional"></label><label>Notes<input type="text" id="predictNotes" placeholder="Anything worth tracking later"></label></div>
+    </div>
+    <div class="button-row"><button type="button" id="predictNotLiveBtn" class="secondaryBtn">Prediction Not Live Yet</button></div>
+  </form>
+</div>
+
+<div id="filterSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Filters</h2><p>Keep the map from turning into point soup.</p></div><button id="closeFilterSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div class="form-grid two"><label>From Date<input type="date" id="filterDateFrom"></label><label>To Date<input type="date" id="filterDateTo"></label></div>
+  <div class="form-grid two"><label>Species<select id="filterSpecies"><option value="">All</option></select></label><label>Color<select id="filterColor"><option value="">All</option></select></label></div>
+  <div class="form-grid two"><label>Bait Type<select id="filterBaitType"><option value="">All</option></select></label><label>Water Type<select id="filterWaterType"><option value="">All</option><option>Stream</option><option>River</option><option>Pond</option><option>Lake</option><option>Great Lake</option></select></label></div>
+  <div class="form-grid two"><label>Time of Day<select id="filterTimeOfDay"><option value="">All</option><option>Dawn</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></label><label>Sky<select id="filterSky"><option value="">All</option><option>Clear</option><option>Cloudy</option><option>Rain</option><option>Night</option></select></label></div>
+  <div class="form-grid two"><label>Speed<select id="filterRetrieveSpeed"><option value="">All</option><option>Slow</option><option>Medium</option><option>Fast</option></select></label><label></label></div>
+  <div class="button-row"><button id="resetFiltersBtn" type="button" class="secondaryBtn">Reset Filters</button></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="fly-reference.js"></script>
+<script src="supabase-config.js"></script>
+<script src="fishing-vocab.js"></script>
+<script src="sheet-controller.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

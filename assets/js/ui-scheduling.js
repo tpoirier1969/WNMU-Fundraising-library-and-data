@@ -169,11 +169,13 @@
     let importedBroadcastTotalDollars = 0;
     let importedProgramSpecificBroadcastTotalDollars = 0;
     let importedNonSpecificBroadcastTotalDollars = 0;
+    let importedPledgesTotal = 0;
     const byFile = new Map();
     (Array.isArray(rows) ? rows : []).forEach((entry) => {
       const row = entry?.row || entry || {};
       const dollars = Number(row?.dollars || 0) || 0;
       importedBroadcastTotalDollars += dollars;
+      importedPledgesTotal += Number(row?.pledge_count || row?.pledges || 0) || 0;
       if (importedRowIsNonSpecific(row)) importedNonSpecificBroadcastTotalDollars += dollars;
       else importedProgramSpecificBroadcastTotalDollars += dollars;
       const file = String(row?.source_file_name || '').trim();
@@ -187,8 +189,14 @@
       importedBroadcastTotalDollars,
       importedProgramSpecificBroadcastTotalDollars,
       importedNonSpecificBroadcastTotalDollars,
+      importedPledgesTotal,
       reportedBroadcastTotalDollars
     };
+  }
+
+  function scheduleImportedPledgesTotal(schedule = {}) {
+    const metaTotal = Number(schedule?.meta?.importedPledgesTotal);
+    return Number.isFinite(metaTotal) && metaTotal > 0 ? metaTotal : 0;
   }
 
   function scheduleReportedBroadcastTotal(schedule = {}) {
@@ -267,6 +275,7 @@
           importedBroadcastTotalDollars: totals.importedBroadcastTotalDollars > 0 ? totals.importedBroadcastTotalDollars : Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0,
           importedProgramSpecificBroadcastTotalDollars: totals.importedProgramSpecificBroadcastTotalDollars > 0 ? totals.importedProgramSpecificBroadcastTotalDollars : Number(schedule?.meta?.importedProgramSpecificBroadcastTotalDollars || 0) || 0,
           importedNonSpecificBroadcastTotalDollars: totals.importedNonSpecificBroadcastTotalDollars > 0 ? totals.importedNonSpecificBroadcastTotalDollars : Number(schedule?.meta?.importedNonSpecificBroadcastTotalDollars || 0) || 0,
+          importedPledgesTotal: totals.importedPledgesTotal > 0 ? totals.importedPledgesTotal : Number(schedule?.meta?.importedPledgesTotal || 0) || 0,
           reportedBroadcastTotalDollars: totals.reportedBroadcastTotalDollars > 0 ? totals.reportedBroadcastTotalDollars : Number(schedule?.meta?.reportedBroadcastTotalDollars || 0) || 0
         };
         if ((schedule.placements || []).length) {
@@ -738,6 +747,7 @@
         importedBroadcastTotalDollars: totals.importedBroadcastTotalDollars,
         importedProgramSpecificBroadcastTotalDollars: totals.importedProgramSpecificBroadcastTotalDollars,
         importedNonSpecificBroadcastTotalDollars: totals.importedNonSpecificBroadcastTotalDollars,
+        importedPledgesTotal: totals.importedPledgesTotal,
         reportedBroadcastTotalDollars: totals.reportedBroadcastTotalDollars
       };
       if (!firstScheduleId) firstScheduleId = schedule.id;
