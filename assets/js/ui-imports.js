@@ -820,7 +820,7 @@
       pending_persist_match_rule: false,
       manual_match_program_id: null,
       manual_match_label: '',
-      raw_payload: mapped
+      raw_payload: extracted.mapped
     };
     normalizedRow.row_hash = computeImportRowHash(normalizedRow);
 
