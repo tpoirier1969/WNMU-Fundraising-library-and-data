@@ -5,7 +5,8 @@
 
   const DATETIME_KEYS = ['aired_at', 'air_datetime', 'air_date', 'drive_date', 'broadcast_at', 'scheduled_at', 'date_time', 'datetime', 'airing_at', 'airing_date'];
   const TIME_ONLY_KEYS = ['air_time', 'time_of_day', 'scheduled_time', 'slot_time', 'airtime', 'broadcast_time'];
-  const MONEY_KEYS = ['dollars', 'total_dollars', 'contribution_total', 'total_contributions', 'total_raised', 'gross_contributions', 'amount_raised', 'revenue', 'pledge_total', 'contributions'];
+  const AIRING_MONEY_KEYS = ['dollars'];
+  const DRIVE_MONEY_KEYS = ['total_dollars', 'dollars'];
   const LOCAL_BREAK_KEYS = ['local_breaks', 'local_break_count', 'local_cutins_count', 'local_cutin_count', 'local_cutins', 'legacy_has_local_cutins_raw'];
   const LIVE_BREAK_KEYS = ['live_breaks', 'live_break_count', 'live_break_flag', 'live_break_notes', 'live_break_note'];
   const PREMIUM_KEYS = ['premium_summary', 'premiums', 'premium_notes', 'premium_offer', 'premium_description'];
@@ -244,7 +245,6 @@
     const byId = new Map();
     const byNola = new Map();
     const byTitle = new Map();
-    const titleEntries = [];
     (rows || []).forEach((row) => {
       const id = utils.normalizeLookupKey(derive.programId(row));
       const nola = utils.normalizeLookupKey(derive.nola(row));
@@ -252,26 +252,65 @@
       if (id && !byId.has(id)) byId.set(id, row);
       if (nola && !byNola.has(nola)) byNola.set(nola, row);
       if (title && !byTitle.has(title)) byTitle.set(title, row);
-      if (title) titleEntries.push({ key: title, row });
     });
-    return { byId, byNola, byTitle, titleEntries };
+    return { byId, byNola, byTitle };
   }
 
-  function fuzzyTitleMatch(titleKey, titleEntries) {
-    if (!titleKey || titleKey.length < 6) return null;
-    const matches = titleEntries.filter((entry) => entry.key.includes(titleKey) || titleKey.includes(entry.key));
-    if (matches.length === 1) return matches[0].row;
-    return null;
+  function importedTitleLooksAnnotated(value) {
+    const text = utils.normalizeText(value).toLowerCase();
+    if (!text) return false;
+    return /(break time|was off by|seconds?|timing note|runtime note|note)/i.test(text);
   }
 
-  function matchProgramRow(row, indexes) {
+  function resolveProgramIdentity(row, indexes) {
+    const importedTitle = utils.firstNonEmpty(row?.imported_program_title, row?.title, row?.program_title, row?.name, '');
+    const matchedLibraryTitle = utils.firstNonEmpty(row?.matched_library_title, '');
     const id = utils.normalizeLookupKey(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, row?.id));
-    if (id && indexes.byId.has(id)) return indexes.byId.get(id);
+    if (id && indexes.byId.has(id)) {
+      return { programRow: indexes.byId.get(id), matchSource: 'program_id', trusted: true, importedTitle, matchedLibraryTitle };
+    }
     const nola = utils.normalizeLookupKey(utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola));
-    if (nola) return indexes.byNola.get(nola) || null;
-    const title = utils.normalizeLookupKey(utils.firstNonEmpty(row?.title, row?.program_title, row?.name));
-    if (title && indexes.byTitle.has(title)) return indexes.byTitle.get(title);
-    return fuzzyTitleMatch(title, indexes.titleEntries);
+    if (nola && indexes.byNola.has(nola)) {
+      return { programRow: indexes.byNola.get(nola), matchSource: 'nola', trusted: true, importedTitle, matchedLibraryTitle };
+    }
+    const titleCandidates = [matchedLibraryTitle, utils.firstNonEmpty(row?.title, row?.program_title, row?.name), importedTitle]
+      .map((value) => utils.normalizeLookupKey(value))
+      .filter(Boolean);
+    for (const titleKey of titleCandidates) {
+      if (indexes.byTitle.has(titleKey)) {
+        return {
+          programRow: indexes.byTitle.get(titleKey),
+          matchSource: titleKey === utils.normalizeLookupKey(matchedLibraryTitle) && matchedLibraryTitle ? 'matched_library_title' : 'title_exact',
+          trusted: true,
+          importedTitle,
+          matchedLibraryTitle
+        };
+      }
+    }
+    return {
+      programRow: null,
+      matchSource: utils.normalizeText(row?.match_method) || 'unmatched',
+      trusted: false,
+      importedTitle,
+      matchedLibraryTitle
+    };
+  }
+
+  function resolveMoney(row, kind = 'airing') {
+    const keys = kind === 'drive' ? DRIVE_MONEY_KEYS : AIRING_MONEY_KEYS;
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(row || {}, key)) {
+        const amount = parseMoney(row?.[key]);
+        if (amount != null) return { amount, source: key, trusted: true };
+      }
+    }
+    return { amount: null, source: 'missing', trusted: false };
+  }
+
+  function pushIntegrityFlag(record, flag) {
+    if (!flag) return;
+    if (!Array.isArray(record.integrityFlags)) record.integrityFlags = [];
+    if (!record.integrityFlags.includes(flag)) record.integrityFlags.push(flag);
   }
 
   function localDateKey(date) {
@@ -304,6 +343,8 @@
   function buildSchedulePlacementIndex(indexes) {
     const exact = new Map();
     const byDate = new Map();
+    const coveredDates = new Set();
+    const datesWithPlacements = new Set();
     const schedules = Array.isArray(state.schedules) ? state.schedules : [];
     const getProgramRowById = (programId) => {
       const key = String(programId || '');
@@ -316,6 +357,9 @@
       map.get(key).push(value);
     };
     schedules.forEach((schedule) => {
+      utils.datesBetween(utils.normalizeText(schedule?.startDate), utils.normalizeText(schedule?.endDate)).forEach((dateKey) => {
+        if (dateKey) coveredDates.add(dateKey);
+      });
       (schedule?.placements || []).forEach((placement) => {
         const programRow = getProgramRowById(placement.programId) || null;
         const signature = signatureForProgram(programRow, placement);
@@ -324,11 +368,12 @@
         const endMinutes = Number(placement.endMinutes || startMinutes);
         const liveBreak = placement?.liveBreakFlag === true;
         const entry = { scheduleId: schedule?.id || '', placementId: placement?.id || '', signature, dateKey, startMinutes, endMinutes, liveBreak, placement, programRow };
+        if (dateKey) datesWithPlacements.add(dateKey);
         push(exact, `${signature}|${dateKey}|${startMinutes}`, entry);
         push(byDate, `${signature}|${dateKey}`, entry);
       });
     });
-    return { exact, byDate };
+    return { exact, byDate, coveredDates, datesWithPlacements };
   }
 
   function scheduleLiveBreakLabelForRecord(record, placementIndex) {
@@ -353,6 +398,48 @@
     return { label: 'Unknown / not matched to schedule', matched: false };
   }
 
+
+  function scheduleIntegrityForRecord(record, placementIndex) {
+    const dateKey = record?.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? localDateKey(record.when) : '';
+    const coveredBySchedule = Boolean(dateKey && placementIndex?.coveredDates?.has(dateKey));
+    if (!dateKey || !(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record?.hasExplicitTime) {
+      return {
+        coveredBySchedule,
+        shouldExclude: false,
+        reason: coveredBySchedule ? 'known_schedule_date_without_explicit_time' : 'no_explicit_time',
+        label: coveredBySchedule ? 'Known schedule date, but row has no explicit time' : 'No explicit time to reconcile'
+      };
+    }
+    const signature = record.signature || signatureForProgram(null, record);
+    if (!signature) {
+      return {
+        coveredBySchedule,
+        shouldExclude: coveredBySchedule,
+        reason: coveredBySchedule ? 'known_schedule_date_without_signature' : 'no_signature',
+        label: coveredBySchedule ? 'Inside a saved schedule window, but missing a trustworthy program signature' : 'Missing signature'
+      };
+    }
+    const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
+    const exactMatches = placementIndex?.exact?.get(`${signature}|${dateKey}|${minutes}`) || [];
+    if (exactMatches.length) {
+      return { coveredBySchedule, shouldExclude: false, reason: 'schedule_exact', label: 'Matched to saved schedule exactly' };
+    }
+    const dateMatches = placementIndex?.byDate?.get(`${signature}|${dateKey}`) || [];
+    const overlapping = dateMatches.filter((item) => minutes >= item.startMinutes && minutes < item.endMinutes);
+    if (overlapping.length) {
+      return { coveredBySchedule, shouldExclude: false, reason: 'schedule_overlap', label: 'Matched to saved schedule block' };
+    }
+    if (coveredBySchedule) {
+      return {
+        coveredBySchedule,
+        shouldExclude: true,
+        reason: 'known_schedule_date_not_reconciled',
+        label: 'Inside a saved schedule window, but not reconciled to a scheduled placement'
+      };
+    }
+    return { coveredBySchedule, shouldExclude: false, reason: 'outside_saved_schedules', label: 'Outside saved schedule windows' };
+  }
+
   function buildPerformanceRecords(inputs) {
     const indexes = buildProgramIndexes(state.rawRows || []);
     const driveRows = Array.isArray(inputs?.driveRows) ? inputs.driveRows : [];
@@ -363,7 +450,13 @@
     const dateOnlyAiringKeys = new Map();
     let matchedDriveRows = 0;
     let unmatchedDriveRows = 0;
-    let fuzzyProgramMatches = 0;
+    let identityTrustedRows = 0;
+    let weakIdentityRows = 0;
+    let moneyTrustedRows = 0;
+    let missingMoneyRows = 0;
+    let annotatedTitleRows = 0;
+    let scheduleMismatchRows = 0;
+
     function eventId(signature, dateKey, timeKey) {
       return [signature || 'unknown', dateKey || 'unknown-date', timeKey || 'unknown-time'].join('|');
     }
@@ -385,6 +478,8 @@
           hasDate: false,
           hasExplicitTime: false,
           programId: '',
+          importedTitle: '',
+          matchedLibraryTitle: '',
           title: 'Unknown title',
           topic: 'Unspecified topic',
           topicDisplay: 'Unspecified topic',
@@ -395,26 +490,52 @@
           liveBreaks: 'Unknown / not matched to schedule',
           liveBreakSource: 'schedule',
           scheduleMatched: false,
+          scheduleCovered: false,
+          scheduleIntegrityLabel: '',
+          scheduleIntegrityReason: '',
+          excludedForIntegrity: false,
           nolaCode: '',
-          signature: ''
+          signature: '',
+          matchSource: 'unmatched',
+          identityTrusted: false,
+          moneyTrusted: false,
+          moneySources: [],
+          integrityFlags: [],
+          titleAnnotated: false,
+          isNonSpecific: false,
+          sourceFiles: new Set()
         });
       }
       return events.get(id);
     }
 
-    function applyMetadata(record, row, programRow, temporal) {
+    function applyMetadata(record, row, identity, temporal) {
+      const programRow = identity?.programRow || null;
       record.programId = record.programId || (programRow ? derive.programId(programRow) : utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, ''));
       record.nolaCode = record.nolaCode || (programRow ? derive.nola(programRow) : utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola, ''));
       record.signature = record.signature || signatureForProgram(programRow, row);
-      if (!record.title || record.title === 'Unknown title') {
-        record.title = programDisplay(programRow, row);
+      record.importedTitle = record.importedTitle || utils.normalizeText(identity?.importedTitle || utils.firstNonEmpty(row?.imported_program_title, row?.title, row?.program_title, row?.name, ''));
+      record.matchedLibraryTitle = record.matchedLibraryTitle || utils.normalizeText(identity?.matchedLibraryTitle || (programRow ? derive.title(programRow) : ''));
+      record.matchSource = record.matchSource === 'unmatched' ? (identity?.matchSource || record.matchSource) : record.matchSource;
+      record.identityTrusted = Boolean(record.identityTrusted || identity?.trusted);
+      record.titleAnnotated = Boolean(record.titleAnnotated || importedTitleLooksAnnotated(record.importedTitle));
+      record.isNonSpecific = Boolean(record.isNonSpecific || row?.is_non_specific === true);
+      if (row?.source_file_name) record.sourceFiles.add(String(row.source_file_name));
+      if (record.identityTrusted && programRow) {
+        record.title = derive.title(programRow);
+      } else if (!record.title || record.title === 'Unknown title') {
+        record.title = utils.firstNonEmpty(record.importedTitle, record.matchedLibraryTitle, row?.title, row?.program_title, row?.name, 'Unknown title');
       }
-      const primaryTopic = primaryTopicFrom(programRow, row);
+      const primaryTopic = record.identityTrusted && programRow
+        ? primaryTopicFrom(programRow, row)
+        : utils.normalizeText(utils.firstNonEmpty(row?.topic_primary, row?.topic, '')) || 'Unassigned';
       const topicTokens = primaryTopic && primaryTopic !== 'Unassigned' ? [primaryTopic] : [];
       if (!record.topicTokens.length && topicTokens.length) record.topicTokens = topicTokens;
       record.topicDisplay = record.topicTokens.length ? topicDisplayFromTokens(record.topicTokens) : primaryTopic;
       record.topic = record.topicDisplay || 'Unassigned';
-      const distributor = programRow ? derive.distributor(programRow) : utils.firstNonEmpty(row?.distributor, row?.distributor_name, 'Unspecified distributor');
+      const distributor = record.identityTrusted && programRow
+        ? derive.distributor(programRow)
+        : utils.firstNonEmpty(row?.distributor, row?.distributor_name, 'Unspecified distributor');
       record.distributor = normalizeDistributor((!record.distributor || record.distributor === 'Unspecified distributor') ? distributor : record.distributor);
       record.premiums = record.premiums === 'No premium metadata' ? premiumLabel(row, programRow) : record.premiums;
       record.localBreaks = record.localBreaks === 'No local breaks' ? localBreakLabel(row, programRow) : record.localBreaks;
@@ -431,21 +552,30 @@
     }
 
     airingRows.forEach((row) => {
-      const sourceTitleKey = utils.normalizeLookupKey(utils.firstNonEmpty(row?.title, row?.program_title, row?.name));
-      const programRow = matchProgramRow(row, indexes);
-      if (programRow && sourceTitleKey && sourceTitleKey !== utils.normalizeLookupKey(derive.title(programRow))) {
-        fuzzyProgramMatches += 1;
-      }
+      const identity = resolveProgramIdentity(row, indexes);
+      if (identity.trusted) identityTrustedRows += 1;
+      else weakIdentityRows += 1;
+      if (importedTitleLooksAnnotated(identity.importedTitle)) annotatedTitleRows += 1;
       const temporal = parseTemporal(row);
-      const signature = signatureForProgram(programRow, row);
+      const signature = signatureForProgram(identity.programRow, row);
       const dateKey = temporal.hasDate ? localDateKey(temporal.when) : '';
       const timeKey = temporal.hasExplicitTime ? timeBucketLabel({ when: temporal.when, hasExplicitTime: true }) : 'unknown-time';
       const record = getOrCreate(signature || utils.makeId('perf-airing'), dateKey, timeKey);
       record.airingRows += 1;
       record.estimatedOnly = false;
-      const amount = parseMoney(candidateValue(row, MONEY_KEYS, /(dollars?|total_?dollars?|contribution|raised|gross|amount|revenue|pledge)/i));
-      if (Number.isFinite(amount)) record.amount += amount;
-      applyMetadata(record, row, programRow, temporal);
+      const money = resolveMoney(row, 'airing');
+      if (money.trusted) {
+        moneyTrustedRows += 1;
+        record.amount += Number.isFinite(money.amount) ? money.amount : 0;
+        record.moneyTrusted = true;
+        if (!record.moneySources.includes(money.source)) record.moneySources.push(money.source);
+      } else {
+        missingMoneyRows += 1;
+        pushIntegrityFlag(record, 'missing_explicit_dollars');
+      }
+      applyMetadata(record, row, identity, temporal);
+      if (!identity.trusted && !record.isNonSpecific) pushIntegrityFlag(record, 'weak_program_identity');
+      if (record.titleAnnotated) pushIntegrityFlag(record, 'annotated_import_title');
       if (temporal.hasDate) {
         const exactKey = eventId(signature, dateKey, timeKey);
         exactAiringKeys.set(exactKey, record.id);
@@ -456,9 +586,9 @@
     });
 
     driveRows.forEach((row, index) => {
-      const programRow = matchProgramRow(row, indexes);
+      const identity = resolveProgramIdentity(row, indexes);
       const temporal = parseTemporal(row);
-      const signature = signatureForProgram(programRow, row);
+      const signature = signatureForProgram(identity.programRow, row);
       const dateKey = temporal.hasDate ? localDateKey(temporal.when) : '';
       const timeKey = temporal.hasExplicitTime ? timeBucketLabel({ when: temporal.when, hasExplicitTime: true }) : 'unknown-time';
       const exactKey = eventId(signature, dateKey, timeKey);
@@ -475,10 +605,14 @@
         matchedDriveRows += 1;
         record.matchedDriveRows += 1;
       }
-      const amount = parseMoney(candidateValue(row, MONEY_KEYS, /(contribution|raised|gross|amount|revenue|pledge)/i));
-      if (Number.isFinite(amount)) record.amount += amount;
+      const money = resolveMoney(row, 'drive');
+      if (money.trusted) {
+        record.amount += Number.isFinite(money.amount) ? money.amount : 0;
+        record.moneyTrusted = true;
+        if (!record.moneySources.includes(money.source)) record.moneySources.push(money.source);
+      }
       record.driveRows += 1;
-      applyMetadata(record, row, programRow, temporal);
+      applyMetadata(record, row, identity, temporal);
     });
 
     const placementIndex = buildSchedulePlacementIndex(indexes);
@@ -486,6 +620,16 @@
       const scheduleLive = scheduleLiveBreakLabelForRecord(record, placementIndex);
       record.liveBreaks = scheduleLive.label;
       record.scheduleMatched = scheduleLive.matched;
+      const integrity = scheduleIntegrityForRecord(record, placementIndex);
+      record.scheduleCovered = integrity.coveredBySchedule;
+      record.scheduleIntegrityLabel = integrity.label;
+      record.scheduleIntegrityReason = integrity.reason;
+      record.excludedForIntegrity = Boolean(integrity.shouldExclude);
+      if (record.excludedForIntegrity) {
+        scheduleMismatchRows += 1;
+        pushIntegrityFlag(record, integrity.reason || 'schedule_not_reconciled');
+      }
+      if (!record.moneyTrusted) pushIntegrityFlag(record, 'money_not_trusted');
     }
 
     const records = [...events.values()].map((record) => ({
@@ -498,12 +642,16 @@
       day: dayLabel(record),
       date: dateLabel(record),
       topicTime: topicTimeLabel(record),
-      topicTimeSortKey: topicTimeSortKey(record)
+      topicTimeSortKey: topicTimeSortKey(record),
+      moneySource: record.moneySources[0] || 'missing',
+      sourceFiles: [...record.sourceFiles].sort((a, b) => utils.compareText(a, b))
     }));
 
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
     if (!records.some((record) => record.topicTokens.length)) warnings.push('Topic matching is still sparse. Some performance rows do not inherit library topics cleanly yet.');
     if (records.length && !records.some((record) => record.scheduleMatched)) warnings.push('Live-break comparisons currently have no imported airings matched back to scheduled placements yet. Those rows will show as Unknown / not matched to schedule.');
+    if (scheduleMismatchRows) warnings.push(`${utils.formatCount(scheduleMismatchRows)} normalized events were quarantined because they fall inside a saved schedule window but do not reconcile to any scheduled placement.`);
+    if (weakIdentityRows) warnings.push(`${utils.formatCount(weakIdentityRows)} imported airings rows had weak program identity and will not drive program/topic analytics unless they reconcile cleanly.`);
 
     const datedRecords = records
       .filter((record) => record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()))
@@ -517,14 +665,20 @@
       normalizedEvents: records.length,
       matchedDriveRows,
       unmatchedDriveRows,
-      fuzzyProgramMatches,
-      recordsWithMoney: records.filter((record) => Number.isFinite(record.amount) && record.amount !== 0).length,
+      identityTrustedRows,
+      weakIdentityRows,
+      moneyTrustedRows,
+      missingMoneyRows,
+      annotatedTitleRows,
+      scheduleMismatchRows,
+      quarantinedEvents: records.filter((record) => record.excludedForIntegrity).length,
+      recordsWithMoney: records.filter((record) => record.moneyTrusted).length,
       recordsWithDateTime: records.filter((record) => record.hasDate).length,
       recordsWithExplicitTime: records.filter((record) => record.hasExplicitTime).length,
       recordsWithTopic: records.filter((record) => record.topicTokens.length).length,
       recordsMatchedToSchedule: records.filter((record) => record.scheduleMatched).length,
-      temporalEligibleDayDate: records.filter((record) => record.hasDate && !record.estimatedOnly).length,
-      temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly).length,
+      temporalEligibleDayDate: records.filter((record) => record.hasDate && !record.estimatedOnly && !record.excludedForIntegrity).length,
+      temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly && !record.excludedForIntegrity).length,
       oldestDate,
       newestDate
     };
@@ -645,6 +799,14 @@
     return true;
   }
 
+  function integrityEligible(record, criterion) {
+    if (!record?.moneyTrusted) return false;
+    if (record?.excludedForIntegrity) return false;
+    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time') && !record?.identityTrusted) return false;
+    if ((criterion === 'topic' || criterion === 'topic_time') && !(record?.topicTokens || []).length) return false;
+    return true;
+  }
+
   function filterAndGroupRecords() {
     const labelFilter = utils.normalizeLookupKey(perf().labelFilter || '');
     const startDate = perf().useAllDates ? null : (perf().startDate ? new Date(`${perf().startDate}T00:00:00`) : null);
@@ -652,7 +814,7 @@
     const criterion = perf().criterion;
     const sourceRecords = perf().records || [];
     const selectedProgramKey = utils.normalizeLookupKey(perf().programFilter || '');
-    const postFilter = sourceRecords.filter((record) => {
+    const scopedRecords = sourceRecords.filter((record) => {
       if (perf().monthFilter !== '' && record.monthIndex !== Number(perf().monthFilter)) return false;
       if (perf().topicFilter && !topicMatches(record, perf().topicFilter)) return false;
       if (selectedProgramKey && utils.normalizeLookupKey(record.programId || record.nolaCode || record.title) !== selectedProgramKey) return false;
@@ -664,9 +826,10 @@
       return true;
     });
 
+    const integrityFiltered = scopedRecords.filter((record) => integrityEligible(record, criterion));
     const eligibleTemporal = TEMPORAL_CRITERIA.has(criterion)
-      ? postFilter.filter((record) => temporalEligibility(record, criterion))
-      : postFilter;
+      ? integrityFiltered.filter((record) => temporalEligibility(record, criterion))
+      : integrityFiltered;
 
     const records = eligibleTemporal.filter((record) => {
       if (labelFilter && !utils.normalizeLookupKey(criterionLabel(record, criterion)).includes(labelFilter)) return false;
@@ -681,10 +844,8 @@
       }
       const group = groups.get(label);
       group.airingCount += 1;
-      if (Number.isFinite(record.amount)) {
-        group.totalDollars += record.amount;
-        group.moneyCount += 1;
-      }
+      group.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
+      group.moneyCount += 1;
       group.titles.add(record.title || 'Unknown title');
       if (Number.isFinite(record.topicTimeSortKey)) {
         group.topicTimeSortKey = group.topicTimeSortKey == null ? record.topicTimeSortKey : Math.min(group.topicTimeSortKey, record.topicTimeSortKey);
@@ -750,20 +911,26 @@
     perf().groups = limited;
     perf().analysisMeta = {
       criterion,
-      postFilterCount: postFilter.length,
+      postFilterCount: scopedRecords.length,
+      integrityEligibleCount: integrityFiltered.length,
       eligibleTemporalCount: eligibleTemporal.length,
-      excludedWeakTemporalCount: Math.max(0, postFilter.length - eligibleTemporal.length),
+      excludedWeakTemporalCount: Math.max(0, integrityFiltered.length - eligibleTemporal.length),
+      excludedIntegrityCount: Math.max(0, scopedRecords.length - integrityFiltered.length),
+      excludedScheduleMismatchCount: scopedRecords.filter((record) => record.excludedForIntegrity).length,
+      excludedWeakIdentityCount: scopedRecords.filter((record) => !record.identityTrusted).length,
+      excludedMissingMoneyCount: scopedRecords.filter((record) => !record.moneyTrusted).length,
+      excludedMissingTopicCount: scopedRecords.filter((record) => !(record.topicTokens || []).length).length,
       lowConfidenceTemporal: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length > 0 && eligibleTemporal.length < 12,
-      noTemporalSupport: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length === 0 && postFilter.length > 0
+      noTemporalSupport: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length === 0 && integrityFiltered.length > 0
     };
-    return { records, grouped: limited, postFilter };
+    return { records, grouped: limited, postFilter: scopedRecords, integrityFiltered };
   }
 
   function renderStats(records) {
     if (!els.performanceStatGrid) return;
     const programs = new Set(records.map((record) => utils.normalizeLookupKey(utils.firstNonEmpty(record.programId, record.nolaCode, record.title))).filter(Boolean));
     const dollars = records.reduce((sum, record) => sum + (Number.isFinite(record.amount) ? record.amount : 0), 0);
-    const moneyCount = records.filter((record) => Number.isFinite(record.amount)).length;
+    const moneyCount = records.filter((record) => record.moneyTrusted).length;
     const datedCount = records.filter((record) => record.hasDate).length;
     const stats = [
       ['Airings used', utils.formatCount(records.length)],
@@ -941,7 +1108,7 @@
     const quick = quickFilterLabel() || 'None';
     const shape = perf().dataShape || {};
     const analysisMeta = perf().analysisMeta || {};
-    const source = `Imported airings view · ${utils.formatCount(shape.airingRows || 0)} airings rows`;
+    const source = `Strict airings view · ${utils.formatCount(shape.airingRows || 0)} airings rows`;
     perf().criteriaSummary = [
       ['Date window', perf().useAllDates ? 'All available dates' : `${start} to ${end}`],
       ['Fundraiser month', month],
@@ -952,12 +1119,23 @@
       ['Chart', perf().criterion === 'topic_time' ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
       ['Confidence', confidenceLabel()],
       ['Source basis', source],
+      ['Integrity-eligible', utils.formatCount(analysisMeta.integrityEligibleCount || records.length)],
       ['Filtered rows', utils.formatCount(records.length)]
     ];
     if (!els.performanceCriteriaBar) return;
     els.performanceCriteriaBar.innerHTML = perf().criteriaSummary.map(([label, value]) => `
       <div class="performance-criteria-pill"><span class="label">${utils.escapeHtml(label)}</span><span>${utils.escapeHtml(value)}</span></div>
     `).join('');
+    if (analysisMeta.excludedIntegrityCount) {
+      els.performanceCriteriaBar.innerHTML += `
+        <div class="performance-criteria-pill warn"><span class="label">Quarantined suspect rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedIntegrityCount))}</span></div>
+      `;
+    }
+    if (analysisMeta.excludedScheduleMismatchCount) {
+      els.performanceCriteriaBar.innerHTML += `
+        <div class="performance-criteria-pill warn"><span class="label">Unreconciled to saved schedule</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedScheduleMismatchCount))}</span></div>
+      `;
+    }
     if (analysisMeta.excludedWeakTemporalCount && TEMPORAL_CRITERIA.has(perf().criterion)) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Excluded weak temporal rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedWeakTemporalCount))}</span></div>
@@ -975,7 +1153,9 @@
       ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : 'Checks both primary and secondary topic text from the library where available.'],
       ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one day-and-hour slot. The chart becomes a weekly heatmap so the strongest slots stand out fast.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized events used in the comparison.'],
-      ['Source basis', 'Imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows. Fundraiser totals are derived later from those same rows instead of being stored a second time.`],
+      ['Source basis', 'Strict imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows, but analytics now trust only rows with an explicit per-airing dollars field. Report totals are not allowed to masquerade as airing dollars.`],
+      ['Program identity rule', 'Strict only', `Program/topic analytics now require a trustworthy identity path (program id, NOLA, or exact title match). Fuzzy title rematching is disabled.`],
+      ['Schedule reconciliation', meta.excludedScheduleMismatchCount ? `${utils.formatCount(meta.excludedScheduleMismatchCount)} rows quarantined` : 'No known schedule mismatches in this filter', 'If a row falls inside a saved schedule window but does not reconcile to any scheduled placement, it is excluded instead of blended into the analytics.'],
       ['Temporal confidence', confidenceLabel(), meta.noTemporalSupport ? 'Day/date/time comparisons do not have enough trustworthy airing-date evidence for this filter yet.' : meta.lowConfidenceTemporal ? 'There are some temporal matches, but the sample is small enough that the result can wobble.' : 'This comparison has enough temporal support to be usable, but still read the airing count.'],
       ['Premium metadata', 'Not actual viewer choice data', 'Premium comparisons currently mean “programs carrying premium metadata,” not which premium item viewers actually chose.'],
       ['How sturdy is this?', `${utils.formatCount(records.length)} rows from ${utils.formatCount(postFilter.length)} rows after non-label filters`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
@@ -996,7 +1176,9 @@
     const meta = perf().analysisMeta || {};
     notes.push(`Pledge Performance is normalizing ${utils.formatCount(shape.airingRows || 0)} imported airings rows into ${utils.formatCount(shape.normalizedEvents || 0)} comparison events.`);
     notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} normalized events include a usable date. ${utils.formatCount(shape.recordsWithExplicitTime || 0)} include an explicit time.`);
-    notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.fuzzyProgramMatches || 0)} rows needed a title fallback because NOLA was missing.`);
+    notes.push(`${utils.formatCount(shape.identityTrustedRows || 0)} imported airings rows had trustworthy program identity. ${utils.formatCount(shape.weakIdentityRows || 0)} had weak identity and are blocked from program/topic analytics.`);
+    notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.scheduleMismatchRows || 0)} normalized events were quarantined because they do not reconcile to a saved schedule placement.`);
+    if (shape.annotatedTitleRows) notes.push(`${utils.formatCount(shape.annotatedTitleRows || 0)} imported rows look like they contain title annotations or notes. Those rows are still allowed if their identity matches cleanly, but they are called out here because they deserve eyeballs.`);
     notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
@@ -1128,7 +1310,7 @@
   function renderAll() {
     if (!els.performanceChart || !els.performanceTableBody) return;
     populateControls();
-    const { records, grouped, postFilter } = filterAndGroupRecords();
+    const { records, grouped, postFilter, integrityFiltered } = filterAndGroupRecords();
     renderStats(records);
     buildCriteriaSummary(records);
     renderExplainTable(records, postFilter);
@@ -1151,7 +1333,7 @@
       ? 'Not enough trustworthy day/time evidence for this view yet.'
       : meta.lowConfidenceTemporal
         ? 'Small temporal sample — read it cautiously.'
-        : `${utils.formatCount(records.length)} filtered rows.`;
+        : `${utils.formatCount(records.length)} filtered rows after quarantining ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows.`;
     const quickTail = quickFilterExplanation();
     setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }
