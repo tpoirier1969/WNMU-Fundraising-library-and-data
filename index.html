@@ -1,877 +1,453 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.47</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
-  <link rel="shortcut icon" href="assets/pledge-icon-32.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.47">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.47"></script>
-  <script defer src="assets/js/dom.js?v=0.20.47"></script>
-  <script defer src="assets/js/data.js?v=0.20.47"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.47"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.47"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.47"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.47"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.47"></script>
-  <script defer src="assets/js/auth.js?v=0.20.47"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.47"></script>
-  <script defer src="assets/js/app.js?v=0.20.47"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Fishing Logbook v10.39.2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<link rel="icon" type="image/svg+xml" href="fishing-icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fish Logbook">
+<link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
+<meta name="theme-color" content="#4fa3d9">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div id="map"></div>
+<div id="topBadge" class="glass">Fishing Logbook v10.39.2</div>
+<div id="buildNotice" class="noticeBanner">This app is still in development. Issues may arise as features are added but they will be fixed shortly, provided I'm not out casting a fly.</div>
+<div id="statusBadge" class="glass hidden">Ready.</div>
+<div id="cloudBadge" class="glass hidden"></div>
 
-  <div id="auth-shell" class="auth-shell hidden">
-    <div class="auth-card">
-      <div class="brand-wrap auth-brand">
-        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo" class="brand-logo auth-logo">
-        <div>
-          <div class="brand-name">WNMU-TV PBS</div>
-          <h2 id="auth-title" class="auth-title">Pledge Program Library</h2>
-          <div class="muted">Sign in with GitHub for admin editing access.</div>
-        </div>
-      </div>
-      <div id="auth-message" class="auth-message"></div>
-      <div class="auth-actions-row">
-        <button type="button" id="login-github-button" class="primary">Sign in with GitHub</button>
-        <button type="button" id="cancel-login-button" class="ghost">Cancel</button>
-      </div>
-    </div>
+<div id="mapUiToggleBar">
+  <button id="showActionDockBtn" class="pill dockToggleBtn hidden" type="button">Menu</button>
+</div>
+
+<div id="mapSearchPanel" class="glass hidden" aria-hidden="true">
+  <div class="map-search-row">
+    <input type="search" id="mapSearchInput" placeholder="Search a place or body of water" autocomplete="off">
+    <button id="mapSearchGoBtn" class="secondaryBtn" type="button">Go</button>
+  </div>
+  <div id="mapSearchResults" class="map-search-results hidden"></div>
+</div>
+
+<div id="floatingActions">
+  <button id="addLogBtn" class="pill primary" type="button">Add Log</button>
+  <button id="reviewBtn" class="pill" type="button">Review</button>
+  <button id="hideActionDockBtn" class="pill" type="button">Map Only</button>
+  <button id="cloudBtn" class="pill" type="button">Cloud Sync</button>
+  <button id="mapSearchToggleBtn" class="pill" type="button">Search</button>
+  <button id="predictBtn" class="pill comingBtn" type="button"><span class="strike">Prediction</span><small>coming</small></button>
+  <button id="anglerSetupBtn" class="pill" type="button">Options</button>
+  <button id="readMeBtn" class="pill" type="button">Read Me</button>
+</div>
+
+<div id="logSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head">
+    <div><h2>New Fishing Log</h2><p>Trip, conditions, technique, and results — without the clunky junk.</p></div>
+    <button id="closeLogSheetBtn" class="sheetClose" type="button">Close</button>
   </div>
 
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand-wrap">
-        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo" class="brand-logo">
-        <div>
-          <div class="brand-name">WNMU-TV PBS</div>
-          <div class="title-row">
-            <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.47</span>
-          </div>
-          <div class="status-line" id="config-status">Checking configuration…</div>
-          <div class="build-meta hidden" id="build-meta"></div>
-        </div>
+  <form id="logForm" autocomplete="off" novalidate>
+    <div class="section">
+      <div class="section-title">Trip</div>
+      <div class="helper-box hidden" id="waterLookupStatus"></div>
+      <div class="location-actions compact-actions">
+        <button type="button" id="useDeviceLocationBtn" class="secondaryBtn">Use My Location</button>
+        <button type="button" id="pickOnMapBtn" class="secondaryBtn">Pick on Map</button>
       </div>
-      <div class="topbar-actions">
-        <div class="role-chip" id="role-chip">Viewer</div>
-        <button type="button" class="ghost" id="admin-button">Admin sign in</button>
-        <button type="button" class="ghost hidden" id="logout-button">Sign out</button>
-                <button type="button" class="ghost" id="refresh-button">Refresh</button>
+      <div id="locationSummary" class="helper-box hidden"></div>
+      <div class="form-grid keep-two compact-grid trip-date-row">
+        <label class="track-fill">Date<input type="date" id="date" name="date"></label>
+        <label class="track-fill">Time of Day
+          <select id="timeOfDay" name="timeOfDay">
+            <option>Dawn</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>Evening</option><option>Night</option>
+          </select>
+        </label>
       </div>
-    </header>
-
-    <div id="loading-banner" class="loading-banner hidden">
-      <div class="loading-title" id="loading-title">Loading…</div>
-      <div class="loading-detail" id="loading-detail"></div>
+      <label class="track-fill">Body of Water<input type="text" id="waterName" name="waterName" list="waterNameSuggestionsList"><datalist id="waterNameSuggestionsList"></datalist></label>
+      <label id="waypointFieldWrap" class="hidden">Waypoint<input type="text" id="waypointName" name="waypointName" placeholder="Optional"></label>
+      <input type="hidden" id="sharePreview" name="sharePreview" value="">
+      <div class="form-grid keep-two compact-grid water-type-row">
+        <label class="track-fill">Water Type
+          <select id="waterType" name="waterType">
+            <option value="">Choose one</option>
+            <option>Stream</option>
+            <option>River</option>
+            <option>Pond</option>
+            <option>Lake</option>
+            <option>Great Lake</option>
+          </select>
+        </label>
+      </div>
     </div>
 
-    <section class="workspace-switcher">
-      <div class="workspace-button-row workspace-button-row-main">
-        <button type="button" class="workspace-tab active" data-workspace-button="library" aria-pressed="true">Program Library</button>
-        <button type="button" class="workspace-tab" data-workspace-button="scheduling" aria-pressed="false">Pledge Scheduling</button>
-        <button type="button" class="workspace-tab" data-workspace-button="imports" aria-pressed="false">Import Pledge Report</button>
-        <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Pledge Performance</button>
-      </div>
-    </section>
+    <div class="divider"></div>
 
-    <section class="workspace-pane" data-workspace-pane="library">
-      <section class="controls compact-controls">
-        <div class="filter-row">
-          <div class="filter-field narrow">
-            <label class="filter-label" for="search-field-select">Search in</label>
-            <select id="search-field-select">
-              <option value="">All fields</option>
-              <option value="title">Title</option>
-              <option value="nola_code">NOLA</option>
-              <option value="topic_primary">Topic</option>
-              <option value="topic_secondary">Secondary topic</option>
-              <option value="distributor">Distributor</option>
-              <option value="premium_summary">Premiums</option>
+    <div class="section">
+      <div class="section-title">Conditions</div>
+      <div class="form-grid keep-three compact-grid">
+        <label>Air Temp (°F)<input type="text" inputmode="decimal" id="airTemp" name="airTemp" placeholder="Optional"></label>
+        <label>Sky
+          <select id="skyCondition" name="skyCondition">
+            <option value="">Choose one</option>
+            <option>Clear</option><option>Partly Cloudy</option><option>Cloudy</option><option>Rain</option><option>Snow</option><option>Night</option>
+          </select>
+        </label>
+        <label>Water Temp (°F)<input type="text" inputmode="decimal" id="waterTemp" name="waterTemp" placeholder="Optional"></label>
+      </div>
+      <div class="form-grid keep-three compact-grid">
+        <label>Water Level
+          <select id="waterCondition" name="waterCondition">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label>Water Clarity
+          <select id="waterClarity" name="waterClarity">
+            <option value="">Choose one</option><option>Gin Clear</option><option>Clear</option><option>Slight Stain</option><option>Stained</option><option>Muddy</option>
+          </select>
+        </label>
+        <label>Water Depth (ft)<input type="text" inputmode="decimal" id="waterDepthFt" name="waterDepthFt" placeholder="Optional"></label>
+      </div>
+      <div class="form-grid keep-three compact-grid">
+        <div id="surfaceConditionWrap">
+          <label>Surface Conditions
+            <select id="surfaceCondition" name="surfaceCondition">
+              <option value="">Choose one</option>
             </select>
-          </div>
-          <div class="filter-field search-grow">
-            <label class="filter-label" for="search-input">Search text</label>
-            <input id="search-input" type="search" placeholder="Search title, NOLA, topic, distributor, description, or premiums.">
-          </div>
-          <div class="filter-actions filter-actions-inline">
-            <button type="button" id="reset-filters-button" class="mini-clear reset-all top-reset">Clear all filters</button>
-          </div>
-          <div class="filter-field">
-            <label class="filter-label" for="topic-filter">Topic</label>
-            <select id="topic-filter"></select>
-          </div>
-          <div class="filter-field">
-            <label class="filter-label" for="secondary-topic-filter">Secondary topic</label>
-            <select id="secondary-topic-filter"></select>
-          </div>
-          <div class="filter-field narrow">
-            <label class="filter-label" for="length-filter">Length</label>
-            <select id="length-filter"></select>
-          </div>
-          <div class="filter-field">
-            <label class="filter-label" for="distributor-filter">Distributor</label>
-            <select id="distributor-filter"></select>
-          </div>
-          <div class="filter-field narrow">
-            <label class="filter-label" for="status-filter">Library state</label>
-            <select id="status-filter">
-              <option value="all">All titles</option>
-              <option value="active" selected>Active only</option>
-              <option value="archived">Archived only</option>
+          </label>
+        </div>
+        <div id="currentSpeedWrap" class="hidden">
+          <label>Current
+            <select id="currentSpeed" name="currentSpeed">
+              <option value="">Choose one</option>
             </select>
-          </div>
+          </label>
         </div>
-      </section>
-
-      <section class="list-panel">
-        <div class="list-meta">
-          <div>
-            <div class="list-title">Program list</div>
-            <div class="list-summary" id="result-summary">Waiting on data…</div>
-          </div>
-          <div class="list-sort-tools compact-sort-tools">
-            <button type="button" class="ghost hidden" id="add-program-button">Add Program</button>
-            <span class="sort-inline-note">Click a column heading to sort.</span>
-            <label class="filter-label sort-label hidden" for="sort-field-select">Sort list by</label>
-            <div class="sort-controls hidden">
-              <select id="sort-field-select">
-                <option value="title">Title</option>
-                <option value="length">Length</option>
-                <option value="topic" selected>Topic</option>
-                <option value="rights_end">Rights End</option>
-                <option value="avg_per_fundraiser">Average $ / fundraiser</option>
-              </select>
-              <button type="button" class="ghost sort-direction-button" id="sort-direction-button">↑ Asc</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="table-wrap all-rows-wrap">
-          <table class="programs-table">
-            <thead>
-              <tr>
-                <th class="col-title"><button type="button" class="sort-header-button" data-sort-field="title" data-sort-label="Title">Title</button></th>
-                <th class="col-length"><button type="button" class="sort-header-button" data-sort-field="length" data-sort-label="Length">Length</button></th>
-                <th class="col-topic"><button type="button" class="sort-header-button" data-sort-field="topic" data-sort-label="Topic">Topic</button></th>
-                <th class="col-distributor">Distributor</th>
-                <th class="col-total">Total $</th>
-                <th class="col-avg"><button type="button" class="sort-header-button" data-sort-field="avg_per_fundraiser" data-sort-label="Avg $ / event">Avg $ / event</button></th>
-                <th class="col-premiums">Premiums</th>
-                <th class="col-rights">Rights Begin</th>
-                <th class="col-rights"><button type="button" class="sort-header-button" data-sort-field="rights_end" data-sort-label="Rights End">Rights End</button></th>
-                <th class="col-airing">Last Aired</th>
-              </tr>
-            </thead>
-            <tbody id="library-body">
-              <tr><td colspan="10" class="placeholder-row">Loading library…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </section>
-
-    <section class="workspace-pane hidden" data-workspace-pane="scheduling">
-      <section class="scheduling-shell">
-        <aside class="schedule-sidebar">
-          <div class="schedule-sidebar-head">
-            <div>
-              <div class="list-title">Scheduled fundraisers</div>
-              <div class="list-summary" id="schedule-summary">Checking fundraiser sync…</div>
-            </div>
-            <button type="button" class="ghost" id="new-schedule-button">New fundraiser</button>
-          </div>
-          <div id="schedule-list" class="schedule-list"></div>
-        </aside>
-
-        <div class="schedule-main">
-          <section class="schedule-builder-card">
-            <div class="schedule-builder-head">
-              <div>
-                <h3 id="schedule-builder-title">New fundraiser</h3>
-                <p class="muted">Fundraiser dates and imported totals live here. The calendar below uses 30-minute increments only.</p>
-              </div>
-            </div>
-            <div class="schedule-form" id="schedule-form">
-              <label class="filter-field">
-                <span class="filter-label">Fundraiser title</span>
-                <input id="fundraiser-title-input" type="text" placeholder="Spring pledge drive">
-              </label>
-              <label class="filter-field narrow">
-                <span class="filter-label">Start date</span>
-                <input id="fundraiser-start-input" type="date">
-              </label>
-              <label class="filter-field narrow">
-                <span class="filter-label">End date</span>
-                <input id="fundraiser-end-input" type="date">
-              </label>
-              <div class="filter-actions">
-                <button type="button" class="primary" id="schedule-generate-button">Build calendar</button>
-                <button type="button" class="ghost" id="schedule-build-from-imports-button">Build from imported reports</button>
-                <button type="button" class="ghost" id="schedule-rebuild-from-imports-button">Rebuild imported schedules</button>
-              </div>
-              <div class="schedule-money-row schedule-money-row-primary">
-                <label class="filter-field narrow">
-                  <span class="filter-label">Broadcast $</span>
-                  <input id="fundraiser-broadcast-total" type="text" value="$0.00" readonly>
-                </label>
-                <label class="filter-field narrow">
-                  <span class="filter-label">Pledges</span>
-                  <input id="fundraiser-pledges-total" type="text" value="0" readonly>
-                </label>
-                <label class="filter-field narrow">
-                  <span class="filter-label">Import total</span>
-                  <input id="fundraiser-import-total" type="text" value="$0.00" readonly>
-                </label>
-                <label class="filter-field narrow">
-                  <span class="filter-label">Difference</span>
-                  <input id="fundraiser-import-difference" type="text" value="$0.00" readonly>
-                </label>
-              </div>
-              <div class="schedule-money-row schedule-money-row-secondary">
-                <label class="filter-field narrow">
-                  <span class="filter-label">Online $</span>
-                  <input id="fundraiser-online-input" type="number" min="0" step="0.01" placeholder="0.00">
-                </label>
-                <label class="filter-field narrow">
-                  <span class="filter-label">Mail $</span>
-                  <input id="fundraiser-mail-input" type="number" min="0" step="0.01" placeholder="0.00">
-                </label>
-                <label class="filter-field narrow">
-                  <span class="filter-label">Total raised $</span>
-                  <input id="fundraiser-grand-total" type="text" value="$0.00" readonly>
-                </label>
-              </div>
-              <div id="fundraiser-broadcast-diagnostic" class="schedule-broadcast-diagnostic hidden"></div>
-            </div>
-          </section>
-
-          <section id="schedule-empty" class="schedule-empty-state">Pick an existing fundraiser or build a new one to open the calendar.</section>
-
-          <section id="schedule-editor" class="schedule-editor hidden">
-            <div class="schedule-toolbar">
-              <div class="schedule-toolbar-group">
-                <span class="schedule-sub-label">Start</span>
-                <button type="button" class="ghost" id="schedule-start-earlier-button">−1 hr</button>
-                <button type="button" class="ghost" id="schedule-start-later-button">+1 hr</button>
-              </div>
-              <div class="schedule-toolbar-group schedule-toolbar-center">
-                <span id="schedule-window-label" class="schedule-window-label">6:00 AM – 12:00 AM</span>
-              </div>
-              <div class="schedule-toolbar-group">
-                <span class="schedule-sub-label">End</span>
-                <button type="button" class="ghost" id="schedule-end-earlier-button">−1 hr</button>
-                <button type="button" class="ghost" id="schedule-end-later-button">+1 hr</button>
-              </div>
-              <div class="schedule-toolbar-group">
-                <button type="button" class="ghost" id="schedule-zoom-out-button">−</button>
-                <span class="schedule-zoom-label">Zoom <span id="schedule-zoom-value">100%</span></span>
-                <button type="button" class="ghost" id="schedule-zoom-in-button">+</button>
-                <button type="button" class="ghost" id="schedule-export-button">Export day list</button>
-              </div>
-            </div>
-            <div id="schedule-grid" class="schedule-grid"></div>
-
-            <section class="schedule-program-details-wrap">
-              <div class="list-title">Scheduled program details</div>
-              <div id="schedule-program-details" class="schedule-program-details"></div>
-            </section>
-          </section>
-        </div>
-      </section>
-    </section>
-
-    <div id="schedule-program-backdrop" class="detail-backdrop hidden"></div>
-    <section id="schedule-program-modal" class="detail-modal hidden" aria-modal="true" role="dialog" aria-labelledby="schedule-modal-title">
-      <div class="detail-modal-card schedule-modal-card">
-        <div class="detail-header sticky">
-          <div>
-            <div class="detail-kicker">Pledge Scheduling</div>
-            <h2 id="schedule-modal-title">Schedule this slot</h2>
-            <div id="schedule-slot-label" class="schedule-slot-label"></div>
-          </div>
-          <div class="toolbar-actions">
-            <button type="button" class="ghost" id="schedule-clear-placement-button">Remove program</button>
-            <button type="button" class="ghost" id="schedule-program-close-button">Close</button>
-          </div>
-        </div>
-        <div class="schedule-program-picker" id="schedule-program-picker">
-          <div id="schedule-modal-warning" class="notice-strip hidden"></div>
-          <div class="schedule-picker-search-row">
-            <label class="filter-field search-grow">
-              <span class="filter-label">Topic browse</span>
-              <select id="schedule-program-topic-select">
-                <option value="">All topics</option>
-              </select>
-            </label>
-            <label class="filter-field search-grow">
-              <span class="filter-label">Program title match</span>
-              <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
-            </label>
-          </div>
-          <div class="schedule-picker-flags-row">
-            <label class="schedule-inline-check">
-              <input id="schedule-non-pledge-toggle" type="checkbox">
-              <span>Not pledge program</span>
-            </label>
-            <label class="schedule-inline-check">
-              <input id="schedule-live-break-flag" type="checkbox">
-              <span>Live break / special local break</span>
-            </label>
-          </div>
-          <div id="schedule-program-results" class="schedule-program-results"></div>
-          <div id="schedule-selected-preview" class="schedule-selected-preview"></div>
-          <div class="schedule-picker-actions">
-            <div class="toolbar-actions wrap">
-              <button type="button" class="ghost" id="schedule-copy-placement-button">Copy program</button>
-              <button type="button" class="ghost" id="schedule-paste-placement-button">Paste copied program here</button>
-            </div>
-            <div id="schedule-assignment-note" class="muted">Selecting a program will place a block sized to that title’s actual runtime when available.</div>
-          </div>
-        </div>
+        <label>Structure
+          <select id="structureType" name="structureType">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label>Bottom Type
+          <select id="bottomType" name="bottomType">
+            <option value="">Choose one</option>
+            <option>Sand</option><option>Mud</option><option>Silt</option><option>Gravel</option><option>Rock</option><option>Boulder</option><option>Clay</option><option>Marl</option><option>Cobble</option><option>Bedrock</option><option>Mixed</option>
+          </select>
+        </label>
       </div>
-    </section>
-
-
-    <section class="workspace-pane hidden" data-workspace-pane="imports">
-      <section class="import-shell">
-        <section class="import-toolbar-card performance-card">
-          <div class="performance-card-head">
-            <div>
-              <h3>Start importing pledge reports</h3>
-              <p class="muted">Load PBS Break Report CSV exports, let the app normalize the airings, then export or push the reconciled import set into Supabase. Fundraiser periods are inferred from actual fundraising activity.</p>
-            </div>
-            <span class="mini-chip" id="import-status-pill">Starter importer</span>
-          </div>
-          <div class="list-summary" id="import-status">Choose one or more PBS Break Report CSV files to analyze, then review the raw totals and import to Supabase.</div>
-          <div class="muted import-review-note">The CSV dollars column is treated as the source of truth for fundraiser totals. Non-specific dollars are calculated automatically.</div>
-          <div id="import-result-banner" class="import-result-banner hidden" aria-live="polite"></div>
-          <div class="import-toolbar-grid">
-            <div class="filter-field import-file-field">
-              <span class="filter-label">Report file</span>
-              <label id="import-drop-zone" class="import-drop-zone" for="import-file-input">
-                <span class="import-drop-zone-title">Drop report files here</span>
-                <span class="import-drop-zone-subtitle">or click to browse for CSV, TSV, or text exports</span>
-              </label>
-              <input id="import-file-input" type="file" accept=".csv,.tsv,.txt,.tab,.psv,.dat,.xls,.xlsx" multiple>
-            </div>
-            <label class="filter-field import-target-field">
-              <span class="filter-label">Import type</span>
-              <select id="import-target-select">
-                <option value="auto" selected>PBS Break Report CSV (recommended)</option>
-                <option value="airings">Force PBS Break Report-style airings</option>
-              </select>
-              <div class="field-help">Leave this on the PBS Break Report setting unless you know the file is a similar airing-level export.</div>
-            </label>
-            <div class="filter-actions filter-actions-inline import-actions-inline">
-              <button type="button" class="primary" id="import-supabase-button">Import / reimport matched rows to Supabase</button>
-              <button type="button" class="ghost" id="import-build-schedule-button">Create scheduler entries</button>
-              <button type="button" class="ghost" id="import-clear-button">Clear batch</button>
-            </div>
-          </div>
-          <details class="import-advanced-tools">
-            <summary>Advanced / fallback tools</summary>
-            <div class="filter-actions filter-actions-inline import-actions-inline import-actions-advanced">
-              <button type="button" class="ghost" id="import-refresh-button">Check table access</button>
-              <button type="button" class="ghost" id="import-export-airings-button">Export matched airings CSV</button>
-              <button type="button" class="ghost" id="import-export-drive-button">Export derived rollups CSV</button>
-            </div>
-          </details>
-        </section>
-
-        <section class="import-summary-grid" id="import-summary-grid">
-          <article class="import-stat-card"><div class="performance-stat-label">Files loaded</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Parsed rows</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Airings rows</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Derived rollups</div><div class="performance-stat-value">0</div></article>
-        </section>
-
-        <section class="performance-card import-table-status-card">
-          <div class="performance-card-head">
-            <h3>Table readiness</h3>
-            <span class="mini-chip" id="import-table-pill">Pending probe</span>
-          </div>
-          <div id="import-table-status" class="import-table-status"></div>
-          <div id="import-warning-list" class="import-warning-list"></div>
-        </section>
-
-        <section class="performance-card">
-          <div class="performance-card-head">
-            <h3>Batch file audit</h3>
-            <span class="mini-chip" id="import-file-pill">No files</span>
-          </div>
-          <div class="table-wrap import-file-table-wrap">
-            <table class="programs-table import-file-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Delimiter</th>
-                  <th>Detected format</th>
-                  <th>Parsed rows</th>
-                  <th>Airings</th>
-                  <th>Raw program $</th>
-                  <th>Raw non-specific $</th>
-                  <th>Raw file total $</th>
-                  <th>Difference</th>
-                  <th>Fundraiser dates</th>
-                  <th>Issues</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody id="import-file-body">
-                <tr><td colspan="12" class="placeholder-row">No reports analyzed yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
-            <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
-          </div>
-
-        </section>
-
-        <section class="performance-card">
-          <div class="performance-card-head">
-            <h3>Money accounting ledger</h3>
-            <span class="mini-chip" id="import-accounting-pill">No rows</span>
-          </div>
-          <div class="muted import-review-note">Temporary diagnostic view. This shows where the importer says each dollar-bearing row went: raw total, non-specific, matched, unmatched, or skipped.</div>
-          <div class="table-wrap import-file-table-wrap">
-            <table class="programs-table import-file-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Raw $</th>
-                  <th>Normalized $</th>
-                  <th>Matched $</th>
-                  <th>Unmatched $</th>
-                  <th>Non-specific $</th>
-                  <th>Raw − normalized</th>
-                  <th>Raw − matched</th>
-                </tr>
-              </thead>
-              <tbody id="import-accounting-summary-body">
-                <tr><td colspan="8" class="placeholder-row">No accounting ledger yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-wrap import-preview-wrap import-accounting-wrap">
-            <table class="programs-table import-preview-table import-accounting-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Row</th>
-                  <th>Date</th>
-                  <th>Time</th>
-                  <th>Title</th>
-                  <th>NOLA</th>
-                  <th>Dollars</th>
-                  <th>Pledges</th>
-                  <th>Bucket</th>
-                  <th>Normalized</th>
-                  <th>Match</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
-              <tbody id="import-accounting-body">
-                <tr><td colspan="12" class="placeholder-row">No accounting ledger yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="import-preview-grid">
-          <article class="performance-card">
-            <div class="performance-card-head">
-              <h3>Normalized airings preview</h3>
-              <span class="mini-chip" id="import-airings-pill">0 rows</span>
-            </div>
-            <div class="table-wrap import-preview-wrap">
-              <table class="programs-table import-preview-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>NOLA</th>
-                    <th>Aired at</th>
-                    <th>Dollars</th>
-                    <th>Pledges</th>
-                    <th>Program minutes</th>
-                    <th>Match status</th>
-                    <th>Matched library title</th>
-                  </tr>
-                </thead>
-                <tbody id="import-airings-body">
-                  <tr><td colspan="8" class="placeholder-row">No normalized airings rows yet.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
-
-          <article class="performance-card">
-            <div class="performance-card-head">
-              <h3>Derived fundraiser rollups preview</h3>
-              <span class="mini-chip" id="import-drive-pill">0 derived rows</span>
-            </div>
-            <div class="table-wrap import-preview-wrap">
-              <table class="programs-table import-preview-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>NOLA</th>
-                    <th>Fundraiser</th>
-                    <th>Drive start</th>
-                    <th>Drive end</th>
-                    <th>Total dollars</th>
-                    <th>Total pledges</th>
-                    <th>Airings</th>
-                  </tr>
-                </thead>
-                <tbody id="import-drive-body">
-                  <tr><td colspan="8" class="placeholder-row">No derived fundraiser rollups yet.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
-        </section>
-
-        <section class="performance-card">
-          <div class="performance-card-head import-unmatched-head">
-            <div>
-              <h3>Unmatched rows needing attention</h3>
-              <p class="muted">Review unmatched report rows, map them to the correct pledge title, then import or reimport without worrying about duplicates.</p>
-            </div>
-            <div class="import-unmatched-head-actions">
-              <button type="button" class="ghost" id="import-apply-all-button">Apply all staged matches</button>
-              <span class="mini-chip" id="import-unmatched-pill">0 rows</span>
-            </div>
-          </div>
-          <div class="table-wrap import-preview-wrap import-unmatched-wrap">
-            <table class="programs-table import-preview-table import-unmatched-table">
-              <thead>
-                <tr>
-                  <th>Imported title</th>
-                  <th>NOLA</th>
-                  <th>Air date</th>
-                  <th>Air time</th>
-                  <th>Dollars</th>
-                  <th>Why unmatched</th>
-                  <th>Match to library title</th>
-                  <th>Always equals this</th>
-                  <th>Apply</th>
-                </tr>
-              </thead>
-              <tbody id="import-unmatched-body">
-                <tr><td colspan="9" class="placeholder-row">No unmatched rows right now.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
-            <button type="button" class="ghost import-apply-all-trigger">Apply all staged matches</button>
-            <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
-          </div>
-        </section>
-      </section>
-    </section>
-
-    <section class="workspace-pane hidden" data-workspace-pane="performance">
-      <section class="performance-shell">
-        <section class="performance-toolbar-card">
-          <div>
-            <div class="list-title">Pledge Performance comparisons</div>
-            <div class="list-summary" id="performance-status">Open Pledge Performance to load the first comparison set.</div>
-          </div>
-          <div class="performance-date-row">
-            <label class="filter-field narrow">
-              <span class="filter-label">Start date</span>
-              <input id="performance-start-date" type="date">
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">End date</span>
-              <input id="performance-end-date" type="date">
-            </label>
-            <div class="filter-actions filter-actions-inline performance-actions-inline performance-date-actions">
-              <button type="button" class="ghost" id="performance-refresh-button">Refresh performance</button>
-              <button type="button" class="ghost" id="performance-export-button">Export chart (SVG)</button>
-            </div>
-          </div>
-          <div class="performance-date-row performance-date-row-secondary">
-            <label class="checkbox-inline performance-all-dates-toggle">
-              <input id="performance-use-all-dates" type="checkbox">
-              <span>Use all available dates</span>
-            </label>
-          </div>
-          <div class="performance-quick-filter-card">
-            <div class="performance-quick-filter-head">
-              <div class="list-title tiny">Quick filters</div>
-              <span class="mini-chip" id="performance-quick-filter-pill">Set a date range first</span>
-            </div>
-            <div class="performance-quick-filter-row" id="performance-quick-filter-row">
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="top_earners">Top earners</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="best_average">Best average earners</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="prime_time">Prime time winners</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="weak_returns">Weak returns</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="live_break_impact">Live break impact</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="repeat_fatigue">Repeat fatigue</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Top Topics</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_time_performance">Topic Time Performance</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="recent_momentum">Recent momentum</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="weekend_weekday">Weekend vs weekday earnings</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="day_of_week">Day of week comparisons</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="daypart">Day-part comparisons</button>
-              <button type="button" class="quick-filter-btn" data-performance-quick-filter="best_daytime">Best daytime performers</button>
-            </div>
-          </div>
-          <div class="performance-toolbar-grid expanded">
-            <label class="filter-field narrow">
-              <span class="filter-label">Main topic</span>
-              <select id="performance-topic-select"></select>
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">Fundraiser month</span>
-              <select id="performance-month-select">
-                <option value="">All months</option>
-                <option value="0">January</option>
-                <option value="1">February</option>
-                <option value="2">March</option>
-                <option value="3">April</option>
-                <option value="4">May</option>
-                <option value="5">June</option>
-                <option value="6">July</option>
-                <option value="7">August</option>
-                <option value="8">September</option>
-                <option value="9">October</option>
-                <option value="10">November</option>
-                <option value="11">December</option>
-              </select>
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">Compare by</span>
-              <select id="performance-criterion-select">
-                <option value="program">Program</option>
-                <option value="date">Date</option>
-                <option value="day">Day of week</option>
-                <option value="daypart">Day-part</option>
-                <option value="weekpart">Weekend vs weekday</option>
-                <option value="time">Time</option>
-                <option value="topic_time">Topic time slot</option>
-                <option value="topic" selected>Topic</option>
-                <option value="local_breaks">Local cut-ins</option>
-                <option value="live_breaks">Live breaks</option>
-                <option value="premiums">Premium metadata</option>
-                <option value="distributor">Distributor</option>
-              </select>
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">Metric</span>
-              <select id="performance-metric-select">
-                <option value="avg_dollars">Average dollars / airing</option>
-                <option value="total_dollars">Total dollars</option>
-                <option value="airings">Airing count</option>
-              </select>
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">Chart type</span>
-              <select id="performance-chart-type-select">
-                <option value="auto" selected>Auto</option>
-                <option value="line">Line</option>
-                <option value="bar">Vertical bars</option>
-              </select>
-            </label>
-            <label class="filter-field narrow">
-              <span class="filter-label">Show top</span>
-              <select id="performance-topn-select">
-                <option value="8">8</option>
-                <option value="12" selected>12</option>
-                <option value="16">16</option>
-                <option value="24">24</option>
-                <option value="999">All</option>
-              </select>
-            </label>
-            <label class="filter-field search-grow">
-              <span class="filter-label">Label contains</span>
-              <input id="performance-filter-input" type="search" placeholder="Optional label filter, like Saturday, Music, or PBS">
-            </label>
-          </div>
-        </section>
-
-        <section class="performance-card performance-criteria-card">
-          <div class="performance-card-head">
-            <h3>Current analysis criteria</h3>
-            
-          </div>
-          <div id="performance-criteria-bar" class="performance-criteria-bar"></div>
-        </section>
-
-        <section class="performance-stat-grid" id="performance-stat-grid">
-          <article class="performance-stat-card"><div class="performance-stat-label">Records</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Titles represented</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Dollars represented</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Airings with dollars / dated</div><div class="performance-stat-value">—</div></article>
-        </section>
-
-        <section class="performance-main-grid">
-          <article class="performance-card">
-            <div class="performance-card-head">
-              <h3 id="performance-chart-title">Performance chart</h3>
-              <span class="mini-chip" id="performance-chart-pill">Awaiting data</span>
-            </div>
-            <div id="performance-chart" class="performance-chart"></div>
-          </article>
-
-          <article class="performance-card">
-            <div class="performance-card-head">
-              <h3>Comparison table</h3>
-              <span class="mini-chip" id="performance-table-pill">Top groups</span>
-            </div>
-            <div class="table-wrap performance-table-wrap">
-              <table class="programs-table performance-table">
-                <thead>
-                  <tr>
-                    <th id="performance-table-group-header">Group</th>
-                    <th>Airings</th>
-                    <th>Total dollars</th>
-                    <th>Avg dollars / airing</th>
-                    <th>Titles</th>
-                  </tr>
-                </thead>
-                <tbody id="performance-table-body">
-                  <tr><td colspan="5" class="placeholder-row">Open Pledge Performance to load comparison data.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
-        </section>
-
-        <section class="performance-card performance-explain-card">
-          <div class="performance-card-head">
-            <h3>How to read this comparison</h3>
-            <span class="mini-chip">Method</span>
-          </div>
-          <div class="table-wrap performance-explain-wrap">
-            <table class="programs-table performance-explain-table">
-              <thead>
-                <tr>
-                  <th>Setting</th>
-                  <th>Current value</th>
-                  <th>How to read it</th>
-                </tr>
-              </thead>
-              <tbody id="performance-explain-body">
-                <tr><td colspan="3" class="placeholder-row">Choose some criteria and open Pledge Performance.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="performance-card performance-insights-card">
-          <div class="performance-card-head">
-            <h3>Source notes</h3>
-            <span class="mini-chip" id="performance-notes-pill">Starter framework</span>
-          </div>
-          <div id="performance-source-notes" class="performance-source-notes"></div>
-        </section>
-      </section>
-    </section>
-
-<div id="detail-backdrop" class="detail-backdrop hidden"></div>
-    <section id="detail-modal" class="detail-modal hidden" aria-modal="true" role="dialog" aria-labelledby="detail-title">
-      <div class="detail-modal-card">
-        <div class="detail-header sticky">
-          <div>
-            <div class="detail-kicker">Pledge program detail</div>
-            <h2 id="detail-title">Program detail</h2>
-            <p id="detail-subtitle" class="muted">Choose a title from the library.</p>
-          </div>
-          <div class="toolbar-actions">
-            <button type="button" class="ghost hidden" id="detail-edit-button">Edit</button>
-            <button type="button" class="ghost" id="detail-close-button">Close</button>
-          </div>
-        </div>
-
-        <div id="detail-notice" class="notice-strip hidden"></div>
-
-        <div id="detail-empty" class="detail-empty hidden">
-          Choose a title from the library to inspect timing, air history, premium notes, and segment structure.
-        </div>
-
-        <div id="detail-content" class="detail-scroll hidden">
-          <form id="detail-edit-form" class="detail-edit-form hidden">
-            <div class="detail-block">
-              <div class="section-head"><h3 id="detail-form-heading">Edit program</h3><div class="mini-chip">Admin</div></div>
-              <div class="detail-form-grid">
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Title</span><input type="text" name="title" required></label>
-                <label class="detail-form-field"><span class="filter-label">NOLA</span><input type="text" name="nola_code"></label>
-                <label class="detail-form-field"><span class="filter-label">Distributor</span><input type="text" name="distributor"></label>
-                <label class="detail-form-field"><span class="filter-label">Length bucket minutes</span><input type="number" name="length_bucket_minutes" min="0" step="30"></label>
-                <label class="detail-form-field"><span class="filter-label">Actual runtime</span><input type="text" name="actual_runtime_input" placeholder="00:56:46 or 57"></label>
-                <label class="detail-form-field"><span class="filter-label">Primary topic</span><input type="text" name="topic_primary"></label>
-                <label class="detail-form-field"><span class="filter-label">Secondary topic</span><input type="text" name="topic_secondary"></label>
-                <label class="detail-form-field"><span class="filter-label">Rights begin</span><input type="date" name="rights_start"></label>
-                <label class="detail-form-field"><span class="filter-label">Rights end</span><input type="date" name="rights_end"></label>
-                <label class="detail-form-field"><span class="filter-label">Package type</span><input type="text" name="package_type"></label>
-                <label class="detail-form-field"><span class="filter-label">Source</span><input type="text" name="source_format"></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Rights notes</span><textarea name="rights_notes" rows="3"></textarea></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Premium summary</span><textarea name="premium_summary" rows="3"></textarea></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Description / notes</span><textarea name="program_notes" rows="6"></textarea></label>
-              </div>
-              <div class="toolbar-actions detail-form-actions">
-                <button type="submit" class="primary" id="detail-save-button">Save</button>
-                <button type="button" class="ghost" id="detail-cancel-edit-button">Cancel</button>
-              </div>
-            </div>
-          </form>
-          <section class="detail-block detail-readonly-block detail-lead-block">
-            <div id="detail-program-meta" class="detail-program-meta"></div>
-            <div id="detail-program-description" class="detail-program-description"></div>
-          </section>
-
-          <section class="detail-block detail-readonly-block">
-            <h3>Overview</h3>
-            <dl class="overview-grid" id="overview-grid"></dl>
-          </section>
-
-          <section class="detail-block detail-readonly-block">
-            <div class="section-head">
-              <h3>Timing &amp; segment structure</h3>
-              <div id="timing-count-chip" class="mini-chip">0</div>
-            </div>
-            <div id="timing-list" class="version-stack"></div>
-          </section>
-
-          <section class="detail-block detail-readonly-block">
-            <div class="section-head">
-              <h3>Air dates &amp; contributions</h3>
-              <div id="airing-count-chip" class="mini-chip">0</div>
-            </div>
-            <div id="airing-list" class="simple-list"></div>
-          </section>
-
-          <section class="detail-block detail-readonly-block">
-            <div class="section-head">
-              <h3>Premiums</h3>
-              <div id="premium-count-chip" class="mini-chip">0</div>
-            </div>
-            <div id="premiums-list" class="simple-list"></div>
-          </section>
-
-          <section class="detail-block detail-readonly-block">
-            <div class="section-head">
-              <h3>All known program fields</h3>
-              <div class="mini-chip">Full row</div>
-            </div>
-            <div id="all-fields-list" class="simple-list"></div>
-          </section>
-        </div>
+      <div class="form-grid keep-two compact-grid">
+        <label>Wind
+          <select id="wind" name="wind">
+            <option value="">Choose one</option>
+            <option>Calm</option><option>Light</option><option>Moderate</option><option>Strong</option><option>Gusting</option>
+          </select>
+        </label>
+        <label>Wind Direction
+          <select id="windDirection" name="windDirection">
+            <option value="">Choose one</option>
+            <option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SW</option><option>W</option><option>NW</option>
+          </select>
+        </label>
       </div>
-    </section>
+    </div>
 
-    <footer class="site-footer">
-      <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.47</div>
-    </footer>
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Type of Fishing</div>
+      <div class="form-grid keep-two compact-grid">
+        <label class="track-fill">Fishing Type
+          <select id="baitType" name="baitType">
+            <option value="">Choose one</option><option value="Fly">Fly</option><option value="Live Bait">Bait</option><option value="Lure">Lures</option><option value="Ice">Ice</option>
+          </select>
+        </label>
+        <label id="subtypeWrap" class="hidden">Subtype
+          <select id="baitSubtype" name="baitSubtype"><option value="">Choose one</option></select>
+        </label>
+      </div>
+
+      <div class="form-grid keep-two compact-grid">
+        <div id="nameWrap" class="typeahead-wrap field-no-margin hidden">
+          <label id="nameLabel">Name
+            <input type="text" id="baitName" name="baitName" placeholder="">
+          </label>
+          <div id="nameSuggestions" class="suggestions hidden"></div>
+        </div>
+        <label id="sizeWrap">Fly Size
+          <select id="baitSize" name="baitSize"><option value="">Choose one</option></select>
+        </label>
+      </div>
+
+      <div class="form-grid keep-three compact-grid technique-grid">
+        <label><span class="label-two-line">Presentation<br>Style</span>
+          <select id="presentationStyle" name="presentationStyle">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label id="presentationDepthZoneWrap">Presentation Depth
+          <select id="depthZone" name="depthZone">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label>Presentation Speed
+          <select id="retrieveSpeed" name="retrieveSpeed">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-grid keep-two compact-grid hidden" id="greatLakeDepthRow">
+        <label>Presentation Depth (ft)<input type="text" inputmode="decimal" id="presentationDepthFt" name="presentationDepthFt" placeholder="80, 120, 180..."></label>
+        <div class="helper-box inline-helper">Use exact depth here for Great Lakes trolling or deep-water work.</div>
+      </div>
+
+      <div class="form-grid keep-two compact-grid" id="lureColorGrid">
+        <label id="mainColorWrap">Lure Color
+          <select id="mainColor" name="mainColor">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label id="additionalColorWrap">Additional Lure Color
+          <select id="additionalColor" name="additionalColor">
+            <option value="">None</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="baitHelper" class="helper-box hidden"></div>
+
+      <div id="hatchesWrap" class="hidden">
+        <label>Hatch<input type="text" id="hatches" name="hatches" placeholder="Hex, caddis, bwo, none..."></label>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Results</div>
+      <div class="form-grid keep-two compact-grid">
+        <label class="track-fill">Species
+          <select id="species" name="species">
+            <option value="">Choose one</option>
+          </select>
+        </label>
+        <label>Quantity<input type="number" id="quantity" name="quantity" min="1" step="1" value="1" required></label>
+      </div>
+      <div class="form-grid keep-two compact-grid size-weight-row">
+        <label>Size (inches)<input type="text" inputmode="decimal" id="sizeInches" name="sizeInches" placeholder="Optional"></label>
+        <label>Weight<input type="text" id="weight" name="weight" placeholder="Optional"></label>
+      </div>
+      <label>Notes<textarea id="notes" name="notes" rows="3" placeholder="Anything worth remembering."></textarea></label>
+    </div>
+
+    <div class="divider hidden" id="sharingDivider"></div>
+
+    <div class="section hidden" id="sharingSection">
+      <div class="section-title">Sharing</div>
+      <div class="helper-box" id="sharingSummaryBox">All logs are shared. Use Angler Setup to choose whether your name is shown and whether location is shared by water type or body of water name.</div>
+    </div>
+
+    <div class="button-row">
+      <button type="button" id="clearSpotBtn" class="secondaryBtn">Clear Spot</button>
+      <button type="submit" id="saveBtn" class="primaryBtn">Save Log</button>
+    </div>
+  </form>
+</div>
+
+<div id="anglerSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Options</h2><p>Angler defaults, sharing, and map behavior all live here now.</p></div><button id="closeAnglerSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <form id="anglerForm" autocomplete="off" novalidate>
+    <div class="section">
+      <div class="section-title">Angler Setup</div>
+      <div class="form-grid two">
+        <label>Angler Name<input type="text" id="anglerNameInput" name="anglerNameInput" placeholder="Your display name" required></label>
+        <label>Sync Key<input type="text" id="anglerKeyInput" name="anglerKeyInput" placeholder="Use same key on other devices"></label>
+      </div>
+      <div class="location-actions">
+        <button type="button" id="generateAnglerKeyBtn" class="secondaryBtn">Generate / Refresh Key</button>
+        <button type="button" id="copyAnglerKeyBtn" class="secondaryBtn">Copy Sync Key</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Sharing Defaults</div>
+      <div class="form-grid two">
+        <label>Share Name Publicly
+          <select id="shareAnglerNameInput" name="shareAnglerNameInput">
+            <option value="Yes">Yes</option>
+            <option value="No">Anonymous</option>
+          </select>
+        </label>
+        <label>Location Sharing Depth
+          <select id="locationShareLevelInput" name="locationShareLevelInput">
+            <option value="Water Type Only">Water Type Only</option>
+            <option value="Body of Water Name">Body of Water Name</option>
+          </select>
+        </label>
+      </div>
+      <div class="helper-box" id="anglerPreviewBox">Shared as Anonymous · Water Type Only</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title">Map Options</div>
+      <div class="form-grid two">
+        <label>Map Style
+          <select id="mapStyleInput" name="mapStyleInput">
+            <option value="Standard">Standard</option>
+            <option value="Satellite">Satellite</option>
+          </select>
+        </label>
+        <label>Waypoint Field in Add Log
+          <select id="showWaypointInput" name="showWaypointInput">
+            <option value="No">No</option>
+            <option value="Yes">Yes</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="button-row">
+      <button type="submit" id="saveAnglerSettingsBtn" class="primaryBtn">Save Options</button>
+    </div>
+  </form>
+</div>
+
+<div id="readMeSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Read Me</h2><p>What this app is, what it tracks, and how sharing works.</p></div><button id="closeReadMeSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div class="readme-copy">
+    <h3>About This Project</h3>
+    <p>This app is a working fishing log and trip-analysis tool built to help anglers record conditions, methods, and results in a more useful way than a simple notebook or map pin. It is already in active use, and new features are being added as the system grows.</p>
+    <h3>What It Tracks</h3>
+    <p>You can log trip details, water and weather conditions, fishing style, bait or presentation choices, and results. Over time, that information becomes more valuable because patterns begin to emerge across seasons, waters, species, and techniques.</p>
+    
+<h3>Sharing Options</h3>
+<p>This version of the app gives you two sharing controls in Options.</p>
+<ul>
+  <li><strong>Share Name Publicly</strong>: choose whether shared logs show your angler name or appear as Anonymous.</li>
+  <li><strong>Location Sharing Depth</strong>: choose how specific the shared location text can be.
+    <ul>
+      <li><strong>Water Type Only</strong>: other people can tell whether the trip was on a river, stream, lake, pond, or Great Lake, but not the named water.</li>
+      <li><strong>Body of Water Name</strong>: other people can see the water name, such as Teal Lake or Boardman River.</li>
+    </ul>
+  </li>
+</ul>
+<p>Shared map placement follows a simple rule: it uses the nearest public access point when one is found. If no access point is found, it uses the saved fishing spot itself. It does not intentionally throw markers into random areas.</p>
+<h3>Where It’s Going</h3>
+    <p>This is a hobby project under active development. New features will continue to be added, with the long-term goal of building a more predictive, AI-driven fishing experience. As more data is logged, the system will be able to do a better job identifying patterns and help anglers make smarter decisions about where, when, and how to fish.</p>
+    <h3>Development Note</h3>
+    <p>This is a hobby project under active development. Improvements and new features are being added over time, and some parts of the app may change as the system grows.</p>
   </div>
+</div>
+
+<div id="sheetPicker" class="sheet picker-sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head">
+    <div><h2 id="pickerTitle">Choose one</h2></div>
+    <button id="closePickerBtn" class="sheetClose" type="button">Done</button>
+  </div>
+  <div class="picker-wheel-wrap">
+    <div class="picker-selection-band" aria-hidden="true"></div>
+    <div id="pickerOptions" class="picker-options"></div>
+  </div>
+</div>
+
+<div id="reviewSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Review Logs</h2><p id="reviewSubcopy">Saved logs stay tucked away until you want them.</p></div><button id="closeReviewSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div id="cloudSummary" class="helper-box">Local-only mode. Add Supabase details in supabase-config.js to share logs across devices.</div>
+  <div class="reviewFilterBar">
+    <div class="reviewFilterGrid">
+      <label>Fishing Type
+        <select id="reviewFilterBaitType"><option value="">All</option><option>Fly</option><option>Lure</option><option>Live Bait</option><option>Ice</option></select>
+      </label>
+      <label>Species
+        <select id="reviewFilterSpecies"><option value="">All</option></select>
+      </label>
+      <label>Water Type
+        <select id="reviewFilterWaterType"><option value="">All</option><option>Stream</option><option>River</option><option>Pond</option><option>Lake</option><option>Great Lake</option></select>
+      </label>
+      <label>Wind Dir
+        <select id="reviewFilterWindDirection"><option value="">All</option><option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SW</option><option>W</option><option>NW</option></select>
+      </label>
+      <label>Water Temp
+        <input type="text" id="reviewFilterWaterTemp" inputmode="decimal" placeholder="55, 55+, 55-">
+      </label>
+      <label>Sky
+        <select id="reviewFilterSky"><option value="">All</option><option>Clear</option><option>Partly Cloudy</option><option>Cloudy</option><option>Rain</option><option>Snow</option><option>Night</option></select>
+      </label>
+      <label>Size
+        <input type="text" id="reviewFilterSizeInches" inputmode="decimal" placeholder="20, 20+, 20-">
+      </label>
+      <label>Air Temp
+        <input type="text" id="reviewFilterAirTemp" inputmode="decimal" placeholder="40, 40+, 40-">
+      </label>
+    </div>
+    <div class="reviewFilterActions">
+      <button id="reviewResetFiltersBtn" type="button" class="secondaryBtn">Reset Review Filters</button>
+    </div>
+  </div>
+  <div id="statsGrid" class="statsGrid"></div>
+  <div id="entryCount" class="entryCount"></div>
+  <div id="entryList" class="entryList"></div>
+</div>
+
+
+<div id="predictSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Prediction Input</h2><p>Capture future prediction variables now. No recommendation engine yet.</p></div><button id="closePredictSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div class="helper-box">Dormant for now. This just defines the future prediction inputs.</div>
+  <form id="predictForm" autocomplete="off" novalidate>
+    <div class="section">
+      <div class="section-title">Trip Context</div>
+      <div class="form-grid two"><label>Date<input type="date" id="predictDate"></label><label>Time of Day<select id="predictTimeOfDay"><option value="">Choose one</option><option>Dawn</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></label></div>
+      <div class="form-grid two"><label>Body of Water<input type="text" id="predictWaterName" placeholder="Optional"></label><label>Water Type<select id="predictWaterType"><option value="">Choose one</option><option>Stream</option><option>River</option><option>Pond</option><option>Lake</option><option>Great Lake</option></select></label></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Targeting</div>
+      <div class="form-grid three"><label>Species<select id="predictSpecies"><option value="">Choose one</option></select></label><label>Presentation Style<select id="predictPresentationStyle"><option value="">Choose one</option><option>Dead Drift</option><option>Swing</option><option>Strip</option><option>Twitch</option><option>Jig</option><option>Under Bobber</option><option>Bottom Bounce</option><option>Trolling</option><option>Static</option></select></label><label>Bait Type<select id="predictBaitType"><option value="">Choose one</option><option>Fly</option><option>Lure</option><option>Live Bait</option><option>Cut Bait</option></select></label></div>
+    </div>
+    <div class="divider"></div>
+    <div class="section">
+      <div class="section-title">Conditions</div>
+      <div class="form-grid four"><label>Sky<select id="predictSky"><option value="">Choose one</option><option>Clear</option><option>Cloudy</option><option>Rain</option><option>Night</option></select></label><label>Air Temp (°F)<input type="number" id="predictAirTemp"></label><label>Water Temp (°F)<input type="number" id="predictWaterTemp"></label><label>Water Clarity<select id="predictWaterClarity"><option value="">Choose one</option><option>Clear</option><option>Stained</option><option>Muddy</option></select></label></div>
+      <div class="form-grid four"><label>Depth Zone<select id="predictDepthZone"><option value="">Choose one</option><option>Surface</option><option>Mid-Column</option><option>Bottom</option></select></label><label>Structure<select id="predictStructureType"><option value="">Choose one</option><option>Pool</option><option>Riffle</option><option>Run</option><option>Seam</option><option>Undercut Bank</option><option>Logjam</option><option>Weed Edge</option><option>Rocky Bank</option><option>Current Break</option><option>Drop-off</option><option>Inlet / Outlet</option><option>Open Water</option><option>Shoreline</option></select></label><label>Wind<input type="text" id="predictWind" placeholder="Optional"></label><label>Notes<input type="text" id="predictNotes" placeholder="Anything worth tracking later"></label></div>
+    </div>
+    <div class="button-row"><button type="button" id="predictNotLiveBtn" class="secondaryBtn">Prediction Not Live Yet</button></div>
+  </form>
+</div>
+
+<div id="filterSheet" class="sheet" aria-hidden="true">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><div><h2>Filters</h2><p>Keep the map from turning into point soup.</p></div><button id="closeFilterSheetBtn" class="sheetClose" type="button">Close</button></div>
+  <div class="form-grid two"><label>From Date<input type="date" id="filterDateFrom"></label><label>To Date<input type="date" id="filterDateTo"></label></div>
+  <div class="form-grid two"><label>Species<select id="filterSpecies"><option value="">All</option></select></label><label>Color<select id="filterColor"><option value="">All</option></select></label></div>
+  <div class="form-grid two"><label>Bait Type<select id="filterBaitType"><option value="">All</option></select></label><label>Water Type<select id="filterWaterType"><option value="">All</option><option>Stream</option><option>River</option><option>Pond</option><option>Lake</option><option>Great Lake</option></select></label></div>
+  <div class="form-grid two"><label>Time of Day<select id="filterTimeOfDay"><option value="">All</option><option>Dawn</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></label><label>Sky<select id="filterSky"><option value="">All</option><option>Clear</option><option>Cloudy</option><option>Rain</option><option>Night</option></select></label></div>
+  <div class="form-grid two"><label>Speed<select id="filterRetrieveSpeed"><option value="">All</option><option>Slow</option><option>Medium</option><option>Fast</option></select></label><label></label></div>
+  <div class="button-row"><button id="resetFiltersBtn" type="button" class="secondaryBtn">Reset Filters</button></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="fly-reference.js"></script>
+<script src="supabase-config.js"></script>
+<script src="fishing-vocab.js"></script>
+<script src="sheet-controller.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

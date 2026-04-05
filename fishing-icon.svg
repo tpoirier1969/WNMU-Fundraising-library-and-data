@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Fishing Logbook icon">
+  <defs>
+    <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#bfe8ff"/>
+      <stop offset="58%" stop-color="#87ceeb"/>
+      <stop offset="58%" stop-color="#4fa3d9"/>
+      <stop offset="100%" stop-color="#2f6fa3"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="44" fill="url(#sky)"/>
+  <circle cx="74" cy="74" r="24" fill="#fff7bf" opacity="0.95"/>
+  <path d="M0 150 C38 136 72 164 108 154 S178 136 256 154 V256 H0 Z" fill="#5db6e6" opacity="0.95"/>
+  <path d="M0 182 C46 168 82 198 124 186 S208 166 256 182" fill="none" stroke="#d9f6ff" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+  <path d="M160 58c24 8 39 28 39 56 0 16-5 28-15 40l-22 25c-6 7-9 15-9 24 0 8 2 14 6 19 4 4 8 7 13 8 8 2 16-1 23-8 7-7 11-15 11-25" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M179 204c-4 10-11 17-21 22" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="160" cy="58" r="10" fill="#ffffff"/>
+</svg>
