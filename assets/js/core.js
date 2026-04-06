@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.54',
+    APP_VERSION: 'v0.20.55',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -340,6 +340,51 @@ window.PledgeLib = window.PledgeLib || {};
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return String(value);
       return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    },
+
+    parseFlexibleDateInput(value) {
+      const text = utils.normalizeText(value);
+      if (!text) return { blank: true, valid: true, iso: null, display: '' };
+
+      const direct = new Date(text);
+      if (!Number.isNaN(direct.getTime()) && /\d{4}-\d{1,2}-\d{1,2}/.test(text)) {
+        const year = direct.getFullYear();
+        const month = String(direct.getMonth() + 1).padStart(2, '0');
+        const day = String(direct.getDate()).padStart(2, '0');
+        return { blank: false, valid: true, iso: `${year}-${month}-${day}`, display: `${month}/${day}/${String(year).slice(-2)}` };
+      }
+
+      const match = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
+      if (!match) return { blank: false, valid: false, iso: null, display: text };
+
+      let month = Number(match[1]);
+      let day = Number(match[2]);
+      let year = Number(match[3]);
+      if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) {
+        return { blank: false, valid: false, iso: null, display: text };
+      }
+      if (match[3].length === 2) year += year >= 70 ? 1900 : 2000;
+      if (month < 1 || month > 12 || day < 1 || day > 31) {
+        return { blank: false, valid: false, iso: null, display: text };
+      }
+      const probe = new Date(year, month - 1, day);
+      if (
+        Number.isNaN(probe.getTime())
+        || probe.getFullYear() != year
+        || probe.getMonth() != month - 1
+        || probe.getDate() != day
+      ) {
+        return { blank: false, valid: false, iso: null, display: text };
+      }
+      const iso = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const display = `${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}/${String(year).slice(-2)}`;
+      return { blank: false, valid: true, iso, display };
+    },
+
+    formatCompactDateInput(value, fallback = '') {
+      const parsed = utils.parseFlexibleDateInput(value);
+      if (!parsed.valid) return utils.normalizeText(value) || fallback;
+      return parsed.display || fallback;
     },
 
     formatDateTime(value, fallback = 'N/A') {

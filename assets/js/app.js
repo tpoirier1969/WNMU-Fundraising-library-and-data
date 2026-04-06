@@ -1,7 +1,7 @@
 (() => {
   const App = window.PledgeLib;
-  const { state, utils, constants } = App;
-  const { els, setNotice, setBuildMeta, setDetailNotice } = App.dom;
+  const { state } = App;
+  const { els, setNotice, setDetailNotice } = App.dom;
 
   const refreshAll = (...args) => App.libraryLoader.refreshAll(...args);
 
@@ -150,59 +150,5 @@
     }
   }
 
-  async function init() {
-    App.auth.setRoleUi();
-    App.workspaceUi?.setWorkspace(state.activeWorkspace);
-    App.schedulingUi?.renderAll();
-    setBuildMeta(state.configVersionMismatch || '');
-    if (!App.data.validateConfig()) {
-      setNotice('Fill in config.js with your Supabase URL and anon key. Until then this page is decorative.', 'warn');
-      if (state.configVersionMismatch) setBuildMeta(state.configVersionMismatch);
-      return;
-    }
-
-    try {
-      App.data.createClient();
-    } catch (error) {
-      setNotice(error.message || 'Supabase failed to initialize.', 'warn');
-      return;
-    }
-
-    const authHashError = App.auth.parseAuthErrorFromHash();
-    if (authHashError) {
-      App.auth.openAuthShell(authHashError);
-      setNotice(authHashError, 'warn');
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
-
-    setNotice(`Connected. Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
-    await App.auth.initAuthRole();
-    App.auth.bindAuthListener();
-
-    // Keep fundraiser data available across the app even when Scheduling is lazy-rendered.
-    // This restores the scheduler/import workflows without forcing a full scheduler paint during boot.
-    void App.schedulingUi?.loadSchedules().catch((error) => {
-      console.warn('Background fundraiser load failed.', error);
-    });
-
-    await refreshAll({ workspace: 'library' });
-  }
-
-  App.app = { init, refreshAll, bindEvents };
-
-  window.addEventListener('DOMContentLoaded', () => {
-    App.programOpen?.bindDelegation?.();
-    bindEvents();
-    ensureMobileModeControls();
-    window.addEventListener('resize', ensureMobileModeControls);
-    void init().catch((error) => {
-      console.error(error);
-      const message = error?.message || 'App startup failed.';
-      setNotice(message, 'warn');
-      if (els.libraryBody) {
-        els.libraryBody.innerHTML = `<tr><td colspan="10" class="placeholder-row">${utils.escapeHtml(message)}</td></tr>`;
-      }
-      if (els.resultSummary) els.resultSummary.textContent = 'Load failed.';
-    });
-  });
+  App.app = { refreshAll, bindEvents, ensureMobileModeControls };
 })();

@@ -8,22 +8,23 @@
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.54">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.55">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.54"></script>
-  <script defer src="assets/js/dom.js?v=0.20.54"></script>
-  <script defer src="assets/js/data.js?v=0.20.54"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.54"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.54"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.54"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.54"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.54"></script>
-  <script defer src="assets/js/auth.js?v=0.20.54"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.54"></script>
-  <script defer src="assets/js/program-open.js?v=0.20.54"></script>
-  <script defer src="assets/js/library-load.js?v=0.20.54"></script>
-  <script defer src="assets/js/app.js?v=0.20.54"></script>
+  <script defer src="assets/js/core.js?v=0.20.55"></script>
+  <script defer src="assets/js/dom.js?v=0.20.55"></script>
+  <script defer src="assets/js/data.js?v=0.20.55"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.55"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.55"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.55"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.55"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.55"></script>
+  <script defer src="assets/js/auth.js?v=0.20.55"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.55"></script>
+  <script defer src="assets/js/program-open.js?v=0.20.55"></script>
+  <script defer src="assets/js/library-load.js?v=0.20.55"></script>
+  <script defer src="assets/js/app.js?v=0.20.55"></script>
+  <script defer src="assets/js/app-init.js?v=0.20.55"></script>
 </head>
 <body>
 
@@ -806,21 +807,29 @@
           <form id="detail-edit-form" class="detail-edit-form hidden">
             <div class="detail-block">
               <div class="section-head"><h3 id="detail-form-heading">Edit program</h3><div class="mini-chip">Admin</div></div>
-              <div class="detail-form-grid">
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Title</span><input type="text" name="title" required></label>
-                <label class="detail-form-field"><span class="filter-label">NOLA</span><input type="text" name="nola_code"></label>
-                <label class="detail-form-field"><span class="filter-label">Distributor</span><input type="text" name="distributor"></label>
-                <label class="detail-form-field"><span class="filter-label">Length bucket minutes</span><input type="number" name="length_bucket_minutes" min="0" step="30"></label>
-                <label class="detail-form-field"><span class="filter-label">Actual runtime</span><input type="text" name="actual_runtime_input" placeholder="00:56:46 or 57"></label>
-                <label class="detail-form-field"><span class="filter-label">Primary topic</span><input type="text" name="topic_primary"></label>
-                <label class="detail-form-field"><span class="filter-label">Secondary topic</span><input type="text" name="topic_secondary"></label>
-                <label class="detail-form-field"><span class="filter-label">Rights begin</span><input type="date" name="rights_start"></label>
-                <label class="detail-form-field"><span class="filter-label">Rights end</span><input type="date" name="rights_end"></label>
-                <label class="detail-form-field"><span class="filter-label">Package type</span><input type="text" name="package_type"></label>
-                <label class="detail-form-field"><span class="filter-label">Source</span><input type="text" name="source_format"></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Rights notes</span><textarea name="rights_notes" rows="3"></textarea></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Premium summary</span><textarea name="premium_summary" rows="3"></textarea></label>
-                <label class="detail-form-field detail-form-span-2"><span class="filter-label">Description / notes</span><textarea name="program_notes" rows="6"></textarea></label>
+              <div class="detail-form-stack compact-program-form">
+                <div class="detail-form-row detail-form-row-main">
+                  <label class="detail-form-field detail-field-title"><span class="filter-label">Title</span><input type="text" name="title" required></label>
+                  <label class="detail-form-field detail-field-nola"><span class="filter-label">NOLA</span><input type="text" name="nola_code"></label>
+                  <label class="detail-form-field detail-field-distributor"><span class="filter-label">Distributor</span><input type="text" name="distributor"></label>
+                </div>
+                <div class="detail-form-row detail-form-row-compact">
+                  <label class="detail-form-field"><span class="filter-label">Bucket length</span><input type="number" name="length_bucket_minutes" min="0" step="30"></label>
+                  <label class="detail-form-field"><span class="filter-label">Runtime</span><input type="text" name="actual_runtime_input" placeholder="00:56:46 or 57"></label>
+                  <label class="detail-form-field"><span class="filter-label">Rights begin</span><input type="text" name="rights_start" inputmode="numeric" placeholder="MM/DD/YY"></label>
+                  <label class="detail-form-field"><span class="filter-label">Rights end</span><input type="text" name="rights_end" inputmode="numeric" placeholder="MM/DD/YY"></label>
+                  <label class="detail-form-field"><span class="filter-label">Primary topic</span><input type="text" name="topic_primary"></label>
+                  <label class="detail-form-field"><span class="filter-label">Secondary topic</span><input type="text" name="topic_secondary"></label>
+                  <label class="detail-form-field"><span class="filter-label">Package type</span><input type="text" name="package_type"></label>
+                  <label class="detail-form-field"><span class="filter-label">Source</span><select name="source_format"><option value=""></option><option value="sIX">sIX</option><option value="FTP">FTP</option><option value="Server">Server</option><option value="Other">Other</option></select></label>
+                </div>
+                <div class="detail-form-row detail-form-row-single">
+                  <label class="detail-form-field"><span class="filter-label">Rights notes</span><textarea name="rights_notes" rows="1"></textarea></label>
+                </div>
+                <div class="detail-form-row detail-form-row-split">
+                  <label class="detail-form-field"><span class="filter-label">Premium summary</span><textarea name="premium_summary" rows="4"></textarea></label>
+                  <label class="detail-form-field"><span class="filter-label">Description / notes</span><textarea name="program_notes" rows="4"></textarea></label>
+                </div>
               </div>
               <div class="toolbar-actions detail-form-actions">
                 <button type="submit" class="primary" id="detail-save-button">Save</button>

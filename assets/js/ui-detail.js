@@ -281,6 +281,51 @@
     els.detailEmpty.textContent = message || 'Something went sideways while loading this title.';
   }
 
+  function ensureSelectOption(select, value) {
+    if (!select) return;
+    const normalized = utils.normalizeText(value);
+    if (!normalized) {
+      select.value = '';
+      return;
+    }
+    const exists = [...select.options].some((option) => utils.normalizeText(option.value) === normalized);
+    if (!exists) {
+      const option = document.createElement('option');
+      option.value = normalized;
+      option.textContent = normalized;
+      option.dataset.dynamic = 'true';
+      select.appendChild(option);
+    }
+    select.value = normalized;
+  }
+
+  function normalizeDateFieldInput(input) {
+    if (!input) return true;
+    const parsed = utils.parseFlexibleDateInput(input.value);
+    if (parsed.blank) {
+      input.value = '';
+      return true;
+    }
+    if (!parsed.valid) return false;
+    input.value = parsed.display;
+    return true;
+  }
+
+  function bindCompactDateInputs() {
+    ['rights_start', 'rights_end'].forEach((name) => {
+      const input = els.detailEditForm?.elements?.[name];
+      if (!input || input.dataset.compactDateBound === 'true') return;
+      input.dataset.compactDateBound = 'true';
+      input.addEventListener('blur', () => {
+        if (!normalizeDateFieldInput(input)) {
+          setDetailNotice(`${name === 'rights_start' ? 'Rights begin' : 'Rights end'} should look like MM/DD/YY.`, 'warn');
+        } else if (state.detailEditMode) {
+          handleEditorInput();
+        }
+      });
+    });
+  }
+
   function setFormFieldsFromSource(source = {}) {
     const form = els.detailEditForm;
     form.elements.title.value = derive.title(source) === 'Untitled program' ? '' : derive.title(source);
@@ -290,10 +335,10 @@
     form.elements.actual_runtime_input.value = derive.actualRuntimeLabel(source) === '—' ? '' : derive.actualRuntimeLabel(source);
     form.elements.topic_primary.value = derive.topicPrimary(source);
     form.elements.topic_secondary.value = derive.topicSecondary(source);
-    form.elements.rights_start.value = derive.rightsBegin(source);
-    form.elements.rights_end.value = derive.rightsEnd(source);
+    form.elements.rights_start.value = utils.formatCompactDateInput(derive.rightsBegin(source));
+    form.elements.rights_end.value = utils.formatCompactDateInput(derive.rightsEnd(source));
     form.elements.package_type.value = utils.normalizeText(source.package_type);
-    form.elements.source_format.value = utils.normalizeText(source.source_format);
+    ensureSelectOption(form.elements.source_format, utils.normalizeText(source.source_format));
     form.elements.rights_notes.value = utils.normalizeText(source.rights_notes);
     form.elements.premium_summary.value = derive.premiumSummary(source);
     form.elements.program_notes.value = derive.description(source);
@@ -363,6 +408,7 @@
 
     const source = state.currentDetailProgram || blankProgram();
     setFormFieldsFromSource(source);
+    bindCompactDateInputs();
     handleEditorInput();
   }
 
@@ -457,14 +503,20 @@
       actual_runtime_seconds: utils.parseRuntimeInput(form.elements.actual_runtime_input.value),
       topic_primary: utils.normalizeText(form.elements.topic_primary.value) || null,
       topic_secondary: utils.normalizeText(form.elements.topic_secondary.value) || null,
-      rights_start: utils.normalizeText(form.elements.rights_start.value) || null,
-      rights_end: utils.normalizeText(form.elements.rights_end.value) || null,
+      rights_start: null,
+      rights_end: null,
       package_type: utils.normalizeText(form.elements.package_type.value) || null,
       source_format: utils.normalizeText(form.elements.source_format.value) || null,
       rights_notes: utils.normalizeText(form.elements.rights_notes.value) || null,
       premium_summary: utils.normalizeText(form.elements.premium_summary.value) || null,
       program_notes: utils.normalizeText(form.elements.program_notes.value) || null
     };
+    const rightsBegin = utils.parseFlexibleDateInput(form.elements.rights_start.value);
+    const rightsEnd = utils.parseFlexibleDateInput(form.elements.rights_end.value);
+    if (!rightsBegin.valid) throw new Error('Rights begin should look like MM/DD/YY.');
+    if (!rightsEnd.valid) throw new Error('Rights end should look like MM/DD/YY.');
+    payload.rights_start = rightsBegin.iso;
+    payload.rights_end = rightsEnd.iso;
     if (payload.length_bucket_minutes != null && !Number.isFinite(payload.length_bucket_minutes)) payload.length_bucket_minutes = null;
     return payload;
   }

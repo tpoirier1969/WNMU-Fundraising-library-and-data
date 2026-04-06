@@ -2790,3 +2790,95 @@ button.primary {
 .performance-confidence.confidence-low,
 .performance-confidence.confidence-very-low { background: rgba(160, 98, 0, 0.12); color: #8a5400; border-color: rgba(160, 98, 0, 0.18); }
 .performance-confidence.confidence-none { background: rgba(120, 120, 120, 0.1); color: #666; border-color: rgba(120, 120, 120, 0.18); }
+
+
+/* v0.20.55 library earnings tint + compact editor */
+.programs-table tbody tr.library-earnings-high .title-cell {
+  box-shadow: inset 4px 0 0 rgba(18, 134, 127, 0.95);
+  background: rgba(36, 176, 168, 0.11);
+}
+.programs-table tbody tr.library-earnings-good .title-cell {
+  box-shadow: inset 4px 0 0 rgba(36, 176, 168, 0.72);
+  background: rgba(36, 176, 168, 0.075);
+}
+.programs-table tbody tr.library-earnings-mid .title-cell {
+  box-shadow: inset 4px 0 0 rgba(29, 95, 150, 0.55);
+  background: rgba(29, 95, 150, 0.05);
+}
+.programs-table tbody tr.library-earnings-low .title-cell {
+  box-shadow: inset 4px 0 0 rgba(216, 142, 0, 0.45);
+  background: rgba(216, 142, 0, 0.055);
+}
+.programs-table tbody tr.library-earnings-zero .title-cell {
+  box-shadow: inset 4px 0 0 rgba(191, 47, 67, 0.35);
+  background: rgba(191, 47, 67, 0.05);
+}
+.programs-table tbody tr.selected .title-cell {
+  background: inherit;
+}
+.programs-table tbody tr.selected.library-earnings-high .title-cell,
+.programs-table tbody tr.selected.library-earnings-good .title-cell,
+.programs-table tbody tr.selected.library-earnings-mid .title-cell,
+.programs-table tbody tr.selected.library-earnings-low .title-cell,
+.programs-table tbody tr.selected.library-earnings-zero .title-cell {
+  background: linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0.02));
+}
+
+.compact-program-form {
+  display: grid;
+  gap: 10px;
+}
+.detail-form-row {
+  display: grid;
+  gap: 10px 12px;
+  align-items: start;
+}
+.detail-form-row-main {
+  grid-template-columns: minmax(320px, 2.4fr) minmax(120px, 0.8fr) minmax(220px, 1.4fr);
+}
+.detail-form-row-compact {
+  grid-template-columns: repeat(8, minmax(110px, 1fr));
+}
+.detail-form-row-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.detail-form-row-split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.detail-form-row .detail-form-field {
+  min-width: 0;
+}
+.detail-form-row textarea {
+  width: 100%;
+  resize: vertical;
+}
+.detail-form-row-single textarea {
+  min-height: 2.6rem;
+}
+.detail-form-row-split textarea {
+  min-height: 7rem;
+}
+.detail-field-title input,
+.detail-field-nola input,
+.detail-field-distributor input {
+  width: 100%;
+}
+@media (max-width: 1360px) {
+  .detail-form-row-compact {
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+  }
+}
+@media (max-width: 980px) {
+  .detail-form-row-main,
+  .detail-form-row-compact,
+  .detail-form-row-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .detail-form-row-main,
+  .detail-form-row-compact,
+  .detail-form-row-split {
+    grid-template-columns: 1fr;
+  }
+}

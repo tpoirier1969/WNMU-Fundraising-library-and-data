@@ -163,6 +163,21 @@
     });
   }
 
+  function hasAired(row) {
+    return Boolean(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at)) || Number(derive.totalRaised(row) || 0) > 0 || Number(derive.avgPerFundraiser(row) || 0) > 0;
+  }
+
+  function earningsTone(row) {
+    if (!hasAired(row)) return 'none';
+    const avg = Number(derive.avgPerFundraiser(row) || 0);
+    const total = Number(derive.totalRaised(row) || 0);
+    if (avg >= 1000 || total >= 5000) return 'high';
+    if (avg >= 500 || total >= 2500) return 'good';
+    if (avg >= 150 || total >= 750) return 'mid';
+    if (avg > 0 || total > 0) return 'low';
+    return 'zero';
+  }
+
   function renderRows() {
     if (!state.rows.length) {
       els.libraryBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">No matching pledge titles found.</td></tr>';
@@ -171,8 +186,9 @@
 
     els.libraryBody.innerHTML = state.rows.map((row) => {
       const programId = App.programLinks?.resolveId?.(row) || derive.programId(row);
+      const tone = earningsTone(row);
       return `
-        <tr data-id="${utils.escapeHtml(programId)}" class="${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
+        <tr data-id="${utils.escapeHtml(programId)}" class="library-earnings-${utils.escapeHtml(tone)} ${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
           <td class="title-cell">
             <button type="button" class="title-open-button" data-open-id="${utils.escapeHtml(programId)}" aria-label="Open details for ${utils.escapeHtml(derive.title(row))}">
               <strong>${utils.escapeHtml(derive.title(row))}</strong>
