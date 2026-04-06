@@ -1461,6 +1461,10 @@ button.primary {
   color: #91a0b1;
   font-weight: 600;
 }
+.topic-time-cell.low-sample {
+  outline: 2px dashed rgba(255,255,255,0.75);
+  outline-offset: -3px;
+}
 @media (max-width: 900px) {
   .topic-time-header,
   .topic-time-row {
@@ -2787,6 +2791,18 @@ button.primary {
 .performance-confidence.confidence-low,
 .performance-confidence.confidence-very-low { background: rgba(160, 98, 0, 0.12); color: #8a5400; border-color: rgba(160, 98, 0, 0.18); }
 .performance-confidence.confidence-none { background: rgba(120, 120, 120, 0.1); color: #666; border-color: rgba(120, 120, 120, 0.18); }
+.sample-warning-inline {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(160, 98, 0, 0.12);
+  color: #8a5400;
+  border: 1px solid rgba(160, 98, 0, 0.18);
+  vertical-align: middle;
+}
 
 
 /* v0.20.56 scheduler quick filters + library earnings tint + compact editor */
