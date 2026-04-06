@@ -861,6 +861,21 @@ button.small { padding: 6px 7px; }
 .schedule-list-title { font-weight: 800; color: var(--heading); font-size: .94rem; line-height: 1.15; }
 .schedule-list-meta, .schedule-list-empty { color: var(--muted); font-size: .76rem; line-height: 1.2; }
 .schedule-main { display: grid; gap: 14px; }
+.schedule-mobile-switcher {
+  display: none;
+  background: #fff;
+  border: 1px solid #dfe8ee;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(12,32,53,.05);
+  padding: 14px;
+  gap: 10px;
+}
+.schedule-mobile-switcher-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
 .schedule-builder-card,
 .schedule-empty-state,
 .schedule-program-picker,
@@ -2209,6 +2224,10 @@ button.primary {
   .programs-table.performance-table { min-width: 0; }
   .programs-table.performance-explain-table, .programs-table.import-preview-table { min-width: 760px; }
   .schedule-sidebar { display: none; }
+  .schedule-mobile-switcher { display: grid; }
+  .schedule-mobile-switcher-head { align-items: flex-start; flex-direction: column; }
+  [data-workspace-pane="scheduling"][data-schedule-state="active"] .schedule-builder-card,
+  [data-workspace-pane="scheduling"][data-schedule-state="active"] .schedule-empty-state { display: none; }
   .schedule-toolbar {
     display: grid !important;
     grid-template-columns: 1fr 1fr;
