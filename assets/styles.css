@@ -220,6 +220,46 @@ button.small { padding: 6px 7px; }
   font-size: .74rem;
   color: var(--muted);
 }
+.program-link-button {
+  display:inline-flex;
+  align-items:center;
+  gap:0;
+  width:auto;
+  padding:0;
+  border:none;
+  background:transparent;
+  color:inherit;
+  cursor:pointer;
+  text-align:left;
+  font:inherit;
+}
+.program-link-inline {
+  color:inherit;
+  cursor:pointer;
+}
+.program-link-button:hover strong,
+.program-link-button:focus-visible strong,
+.program-link-inline:hover,
+.program-link-inline:hover strong,
+.program-link-inline:focus-visible,
+.program-link-inline:focus-visible strong,
+.svg-program-link:hover text,
+.svg-program-link:focus text {
+  text-decoration: underline;
+}
+.program-link-button:focus-visible,
+.program-link-inline:focus-visible {
+  outline: 2px solid var(--pbs-blue-dark);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.svg-program-link { cursor:pointer; }
+.svg-program-link text { pointer-events:none; }
+.schedule-card-title-link strong,
+.schedule-selected-title-link strong,
+.performance-program-link { color: var(--heading); font-weight: 800; }
+.schedule-placement-title-link strong,
+.schedule-match-title-link strong { color: inherit; }
 .premiums-cell { vertical-align: top; }
 .premium-lines { display: grid; gap: 4px; }
 .premium-line { white-space: normal; }

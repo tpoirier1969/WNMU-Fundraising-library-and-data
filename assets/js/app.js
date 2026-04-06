@@ -60,6 +60,44 @@
     }
   }
 
+  function programOpenTrigger(target) {
+    return target?.closest?.('[data-program-open-id], [data-open-id]') || null;
+  }
+
+  function resolvedProgramOpenId(trigger) {
+    if (!trigger) return '';
+    const candidate = trigger.dataset?.programOpenId || trigger.dataset?.openId || '';
+    return App.programLinks?.resolveId(candidate) || '';
+  }
+
+  function openProgramFromTrigger(trigger, event = null) {
+    const programId = resolvedProgramOpenId(trigger);
+    if (!programId) return false;
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    void App.detailUi.loadProgramDetail(programId);
+    return true;
+  }
+
+  function bindProgramOpenDelegation() {
+    document.addEventListener('click', (event) => {
+      const trigger = programOpenTrigger(event.target);
+      if (!trigger) return;
+      openProgramFromTrigger(trigger, event);
+    }, true);
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const trigger = programOpenTrigger(event.target);
+      if (!trigger) return;
+      const isKeyboardTarget = trigger.hasAttribute('tabindex') || trigger.tagName === 'A' || trigger.tagName === 'BUTTON';
+      if (!isKeyboardTarget) return;
+      openProgramFromTrigger(trigger, event);
+    }, true);
+  }
+
   function bindEvents() {
     let searchTimer = null;
     els.searchInput.addEventListener('input', (event) => {
@@ -87,12 +125,6 @@
     });
     els.resetFiltersButton.addEventListener('click', () => { App.listUi.resetFilters(); App.listUi.applyLibraryView(); });
     els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace }); });
-    els.libraryBody.addEventListener('click', (event) => {
-      const trigger = event.target.closest('[data-open-id]');
-      if (!trigger) return;
-      event.preventDefault();
-      void App.detailUi.loadProgramDetail(trigger.dataset.openId);
-    });
     els.detailCloseButton.addEventListener('click', App.detailUi.closeDetailModal);
     els.detailBackdrop.addEventListener('click', App.detailUi.closeDetailModal);
     document.addEventListener('keydown', (event) => {
@@ -248,9 +280,10 @@
     await refreshAll({ workspace: 'library' });
   }
 
-  App.app = { init, refreshAll, bindEvents };
+  App.app = { init, refreshAll, bindEvents, openProgramFromTrigger };
 
   window.addEventListener('DOMContentLoaded', () => {
+    bindProgramOpenDelegation();
     bindEvents();
     ensureMobileModeControls();
     window.addEventListener('resize', ensureMobileModeControls);

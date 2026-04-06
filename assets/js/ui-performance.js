@@ -840,13 +840,14 @@
     records.forEach((record) => {
       const label = criterionLabel(record, criterion);
       if (!groups.has(label)) {
-        groups.set(label, { label, airingCount: 0, totalDollars: 0, moneyCount: 0, avgDollars: 0, titles: new Set(), minTime: null, minMinutes: null, topicTimeSortKey: null, dayIndex: null, hourOfDay: null });
+        groups.set(label, { label, airingCount: 0, totalDollars: 0, moneyCount: 0, avgDollars: 0, titles: new Set(), programIds: new Set(), minTime: null, minMinutes: null, topicTimeSortKey: null, dayIndex: null, hourOfDay: null });
       }
       const group = groups.get(label);
       group.airingCount += 1;
       group.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
       group.moneyCount += 1;
       group.titles.add(record.title || 'Unknown title');
+      if (record.programId) group.programIds.add(String(record.programId));
       if (Number.isFinite(record.topicTimeSortKey)) {
         group.topicTimeSortKey = group.topicTimeSortKey == null ? record.topicTimeSortKey : Math.min(group.topicTimeSortKey, record.topicTimeSortKey);
       }
@@ -865,7 +866,8 @@
       ...group,
       avgDollars: group.airingCount ? group.totalDollars / group.airingCount : 0,
       titleCount: group.titles.size,
-      titles: [...group.titles].sort((a, b) => utils.compareText(a, b))
+      titles: [...group.titles].sort((a, b) => utils.compareText(a, b)),
+      programOpenId: group.programIds.size === 1 ? [...group.programIds][0] : ''
     }));
 
     let sorted = grouped.sort((a, b) => {
@@ -971,10 +973,13 @@
       const display = metricDisplay(group, { includeCount: true });
       const label = String(group.label || '').length > 16 ? `${String(group.label).slice(0, 13)}…` : String(group.label || '');
       const title = `${group.label}: ${display} · ${utils.formatCount(group.titleCount)} titles`;
+      const labelNode = perf().criterion === 'program' && group.programOpenId
+        ? `<g class="svg-program-link" data-program-open-id="${utils.escapeHtml(group.programOpenId)}" tabindex="0" role="button" aria-label="${utils.escapeHtml(`Open details for ${group.label}`)}"><text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text></g>`
+        : `<text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text>`;
       return `
         <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="#123e6b"><title>${utils.escapeHtml(title)}</title></rect>
         <text x="${x + barW / 2}" y="${y - 8}" font-size="11" text-anchor="middle" fill="#183a5f">${utils.escapeHtml(display)}</text>
-        <text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text>
+        ${labelNode}
       `;
     }).join('');
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">${grid}${bars}</svg>`;
@@ -997,7 +1002,12 @@
     });
     const path = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({ y: top + chartH - (ratio * chartH), value: max * ratio }));
-    const labels = points.map((point) => `<text x="${point.x}" y="${height - 18}" font-size="11" text-anchor="middle" fill="#526174">${utils.escapeHtml(point.label)}</text>`).join('');
+    const labels = points.map((point) => {
+      if (perf().criterion === 'program' && point.group.programOpenId) {
+        return `<g class="svg-program-link" data-program-open-id="${utils.escapeHtml(point.group.programOpenId)}" tabindex="0" role="button" aria-label="${utils.escapeHtml(`Open details for ${point.label}`)}"><text x="${point.x}" y="${height - 18}" font-size="11" text-anchor="middle" fill="#526174">${utils.escapeHtml(point.label)}</text></g>`;
+      }
+      return `<text x="${point.x}" y="${height - 18}" font-size="11" text-anchor="middle" fill="#526174">${utils.escapeHtml(point.label)}</text>`;
+    }).join('');
     const dots = points.map((point) => `
       <circle cx="${point.x}" cy="${point.y}" r="4" fill="#123e6b"><title>${utils.escapeHtml(`${point.label}: ${metricDisplay(point.group, { includeCount: true })} · ${utils.formatCount(point.group.titleCount)} titles`)}</title></circle>
       <text x="${point.x}" y="${point.y - 10}" font-size="11" text-anchor="middle" fill="#173a5e">${utils.escapeHtml(metricDisplay(point.group, { includeCount: true }))}</text>
@@ -1082,15 +1092,20 @@
       els.performanceTableBody.innerHTML = '<tr><td colspan="5" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
       return;
     }
-    els.performanceTableBody.innerHTML = groups.map((group) => `
+    els.performanceTableBody.innerHTML = groups.map((group) => {
+      const labelHtml = perf().criterion === 'program'
+        ? App.programLinks.render({ programId: group.programOpenId, title: group.label, className: 'performance-program-link' })
+        : utils.escapeHtml(group.label);
+      return `
       <tr>
-        <td>${utils.escapeHtml(group.label)}</td>
+        <td>${labelHtml}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
         <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.titleCount))}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   function confidenceLabel() {

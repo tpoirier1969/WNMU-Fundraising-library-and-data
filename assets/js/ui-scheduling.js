@@ -23,6 +23,17 @@
     return `Fundraiser ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}`;
   }
 
+  function renderProgramTitleLink(programId, title, { html = '', className = '', nested = false, titleAttr = '' } = {}) {
+    return App.programLinks.render({
+      programId,
+      title,
+      html: html || `<strong>${utils.escapeHtml(title || 'Untitled program')}</strong>`,
+      className,
+      nested,
+      titleAttr
+    });
+  }
+
 
   function getScheduleDateSpanInfo(schedule = {}) {
     const startKey = utils.normalizeText(schedule?.startDate);
@@ -1281,7 +1292,7 @@
         }
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}"><strong>${utils.escapeHtml(placement.programTitle)}</strong><span>${subtitleBits.join(' · ')}</span></span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span></span>` : ''}
           </button>
         `);
       });
@@ -1409,7 +1420,7 @@
         <article class="scheduled-program-card compact-program-card">
           <div class="scheduled-program-line scheduled-program-line-top">
             <div class="scheduled-program-title-wrap">
-              <strong>${utils.escapeHtml(derive.title(row) || occurrences[0].programTitle)}</strong>
+              ${renderProgramTitleLink(programId, derive.title(row) || occurrences[0].programTitle, { className: 'schedule-card-title-link' })}
               <div class="scheduled-program-meta-inline">${metaBits.map((bit) => `<span>${utils.escapeHtml(bit)}</span>`).join('<span class="meta-dot">•</span>')}</div>
             </div>
           </div>
@@ -1483,7 +1494,7 @@
         const topicText = derive.topicPrimary(row) || derive.topicSecondary(row) || 'No topic';
         return `
           <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}" data-program-id="${utils.escapeHtml(derive.programId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" data-non-pledge="${isNonPledge ? 'true' : 'false'}" ${editable ? '' : 'disabled'}>
-            <strong>${utils.escapeHtml(derive.title(row))}</strong>
+            ${renderProgramTitleLink(isNonPledge ? '' : derive.programId(row), derive.title(row), { nested: true, className: 'schedule-match-title-link' })}
             <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
             <span class="schedule-program-rights">${isNonPledge ? 'Program Library marker' : `Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}`}</span>
             ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}
@@ -1494,7 +1505,7 @@
 
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     if (currentPlacement) {
-      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card"><strong>${utils.escapeHtml(currentPlacement.programTitle)}</strong><div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${currentPlacement.isNonPledge ? ' · non-pledge marker' : ''} · ${utils.escapeHtml(liveBreakFlagLabel(currentPlacement))}</div></div>`;
+      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card">${renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${currentPlacement.isNonPledge ? ' · non-pledge marker' : ''} · ${utils.escapeHtml(liveBreakFlagLabel(currentPlacement))}</div></div>`;
       if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.checked = hasLiveBreakFlag(currentPlacement);
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;

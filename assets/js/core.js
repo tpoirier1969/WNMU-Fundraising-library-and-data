@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.47',
+    APP_VERSION: 'v0.20.48',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -570,6 +570,37 @@ window.PledgeLib = window.PledgeLib || {};
     }
   };
 
+  const programLinks = {
+    resolveRow(programLike) {
+      const key = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || ''));
+      if (!key) return null;
+      return (state.rawRows || []).find((row) => String(derive.programId(row)) === key) || null;
+    },
+
+    resolveId(programLike) {
+      const row = programLinks.resolveRow(programLike);
+      return row ? String(derive.programId(row)) : '';
+    },
+
+    render({ programId = '', title = '', html = '', className = '', nested = false, ariaLabel = '', titleAttr = '' } = {}) {
+      const resolvedId = programLinks.resolveId(programId);
+      const resolvedTitle = utils.normalizeText(title || '') || (resolvedId ? derive.title(programLinks.resolveRow(resolvedId)) : '') || 'Untitled program';
+      const content = html || utils.escapeHtml(resolvedTitle);
+      if (!resolvedId) return content;
+      const tag = nested ? 'span' : 'button';
+      const classes = [nested ? 'program-link-inline' : 'program-link-button', className].filter(Boolean).join(' ');
+      const attrs = [
+        nested ? 'role="button"' : 'type="button"',
+        `class="${utils.escapeHtml(classes)}"`,
+        `data-program-open-id="${utils.escapeHtml(resolvedId)}"`,
+        `aria-label="${utils.escapeHtml(ariaLabel || `Open details for ${resolvedTitle}`)}"`
+      ];
+      if (titleAttr) attrs.push(`title="${utils.escapeHtml(titleAttr)}"`);
+      return `<${tag} ${attrs.join(' ')}>${content}</${tag}>`;
+    }
+  };
+
   App.utils = utils;
   App.derive = derive;
+  App.programLinks = programLinks;
 })();
