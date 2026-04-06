@@ -1199,13 +1199,35 @@
   }
 
   function renderScheduleList() {
-    if (!els.scheduleList) return;
-    if (!state.schedules.length) {
-      els.scheduleList.innerHTML = '<div class="schedule-list-empty">No fundraiser calendars yet. Build one below.</div>';
-      if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || '0 fundraiser calendars yet.';
+    const orderedSchedules = sortSchedulesNewestFirst(state.schedules || []);
+    const selected = state.activeScheduleId || '';
+    const scheduleOptionsHtml = ['<option value="">Select fundraiser…</option>'].concat(orderedSchedules.map((schedule) => {
+      const spanInfo = getScheduleDateSpanInfo(schedule);
+      const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
+      const totalRaised = scheduleGrandTotal(schedule);
+      const selectedAttr = schedule.id === selected ? ' selected' : '';
+      const invalidSuffix = spanInfo.ok ? '' : ' · INVALID DATE RANGE';
+      return `<option value="${utils.escapeHtml(schedule.id)}"${selectedAttr}>${utils.escapeHtml(`${schedule.title} · ${utils.formatDate(schedule.startDate)} – ${utils.formatDate(schedule.endDate)} · ${placementCount} blocks · ${utils.formatMoney(totalRaised)}${invalidSuffix}`)}</option>`;
+    })).join('');
+    if (els.scheduleDesktopSelect) {
+      els.scheduleDesktopSelect.innerHTML = scheduleOptionsHtml;
+      els.scheduleDesktopSelect.value = selected;
+    }
+    if (els.scheduleMobileSelect) {
+      els.scheduleMobileSelect.innerHTML = scheduleOptionsHtml;
+      els.scheduleMobileSelect.value = selected;
+    }
+    if (!els.scheduleList) {
+      if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || (orderedSchedules.length ? `${orderedSchedules.length} fundraiser calendars ready.` : '0 fundraiser calendars yet.');
+      if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || (orderedSchedules.length ? `${orderedSchedules.length} fundraiser calendars ready.` : '0 fundraiser calendars yet.');
       return;
     }
-    const orderedSchedules = sortSchedulesNewestFirst(state.schedules);
+    if (!orderedSchedules.length) {
+      els.scheduleList.innerHTML = '<div class="schedule-list-empty">No fundraiser calendars yet. Build one below.</div>';
+      if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || '0 fundraiser calendars yet.';
+      if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || '0 fundraiser calendars yet.';
+      return;
+    }
     els.scheduleList.innerHTML = orderedSchedules.map((schedule) => {
       const spanInfo = getScheduleDateSpanInfo(schedule);
       const active = schedule.id === state.activeScheduleId;
@@ -1221,20 +1243,8 @@
         </div>
       `;
     }).join('');
-    if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || `${state.schedules.length} fundraiser calendars ready.`;
-    if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || `${state.schedules.length} fundraiser calendars ready.`;
-    if (els.scheduleMobileSelect) {
-      const selected = state.activeScheduleId || '';
-      els.scheduleMobileSelect.innerHTML = ['<option value="">Select fundraiser…</option>'].concat(orderedSchedules.map((schedule) => {
-        const spanInfo = getScheduleDateSpanInfo(schedule);
-        const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
-        const totalRaised = scheduleGrandTotal(schedule);
-        const selectedAttr = schedule.id === selected ? ' selected' : '';
-        const invalidSuffix = spanInfo.ok ? '' : ' · INVALID DATE RANGE';
-        return `<option value="${utils.escapeHtml(schedule.id)}"${selectedAttr}>${utils.escapeHtml(`${schedule.title} · ${utils.formatDate(schedule.startDate)} – ${utils.formatDate(schedule.endDate)} · ${placementCount} blocks · ${utils.formatMoney(totalRaised)}${invalidSuffix}`)}</option>`;
-      })).join('');
-      els.scheduleMobileSelect.value = selected;
-    }
+    if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || `${orderedSchedules.length} fundraiser calendars ready.`;
+    if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || `${orderedSchedules.length} fundraiser calendars ready.`;
   }
 
   function activateScheduleById(scheduleId, { focusCalendar = false } = {}) {
@@ -2149,7 +2159,7 @@
     menu.style.top = `${event.pageY}px`;
   }
 
-  async function exportScheduleView() {
+  function exportScheduleView() {
     const schedule = getActiveSchedule();
     if (!schedule) return;
     const rows = annotatePlacements(schedule);
@@ -2168,16 +2178,13 @@
         lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${markerBits.length ? ` | ${markerBits.join(' · ')}` : ''}`);
         let cutinLine = 'Local cut-ins: no break timings yet';
         if (!item.isNonPledge && item.programId) {
-          let cache = state.scheduleDetailCache[item.programId];
-          if (!cache?.loaded && !cache?.loading && state.client) {
-            try {
-              const detail = await App.data.fetchProgramDetail(item.programId);
-              cache = state.scheduleDetailCache[item.programId] = { loading: false, loaded: true, detail };
-            } catch (error) {
-              cache = state.scheduleDetailCache[item.programId] = { loading: false, loaded: true, error };
-            }
+          const cache = state.scheduleDetailCache[item.programId];
+          if (cache?.detail?.timings) {
+            cutinLine = timingLocalCutinSummary(cache.detail.timings);
+          } else {
+            loadScheduledDetail(item.programId);
+            cutinLine = 'Local cut-ins: open title details once to load break timings';
           }
-          if (cache?.detail?.timings) cutinLine = timingLocalCutinSummary(cache.detail.timings);
         }
         lines.push(`  ${cutinLine}`);
       }
@@ -2191,17 +2198,19 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
   }
 
   function bindEvents() {
     els.newScheduleButton?.addEventListener('click', resetToNewScheduleDraft);
     els.scheduleMobileNewButton?.addEventListener('click', resetToNewScheduleDraft);
-    els.scheduleMobileSelect?.addEventListener('change', (event) => {
+    const handleScheduleSelectChange = (event) => {
       const scheduleId = String(event.target?.value || '');
       if (!scheduleId) return;
       activateScheduleById(scheduleId, { focusCalendar: true });
-    });
+    };
+    els.scheduleDesktopSelect?.addEventListener('change', handleScheduleSelectChange);
+    els.scheduleMobileSelect?.addEventListener('change', handleScheduleSelectChange);
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });
     els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: false, activateFirst: true }); });
     els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: true, activateFirst: true }); });

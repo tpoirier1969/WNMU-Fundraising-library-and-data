@@ -62,6 +62,7 @@
     premiumCountChip: document.getElementById('premium-count-chip'),
     scheduleList: document.getElementById('schedule-list'),
     scheduleSummary: document.getElementById('schedule-summary'),
+    scheduleDesktopSelect: document.getElementById('schedule-desktop-select'),
     scheduleMobileSummary: document.getElementById('schedule-mobile-summary'),
     scheduleMobileSelect: document.getElementById('schedule-mobile-select'),
     scheduleMobileNewButton: document.getElementById('schedule-mobile-new-button'),
