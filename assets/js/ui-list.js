@@ -44,13 +44,17 @@
     return utils.normalizeLookupKey(a) === utils.normalizeLookupKey(b);
   }
 
-  function rowMatchesFilters(row) {
+  function rowMatchesFiltersExcept(row, except = '') {
     if (!rowMatchesStatus(row)) return false;
-    if (state.topicFilter && !sameLookupValue(derive.topicPrimary(row), state.topicFilter)) return false;
-    if (state.secondaryTopicFilter && !sameLookupValue(derive.topicSecondary(row), state.secondaryTopicFilter)) return false;
-    if (state.distributorFilter && !sameLookupValue(derive.distributor(row), state.distributorFilter)) return false;
-    if (state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
+    if (except !== 'topic' && state.topicFilter && !sameLookupValue(derive.topicPrimary(row), state.topicFilter)) return false;
+    if (except !== 'secondary' && state.secondaryTopicFilter && !sameLookupValue(derive.topicSecondary(row), state.secondaryTopicFilter)) return false;
+    if (except !== 'distributor' && state.distributorFilter && !sameLookupValue(derive.distributor(row), state.distributorFilter)) return false;
+    if (except !== 'length' && state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
     return rowMatchesSearch(row);
+  }
+
+  function rowMatchesFilters(row) {
+    return rowMatchesFiltersExcept(row, '');
   }
 
   function compareBySortField(a, b) {
@@ -120,12 +124,23 @@
     return [...map.values()].sort((a, b) => utils.compareText(a.label, b.label));
   }
 
+  function ensureCurrentOption(entries = [], currentValue = '') {
+    if (!currentValue) return entries;
+    if (entries.some((entry) => sameLookupValue(entry?.value ?? entry, currentValue))) return entries;
+    return [{ value: currentValue, label: currentValue }, ...entries];
+  }
+
   function buildFilterOptions() {
-    const rows = (state.rawRows || []).filter(rowMatchesStatus);
-    state.topicOptions = canonicalOptionEntries(rows.map((row) => derive.topicPrimary(row)).filter(Boolean));
-    state.secondaryTopicOptions = canonicalOptionEntries(rows.map((row) => derive.topicSecondary(row)).filter(Boolean));
-    state.distributorOptions = canonicalOptionEntries(rows.map((row) => derive.distributor(row)).filter(Boolean));
-    state.lengthOptions = Array.from(new Set(rows.map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b));
+    const sourceRows = state.rawRows || [];
+    const topicRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'topic'));
+    const secondaryRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'secondary'));
+    const distributorRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'distributor'));
+    const lengthRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'length'));
+
+    state.topicOptions = ensureCurrentOption(canonicalOptionEntries(topicRows.map((row) => derive.topicPrimary(row)).filter(Boolean)), state.topicFilter);
+    state.secondaryTopicOptions = ensureCurrentOption(canonicalOptionEntries(secondaryRows.map((row) => derive.topicSecondary(row)).filter(Boolean)), state.secondaryTopicFilter);
+    state.distributorOptions = ensureCurrentOption(canonicalOptionEntries(distributorRows.map((row) => derive.distributor(row)).filter(Boolean)), state.distributorFilter);
+    state.lengthOptions = ensureCurrentOption(Array.from(new Set(lengthRows.map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b)), state.lengthFilter);
 
     renderSelectOptions(els.topicFilter, state.topicOptions, state.topicFilter, 'All topics');
     renderSelectOptions(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
@@ -155,7 +170,7 @@
     }
 
     els.libraryBody.innerHTML = state.rows.map((row) => {
-      const programId = derive.programId(row);
+      const programId = App.programLinks?.resolveId?.(row) || derive.programId(row);
       return `
         <tr data-id="${utils.escapeHtml(programId)}" class="${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
           <td class="title-cell">
@@ -199,6 +214,7 @@
 
   function applyLibraryView() {
     const sourceRows = state.rawRows || [];
+    buildFilterOptions();
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));
     state.totalRows = state.rows.length;
     renderRows();

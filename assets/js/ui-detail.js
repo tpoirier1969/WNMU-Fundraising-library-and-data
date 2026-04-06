@@ -437,7 +437,7 @@
     } catch (error) {
       console.error('Detail render failed.', error);
       setDetailNotice(`Detail render warning: ${error.message || error}`, 'bad');
-      const fallbackProgram = state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
+      const fallbackProgram = App.programLinks?.resolveRow?.(programId) || state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
       if (fallbackProgram) {
         state.currentDetailProgram = fallbackProgram;
         renderDetail(fallbackProgram, [], [], []);

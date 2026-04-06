@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.51',
+    APP_VERSION: 'v0.20.52',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -573,17 +573,34 @@ window.PledgeLib = window.PledgeLib || {};
   };
 
   const programLinks = {
+    fallbackLookupId(programLike) {
+      const row = typeof programLike === 'object' && programLike ? programLike : null;
+      const direct = String(!row ? (programLike || '') : '').trim();
+      if (direct.startsWith('lookup:')) return direct;
+      const titleKey = utils.normalizeLookupKey(row ? derive.title(row) : '');
+      const nolaKey = utils.normalizeLookupKey(row ? derive.nola(row) : '');
+      if (!(titleKey || nolaKey)) return '';
+      return `lookup:${titleKey}|${nolaKey}`;
+    },
+
     resolveRow(programLike) {
-      const key = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || ''));
-      if (!key) return null;
-      return (state.rawRows || []).find((row) => String(derive.programId(row)) === key) || null;
+      const key = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
+      if (key) {
+        const directMatch = (state.rawRows || []).find((row) => String(derive.programId(row)).trim() === key);
+        if (directMatch) return directMatch;
+      }
+      const fallback = programLinks.fallbackLookupId(programLike);
+      if (!fallback) return null;
+      return (state.rawRows || []).find((row) => programLinks.fallbackLookupId(row) === fallback) || null;
     },
 
     resolveId(programLike) {
       const direct = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
-      if (!direct) return '';
-      const row = programLinks.resolveRow(direct);
-      return row ? String(derive.programId(row)) : direct;
+      if (direct) {
+        const row = programLinks.resolveRow(direct);
+        return row ? String(derive.programId(row)).trim() || direct : direct;
+      }
+      return programLinks.fallbackLookupId(programLike);
     },
 
     render({ programId = '', title = '', html = '', className = '', nested = false, ariaLabel = '', titleAttr = '' } = {}) {

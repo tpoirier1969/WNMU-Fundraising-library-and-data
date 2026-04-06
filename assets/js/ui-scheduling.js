@@ -932,10 +932,19 @@
     return `${formatScheduleDay(dateKey)} · ${utils.minutesToLabel(minutes)}`;
   }
 
+  function scheduleRowLookupId(row = {}) {
+    const direct = String(derive.programId(row) || '').trim();
+    if (direct) return direct;
+    const titleKey = utils.normalizeLookupKey(derive.title(row));
+    const nolaKey = utils.normalizeLookupKey(derive.nola(row));
+    if (!(titleKey || nolaKey)) return '';
+    return `lookup:${titleKey}|${nolaKey}`;
+  }
+
   function getProgramRowById(programId) {
-    const key = String(programId || '');
+    const key = String(programId || '').trim();
     return [...(state.rawRows || []), ...(state.nonPledgeRows || [])]
-      .find((row) => String(derive.programId(row)) === key) || null;
+      .find((row) => String(derive.programId(row) || '').trim() === key || scheduleRowLookupId(row) === key) || null;
   }
 
   function isWeekendDateKey(dateKey) {
@@ -1023,41 +1032,74 @@
     if (type) els.scheduleModalWarning.classList.add(type);
   }
 
+  function scheduleSearchMinChars() {
+    return 1;
+  }
+
+  function scheduleLookupEntries(usingNonPledge = false) {
+    const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
+    const seen = new Set();
+    return (sourceRows || [])
+      .filter((row) => usingNonPledge || derive.isActive(row))
+      .map((row, index) => {
+        const title = utils.normalizeText(derive.title(row));
+        const nola = utils.normalizeText(derive.nola(row));
+        const topic = utils.normalizeText(derive.topicPrimary(row));
+        const titleKey = utils.normalizeLookupKey(title);
+        const nolaKey = utils.normalizeLookupKey(nola);
+        const topicKey = utils.normalizeLookupKey(topic);
+        const programId = scheduleRowLookupId(row);
+        const dedupeKey = programId || `${titleKey}|${nolaKey}|${topicKey}|${index}`;
+        return {
+          row,
+          title,
+          nola,
+          topic,
+          titleKey,
+          nolaKey,
+          topicKey,
+          dedupeKey
+        };
+      })
+      .filter((entry) => entry.titleKey || entry.nolaKey)
+      .filter((entry) => {
+        if (seen.has(entry.dedupeKey)) return false;
+        seen.add(entry.dedupeKey);
+        return true;
+      });
+  }
+
   function populateScheduleTopicSelect() {
     if (!els.scheduleProgramTopicSelect) return;
-    const sourceRows = state.scheduleNonPledgeMode ? (state.nonPledgeRows || []) : (state.rawRows || []);
-    const eligibleRows = (sourceRows || []).filter((row) => state.scheduleNonPledgeMode || derive.isActive(row));
-    const values = canonicalTopicEntries(eligibleRows.map((row) => derive.topicPrimary(row)).filter(Boolean));
+    const values = canonicalTopicEntries(scheduleLookupEntries(Boolean(state.scheduleNonPledgeMode)).map((entry) => entry.topic).filter(Boolean));
     els.scheduleProgramTopicSelect.innerHTML = ['<option value="">All topics</option>', ...values.map((value) => `<option value="${utils.escapeHtml(value.value)}">${utils.escapeHtml(value.label)}</option>`)].join('');
     els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
   }
 
   function scheduleProgramMatches(query, topicFilter, slotDateKey) {
     const text = utils.normalizeLookupKey(query || '');
+    const searchTokens = text ? text.split(/\s+/).filter(Boolean) : [];
     const topicKey = utils.normalizeLookupKey(topicFilter || '');
     const hasTopic = Boolean(topicKey);
-    const hasSearch = text.length >= 4;
+    const hasSearch = searchTokens.length > 0 && text.length >= scheduleSearchMinChars();
     const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
-    const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
     if (!hasTopic && !hasSearch) return [];
-    return sourceRows
-      .filter((row) => usingNonPledge || derive.isActive(row))
-      .filter((row) => {
+    return scheduleLookupEntries(usingNonPledge)
+      .filter((entry) => {
         if (!hasTopic) return true;
-        return utils.normalizeLookupKey(derive.topicPrimary(row)) === topicKey;
+        return entry.topicKey === topicKey;
       })
-      .filter((row) => {
+      .filter((entry) => {
         if (!hasSearch) return true;
-        const title = utils.normalizeLookupKey(derive.title(row));
-        const nola = utils.normalizeLookupKey(derive.nola(row));
-        return title.includes(text) || nola.includes(text);
+        const haystack = `${entry.titleKey} ${entry.nolaKey}`.trim();
+        return searchTokens.every((token) => haystack.includes(token));
       })
-      .map((row) => ({ row, rights: rightsCheckForDate(row, slotDateKey), isNonPledge: usingNonPledge }))
+      .map((entry) => ({ row: entry.row, rights: rightsCheckForDate(entry.row, slotDateKey), isNonPledge: usingNonPledge }))
       .sort((a, b) => {
         if (a.rights.ok !== b.rights.ok) return a.rights.ok ? -1 : 1;
         return utils.compareText(derive.title(a.row), derive.title(b.row));
       })
-      .slice(0, hasTopic ? 60 : 24);
+      .slice(0, hasTopic ? 120 : 60);
   }
 
   function ensureScheduleModalState(slot) {
@@ -1474,8 +1516,9 @@
     if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.disabled = !editable;
     const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
     const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
-    const hasSearch = utils.normalizeText(state.scheduleProgramQuery || '').trim().length >= 4;
+    const hasSearch = utils.normalizeLookupKey(state.scheduleProgramQuery || '').length >= scheduleSearchMinChars();
     const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
+    const sourceCount = scheduleLookupEntries(usingNonPledge).length;
 
     if (!editable) {
       showScheduleModalWarning('Viewer mode. Sign in as admin to create, move, remove, or edit scheduled programs.', 'warn');
@@ -1493,8 +1536,10 @@
       els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">The WNMU Program Library could not be read right now.</div>';
     } else if (!editable && !findPlacementForSlot(schedule, slot.key)) {
       els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Viewer mode. Empty slots cannot be edited until an admin signs in.</div>';
+    } else if (!sourceCount) {
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No readable ${usingNonPledge ? 'Program Library' : 'pledge'} titles are loaded for scheduling right now.</div>`;
     } else if (!hasTopic && !hasSearch) {
-      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Type at least 4 letters to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title, or choose a topic to browse.</div>`;
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Choose a topic to browse or type ${scheduleSearchMinChars()}+ letter${scheduleSearchMinChars() === 1 ? '' : 's'} to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title.</div>`;
     } else if (!matches.length) {
       els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched this topic/search combination.</div>`;
     } else {
@@ -1504,8 +1549,8 @@
         const rightsEnd = derive.rightsEnd(row) ? utils.formatDate(derive.rightsEnd(row)) : '—';
         const topicText = derive.topicPrimary(row) || 'No topic';
         return `
-          <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}" data-program-id="${utils.escapeHtml(derive.programId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" data-non-pledge="${isNonPledge ? 'true' : 'false'}" ${editable ? '' : 'disabled'}>
-            ${renderProgramTitleLink(isNonPledge ? '' : derive.programId(row), derive.title(row), { nested: true, className: 'schedule-match-title-link' })}
+          <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}" data-program-id="${utils.escapeHtml(scheduleRowLookupId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" data-non-pledge="${isNonPledge ? 'true' : 'false'}" ${editable ? '' : 'disabled'}>
+            <strong class="schedule-match-title">${utils.escapeHtml(derive.title(row) || 'Untitled program')}</strong>
             <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
             <span class="schedule-program-rights">${isNonPledge ? 'Program Library marker' : `Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}`}</span>
             ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}

@@ -337,8 +337,10 @@
   }
 
   async function fetchProgramDetail(programId) {
-    const summaryRow = state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
-    const baseResp = await fetchOneById(constants.BASE_TABLE, programId);
+    const summaryRow = App.programLinks?.resolveRow?.(programId) || state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
+    const baseResp = String(programId || '').startsWith('lookup:')
+      ? { data: null, error: null }
+      : await fetchOneById(constants.BASE_TABLE, programId);
     const contextRow = utils.mergeRows(summaryRow || {}, baseResp.data || {});
     const context = {
       programId,
