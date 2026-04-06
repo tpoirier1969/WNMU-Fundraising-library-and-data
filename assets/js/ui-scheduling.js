@@ -1,6 +1,7 @@
 (() => {
   const App = window.PledgeLib;
   const { state, constants, utils, derive } = App;
+  const filters = App.programFilters;
   const { els, setNotice } = App.dom;
   const scheduledDetailQueue = new Set();
   let scheduledDetailPumpActive = false;
@@ -33,21 +34,6 @@
       titleAttr
     });
   }
-
-  function canonicalTopicEntries(values = []) {
-    const seen = new Map();
-    (values || []).forEach((value) => {
-      const label = utils.normalizeText(value);
-      const key = utils.normalizeLookupKey(label);
-      if (!key) return;
-      const existing = seen.get(key);
-      const existingLooksShouty = existing && /^[A-Z0-9\s'&/-]+$/.test(existing.label || '');
-      const currentLooksMixed = /[A-Z]/.test(label) && /[a-z]/.test(label);
-      if (!existing || (existingLooksShouty && currentLooksMixed)) seen.set(key, { value: label, label });
-    });
-    return [...seen.values()].sort((a, b) => utils.compareText(a.label, b.label));
-  }
-
 
   function getScheduleDateSpanInfo(schedule = {}) {
     const startKey = utils.normalizeText(schedule?.startDate);
@@ -1043,34 +1029,25 @@
   }
 
   function scheduleEntryHasAired(row) {
-    const aired = utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at);
-    if (utils.normalizeText(aired)) return true;
-    const fundraiserCount = Number(utils.firstNonEmpty(row?.fundraiser_count, row?.drive_count, row?.fundraiser_total, row?.drive_total, 0)) || 0;
-    if (fundraiserCount > 0) return true;
-    const avg = Number(derive.avgPerFundraiser(row) || 0) || 0;
-    const total = Number(derive.totalRaised(row) || 0) || 0;
-    return avg > 0 || total > 0;
+    return filters.rowHasAired(row);
   }
 
   function scheduleEntryPassesExtraFilters(row, slotDateKey, usingNonPledge = false) {
     if (!row) return false;
-    if (!usingNonPledge && state.scheduleFilterUnaired && scheduleEntryHasAired(row)) return false;
-    if (state.scheduleFilterRightsStartYear) {
-      const targetYear = scheduleSlotYear(slotDateKey) || scheduleSlotYear(getActiveSchedule()?.startDate || '') || new Date().getFullYear();
-      const rightsYear = scheduleSlotYear(derive.rightsBegin(row));
-      if (!rightsYear || rightsYear != targetYear) return false;
-    }
-    if (!usingNonPledge && state.scheduleFilterTopEarner) {
-      const avg = Number(derive.avgPerFundraiser(row) || 0) || 0;
-      if (avg < 500) return false;
-    }
-    return true;
+    const targetYear = scheduleSlotYear(slotDateKey) || scheduleSlotYear(getActiveSchedule()?.startDate || '') || new Date().getFullYear();
+    return filters.rowMatchesScheduleFilters(row, {
+      unairedOnly: !usingNonPledge && state.scheduleFilterUnaired,
+      rightsStartYear: state.scheduleFilterRightsStartYear ? targetYear : null,
+      topEarner: !usingNonPledge && state.scheduleFilterTopEarner,
+      topEarnerThreshold: 500
+    });
   }
 
   function scheduleLookupEntries(usingNonPledge = false) {
     const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
+    const collapsedRows = filters.collapseRows(sourceRows || [], { statusPreference: usingNonPledge ? 'all' : 'active' });
     const seen = new Set();
-    return (sourceRows || [])
+    return (collapsedRows || [])
       .filter((row) => usingNonPledge || derive.isActive(row))
       .map((row, index) => {
         const title = utils.normalizeText(derive.title(row));
@@ -1102,7 +1079,7 @@
 
   function populateScheduleTopicSelect() {
     if (!els.scheduleProgramTopicSelect) return;
-    const values = canonicalTopicEntries(scheduleLookupEntries(Boolean(state.scheduleNonPledgeMode)).map((entry) => entry.topic).filter(Boolean));
+    const values = filters.canonicalOptionEntries(scheduleLookupEntries(Boolean(state.scheduleNonPledgeMode)).map((entry) => entry.topic).filter(Boolean));
     els.scheduleProgramTopicSelect.innerHTML = ['<option value="">All topics</option>', ...values.map((value) => `<option value="${utils.escapeHtml(value.value)}">${utils.escapeHtml(value.label)}</option>`)].join('');
     els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
   }

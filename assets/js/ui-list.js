@@ -1,6 +1,7 @@
 (() => {
   const App = window.PledgeLib;
   const { state, constants, utils, derive } = App;
+  const filters = App.programFilters;
   const { els, renderSelectOptions, setNotice } = App.dom;
 
   function searchableTextForField(row, field) {
@@ -35,13 +36,11 @@
   }
 
   function rowMatchesStatus(row) {
-    if (state.statusFilter === 'active' && !derive.isActive(row)) return false;
-    if (state.statusFilter === 'archived' && derive.isActive(row)) return false;
-    return true;
+    return filters.rowMatchesStatus(row, state.statusFilter);
   }
 
   function sameLookupValue(a, b) {
-    return utils.normalizeLookupKey(a) === utils.normalizeLookupKey(b);
+    return filters.sameLookupValue(a, b);
   }
 
   function rowMatchesFiltersExcept(row, except = '') {
@@ -99,31 +98,6 @@
   }
 
 
-  function scoreOptionLabel(value) {
-    const text = utils.normalizeText(value);
-    if (!text) return -1;
-    const hasLower = /[a-z]/.test(text);
-    const hasUpper = /[A-Z]/.test(text);
-    const isAllCaps = hasUpper && !hasLower;
-    if (isAllCaps) return 1;
-    if (hasUpper && hasLower) return 3;
-    return 2;
-  }
-
-  function canonicalOptionEntries(values = []) {
-    const map = new Map();
-    (values || []).forEach((value) => {
-      const label = utils.normalizeText(value);
-      const key = utils.normalizeLookupKey(label);
-      if (!key) return;
-      const existing = map.get(key);
-      if (!existing || scoreOptionLabel(label) > scoreOptionLabel(existing.label) || utils.compareText(label, existing.label) < 0) {
-        map.set(key, { value: label, label });
-      }
-    });
-    return [...map.values()].sort((a, b) => utils.compareText(a.label, b.label));
-  }
-
   function ensureCurrentOption(entries = [], currentValue = '') {
     if (!currentValue) return entries;
     if (entries.some((entry) => sameLookupValue(entry?.value ?? entry, currentValue))) return entries;
@@ -131,15 +105,15 @@
   }
 
   function buildFilterOptions() {
-    const sourceRows = state.rawRows || [];
+    const sourceRows = filters.collapseRows(state.rawRows || [], { statusPreference: state.statusFilter });
     const topicRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'topic'));
     const secondaryRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'secondary'));
     const distributorRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'distributor'));
     const lengthRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'length'));
 
-    state.topicOptions = ensureCurrentOption(canonicalOptionEntries(topicRows.map((row) => derive.topicPrimary(row)).filter(Boolean)), state.topicFilter);
-    state.secondaryTopicOptions = ensureCurrentOption(canonicalOptionEntries(secondaryRows.map((row) => derive.topicSecondary(row)).filter(Boolean)), state.secondaryTopicFilter);
-    state.distributorOptions = ensureCurrentOption(canonicalOptionEntries(distributorRows.map((row) => derive.distributor(row)).filter(Boolean)), state.distributorFilter);
+    state.topicOptions = ensureCurrentOption(filters.canonicalOptionEntries(topicRows.map((row) => derive.topicPrimary(row)).filter(Boolean)), state.topicFilter);
+    state.secondaryTopicOptions = ensureCurrentOption(filters.canonicalOptionEntries(secondaryRows.map((row) => derive.topicSecondary(row)).filter(Boolean)), state.secondaryTopicFilter);
+    state.distributorOptions = ensureCurrentOption(filters.canonicalOptionEntries(distributorRows.map((row) => derive.distributor(row)).filter(Boolean)), state.distributorFilter);
     state.lengthOptions = ensureCurrentOption(Array.from(new Set(lengthRows.map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b)), state.lengthFilter);
 
     renderSelectOptions(els.topicFilter, state.topicOptions, state.topicFilter, 'All topics');
@@ -164,7 +138,7 @@
   }
 
   function hasAired(row) {
-    return Boolean(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at)) || Number(derive.totalRaised(row) || 0) > 0 || Number(derive.avgPerFundraiser(row) || 0) > 0;
+    return filters.rowHasAired(row);
   }
 
   function earningsTone(row) {
@@ -229,7 +203,7 @@
   }
 
   function applyLibraryView() {
-    const sourceRows = state.rawRows || [];
+    const sourceRows = filters.collapseRows(state.rawRows || [], { statusPreference: state.statusFilter });
     buildFilterOptions();
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));
     state.totalRows = state.rows.length;
