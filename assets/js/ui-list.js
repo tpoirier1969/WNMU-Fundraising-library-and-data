@@ -34,13 +34,27 @@
     ].some((value) => utils.normalizeText(value).toLowerCase().includes(cleanedSearch));
   }
 
-  function rowMatchesFilters(row) {
-    if (state.topicFilter && derive.topicPrimary(row) !== state.topicFilter) return false;
-    if (state.secondaryTopicFilter && derive.topicSecondary(row) !== state.secondaryTopicFilter) return false;
-    if (state.distributorFilter && derive.distributor(row) !== state.distributorFilter) return false;
-    if (state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
+  function rowMatchesStatus(row) {
     if (state.statusFilter === 'active' && !derive.isActive(row)) return false;
     if (state.statusFilter === 'archived' && derive.isActive(row)) return false;
+    return true;
+  }
+
+  function rowMatchesFilters(row) {
+    if (!rowMatchesStatus(row)) return false;
+    if (state.topicFilter) {
+      const topicKey = utils.normalizeLookupKey(derive.topicPrimary(row));
+      if (topicKey !== state.topicFilter) return false;
+    }
+    if (state.secondaryTopicFilter) {
+      const secondaryKey = utils.normalizeLookupKey(derive.topicSecondary(row));
+      if (secondaryKey !== state.secondaryTopicFilter) return false;
+    }
+    if (state.distributorFilter) {
+      const distributorKey = utils.normalizeLookupKey(derive.distributor(row));
+      if (distributorKey !== state.distributorFilter) return false;
+    }
+    if (state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
     return rowMatchesSearch(row);
   }
 
@@ -50,8 +64,12 @@
         return utils.compareText(derive.title(a), derive.title(b));
       case 'length':
         return utils.compareNumber(derive.lengthBucket(a), derive.lengthBucket(b)) || utils.compareText(derive.title(a), derive.title(b));
+      case 'rights_begin':
+        return utils.compareDate(derive.rightsBegin(a), derive.rightsBegin(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'rights_end':
         return utils.compareDate(derive.rightsEnd(a), derive.rightsEnd(b)) || utils.compareText(derive.title(a), derive.title(b));
+      case 'last_aired':
+        return utils.compareDate(derive.lastAiredValue(a), derive.lastAiredValue(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'avg_per_fundraiser':
         return utils.compareNumber(derive.avgPerFundraiser(a), derive.avgPerFundraiser(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'topic':
@@ -81,17 +99,43 @@
     return `<div class="premium-lines">${premiumLines(value).map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
   }
 
-  function buildFilterOptions() {
-    const rows = state.rawRows || [];
-    state.topicOptions = Array.from(new Set(rows.map((row) => derive.topicPrimary(row)).filter(Boolean))).sort(utils.compareText);
-    state.secondaryTopicOptions = Array.from(new Set(rows.map((row) => derive.topicSecondary(row)).filter(Boolean))).sort(utils.compareText);
-    state.distributorOptions = Array.from(new Set(rows.map((row) => derive.distributor(row)).filter(Boolean))).sort(utils.compareText);
-    state.lengthOptions = Array.from(new Set(rows.map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b));
+  function optionRows(exceptField = '') {
+    return (state.rawRows || []).filter((row) => {
+      if (!rowMatchesStatus(row) || !rowMatchesSearch(row)) return false;
+      if (exceptField !== 'topic' && state.topicFilter && utils.normalizeLookupKey(derive.topicPrimary(row)) !== state.topicFilter) return false;
+      if (exceptField !== 'secondary' && state.secondaryTopicFilter && utils.normalizeLookupKey(derive.topicSecondary(row)) !== state.secondaryTopicFilter) return false;
+      if (exceptField !== 'distributor' && state.distributorFilter && utils.normalizeLookupKey(derive.distributor(row)) !== state.distributorFilter) return false;
+      if (exceptField !== 'length' && state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
+      return true;
+    });
+  }
 
-    renderSelectOptions(els.topicFilter, state.topicOptions, state.topicFilter, 'All topics');
-    renderSelectOptions(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
+  function syncFilterValue(selectEl, stateKey, options = []) {
+    const hasValue = options.some((entry) => String(entry?.value ?? entry ?? '') === String(state[stateKey] || ''));
+    if (!hasValue) state[stateKey] = '';
+    if (selectEl) selectEl.value = state[stateKey] || '';
+  }
+
+  function buildFilterOptions() {
+    const topicOptions = utils.canonicalTextOptions(optionRows('topic').map((row) => derive.topicPrimary(row)));
+    const secondaryTopicOptions = utils.canonicalTextOptions(optionRows('secondary').map((row) => derive.topicSecondary(row)));
+    const distributorOptions = utils.canonicalTextOptions(optionRows('distributor').map((row) => derive.distributor(row)));
+    const lengthOptions = Array.from(new Set(optionRows('length').map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b));
+
+    state.topicOptions = topicOptions;
+    state.secondaryTopicOptions = secondaryTopicOptions;
+    state.distributorOptions = distributorOptions;
+    state.lengthOptions = lengthOptions;
+
+    syncFilterValue(els.topicFilter, 'topicFilter', topicOptions);
+    syncFilterValue(els.secondaryTopicFilter, 'secondaryTopicFilter', secondaryTopicOptions);
+    syncFilterValue(els.distributorFilter, 'distributorFilter', distributorOptions);
+    if (!lengthOptions.includes(state.lengthFilter)) state.lengthFilter = '';
+
+    renderSelectOptions(els.topicFilter, topicOptions, state.topicFilter, 'All topics');
+    renderSelectOptions(els.secondaryTopicFilter, secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
     renderSelectOptions(els.lengthFilter, state.lengthOptions, state.lengthFilter, 'All lengths');
-    renderSelectOptions(els.distributorFilter, state.distributorOptions, state.distributorFilter, 'All distributors');
+    renderSelectOptions(els.distributorFilter, distributorOptions, state.distributorFilter, 'All distributors');
     if (els.sortFieldSelect) els.sortFieldSelect.value = state.sortField;
     if (els.sortDirectionButton) els.sortDirectionButton.textContent = state.sortDirection === 'desc' ? '↓ Desc' : '↑ Asc';
     syncSortHeaders();
@@ -142,10 +186,13 @@
 
   function updateSummary() {
     const filters = [];
-    if (state.topicFilter) filters.push(`topic: ${state.topicFilter}`);
-    if (state.secondaryTopicFilter) filters.push(`secondary: ${state.secondaryTopicFilter}`);
+    const topicLabel = state.topicOptions.find((entry) => entry.value === state.topicFilter)?.label || state.topicFilter;
+    const secondaryTopicLabel = state.secondaryTopicOptions.find((entry) => entry.value === state.secondaryTopicFilter)?.label || state.secondaryTopicFilter;
+    const distributorLabel = state.distributorOptions.find((entry) => entry.value === state.distributorFilter)?.label || state.distributorFilter;
+    if (state.topicFilter) filters.push(`topic: ${topicLabel}`);
+    if (state.secondaryTopicFilter) filters.push(`secondary: ${secondaryTopicLabel}`);
     if (state.lengthFilter) filters.push(`length: ${state.lengthFilter}`);
-    if (state.distributorFilter) filters.push(`distributor: ${state.distributorFilter}`);
+    if (state.distributorFilter) filters.push(`distributor: ${distributorLabel}`);
     filters.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
     filters.push(`sorted by ${utils.sortLabel(state.sortField)} ${state.sortDirection === 'desc' ? 'descending' : 'ascending'}`);
     const sourceName = state.librarySource ? `source: ${state.librarySource.name}` : 'source: unknown';
@@ -159,6 +206,7 @@
   }
 
   function applyLibraryView() {
+    buildFilterOptions();
     const sourceRows = state.rawRows || [];
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));
     state.totalRows = state.rows.length;

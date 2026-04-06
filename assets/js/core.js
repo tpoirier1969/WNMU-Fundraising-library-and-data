@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.49',
+    APP_VERSION: 'v0.20.50',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -47,7 +47,9 @@ window.PledgeLib = window.PledgeLib || {};
       title: 'Title',
       length: 'Length',
       topic: 'Topic',
+      rights_begin: 'Rights Begin',
       rights_end: 'Rights End',
+      last_aired: 'Last Aired',
       avg_per_fundraiser: 'Average $ / fundraiser'
     },
     WORKSPACES: [
@@ -164,6 +166,9 @@ window.PledgeLib = window.PledgeLib || {};
     selectedScheduleProgram: null,
     scheduleProgramQuery: '',
     scheduleProgramTopicFilter: '',
+    scheduleProgramUnairedOnly: false,
+    scheduleProgramRightsStartYearOnly: false,
+    scheduleProgramTopEarnerOnly: false,
     scheduleNonPledgeMode: false,
     scheduleModalWarning: { text: '', type: '' },
     scheduleStoreMode: 'local',
@@ -401,6 +406,40 @@ window.PledgeLib = window.PledgeLib || {};
       return aDate - bDate;
     },
 
+    preferDisplayLabel(existingValue, candidateValue) {
+      const existing = utils.normalizeText(existingValue);
+      const candidate = utils.normalizeText(candidateValue);
+      if (!candidate) return existing;
+      if (!existing) return candidate;
+      const score = (value) => {
+        let total = 0;
+        if (/[a-z]/.test(value)) total += 12;
+        if (/[A-Z]/.test(value)) total += 4;
+        if (/^[A-Z0-9\s&'’/:-]+$/.test(value) && /[A-Z]/.test(value) && !/[a-z]/.test(value)) total -= 5;
+        if (/\s{2,}/.test(value)) total -= 2;
+        total += Math.min(value.length, 80) / 100;
+        return total;
+      };
+      const existingScore = score(existing);
+      const candidateScore = score(candidate);
+      if (candidateScore !== existingScore) return candidateScore > existingScore ? candidate : existing;
+      return utils.compareText(candidate, existing) < 0 ? candidate : existing;
+    },
+
+    canonicalTextOptions(values = []) {
+      const byKey = new Map();
+      values.forEach((value) => {
+        const label = utils.normalizeText(value);
+        const key = utils.normalizeLookupKey(label);
+        if (!key) return;
+        const current = byKey.get(key) || '';
+        byKey.set(key, utils.preferDisplayLabel(current, label));
+      });
+      return [...byKey.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => utils.compareText(a.label, b.label));
+    },
+
     sortLabel(field) {
       return App.constants.SORT_FIELDS[field] || field;
     },
@@ -553,8 +592,12 @@ window.PledgeLib = window.PledgeLib || {};
       return Number.isFinite(bucket) && bucket > 0 ? utils.formatSeconds(bucket * 60) : '—';
     },
 
+    lastAiredValue(row) {
+      return utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at) || '';
+    },
+
     lastAiredDisplay(row) {
-      return utils.formatDate(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at), '—');
+      return utils.formatDate(derive.lastAiredValue(row), '—');
     },
 
     isActive(row) {

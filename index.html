@@ -3,25 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.49</title>
+  <title>WNMU Pledge Program Library v0.20.50</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.48">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.50">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.48"></script>
-  <script defer src="assets/js/dom.js?v=0.20.48"></script>
-  <script defer src="assets/js/data.js?v=0.20.48"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.48"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.48"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.48"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.48"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.48"></script>
-  <script defer src="assets/js/auth.js?v=0.20.48"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.48"></script>
-  <script defer src="assets/js/app.js?v=0.20.48"></script>
+  <script defer src="assets/js/core.js?v=0.20.50"></script>
+  <script defer src="assets/js/dom.js?v=0.20.50"></script>
+  <script defer src="assets/js/data.js?v=0.20.50"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.50"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.50"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.50"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.50"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.50"></script>
+  <script defer src="assets/js/auth.js?v=0.20.50"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.50"></script>
+  <script defer src="assets/js/app.js?v=0.20.50"></script>
 </head>
 <body>
 
@@ -51,7 +51,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.49</span>
+            <span class="version-pill" id="version-flag">v0.20.50</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -143,7 +143,9 @@
                 <option value="title">Title</option>
                 <option value="length">Length</option>
                 <option value="topic" selected>Topic</option>
+                <option value="rights_begin">Rights Begin</option>
                 <option value="rights_end">Rights End</option>
+                <option value="last_aired">Last Aired</option>
                 <option value="avg_per_fundraiser">Average $ / fundraiser</option>
               </select>
               <button type="button" class="ghost sort-direction-button" id="sort-direction-button">↑ Asc</button>
@@ -162,9 +164,9 @@
                 <th class="col-total">Total $</th>
                 <th class="col-avg"><button type="button" class="sort-header-button" data-sort-field="avg_per_fundraiser" data-sort-label="Avg $ / event">Avg $ / event</button></th>
                 <th class="col-premiums">Premiums</th>
-                <th class="col-rights">Rights Begin</th>
+                <th class="col-rights"><button type="button" class="sort-header-button" data-sort-field="rights_begin" data-sort-label="Rights Begin">Rights Begin</button></th>
                 <th class="col-rights"><button type="button" class="sort-header-button" data-sort-field="rights_end" data-sort-label="Rights End">Rights End</button></th>
-                <th class="col-airing">Last Aired</th>
+                <th class="col-airing"><button type="button" class="sort-header-button" data-sort-field="last_aired" data-sort-label="Last Aired">Last Aired</button></th>
               </tr>
             </thead>
             <tbody id="library-body">
@@ -321,6 +323,18 @@
             <label class="schedule-inline-check">
               <input id="schedule-live-break-flag" type="checkbox">
               <span>Live break / special local break</span>
+            </label>
+            <label class="schedule-inline-check">
+              <input id="schedule-program-unaired-only" type="checkbox">
+              <span>Unaired only</span>
+            </label>
+            <label class="schedule-inline-check">
+              <input id="schedule-program-rights-start-year-only" type="checkbox">
+              <span>Rights start this year</span>
+            </label>
+            <label class="schedule-inline-check">
+              <input id="schedule-program-top-earner-only" type="checkbox">
+              <span>Top earner ($500+ / fundraiser)</span>
             </label>
           </div>
           <div id="schedule-program-results" class="schedule-program-results"></div>
@@ -871,7 +885,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.49</div>
+      <div id="footer-version">v0.20.50</div>
     </footer>
   </div>
 </body>

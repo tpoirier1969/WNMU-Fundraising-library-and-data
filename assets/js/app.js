@@ -16,7 +16,7 @@
   async function refreshAll(options = {}) {
     if (!state.client) return;
     beginLoading('Loading pledge program data…', `Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
-    els.libraryBody.innerHTML = '<tr><td colspan="9" class="placeholder-row">Loading library…</td></tr>';
+    els.libraryBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">Loading library…</td></tr>';
     try {
       await App.data.refreshRawRows();
       App.listUi.buildFilterOptions();
@@ -51,7 +51,7 @@
       const message = /permission denied|row-level security|schema cache/i.test(rawMessage)
         ? `${rawMessage} Run the v2 access SQL patch, then reload.`
         : rawMessage;
-      els.libraryBody.innerHTML = `<tr><td colspan="9" class="placeholder-row">${utils.escapeHtml(message)}</td></tr>`;
+      els.libraryBody.innerHTML = `<tr><td colspan="10" class="placeholder-row">${utils.escapeHtml(message)}</td></tr>`;
       els.resultSummary.textContent = 'Load failed.';
       setNotice(message, 'warn');
       if (state.configVersionMismatch) setBuildMeta(state.configVersionMismatch);

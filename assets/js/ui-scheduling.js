@@ -1009,14 +1009,33 @@
     if (type) els.scheduleModalWarning.classList.add(type);
   }
 
+  function scheduleProgramFilterRows() {
+    const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
+    const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
+    const currentYear = new Date().getFullYear();
+    return (sourceRows || [])
+      .filter((row) => usingNonPledge || derive.isActive(row))
+      .filter((row) => {
+        if (state.scheduleProgramUnairedOnly && derive.lastAiredValue(row)) return false;
+        if (state.scheduleProgramRightsStartYearOnly) {
+          const rightsBegin = derive.rightsBegin(row);
+          const rightsYear = rightsBegin ? new Date(rightsBegin).getFullYear() : NaN;
+          if (!Number.isFinite(rightsYear) || rightsYear !== currentYear) return false;
+        }
+        if (state.scheduleProgramTopEarnerOnly) {
+          const avg = Number(derive.avgPerFundraiser(row));
+          if (!Number.isFinite(avg) || avg < 500) return false;
+        }
+        return true;
+      });
+  }
+
   function populateScheduleTopicSelect() {
     if (!els.scheduleProgramTopicSelect) return;
-    const sourceRows = state.scheduleNonPledgeMode ? (state.nonPledgeRows || []) : (state.rawRows || []);
-    const values = [...new Set((sourceRows || [])
-      .flatMap((row) => [derive.topicPrimary(row), derive.topicSecondary(row)])
-      .map((value) => utils.normalizeText(value))
-      .filter(Boolean))].sort((a, b) => utils.compareText(a, b));
-    els.scheduleProgramTopicSelect.innerHTML = ['<option value="">All topics</option>', ...values.map((value) => `<option value="${utils.escapeHtml(value)}">${utils.escapeHtml(value)}</option>`)].join('');
+    const options = utils.canonicalTextOptions(scheduleProgramFilterRows()
+      .flatMap((row) => [derive.topicPrimary(row), derive.topicSecondary(row)]));
+    if (!options.some((entry) => entry.value === state.scheduleProgramTopicFilter)) state.scheduleProgramTopicFilter = '';
+    els.scheduleProgramTopicSelect.innerHTML = ['<option value="">All topics</option>', ...options.map((entry) => `<option value="${utils.escapeHtml(entry.value)}">${utils.escapeHtml(entry.label)}</option>`)].join('');
     els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
   }
 
@@ -1025,11 +1044,11 @@
     const topicKey = utils.normalizeLookupKey(topicFilter || '');
     const hasTopic = Boolean(topicKey);
     const hasSearch = text.length >= 4;
+    const hasExtraFilters = Boolean(state.scheduleProgramUnairedOnly || state.scheduleProgramRightsStartYearOnly || state.scheduleProgramTopEarnerOnly);
     const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
-    const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
-    if (!hasTopic && !hasSearch) return [];
+    const sourceRows = scheduleProgramFilterRows();
+    if (!hasTopic && !hasSearch && !hasExtraFilters) return [];
     return sourceRows
-      .filter((row) => usingNonPledge || derive.isActive(row))
       .filter((row) => {
         if (!hasTopic) return true;
         const topics = [derive.topicPrimary(row), derive.topicSecondary(row)].map((value) => utils.normalizeLookupKey(value));
@@ -1044,15 +1063,22 @@
       .map((row) => ({ row, rights: rightsCheckForDate(row, slotDateKey), isNonPledge: usingNonPledge }))
       .sort((a, b) => {
         if (a.rights.ok !== b.rights.ok) return a.rights.ok ? -1 : 1;
+        if (!state.scheduleProgramTopEarnerOnly) {
+          const avgDiff = utils.compareNumber(derive.avgPerFundraiser(b.row), derive.avgPerFundraiser(a.row));
+          if (avgDiff) return avgDiff;
+        }
         return utils.compareText(derive.title(a.row), derive.title(b.row));
       })
-      .slice(0, hasTopic ? 60 : 24);
+.slice(0, (hasTopic || hasExtraFilters) ? 60 : 24);
   }
 
   function ensureScheduleModalState(slot) {
     state.selectedScheduleSlot = slot;
     state.scheduleProgramQuery = '';
     state.scheduleProgramTopicFilter = '';
+    state.scheduleProgramUnairedOnly = false;
+    state.scheduleProgramRightsStartYearOnly = false;
+    state.scheduleProgramTopEarnerOnly = false;
     showScheduleModalWarning('', '');
     const schedule = getActiveSchedule();
     const placement = slot && schedule ? findPlacementForSlot(schedule, slot.key) : null;
@@ -1460,10 +1486,23 @@
       els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
       els.scheduleProgramTopicSelect.disabled = !editable;
     }
+    if (els.scheduleProgramUnairedOnly) {
+      els.scheduleProgramUnairedOnly.checked = Boolean(state.scheduleProgramUnairedOnly);
+      els.scheduleProgramUnairedOnly.disabled = !editable;
+    }
+    if (els.scheduleProgramRightsStartYearOnly) {
+      els.scheduleProgramRightsStartYearOnly.checked = Boolean(state.scheduleProgramRightsStartYearOnly);
+      els.scheduleProgramRightsStartYearOnly.disabled = !editable;
+    }
+    if (els.scheduleProgramTopEarnerOnly) {
+      els.scheduleProgramTopEarnerOnly.checked = Boolean(state.scheduleProgramTopEarnerOnly);
+      els.scheduleProgramTopEarnerOnly.disabled = !editable;
+    }
     if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.disabled = !editable;
     const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
     const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
     const hasSearch = utils.normalizeText(state.scheduleProgramQuery || '').trim().length >= 4;
+    const hasExtraFilters = Boolean(state.scheduleProgramUnairedOnly || state.scheduleProgramRightsStartYearOnly || state.scheduleProgramTopEarnerOnly);
     const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
 
     if (!editable) {
@@ -1482,10 +1521,10 @@
       els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">The WNMU Program Library could not be read right now.</div>';
     } else if (!editable && !findPlacementForSlot(schedule, slot.key)) {
       els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Viewer mode. Empty slots cannot be edited until an admin signs in.</div>';
-    } else if (!hasTopic && !hasSearch) {
-      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Type at least 4 letters to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title, or choose a topic to browse.</div>`;
+    } else if (!hasTopic && !hasSearch && !hasExtraFilters) {
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Type at least 4 letters to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title, choose a topic, or use one of the quick filters.</div>`;
     } else if (!matches.length) {
-      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched this topic/search combination.</div>`;
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched this topic/search/filter combination.</div>`;
     } else {
       els.scheduleProgramResults.innerHTML = matches.map(({ row, rights, isNonPledge }) => {
         const runtimeLabel = lengthMetaLabel(row);
@@ -2094,6 +2133,9 @@
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
+    els.scheduleProgramUnairedOnly?.addEventListener('change', (event) => { state.scheduleProgramUnairedOnly = Boolean(event.target.checked); state.scheduleProgramTopicFilter = ''; renderProgramPicker(); });
+    els.scheduleProgramRightsStartYearOnly?.addEventListener('change', (event) => { state.scheduleProgramRightsStartYearOnly = Boolean(event.target.checked); state.scheduleProgramTopicFilter = ''; renderProgramPicker(); });
+    els.scheduleProgramTopEarnerOnly?.addEventListener('change', (event) => { state.scheduleProgramTopEarnerOnly = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleNonPledgeToggle?.addEventListener('change', (event) => { state.scheduleNonPledgeMode = Boolean(event.target.checked); state.scheduleProgramTopicFilter = ''; renderProgramPicker(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-program-id]');
