@@ -2967,37 +2967,38 @@ button.primary {
 }
 
 
-/* v0.20.62 scheduling layout + export rescue */
-.schedule-desktop-select-field {
-  margin-top: 2px;
+/* v0.20.63 scheduler correction pass */
+.schedule-sidebar-head-inline {
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
-.schedule-list-details {
-  border: 1px solid #d9e6ee;
-  border-radius: 12px;
-  background: #fbfdfe;
-  padding: 8px 10px;
+.schedule-sidebar-title-group {
+  min-width: 0;
 }
-.schedule-list-details > summary {
-  cursor: pointer;
-  font-weight: 800;
-  color: var(--pbs-blue-dark);
-  list-style: none;
+.schedule-sidebar-open-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
-.schedule-list-details > summary::-webkit-details-marker {
-  display: none;
+.schedule-sidebar-open-row .filter-label.inline {
+  margin: 0;
+  white-space: nowrap;
 }
-.schedule-list-details > summary::after {
-  content: '▾';
-  float: right;
-  font-size: .88rem;
-}
-.schedule-list-details[open] > summary::after {
-  content: '▴';
+.schedule-sidebar-open-row select {
+  min-width: 260px;
+  max-width: 100%;
 }
 .schedule-list {
   max-height: 240px;
   overflow: auto;
   padding-right: 4px;
+}
+.schedule-builder-actions-top {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
 }
 .schedule-money-row {
   grid-template-columns: repeat(7, minmax(96px, 1fr));
@@ -3092,5 +3093,56 @@ button.primary {
 @media (max-width: 900px) {
   .schedule-money-row {
     grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+}
+
+
+/* v0.20.63 scheduler corrections + performance row tightening */
+.schedule-builder-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.schedule-builder-head .muted {
+  max-width: 720px;
+}
+@media (min-width: 761px) {
+  .schedule-editor {
+    grid-template-rows: auto minmax(430px, 1fr) auto;
+    min-height: min(78vh, 980px);
+  }
+  #schedule-grid,
+  .schedule-grid {
+    min-height: 430px;
+  }
+  .schedule-program-details-wrap {
+    max-height: min(20vh, 220px);
+  }
+}
+@media (max-width: 1100px) {
+  .schedule-sidebar-open-row {
+    width: 100%;
+    margin-left: 0;
+  }
+  .schedule-sidebar-open-row select {
+    min-width: 0;
+    flex: 1 1 220px;
+  }
+}
+@media (min-width: 1100px) {
+  .performance-toolbar-grid.expanded {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+  .performance-toolbar-grid.expanded .filter-field {
+    min-width: 0;
+  }
+  .performance-toolbar-grid.expanded .filter-label {
+    font-size: 0.68rem;
+  }
+  .performance-toolbar-grid.expanded select,
+  .performance-toolbar-grid.expanded input {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+    font-size: 0.92rem;
   }
 }
