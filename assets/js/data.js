@@ -474,6 +474,44 @@
     return state.client.from(constants.BASE_TABLE).update(payload).eq('id', programId);
   }
 
+  function sanitizeTimingRow(row = {}) {
+    const clone = { ...row };
+    delete clone.created_at;
+    delete clone.updated_at;
+    delete clone.program_title;
+    Object.keys(clone).forEach((key) => {
+      if (clone[key] === '') clone[key] = null;
+    });
+    return clone;
+  }
+
+  async function saveTimingRows(programId, rows = []) {
+    const wanted = Array.isArray(rows) ? rows.map((row) => sanitizeTimingRow({ ...row, program_id: programId })).filter((row) => Object.keys(row).length) : [];
+    const currentResp = await fetchManyByContext(constants.TIMING_TABLE, { programId }, ['segment_number', 'slot_number'], true);
+    const currentRows = Array.isArray(currentResp?.data) ? currentResp.data : [];
+    const currentIds = new Set(currentRows.map((row) => String(row.id || '')).filter(Boolean));
+    const wantedIds = new Set(wanted.map((row) => String(row.id || '')).filter(Boolean));
+    const idsToDelete = [...currentIds].filter((id) => !wantedIds.has(id));
+    for (const id of idsToDelete) {
+      const delResp = await state.client.from(constants.TIMING_TABLE).delete().eq('id', id);
+      if (delResp.error) return delResp;
+    }
+    for (const row of wanted) {
+      let response;
+      if (row.id) {
+        const payload = { ...row };
+        delete payload.id;
+        response = await state.client.from(constants.TIMING_TABLE).update(payload).eq('id', row.id);
+      } else {
+        const payload = { ...row };
+        delete payload.id;
+        response = await state.client.from(constants.TIMING_TABLE).insert(payload);
+      }
+      if (response.error) return response;
+    }
+    return { error: null };
+  }
+
   function buildManualSourceRowNumber() {
     const base = Number(Date.now() % 2147483000);
     const noise = Math.floor(Math.random() * 997);
@@ -671,6 +709,31 @@
       return !hasProgram;
     });
   }
+
+  async function updateImportedAiringByHash(rowHash, payload = {}) {
+    if (!rowHash) return { error: new Error('Missing row hash.') };
+    let next = sanitizeImportRow(payload);
+    let safety = 0;
+    while (safety < 10) {
+      safety += 1;
+      const response = await state.client.from(constants.AIRINGS_TABLE).update(next).eq('row_hash', rowHash);
+      if (!response.error) return response;
+      const missingColumn = extractMissingColumnName(response.error);
+      if (missingColumn && Object.prototype.hasOwnProperty.call(next, missingColumn)) {
+        const clone = { ...next };
+        delete clone[missingColumn];
+        next = clone;
+        continue;
+      }
+      return response;
+    }
+    return { error: new Error('Could not update imported airing row with current schema.') };
+  }
+
+  async function deleteImportedAiringByHash(rowHash) {
+    if (!rowHash) return { error: new Error('Missing row hash.') };
+    return state.client.from(constants.AIRINGS_TABLE).delete().eq('row_hash', rowHash);
+  }
   async function fetchPerformanceInputs() {
     const warnings = [];
     let airingRows = [];
@@ -824,6 +887,7 @@
     resolveProgramSnapshot,
     resetDetailCaches,
     updateProgram,
+    saveTimingRows,
     mergeLibraryRows,
     buildFieldAudit,
     buildBaseIndexes,
@@ -836,6 +900,8 @@
     fetchPerformanceInputs,
     fetchImportedAirings,
     fetchUnlinkedImportedAirings,
+    updateImportedAiringByHash,
+    deleteImportedAiringByHash,
     probeImportTables,
     importNormalizedRows,
     createProgram

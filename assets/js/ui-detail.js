@@ -151,6 +151,85 @@
     return keys;
   }
 
+
+  function timingEditorColumns(rows = []) {
+    const cols = candidateColumns(rows).filter((key) => !/^(id|program_id|source_row_number)$/i.test(key));
+    return cols.length ? cols : ['segment_number', 'act_offset_seconds', 'act_seconds', 'break_offset_seconds', 'break_seconds', 'local_cutin_seconds', 'notes'];
+  }
+
+  function cloneTimingRows(rows = []) {
+    return (rows || []).map((row) => JSON.parse(JSON.stringify(row || {})));
+  }
+
+  function blankTimingRow() {
+    return {
+      segment_number: null,
+      act_offset_seconds: null,
+      act_seconds: null,
+      break_offset_seconds: null,
+      break_seconds: null,
+      local_cutin_seconds: null,
+      notes: ''
+    };
+  }
+
+  function inputTypeForTimingKey(key = '') {
+    return /(number|seconds|offset|slot|segment)/i.test(key) ? 'number' : 'text';
+  }
+
+  function renderTimingEditor(rows = []) {
+    if (!els.detailTimingEditor) return;
+    const draftRows = cloneTimingRows(rows);
+    state.detailTimingDraftRows = draftRows;
+    const columns = timingEditorColumns(draftRows);
+    els.detailTimingEditor.innerHTML = `
+      <div class="segment-table-wrap">
+        <table class="segment-table detail-timing-table">
+          <thead>
+            <tr>
+              ${columns.map((key) => `<th>${utils.escapeHtml(displayKeyLabel(key))}</th>`).join('')}
+              <th>Remove</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${draftRows.length ? draftRows.map((row, rowIndex) => `
+              <tr data-timing-row-index="${rowIndex}">
+                ${columns.map((key) => `<td><input type="${inputTypeForTimingKey(key)}" class="detail-timing-input" data-timing-row-index="${rowIndex}" data-timing-key="${utils.escapeHtml(key)}" value="${utils.escapeHtml(row[key] == null ? '' : String(row[key]))}"></td>`).join('')}
+                <td><button type="button" class="ghost detail-remove-timing-row-button" data-timing-row-index="${rowIndex}">Remove</button></td>
+              </tr>
+            `).join('') : `<tr><td colspan="${columns.length + 1}" class="placeholder-row">No timing rows yet. Add one below.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function syncTimingDraftFromDom() {
+    if (!els.detailTimingEditor) return;
+    const rows = cloneTimingRows(state.detailTimingDraftRows || []);
+    els.detailTimingEditor.querySelectorAll('.detail-timing-input').forEach((input) => {
+      const rowIndex = Number(input.getAttribute('data-timing-row-index') || -1);
+      const key = input.getAttribute('data-timing-key') || '';
+      if (rowIndex < 0 || !rows[rowIndex] || !key) return;
+      const raw = input.value;
+      rows[rowIndex][key] = input.type === 'number'
+        ? (raw === '' ? null : Number(raw))
+        : (utils.normalizeText(raw) || null);
+    });
+    state.detailTimingDraftRows = rows;
+  }
+
+  function addTimingDraftRow() {
+    const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []);
+    next.push(blankTimingRow());
+    renderTimingEditor(next);
+  }
+
+  function removeTimingDraftRow(index) {
+    const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []);
+    next.splice(index, 1);
+    renderTimingEditor(next);
+  }
+
   function renderTiming(timings) {
     els.timingCountChip.textContent = `${timings.length}`;
     if (!timings.length) {
@@ -402,7 +481,10 @@
   }
 
   function handleEditorInput() {
-    if (!state.detailEditMode) return;
+    if (!state.detailEditMode) {
+      if (els.detailTimingEditor) els.detailTimingEditor.innerHTML = '';
+      return;
+    }
     const form = els.detailEditForm;
     const title = utils.normalizeText(form.elements.title.value);
     const nola = utils.normalizeText(form.elements.nola_code.value);
@@ -412,7 +494,7 @@
       return;
     }
     if (state.detailCreateMode) {
-      setDetailNotice('Add the core fields now. Timings, premiums, and manual money screens come next.', '');
+      setDetailNotice('Edit the core fields here. Break timings save with the same button.', '');
     } else {
       setDetailNotice('');
     }
@@ -430,6 +512,7 @@
     const source = state.currentDetailProgram || blankProgram();
     setFormFieldsFromSource(source);
     bindCompactDateInputs();
+    renderTimingEditor(state.currentDetailTimings || []);
     handleEditorInput();
   }
 
@@ -467,7 +550,7 @@
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.remove('hidden');
     setDetailMode('edit');
-    setDetailNotice('Add the core fields now. Timings, premiums, and manual money screens come next.');
+    setDetailNotice('Edit the core fields here. Break timings save with the same button.');
     window.setTimeout(() => els.detailEditForm?.elements?.title?.focus(), 0);
   }
 
@@ -593,6 +676,11 @@
         throw new Error(friendly);
       }
       const createdId = derive.programId(response.data || {});
+      syncTimingDraftFromDom();
+      if (createdId && (state.detailTimingDraftRows || []).length) {
+        const timingResponse = await App.data.saveTimingRows(createdId, state.detailTimingDraftRows || []);
+        if (timingResponse?.error) throw timingResponse.error;
+      }
       await App.app.refreshAll();
       if (createdId) {
         state.detailCreateMode = false;
@@ -608,6 +696,9 @@
     if (!programId) return;
     const { error } = await App.data.updateProgram(programId, payload);
     if (error) throw error;
+    syncTimingDraftFromDom();
+    const timingResponse = await App.data.saveTimingRows(programId, state.detailTimingDraftRows || []);
+    if (timingResponse?.error) throw timingResponse.error;
     await App.app.refreshAll({ preserveDetail: true });
     await loadProgramDetail(programId, { preserveMode: false });
     setDetailNotice('Changes saved.');
@@ -624,6 +715,9 @@
     loadProgramDetail,
     saveDetailEdit,
     handleEditorInput,
-    showDetailFailure
+    showDetailFailure,
+    addTimingDraftRow,
+    removeTimingDraftRow,
+    syncTimingDraftFromDom
   };
 })();

@@ -1028,6 +1028,63 @@
     return match ? Number(match[1]) : null;
   }
 
+  function addAiringHistoryKey(map, key, dateValue) {
+    const normalizedKey = utils.normalizeLookupKey(key);
+    const normalizedDate = utils.normalizeText(dateValue);
+    if (!normalizedKey || !normalizedDate) return;
+    if (!map[normalizedKey]) map[normalizedKey] = new Set();
+    map[normalizedKey].add(normalizedDate);
+  }
+
+  function buildScheduleAiringHistoryMap(rows = []) {
+    const map = {};
+    (rows || []).forEach((row) => {
+      const dateValue = utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '';
+      addAiringHistoryKey(map, row.program_id || row.pledge_program_id, dateValue);
+      addAiringHistoryKey(map, row.nola_code, dateValue);
+      addAiringHistoryKey(map, row.program_title || row.title || row.imported_program_title || row.matched_library_title, dateValue);
+    });
+    return Object.fromEntries(Object.entries(map).map(([key, value]) => [key, [...value].sort().reverse()]));
+  }
+
+  async function ensureScheduleAiringHistoryLoaded() {
+    if (state.scheduleAiringHistoryLoading || state.scheduleAiringHistoryLoaded) return;
+    state.scheduleAiringHistoryLoading = true;
+    try {
+      const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
+      state.scheduleAiringHistoryMap = buildScheduleAiringHistoryMap(rows || []);
+      state.scheduleAiringHistoryLoaded = true;
+    } catch (error) {
+      console.warn('Could not load scheduler airing history.', error);
+      state.scheduleAiringHistoryMap = {};
+      state.scheduleAiringHistoryLoaded = true;
+    } finally {
+      state.scheduleAiringHistoryLoading = false;
+      if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
+    }
+  }
+
+  function airDatesForScheduleRow(row = {}) {
+    const map = state.scheduleAiringHistoryMap || {};
+    const values = [];
+    [derive.programId(row), derive.nola(row), derive.title(row)]
+      .map((value) => utils.normalizeLookupKey(value))
+      .filter(Boolean)
+      .forEach((key) => {
+        const bucket = Array.isArray(map[key]) ? map[key] : [];
+        bucket.forEach((date) => { if (!values.includes(date)) values.push(date); });
+      });
+    return values.sort().reverse();
+  }
+
+  function airDatesSummaryForScheduleRow(row = {}) {
+    const dates = airDatesForScheduleRow(row);
+    if (!dates.length) return state.scheduleAiringHistoryLoading ? 'Air dates: loading…' : 'Air dates: none known yet';
+    const visible = dates.slice(0, 4).map((value) => utils.formatDate(value, value));
+    const remainder = dates.length > visible.length ? ` +${dates.length - visible.length} more` : '';
+    return `Air dates: ${visible.join(', ')}${remainder}`;
+  }
+
   function scheduleEntryHasAired(row) {
     return filters.rowHasAired(row);
   }
@@ -1511,11 +1568,8 @@
     const slot = state.selectedScheduleSlot;
     if (!(schedule && slot)) return;
     const editable = canScheduleEdit();
-    if (els.scheduleNonPledgeToggle) {
-      els.scheduleNonPledgeToggle.checked = Boolean(state.scheduleNonPledgeMode);
-      els.scheduleNonPledgeToggle.disabled = !editable;
-    }
-    if (state.scheduleNonPledgeMode) ensureNonPledgeRowsLoaded();
+    state.scheduleNonPledgeMode = false;
+    void ensureScheduleAiringHistoryLoaded();
     populateScheduleTopicSelect();
     els.scheduleSlotLabel.textContent = slotLabel(slot.dateKey, slot.minutes);
     if (els.scheduleProgramSearch) {
@@ -1526,8 +1580,7 @@
       els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
       els.scheduleProgramTopicSelect.disabled = !editable;
     }
-    if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.disabled = !editable;
-    const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
+    const usingNonPledge = false;
     if (els.scheduleFilterUnaired) {
       els.scheduleFilterUnaired.checked = Boolean(state.scheduleFilterUnaired);
       els.scheduleFilterUnaired.disabled = !editable || usingNonPledge;
@@ -1581,26 +1634,32 @@
         const rightsBegin = derive.rightsBegin(row) ? utils.formatDate(derive.rightsBegin(row)) : '—';
         const rightsEnd = derive.rightsEnd(row) ? utils.formatDate(derive.rightsEnd(row)) : '—';
         const topicText = derive.topicPrimary(row) || 'No topic';
+        const airDatesText = airDatesSummaryForScheduleRow(row);
+        const programLookupId = scheduleRowLookupId(row);
         return `
-          <button type="button" class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}" data-program-id="${utils.escapeHtml(scheduleRowLookupId(row))}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" data-non-pledge="${isNonPledge ? 'true' : 'false'}" ${editable ? '' : 'disabled'}>
-            <strong class="schedule-match-title">${utils.escapeHtml(derive.title(row) || 'Untitled program')}</strong>
-            <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
-            <span class="schedule-program-rights">${isNonPledge ? 'Program Library marker' : `Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}`}</span>
-            ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}
-          </button>
+          <article class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}">
+            <div class="schedule-program-match-main" data-program-open-id="${utils.escapeHtml(programLookupId)}" tabindex="0" role="button">
+              <strong class="schedule-match-title">${utils.escapeHtml(derive.title(row) || 'Untitled program')}</strong>
+              <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
+              <span class="schedule-program-rights">Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}</span>
+              <span class="schedule-program-air-dates">${utils.escapeHtml(airDatesText)}</span>
+              ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}
+            </div>
+            <div class="schedule-program-match-actions">
+              <button type="button" class="primary schedule-program-assign-button" data-program-id="${utils.escapeHtml(programLookupId)}" data-rights-ok="${rights.ok ? 'true' : 'false'}" data-rights-reason="${utils.escapeHtml(rights.reason || '')}" ${editable ? '' : 'disabled'}>Schedule</button>
+            </div>
+          </article>
         `;
       }).join('');
     }
 
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     if (currentPlacement) {
-      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card">${renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${currentPlacement.isNonPledge ? ' · non-pledge marker' : ''} · ${utils.escapeHtml(liveBreakFlagLabel(currentPlacement))}</div></div>`;
-      if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.checked = hasLiveBreakFlag(currentPlacement);
+      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card">${renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min</div></div>`;
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;
     } else {
       els.scheduleSelectedPreview.innerHTML = '<div class="schedule-hint">No program assigned to this slot yet.</div>';
-      if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.checked = false;
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = true;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
@@ -1608,8 +1667,6 @@
     if (els.scheduleAssignmentNote) {
       if (!editable) {
         els.scheduleAssignmentNote.textContent = 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
-      } else if (usingNonPledge) {
-        els.scheduleAssignmentNote.textContent = 'Non-pledge markers come from the WNMU Program Library, render in light green, and stay out of the pledge detail list below. Earnings filters stay off in this mode.';
       } else if (state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner) {
         const notes = [];
         if (state.scheduleFilterUnaired) notes.push('unaired only');
@@ -2189,20 +2246,11 @@
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
-    els.scheduleNonPledgeToggle?.addEventListener('change', (event) => {
-      state.scheduleNonPledgeMode = Boolean(event.target.checked);
-      state.scheduleProgramTopicFilter = '';
-      if (state.scheduleNonPledgeMode) {
-        state.scheduleFilterUnaired = false;
-        state.scheduleFilterTopEarner = false;
-      }
-      renderProgramPicker();
-    });
     els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterRightsStartYear?.addEventListener('change', (event) => { state.scheduleFilterRightsStartYear = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterTopEarner?.addEventListener('change', (event) => { state.scheduleFilterTopEarner = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-program-id]');
+      const btn = event.target.closest('.schedule-program-assign-button');
       if (!btn) return;
       const rightsOk = btn.dataset.rightsOk !== 'false';
       const reason = btn.dataset.rightsReason || '';
@@ -2210,9 +2258,10 @@
         showScheduleModalWarning(reason || 'This title is out of rights for the selected slot.', 'bad');
         return;
       }
-      void assignProgramToSelectedSlot(btn.dataset.programId, { isNonPledge: btn.dataset.nonPledge === 'true' });
+      event.preventDefault();
+      event.stopPropagation();
+      void assignProgramToSelectedSlot(btn.dataset.programId, { isNonPledge: false });
     });
-    els.scheduleLiveBreakFlag?.addEventListener('change', () => { void updateLiveBreakFlag(); });
     els.scheduleClearPlacementButton?.addEventListener('click', () => { void clearSelectedPlacement(); });
     els.scheduleZoomInButton?.addEventListener('click', () => adjustZoom(0.15));
     els.scheduleZoomOutButton?.addEventListener('click', () => adjustZoom(-0.15));

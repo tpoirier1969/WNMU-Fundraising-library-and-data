@@ -70,6 +70,14 @@
       else App.detailUi.setDetailMode('view');
     });
     els.detailEditForm?.addEventListener('input', () => App.detailUi.handleEditorInput?.());
+    els.detailTimingEditor?.addEventListener('input', () => App.detailUi.syncTimingDraftFromDom?.());
+    els.detailTimingEditor?.addEventListener('click', (event) => {
+      const removeButton = event.target.closest('.detail-remove-timing-row-button');
+      if (!removeButton) return;
+      const rowIndex = Number(removeButton.getAttribute('data-timing-row-index') || -1);
+      if (rowIndex >= 0) App.detailUi.removeTimingDraftRow?.(rowIndex);
+    });
+    els.detailAddTimingRowButton?.addEventListener('click', () => App.detailUi.addTimingDraftRow?.());
     els.detailEditForm?.addEventListener('submit', async (event) => {
       try {
         await App.detailUi.saveDetailEdit(event);

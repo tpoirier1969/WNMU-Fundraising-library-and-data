@@ -173,13 +173,15 @@
 
   function normalizeExistingUnlinkedRow(row = {}) {
     return {
+      row_hash: String(row.row_hash || ''),
       imported_program_title: utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '—',
       nola_code: utils.normalizeText(row.nola_code) || '—',
       air_date: utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '—',
       air_time: utils.normalizeText(row.air_time) || '—',
       dollars: Number.isFinite(Number(row.dollars)) ? Number(row.dollars) : null,
       source_file_name: utils.normalizeText(row.source_file_name) || '—',
-      match_reason: existingUnlinkedReason(row)
+      match_reason: existingUnlinkedReason(row),
+      approved_unlinked: Boolean(row.approved_unlinked || row.review_status === 'approved_unlinked' || row.match_method === 'approved_unlinked')
     };
   }
 
@@ -1306,6 +1308,7 @@
       imp().lastImportResult = { ...summary, skippedUnmatched: 0, unmatchedImported: unmatchedCount };
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
+      await refreshExistingUnlinkedRows({ silent: true });
       renderAll();
       const success = `Imported ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
       setStatus(success);
@@ -1449,6 +1452,20 @@
     }
   }
 
+
+  async function refreshExistingUnlinkedRows(options = {}) {
+    imp().existingUnlinkedError = '';
+    try {
+      const rows = await App.data.fetchUnlinkedImportedAirings();
+      imp().existingUnlinkedRows = (rows || []).map((row) => normalizeExistingUnlinkedRow(row));
+    } catch (error) {
+      imp().existingUnlinkedRows = [];
+      imp().existingUnlinkedError = error?.message || String(error);
+      if (!options.silent) setNotice(`Could not load quarantined imported rows. ${imp().existingUnlinkedError}`, 'warn');
+    }
+    renderExistingUnlinkedRows();
+  }
+
   function renderPreviewRows(rows, bodyEl, columns, emptyMessage) {
     if (!bodyEl) return;
     if (!rows.length) {
@@ -1560,6 +1577,59 @@
   }
 
 
+
+  function selectedProgramRow(programId) {
+    return (state.rawRows || []).find((row) => String(derive.programId(row) || '') === String(programId || '')) || null;
+  }
+
+  async function linkExistingUnlinkedRow(rowHash, programId) {
+    const targetRow = selectedProgramRow(programId);
+    if (!targetRow) {
+      setNotice('Choose a pledge-library title before linking this quarantined row.', 'warn');
+      return;
+    }
+    const payload = {
+      program_id: derive.programId(targetRow) || null,
+      pledge_program_id: derive.programId(targetRow) || null,
+      matched_library_title: derive.title(targetRow) || '',
+      match_method: 'manual_library',
+      match_reason: 'Linked manually from quarantined imported rows review',
+      approved_unlinked: false,
+      review_status: null
+    };
+    const response = await App.data.updateImportedAiringByHash(rowHash, payload);
+    if (response.error) throw response.error;
+    await refreshExistingUnlinkedRows({ silent: true });
+    await refreshTableStatus({ silent: true });
+    setStatus('Quarantined imported row linked to the library.');
+    setResultBanner('Quarantined imported row linked to the library.');
+    setNotice('Quarantined imported row linked.');
+  }
+
+  async function approveExistingUnlinkedRow(rowHash) {
+    const response = await App.data.updateImportedAiringByHash(rowHash, {
+      approved_unlinked: true,
+      review_status: 'approved_unlinked',
+      match_method: 'approved_unlinked',
+      match_reason: 'Approved to remain unlinked during quarantine review'
+    });
+    if (response.error) throw response.error;
+    await refreshExistingUnlinkedRows({ silent: true });
+    setStatus('Quarantined imported row approved to remain unlinked.');
+    setResultBanner('Quarantined imported row approved to remain unlinked.');
+    setNotice('Quarantined imported row approved.');
+  }
+
+  async function deleteExistingUnlinkedRow(rowHash) {
+    const response = await App.data.deleteImportedAiringByHash(rowHash);
+    if (response.error) throw response.error;
+    await refreshExistingUnlinkedRows({ silent: true });
+    await refreshTableStatus({ silent: true });
+    setStatus('Quarantined imported row deleted.');
+    setResultBanner('Quarantined imported row deleted.');
+    setNotice('Quarantined imported row deleted.');
+  }
+
   async function createAndLinkNewProgram(rowHash) {
     if (!App.auth.canEdit()) {
       setNotice('Sign in as admin to create a new pledge title from an unmatched row.', 'warn');
@@ -1646,24 +1716,37 @@
     const bodyEl = els.importExistingUnlinkedBody;
     if (!bodyEl) return;
     if (imp().existingUnlinkedError) {
-      bodyEl.innerHTML = `<tr><td colspan="6" class="placeholder-row">${escape(imp().existingUnlinkedError)}</td></tr>`;
+      bodyEl.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escape(imp().existingUnlinkedError)}</td></tr>`;
       return;
     }
     const rows = imp().existingUnlinkedRows || [];
     if (!rows.length) {
-      bodyEl.innerHTML = '<tr><td colspan="6" class="placeholder-row">No existing unlinked imported airings found.</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No quarantined imported rows right now.</td></tr>';
       return;
     }
-    bodyEl.innerHTML = rows.slice(0, 50).map((row) => `
+    bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
+      const options = buildLibraryProgramOptions(row.imported_program_title || row.nola_code || '');
+      const optionHtml = ['<option value="">Select a pledge title…</option>']
+        .concat(options.map((entry) => `<option value="${escape(entry.value)}">${escape(entry.label)}</option>`))
+        .join('');
+      return `
       <tr>
         <td>${escape(row.imported_program_title || '—')}</td>
         <td>${escape(row.nola_code || '—')}</td>
         <td>${escape(row.air_date || '—')}</td>
         <td>${escape(row.air_time || '—')}</td>
         <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
-        <td>${escape(row.source_file_name || '—')}</td>
-      </tr>
-    `).join('');
+        <td>${escape(`${row.match_reason || 'No library link'} · ${row.source_file_name || '—'}${row.approved_unlinked ? ' · approved' : ''}`)}</td>
+        <td><select class="import-existing-link-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select></td>
+        <td>
+          <div class="import-match-actions">
+            <button type="button" class="ghost import-existing-apply-button" data-row-hash="${escape(row.row_hash)}">Link</button>
+            <button type="button" class="ghost import-existing-approve-button" data-row-hash="${escape(row.row_hash)}">Approve</button>
+            <button type="button" class="ghost import-existing-delete-button" data-row-hash="${escape(row.row_hash)}">Delete</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
   }
 
   function renderPreviews() {
@@ -1747,6 +1830,7 @@
       imp().aliasRules = utils.storageGet(IMPORT_MATCH_RULES_STORAGE_KEY, []);
       imp().reportTotalsByFile = utils.storageGet(IMPORT_REPORT_TOTALS_STORAGE_KEY, {});
       await refreshTableStatus({ silent: true });
+      await refreshExistingUnlinkedRows({ silent: true });
       imp().ready = true;
     }
     renderAll();
@@ -1796,7 +1880,12 @@
     els.importClearButton?.addEventListener('click', clearBatch);
     els.importRefreshButton?.addEventListener('click', async () => {
       await refreshTableStatus();
+      await refreshExistingUnlinkedRows({ silent: true });
       setStatus('Table probe refreshed.');
+    });
+    els.importRefreshQuarantineButton?.addEventListener('click', async () => {
+      await refreshExistingUnlinkedRows();
+      setStatus('Quarantined imported rows refreshed.');
     });
     els.importExportAiringsButton?.addEventListener('click', () => {
       const matchedRows = getMatchedRows();
@@ -1859,6 +1948,32 @@
       if (createButton) {
         const rowHash = createButton.getAttribute('data-row-hash') || '';
         void createAndLinkNewProgram(rowHash);
+      }
+    });
+    els.importExistingUnlinkedBody?.addEventListener('click', (event) => {
+      const rowHash = event.target.closest('[data-row-hash]')?.getAttribute('data-row-hash') || '';
+      if (!rowHash) return;
+      const linkButton = event.target.closest('.import-existing-apply-button');
+      if (linkButton) {
+        const select = els.importExistingUnlinkedBody.querySelector(`.import-existing-link-select[data-row-hash="${rowHash}"]`);
+        const selectedProgramId = select?.value || '';
+        void linkExistingUnlinkedRow(rowHash, selectedProgramId).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
+        return;
+      }
+      const approveButton = event.target.closest('.import-existing-approve-button');
+      if (approveButton) {
+        void approveExistingUnlinkedRow(rowHash).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
+        return;
+      }
+      const deleteButton = event.target.closest('.import-existing-delete-button');
+      if (deleteButton) {
+        void deleteExistingUnlinkedRow(rowHash).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
       }
     });
   }

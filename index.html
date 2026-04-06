@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.57</title>
+  <title>WNMU Pledge Program Library v0.20.59</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
@@ -55,7 +55,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.57</span>
+            <span class="version-pill" id="version-flag">v0.20.59</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -316,17 +316,7 @@
             </label>
             <label class="filter-field search-grow">
               <span class="filter-label">Program title match</span>
-              <input id="schedule-program-search" type="search" placeholder="Type 4 letters to match an existing title">
-            </label>
-          </div>
-          <div class="schedule-picker-flags-row">
-            <label class="schedule-inline-check">
-              <input id="schedule-non-pledge-toggle" type="checkbox">
-              <span>Not pledge program</span>
-            </label>
-            <label class="schedule-inline-check">
-              <input id="schedule-live-break-flag" type="checkbox">
-              <span>Live break / special local break</span>
+              <input id="schedule-program-search" type="search" placeholder="Type to match an existing title">
             </label>
           </div>
           <div class="schedule-picker-flags-row schedule-picker-filters-row">
@@ -593,6 +583,38 @@
             <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
           </div>
         </section>
+
+        <section class="performance-card">
+          <div class="performance-card-head import-unmatched-head">
+            <div>
+              <h3>Quarantined / unlinked imported rows</h3>
+              <p class="muted">These rows already exist in imported airings but still have no library link. You can link them, approve them to stay unlinked, or delete them.</p>
+            </div>
+            <div class="import-unmatched-head-actions">
+              <button type="button" class="ghost" id="import-refresh-quarantine-button">Refresh</button>
+              <span class="mini-chip" id="import-existing-unlinked-pill">0 rows</span>
+            </div>
+          </div>
+          <div class="table-wrap import-preview-wrap import-unmatched-wrap">
+            <table class="programs-table import-preview-table import-unmatched-table">
+              <thead>
+                <tr>
+                  <th>Imported title</th>
+                  <th>NOLA</th>
+                  <th>Air date</th>
+                  <th>Air time</th>
+                  <th>Dollars</th>
+                  <th>Why quarantined</th>
+                  <th>Match to library title</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="import-existing-unlinked-body">
+                <tr><td colspan="8" class="placeholder-row">No quarantined rows right now.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </section>
 
@@ -845,6 +867,15 @@
                   <label class="detail-form-field"><span class="filter-label">Premium summary</span><textarea name="premium_summary" rows="4"></textarea></label>
                   <label class="detail-form-field"><span class="filter-label">Description / notes</span><textarea name="program_notes" rows="4"></textarea></label>
                 </div>
+                <div class="detail-block detail-editor-subblock timing-editor-subblock">
+                  <div class="section-head">
+                    <h3>Break timings</h3>
+                    <div class="toolbar-actions">
+                      <button type="button" class="ghost" id="detail-add-timing-row-button">Add timing row</button>
+                    </div>
+                  </div>
+                  <div id="detail-timing-editor" class="detail-timing-editor"></div>
+                </div>
               </div>
               <div class="toolbar-actions detail-form-actions">
                 <button type="submit" class="primary" id="detail-save-button">Save</button>
@@ -899,7 +930,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.57</div>
+      <div id="footer-version">v0.20.59</div>
     </footer>
   </div>
 </body>

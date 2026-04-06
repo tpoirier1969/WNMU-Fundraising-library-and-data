@@ -995,9 +995,6 @@ button.small { padding: 6px 7px; }
 }
 .schedule-program-match {
   text-align: left;
-  cursor: pointer;
-  display: grid;
-  gap: 4px;
 }
 .schedule-program-match strong,
 .scheduled-program-head strong { color: var(--heading); }
@@ -2890,4 +2887,46 @@ button.primary {
 }
 .schedule-picker-filters-row .schedule-inline-check span {
   white-space: nowrap;
+}
+
+
+.detail-timing-editor .segment-table input {
+  width: 100%;
+  min-width: 86px;
+}
+.detail-editor-subblock {
+  margin-top: 14px;
+}
+.schedule-program-match {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  align-items: start;
+  cursor: default;
+}
+.schedule-program-match-main {
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+}
+.schedule-program-match-main:focus-visible {
+  outline: 2px solid rgba(21,91,139,.25);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+.schedule-program-match-actions {
+  display: flex;
+  align-items: center;
+}
+.schedule-program-air-dates {
+  color: var(--muted);
+  font-size: .82rem;
+}
+@media (max-width: 720px) {
+  .schedule-program-match {
+    grid-template-columns: 1fr;
+  }
+  .schedule-program-match-actions {
+    justify-content: flex-start;
+  }
 }
