@@ -250,6 +250,7 @@
     state.baseRows = baseRows;
     state.rawRows = mergeLibraryRows(sourceRows, baseRows);
     state.fieldAudit = buildFieldAudit(state.rawRows);
+    resetDetailCaches();
     return state.rawRows;
   }
 
@@ -286,12 +287,85 @@
     return { data: null, error: new Error(`Unable to match ${tableName} rows to a program id.`) };
   }
 
+  function resetDetailCaches() {
+    state.detailCache = {};
+    state.detailPending = {};
+    state.detailQueryHints = {};
+  }
+
+  function resolveProgramSummaryRow(programId) {
+    return App.programLinks?.resolveRow?.(programId)
+      || state.rawRows.find((row) => String(derive.programId(row)) === String(programId))
+      || null;
+  }
+
+  function resolveProgramSnapshot(programId) {
+    if (!programId) return null;
+    const cachedProgram = state.detailCache?.[programId]?.program || null;
+    const summaryRow = resolveProgramSummaryRow(programId);
+    const merged = utils.mergeRows(summaryRow || {}, cachedProgram || {});
+    if (!Object.keys(merged || {}).length) return null;
+    return enrichResolvedFields(merged, cachedProgram || summaryRow || {});
+  }
+
+  function buildDetailContext(programId, row = {}) {
+    return {
+      programId,
+      nola: derive.nola(row),
+      title: derive.title(row)
+    };
+  }
+
+  function prioritizeFieldAttempts(tableName, fieldAttempts = []) {
+    const hint = state.detailQueryHints?.[tableName];
+    if (!hint?.field) return fieldAttempts;
+    return [...fieldAttempts].sort((a, b) => {
+      const aScore = a[0] === hint.field ? 0 : 1;
+      const bScore = b[0] === hint.field ? 0 : 1;
+      return aScore - bScore;
+    });
+  }
+
+  function prioritizeOrderAttempts(tableName, orderAttempts = []) {
+    const hint = state.detailQueryHints?.[tableName];
+    if (!hint || !Object.prototype.hasOwnProperty.call(hint, 'orderField')) return orderAttempts;
+    return [...orderAttempts].sort((a, b) => {
+      const normalize = (value) => value || '';
+      const aScore = normalize(a) === normalize(hint.orderField) ? 0 : 1;
+      const bScore = normalize(b) === normalize(hint.orderField) ? 0 : 1;
+      return aScore - bScore;
+    });
+  }
+
+  function cacheDetailQueryHint(tableName, field, orderField) {
+    if (!tableName || !field) return;
+    state.detailQueryHints[tableName] = { field, orderField: orderField || null };
+  }
+
+  function needsContextRetry(initialContext = {}, enrichedContext = {}) {
+    return utils.normalizeLookupKey(initialContext.nola) !== utils.normalizeLookupKey(enrichedContext.nola)
+      || utils.normalizeLookupKey(initialContext.title) !== utils.normalizeLookupKey(enrichedContext.title);
+  }
+
+  function isLookupOnlyProgram(programId) {
+    return String(programId || '').startsWith('lookup:');
+  }
+
+  function buildDetailWarnings(baseResp, timingResp, driveResp, airingsResp) {
+    const warnings = [];
+    if (baseResp?.error && !baseResp?.data) warnings.push(`Base row read warning: ${baseResp.error.message}`);
+    if (timingResp?.error) warnings.push(`Timing read warning: ${timingResp.error.message}`);
+    if (driveResp?.error) warnings.push(`Drive history read warning: ${driveResp.error.message}`);
+    if (airingsResp?.error) warnings.push(`Air history read warning: ${airingsResp.error.message}`);
+    return warnings;
+  }
+
   function isSchemaOnlyError(message) {
     return /column .* does not exist|schema cache/i.test(message || '');
   }
 
   async function fetchManyByContext(tableName, context = {}, orderFields = [], ascending = true, options = {}) {
-    const fieldAttempts = [
+    const rawFieldAttempts = [
       ['program_id', context.programId],
       ['pledge_program_id', context.programId],
       ['id', context.programId],
@@ -305,10 +379,11 @@
       ])
     ].filter((entry) => !utils.isBlank(entry[1]));
 
+    const fieldAttempts = prioritizeFieldAttempts(tableName, rawFieldAttempts);
     const normalizedOrderFields = Array.isArray(orderFields)
       ? orderFields.filter(Boolean)
       : [orderFields].filter(Boolean);
-    const orderAttempts = [...normalizedOrderFields, null];
+    const orderAttempts = prioritizeOrderAttempts(tableName, [...normalizedOrderFields, null]);
 
     let lastError = null;
     let sawSchemaOnlyError = false;
@@ -317,7 +392,10 @@
         let query = state.client.from(tableName).select('*').eq(field, value);
         if (orderField) query = query.order(orderField, { ascending });
         const response = await query;
-        if (!response.error && Array.isArray(response.data) && response.data.length) return response;
+        if (!response.error && Array.isArray(response.data) && response.data.length) {
+          cacheDetailQueryHint(tableName, field, orderField);
+          return response;
+        }
         if (!response.error) {
           lastError = null;
           continue;
@@ -336,37 +414,60 @@
     return { data: [], error: lastError };
   }
 
-  async function fetchProgramDetail(programId) {
-    const summaryRow = App.programLinks?.resolveRow?.(programId) || state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
-    const baseResp = String(programId || '').startsWith('lookup:')
-      ? { data: null, error: null }
-      : await fetchOneById(constants.BASE_TABLE, programId);
-    const contextRow = utils.mergeRows(summaryRow || {}, baseResp.data || {});
-    const context = {
-      programId,
-      nola: derive.nola(contextRow),
-      title: derive.title(contextRow)
-    };
-    const [timingResp, driveResp, airingsResp] = await Promise.all([
-      fetchManyByContext(constants.TIMING_TABLE, context, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true),
-      fetchManyByContext(constants.DRIVE_RESULTS_TABLE, context, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false),
-      fetchManyByContext(constants.AIRINGS_TABLE, context, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false })
-    ]);
+  async function fetchProgramDetail(programId, options = {}) {
+    if (!programId) return { program: null, timings: [], driveResults: [], airings: [], warnings: [] };
+    const useCache = options.useCache !== false;
+    if (useCache && state.detailCache[programId]) return state.detailCache[programId];
+    if (useCache && state.detailPending[programId]) return state.detailPending[programId];
 
-    const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseResp.data || {}), baseResp.data || summaryRow || {});
-    const warnings = [];
-    if (baseResp.error && !baseResp.data) warnings.push(`Base row read warning: ${baseResp.error.message}`);
-    if (timingResp.error) warnings.push(`Timing read warning: ${timingResp.error.message}`);
-    if (driveResp.error) warnings.push(`Drive history read warning: ${driveResp.error.message}`);
-    if (airingsResp.error) warnings.push(`Air history read warning: ${airingsResp.error.message}`);
+    const detailPromise = (async () => {
+      const summaryRow = resolveProgramSummaryRow(programId);
+      const initialContext = buildDetailContext(programId, summaryRow || {});
+      const basePromise = isLookupOnlyProgram(programId)
+        ? Promise.resolve({ data: null, error: null })
+        : fetchOneById(constants.BASE_TABLE, programId);
+      const sectionPromise = Promise.all([
+        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true),
+        fetchManyByContext(constants.DRIVE_RESULTS_TABLE, initialContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false),
+        fetchManyByContext(constants.AIRINGS_TABLE, initialContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false })
+      ]);
 
-    return {
-      program: Object.keys(detailProgram).length ? detailProgram : null,
-      timings: timingResp.data || [],
-      driveResults: driveResp.data || [],
-      airings: airingsResp.data || [],
-      warnings
-    };
+      const baseResp = await basePromise;
+      let [timingResp, driveResp, airingsResp] = await sectionPromise;
+
+      const contextRow = utils.mergeRows(summaryRow || {}, baseResp.data || {});
+      const enrichedContext = buildDetailContext(programId, contextRow);
+
+      if (needsContextRetry(initialContext, enrichedContext)) {
+        if (!(timingResp.data || []).length) {
+          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true);
+        }
+        if (!(driveResp.data || []).length) {
+          driveResp = await fetchManyByContext(constants.DRIVE_RESULTS_TABLE, enrichedContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false);
+        }
+        if (!(airingsResp.data || []).length) {
+          airingsResp = await fetchManyByContext(constants.AIRINGS_TABLE, enrichedContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false });
+        }
+      }
+
+      const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseResp.data || {}), baseResp.data || summaryRow || {});
+      const detail = {
+        program: Object.keys(detailProgram).length ? detailProgram : null,
+        timings: timingResp.data || [],
+        driveResults: driveResp.data || [],
+        airings: airingsResp.data || [],
+        warnings: buildDetailWarnings(baseResp, timingResp, driveResp, airingsResp)
+      };
+      state.detailCache[programId] = detail;
+      return detail;
+    })();
+
+    if (useCache) state.detailPending[programId] = detailPromise;
+    try {
+      return await detailPromise;
+    } finally {
+      if (useCache) delete state.detailPending[programId];
+    }
   }
 
   async function updateProgram(programId, payload) {
@@ -720,6 +821,8 @@
     refreshRawRows,
     getProbeStatusMessage,
     fetchProgramDetail,
+    resolveProgramSnapshot,
+    resetDetailCaches,
     updateProgram,
     mergeLibraryRows,
     buildFieldAudit,

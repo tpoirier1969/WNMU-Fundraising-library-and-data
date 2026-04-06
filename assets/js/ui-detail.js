@@ -260,6 +260,27 @@
       : '<div class="premium-card">No readable program-row fields were available.</div>';
   }
 
+  function renderSectionLoading() {
+    els.timingCountChip.textContent = '…';
+    els.airingCountChip.textContent = '…';
+    els.timingList.innerHTML = '<div class="timing-card">Loading timing rows…</div>';
+    els.airingList.innerHTML = '<div class="premium-card">Loading airing and drive history…</div>';
+  }
+
+  function renderDetailShell(program) {
+    els.detailEmpty.classList.add('hidden');
+    els.detailContent.classList.remove('hidden');
+    els.detailTitle.textContent = state.detailCreateMode ? 'Add Program' : derive.title(program);
+    els.detailSubtitle.textContent = state.detailCreateMode
+      ? detailSubtitleHtml(program)
+      : 'Loading timing rows and drive history…';
+    renderLead(program);
+    renderOverview(program, [], []);
+    renderSectionLoading();
+    renderPremiums(program);
+    renderAllFields(program);
+  }
+
   function renderDetail(program, timings, driveResults, exactAirings) {
     els.detailEmpty.classList.add('hidden');
     els.detailContent.classList.remove('hidden');
@@ -424,6 +445,7 @@
     document.body.classList.remove('modal-open');
     state.detailEditMode = false;
     state.detailCreateMode = false;
+    state.detailLoadToken = null;
     els.detailModal.classList.remove('create-mode');
     setDetailNotice('');
   }
@@ -450,10 +472,16 @@
   }
 
   async function loadProgramDetail(programId, options = {}) {
-    if (!programId) return;
+    state.selectedProgramId = programId;
+    state.currentDetailProgram = blankProgram();
+    state.currentDetailTimings = [];
+    state.currentDetailDriveResults = [];
+    state.currentDetailAirings = [];
     state.detailCreateMode = false;
-    state.selectedProgramId = String(programId);
-    App.listUi.syncSelectedRows();
+
+    const loadToken = Symbol(`detail:${programId}`);
+    state.detailLoadToken = loadToken;
+
     openDetailModal();
     els.detailModal.classList.remove('create-mode');
     els.detailTitle.textContent = 'Loading detail…';
@@ -465,8 +493,15 @@
     setDetailMode('view');
     setDetailNotice('');
 
+    const snapshotProgram = App.data.resolveProgramSnapshot?.(programId);
+    if (snapshotProgram) {
+      state.currentDetailProgram = snapshotProgram;
+      renderDetailShell(snapshotProgram);
+    }
+
     try {
       const detail = await App.data.fetchProgramDetail(programId);
+      if (state.detailLoadToken !== loadToken) return;
       if (!detail.program) {
         showDetailFailure('No readable detail data came back for this title.');
         return;
@@ -481,9 +516,13 @@
       if (options.preserveMode && canEdit()) setDetailMode('edit');
       els.detailCloseButton.focus();
     } catch (error) {
+      if (state.detailLoadToken !== loadToken) return;
       console.error('Detail render failed.', error);
       setDetailNotice(`Detail render warning: ${error.message || error}`, 'bad');
-      const fallbackProgram = App.programLinks?.resolveRow?.(programId) || state.rawRows.find((row) => String(derive.programId(row)) === String(programId)) || null;
+      const fallbackProgram = App.data.resolveProgramSnapshot?.(programId)
+        || App.programLinks?.resolveRow?.(programId)
+        || state.rawRows.find((row) => String(derive.programId(row)) === String(programId))
+        || null;
       if (fallbackProgram) {
         state.currentDetailProgram = fallbackProgram;
         renderDetail(fallbackProgram, [], [], []);
