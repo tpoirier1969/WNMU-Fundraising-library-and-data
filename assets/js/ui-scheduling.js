@@ -959,6 +959,39 @@
     return `Local cut-ins: ${cutins.length} total · ${cutins.map((value) => utils.formatSeconds(value)).join(', ')}`;
   }
 
+  function timingExportSummary(timings = []) {
+    if (!Array.isArray(timings) || !timings.length) return 'Break timings: none found';
+    const summaries = timings
+      .map((row) => timingRowSummary(row).join(' · '))
+      .map((value) => utils.normalizeText(value))
+      .filter(Boolean);
+    if (summaries.length) {
+      const preview = summaries.slice(0, 4).join(' | ');
+      const suffix = summaries.length > 4 ? ` | +${summaries.length - 4} more` : '';
+      return `Break timings: ${preview}${suffix}`;
+    }
+    return timingLocalCutinSummary(timings);
+  }
+
+  async function ensureScheduleExportDetails(rows = []) {
+    const programIds = [...new Set((Array.isArray(rows) ? rows : [])
+      .filter((item) => !item?.isNonPledge && item?.programId)
+      .map((item) => String(item.programId || '').trim())
+      .filter(Boolean))];
+    if (!state.client || !programIds.length) return;
+    await Promise.all(programIds.map(async (programId) => {
+      const cache = state.scheduleDetailCache[programId];
+      if (cache?.loaded || cache?.loading) return;
+      state.scheduleDetailCache[programId] = { loading: true, loaded: false };
+      try {
+        const detail = await App.data.fetchProgramDetail(programId);
+        state.scheduleDetailCache[programId] = { loading: false, loaded: true, detail };
+      } catch (error) {
+        state.scheduleDetailCache[programId] = { loading: false, loaded: true, error };
+      }
+    }));
+  }
+
   function lengthMetaLabel(row = {}) {
     const runtimeMinutes = derive.runtimeMinutes(row);
     const runtimeClock = derive.actualRuntimeLabel(row);
@@ -2159,10 +2192,11 @@
     menu.style.top = `${event.pageY}px`;
   }
 
-  function exportScheduleView() {
+  async function exportScheduleView() {
     const schedule = getActiveSchedule();
     if (!schedule) return;
     const rows = annotatePlacements(schedule);
+    await ensureScheduleExportDetails(rows);
     const byDay = new Map();
     rows.forEach((item) => {
       if (!byDay.has(item.dateKey)) byDay.set(item.dateKey, []);
@@ -2176,17 +2210,14 @@
         if (item.isNonPledge) markerBits.push('non-pledge marker');
         if (hasLiveBreakFlag(item)) markerBits.push('live-break');
         lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${markerBits.length ? ` | ${markerBits.join(' · ')}` : ''}`);
-        let cutinLine = 'Local cut-ins: no break timings yet';
+        let breakLine = 'Break timings: none found';
         if (!item.isNonPledge && item.programId) {
           const cache = state.scheduleDetailCache[item.programId];
-          if (cache?.detail?.timings) {
-            cutinLine = timingLocalCutinSummary(cache.detail.timings);
-          } else {
-            loadScheduledDetail(item.programId);
-            cutinLine = 'Local cut-ins: open title details once to load break timings';
-          }
+          if (cache?.detail?.timings) breakLine = timingExportSummary(cache.detail.timings);
+          else if (cache?.error) breakLine = `Break timings unavailable: ${cache.error.message || 'load failed'}`;
+          else breakLine = 'Break timings unavailable';
         }
-        lines.push(`  ${cutinLine}`);
+        lines.push(`  ${breakLine}`);
       }
       lines.push('');
     }

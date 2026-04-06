@@ -3097,7 +3097,7 @@ button.primary {
 }
 
 
-/* v0.20.63 scheduler corrections + performance row tightening */
+/* v0.20.64 scheduled detail restore + export accuracy pass */
 .schedule-builder-head {
   align-items: flex-start;
   flex-wrap: wrap;
@@ -3105,17 +3105,28 @@ button.primary {
 .schedule-builder-head .muted {
   max-width: 720px;
 }
+.schedule-program-details-wrap {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.schedule-program-details {
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+}
 @media (min-width: 761px) {
   .schedule-editor {
-    grid-template-rows: auto minmax(430px, 1fr) auto;
-    min-height: min(78vh, 980px);
+    grid-template-rows: auto minmax(420px, 1fr) minmax(260px, auto);
+    min-height: min(84vh, 1100px);
   }
   #schedule-grid,
   .schedule-grid {
-    min-height: 430px;
+    min-height: 420px;
   }
   .schedule-program-details-wrap {
-    max-height: min(20vh, 220px);
+    min-height: 260px;
+    max-height: min(38vh, 460px);
   }
 }
 @media (max-width: 1100px) {
