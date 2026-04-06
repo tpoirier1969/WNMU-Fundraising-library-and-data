@@ -3,29 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.64</title>
+  <title>WNMU Pledge Program Library v0.20.65</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.64">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.65">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.64"></script>
-  <script defer src="assets/js/program-filters.js?v=0.20.64"></script>
-  <script defer src="assets/js/dom.js?v=0.20.64"></script>
-  <script defer src="assets/js/data.js?v=0.20.64"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.64"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.64"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.64"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.64"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.64"></script>
-  <script defer src="assets/js/auth.js?v=0.20.64"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.64"></script>
-  <script defer src="assets/js/program-open.js?v=0.20.64"></script>
-  <script defer src="assets/js/library-load.js?v=0.20.64"></script>
-  <script defer src="assets/js/app.js?v=0.20.64"></script>
-  <script defer src="assets/js/app-init.js?v=0.20.64"></script>
+  <script defer src="assets/js/core.js?v=0.20.65"></script>
+  <script defer src="assets/js/program-filters.js?v=0.20.65"></script>
+  <script defer src="assets/js/dom.js?v=0.20.65"></script>
+  <script defer src="assets/js/data.js?v=0.20.65"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.65"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.65"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.65"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.65"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.65"></script>
+  <script defer src="assets/js/auth.js?v=0.20.65"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.65"></script>
+  <script defer src="assets/js/program-open.js?v=0.20.65"></script>
+  <script defer src="assets/js/library-load.js?v=0.20.65"></script>
+  <script defer src="assets/js/app.js?v=0.20.65"></script>
+  <script defer src="assets/js/app-init.js?v=0.20.65"></script>
 </head>
 <body>
 
@@ -55,7 +55,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.64</span>
+            <span class="version-pill" id="version-flag">v0.20.65</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -611,6 +611,7 @@
               <p class="muted">These rows already exist in imported airings but still have no library link. You can link them, approve them to stay unlinked, or delete them.</p>
             </div>
             <div class="import-unmatched-head-actions">
+              <input type="search" id="import-quarantine-filter" class="import-quarantine-filter" placeholder="Filter quarantined rows by title, NOLA, date, file, or reason">
               <button type="button" class="ghost" id="import-refresh-quarantine-button">Refresh</button>
               <span class="mini-chip" id="import-existing-unlinked-pill">0 rows</span>
             </div>
@@ -634,6 +635,7 @@
               </tbody>
             </table>
           </div>
+          <div id="import-quarantine-preview" class="import-quarantine-preview">Choose a quarantined row to inspect the imported fields and review why it is still unlinked.</div>
         </section>
       </section>
     </section>
@@ -896,6 +898,13 @@
                   </div>
                   <div id="detail-timing-editor" class="detail-timing-editor"></div>
                 </div>
+                <div class="detail-block detail-editor-subblock">
+                  <div class="section-head">
+                    <h3>Additional editable program fields</h3>
+                    <div class="mini-chip">Base row</div>
+                  </div>
+                  <div id="detail-extra-fields-editor" class="detail-extra-fields-editor"></div>
+                </div>
               </div>
               <div class="toolbar-actions detail-form-actions">
                 <button type="submit" class="primary" id="detail-save-button">Save</button>
@@ -939,6 +948,14 @@
 
           <section class="detail-block detail-readonly-block">
             <div class="section-head">
+              <h3>Income over time</h3>
+              <div id="detail-graph-pill" class="mini-chip">Needs 2 fundraisers</div>
+            </div>
+            <div id="detail-performance-graph" class="detail-performance-graph"></div>
+          </section>
+
+          <section class="detail-block detail-readonly-block">
+            <div class="section-head">
               <h3>All known program fields</h3>
               <div class="mini-chip">Full row</div>
             </div>
@@ -950,7 +967,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.64</div>
+      <div id="footer-version">v0.20.65</div>
     </footer>
   </div>
 </body>

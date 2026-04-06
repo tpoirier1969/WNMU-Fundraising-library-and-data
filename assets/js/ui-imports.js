@@ -181,7 +181,8 @@
       dollars: Number.isFinite(Number(row.dollars)) ? Number(row.dollars) : null,
       source_file_name: utils.normalizeText(row.source_file_name) || '—',
       match_reason: existingUnlinkedReason(row),
-      approved_unlinked: Boolean(row.approved_unlinked || row.review_status === 'approved_unlinked' || row.match_method === 'approved_unlinked')
+      approved_unlinked: Boolean(row.approved_unlinked || row.review_status === 'approved_unlinked' || row.match_method === 'approved_unlinked'),
+      raw: row
     };
   }
 
@@ -1711,26 +1712,73 @@
     }).join('');
   }
 
+  function filteredExistingUnlinkedRows() {
+    const rows = imp().existingUnlinkedRows || [];
+    const needle = utils.normalizeLookupKey(imp().quarantineFilterText || '');
+    if (!needle) return rows;
+    return rows.filter((row) => utils.normalizeLookupKey([
+      row.imported_program_title,
+      row.nola_code,
+      row.air_date,
+      row.air_time,
+      row.source_file_name,
+      row.match_reason,
+      row.approved_unlinked ? 'approved' : ''
+    ].join(' ')).includes(needle));
+  }
+
+  function renderQuarantinePreview() {
+    if (!els.importQuarantinePreview) return;
+    const rows = imp().existingUnlinkedRows || [];
+    const selected = rows.find((row) => row.row_hash === imp().selectedExistingUnlinkedHash) || filteredExistingUnlinkedRows()[0] || null;
+    if (!selected) {
+      els.importQuarantinePreview.innerHTML = 'Choose a quarantined row to inspect the imported fields and review why it is still unlinked.';
+      return;
+    }
+    imp().selectedExistingUnlinkedHash = selected.row_hash;
+    const raw = selected.raw || {};
+    const entries = Object.keys(raw)
+      .filter((key) => raw[key] != null && raw[key] !== '' && !/^__/.test(key))
+      .sort(utils.compareText)
+      .slice(0, 24)
+      .map((key) => `<div class="import-quarantine-preview-row"><dt>${escape(key.replace(/_/g, ' '))}</dt><dd>${escape(typeof raw[key] === 'object' ? JSON.stringify(raw[key]) : String(raw[key]))}</dd></div>`)
+      .join('');
+    els.importQuarantinePreview.innerHTML = `
+      <div class="import-quarantine-preview-head">
+        <strong>${escape(selected.imported_program_title || 'Untitled imported row')}</strong>
+        <span class="mini-chip">${escape(selected.nola_code || 'No NOLA')}</span>
+        <span class="mini-chip">${escape(selected.air_date || 'No date')}</span>
+        <span class="mini-chip">${escape(selected.source_file_name || 'No file')}</span>
+      </div>
+      <div class="muted">${escape(selected.match_reason || 'No reason recorded')}${selected.approved_unlinked ? ' · approved to remain unlinked' : ''}</div>
+      <dl class="import-quarantine-preview-grid">${entries || '<div class="placeholder-row">No additional imported fields were available for preview.</div>'}</dl>`;
+  }
+
   function renderExistingUnlinkedRows() {
-    if (els.importExistingUnlinkedPill) els.importExistingUnlinkedPill.textContent = `${utils.formatCount(imp().existingUnlinkedRows.length)} rows`;
+    const allRows = imp().existingUnlinkedRows || [];
+    if (els.importExistingUnlinkedPill) els.importExistingUnlinkedPill.textContent = `${utils.formatCount(allRows.length)} rows`;
     const bodyEl = els.importExistingUnlinkedBody;
     if (!bodyEl) return;
     if (imp().existingUnlinkedError) {
       bodyEl.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escape(imp().existingUnlinkedError)}</td></tr>`;
+      renderQuarantinePreview();
       return;
     }
-    const rows = imp().existingUnlinkedRows || [];
+    const rows = filteredExistingUnlinkedRows();
     if (!rows.length) {
-      bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No quarantined imported rows right now.</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No quarantined imported rows match this filter right now.</td></tr>';
+      renderQuarantinePreview();
       return;
     }
+    if (!rows.some((row) => row.row_hash === imp().selectedExistingUnlinkedHash)) imp().selectedExistingUnlinkedHash = rows[0]?.row_hash || '';
     bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
       const options = buildLibraryProgramOptions(row.imported_program_title || row.nola_code || '');
       const optionHtml = ['<option value="">Select a pledge title…</option>']
-        .concat(options.map((entry) => `<option value="${escape(entry.value)}">${escape(entry.label)}</option>`))
+        .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${String(row.pending_link_program_id || '') === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
         .join('');
+      const selectedClass = row.row_hash === imp().selectedExistingUnlinkedHash ? ' import-quarantine-row-selected' : '';
       return `
-      <tr>
+      <tr class="import-quarantine-row${selectedClass}" data-row-hash="${escape(row.row_hash)}">
         <td>${escape(row.imported_program_title || '—')}</td>
         <td>${escape(row.nola_code || '—')}</td>
         <td>${escape(row.air_date || '—')}</td>
@@ -1747,6 +1795,7 @@
         </td>
       </tr>`;
     }).join('');
+    renderQuarantinePreview();
   }
 
   function renderPreviews() {
@@ -1887,6 +1936,10 @@
       await refreshExistingUnlinkedRows();
       setStatus('Quarantined imported rows refreshed.');
     });
+    els.importQuarantineFilter?.addEventListener('input', (event) => {
+      imp().quarantineFilterText = event.target.value || '';
+      renderExistingUnlinkedRows();
+    });
     els.importExportAiringsButton?.addEventListener('click', () => {
       const matchedRows = getMatchedRows();
       if (!matchedRows.length) {
@@ -1950,13 +2003,23 @@
         void createAndLinkNewProgram(rowHash);
       }
     });
+    els.importExistingUnlinkedBody?.addEventListener('change', (event) => {
+      const select = event.target.closest('.import-existing-link-select');
+      if (!select) return;
+      const rowHash = select.getAttribute('data-row-hash') || '';
+      const target = (imp().existingUnlinkedRows || []).find((row) => row.row_hash === rowHash);
+      if (target) target.pending_link_program_id = select.value || '';
+    });
     els.importExistingUnlinkedBody?.addEventListener('click', (event) => {
       const rowHash = event.target.closest('[data-row-hash]')?.getAttribute('data-row-hash') || '';
       if (!rowHash) return;
+      imp().selectedExistingUnlinkedHash = rowHash;
+      renderExistingUnlinkedRows();
       const linkButton = event.target.closest('.import-existing-apply-button');
       if (linkButton) {
         const select = els.importExistingUnlinkedBody.querySelector(`.import-existing-link-select[data-row-hash="${rowHash}"]`);
-        const selectedProgramId = select?.value || '';
+        const selectedRow = (imp().existingUnlinkedRows || []).find((row) => row.row_hash === rowHash);
+        const selectedProgramId = select?.value || selectedRow?.pending_link_program_id || '';
         void linkExistingUnlinkedRow(rowHash, selectedProgramId).catch((error) => {
           setNotice(error?.message || String(error), 'warn');
         });

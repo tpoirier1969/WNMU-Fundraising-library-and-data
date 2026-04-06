@@ -9,6 +9,13 @@
     'rights_start', 'rights_end', 'rights_notes', 'premium_summary', 'program_notes', 'status', 'library_state',
     'aired_on_13_1', 'aired_on_13_3', 'last_aired_at', 'last_aired', 'total_contributions', 'avg_contribution_per_drive'
   ];
+  const CORE_EDIT_FIELD_SET = new Set([
+    'title', 'nola_code', 'distributor', 'length_bucket_minutes', 'actual_runtime_seconds', 'actual_runtime_minutes', 'runtime_minutes',
+    'topic_primary', 'topic_secondary', 'rights_start', 'rights_end', 'package_type', 'source_format', 'rights_notes',
+    'premium_summary', 'program_notes'
+  ]);
+  const NON_EDITABLE_FIELD_PATTERN = /^(?:id|program_id|source_row_number|created_at|updated_at|created_by|updated_by|row_hash)$/i;
+  const READ_ONLY_DETAIL_FIELD_PATTERN = /^(?:__.*|total_contributions|avg_contribution_per_drive|avg_per_fundraiser|total_raised|last_aired(?:_at)?|fundraiser_count|drive_count|fundraiser_total|matched_library_title|match_method|match_reason|approved_unlinked|review_status)$/i;
 
   function canEdit() {
     return App.auth.canEdit();
@@ -46,6 +53,144 @@
       premium_summary: '',
       program_notes: ''
     };
+  }
+
+  function resolveBaseProgramSource(source = {}) {
+    const directId = String(derive.programId(source) || '');
+    const directNola = utils.normalizeLookupKey(derive.nola(source));
+    const directTitle = utils.normalizeLookupKey(derive.title(source));
+    return (state.baseRows || []).find((row) => {
+      if (directId && String(derive.programId(row) || '') === directId) return true;
+      if (directNola && utils.normalizeLookupKey(derive.nola(row)) === directNola) return true;
+      if (directTitle && utils.normalizeLookupKey(derive.title(row)) === directTitle) return true;
+      return false;
+    }) || source || {};
+  }
+
+  function isEditableExtraField(key, value) {
+    if (!key || CORE_EDIT_FIELD_SET.has(key) || NON_EDITABLE_FIELD_PATTERN.test(key) || READ_ONLY_DETAIL_FIELD_PATTERN.test(key)) return false;
+    if (typeof value === 'function') return false;
+    if (value && typeof value === 'object' && !Array.isArray(value)) return false;
+    return true;
+  }
+
+  function editableExtraFieldEntries(source = {}) {
+    const baseSource = resolveBaseProgramSource(source);
+    return Object.keys(baseSource || {})
+      .filter((key) => isEditableExtraField(key, baseSource[key]))
+      .sort(utils.compareText)
+      .map((key) => [key, baseSource[key]]);
+  }
+
+  function inferExtraFieldKind(key, value) {
+    if (/^(?:aired_on_13_1|aired_on_13_3)$/i.test(key)) return 'checkbox';
+    if (typeof value === 'boolean') return 'checkbox';
+    if (/(notes|description|summary|premium|memo|copy|text)$/i.test(key)) return 'textarea';
+    if (typeof value === 'number') return 'number';
+    if (value != null && value !== '' && /^-?\d+(?:\.\d+)?$/.test(String(value)) && !/^0\d+/.test(String(value))) return 'number';
+    return 'text';
+  }
+
+  function renderExtraFieldsEditor(source = {}) {
+    if (!els.detailExtraFieldsEditor) return;
+    const entries = editableExtraFieldEntries(source);
+    state.detailExtraFieldDraft = Object.fromEntries(entries.map(([key, value]) => [key, value]));
+    if (!entries.length) {
+      els.detailExtraFieldsEditor.innerHTML = '<div class="detail-extra-empty">No additional writable base-row fields were detected for this title.</div>';
+      return;
+    }
+    els.detailExtraFieldsEditor.innerHTML = `<div class="detail-extra-grid">${entries.map(([key, value]) => {
+      const kind = inferExtraFieldKind(key, value);
+      const label = utils.escapeHtml(displayKeyLabel(key));
+      if (kind === 'checkbox') {
+        const checked = value === true || value === 1 || String(value).toLowerCase() === 'true';
+        return `<label class="detail-form-field detail-extra-field"><span class="filter-label">${label}</span><label class="detail-inline-check"><input type="checkbox" class="detail-extra-input" data-extra-field-key="${utils.escapeHtml(key)}" ${checked ? 'checked' : ''}><span>Enabled</span></label></label>`;
+      }
+      if (kind === 'textarea') {
+        return `<label class="detail-form-field detail-extra-field detail-extra-field-wide"><span class="filter-label">${label}</span><textarea rows="3" class="detail-extra-input" data-extra-field-key="${utils.escapeHtml(key)}">${utils.escapeHtml(value == null ? '' : String(value))}</textarea></label>`;
+      }
+      return `<label class="detail-form-field detail-extra-field"><span class="filter-label">${label}</span><input type="${kind}" class="detail-extra-input" data-extra-field-key="${utils.escapeHtml(key)}" value="${utils.escapeHtml(value == null ? '' : String(value))}"></label>`;
+    }).join('')}</div>`;
+  }
+
+  function syncExtraFieldsDraftFromDom() {
+    const next = { ...(state.detailExtraFieldDraft || {}) };
+    els.detailExtraFieldsEditor?.querySelectorAll('.detail-extra-input').forEach((input) => {
+      const key = input.getAttribute('data-extra-field-key') || '';
+      if (!key) return;
+      if (input.type === 'checkbox') next[key] = Boolean(input.checked);
+      else if (input.tagName === 'TEXTAREA') next[key] = utils.normalizeText(input.value) || null;
+      else if (input.type === 'number') next[key] = input.value === '' ? null : Number(input.value);
+      else next[key] = utils.normalizeText(input.value) || null;
+    });
+    state.detailExtraFieldDraft = next;
+  }
+
+  function extraFieldPayload() {
+    syncExtraFieldsDraftFromDom();
+    return { ...(state.detailExtraFieldDraft || {}) };
+  }
+
+  function buildGraphSeries(driveResults = [], exactAirings = []) {
+    const sourceRows = exactAirings.length ? exactAirings : driveResults;
+    const grouped = new Map();
+    sourceRows.forEach((row) => {
+      const iso = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.date_key);
+      const dateKey = utils.dateKeyFromDate(iso) || utils.normalizeText(iso);
+      const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column)) || (dateKey || 'Unknown');
+      const amount = Number(utils.firstNonEmpty(row?.contribution_amount, row?.total_contributions, row?.dollars, row?.contributed) || 0) || 0;
+      if (!dateKey && !label) return;
+      const key = `${dateKey || label}|${label}`;
+      const prior = grouped.get(key) || { label, dateKey: dateKey || label, amount: 0 };
+      prior.amount += amount;
+      grouped.set(key, prior);
+    });
+    return [...grouped.values()].sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+  }
+
+  function renderPerformanceGraph(program, driveResults = [], exactAirings = []) {
+    if (!els.detailPerformanceGraph || !els.detailGraphPill) return;
+    const series = buildGraphSeries(driveResults, exactAirings);
+    if (series.length < 2) {
+      els.detailGraphPill.textContent = series.length ? 'Only 1 fundraiser' : 'Needs 2 fundraisers';
+      els.detailPerformanceGraph.innerHTML = '<div class="detail-graph-empty">This chart appears once the title has at least two fundraiser/airing contribution points.</div>';
+      return;
+    }
+    els.detailGraphPill.textContent = `${series.length} points`;
+    const width = 760;
+    const height = 220;
+    const margin = { top: 18, right: 22, bottom: 44, left: 58 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+    const maxAmount = Math.max(...series.map((entry) => Number(entry.amount || 0) || 0), 1);
+    const xStep = series.length > 1 ? innerW / (series.length - 1) : innerW;
+    const points = series.map((entry, index) => {
+      const x = margin.left + (xStep * index);
+      const y = margin.top + innerH - ((Number(entry.amount || 0) || 0) / maxAmount * innerH);
+      return { ...entry, x, y };
+    });
+    const polyline = points.map((pt) => `${pt.x},${pt.y}`).join(' ');
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+      const y = margin.top + innerH - (innerH * fraction);
+      const value = maxAmount * fraction;
+      return `<g><line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" class="detail-graph-grid"></line><text x="${margin.left - 8}" y="${y + 4}" text-anchor="end" class="detail-graph-axis">${utils.escapeHtml(utils.formatMoney(value))}</text></g>`;
+    }).join('');
+    const xLabels = points.map((pt, index) => {
+      if (!(index === 0 || index === points.length - 1 || index % Math.max(1, Math.ceil(points.length / 4)) === 0)) return '';
+      return `<text x="${pt.x}" y="${height - 12}" text-anchor="middle" class="detail-graph-axis">${utils.escapeHtml(utils.formatDate(pt.dateKey, pt.dateKey))}</text>`;
+    }).join('');
+    const dots = points.map((pt) => `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(`${pt.label}: ${utils.formatMoney(pt.amount)} on ${utils.formatDate(pt.dateKey, pt.dateKey)}`)}</title></g>`).join('');
+    const latest = points[points.length - 1];
+    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · ${utils.escapeHtml(utils.formatMoney(latest.amount))} most recently on ${utils.escapeHtml(utils.formatDate(latest.dateKey, latest.dateKey))}`;
+    els.detailPerformanceGraph.innerHTML = `
+      <div class="detail-graph-summary">${summary}</div>
+      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart">
+        ${yTicks}
+        <line x1="${margin.left}" y1="${margin.top + innerH}" x2="${width - margin.right}" y2="${margin.top + innerH}" class="detail-graph-axis-line"></line>
+        <polyline fill="none" points="${polyline}" class="detail-graph-line"></polyline>
+        ${dots}
+        ${xLabels}
+      </svg>`;
   }
 
   function labelValue(label, value, extraClass = '') {
@@ -357,6 +502,7 @@
     renderOverview(program, [], []);
     renderSectionLoading();
     renderPremiums(program);
+    renderPerformanceGraph(program, [], []);
     renderAllFields(program);
   }
 
@@ -370,6 +516,7 @@
     renderTiming(timings);
     renderDriveResults(driveResults, exactAirings);
     renderPremiums(program);
+    renderPerformanceGraph(program, driveResults, exactAirings);
     renderAllFields(program);
   }
 
@@ -442,6 +589,7 @@
     form.elements.rights_notes.value = utils.normalizeText(source.rights_notes);
     form.elements.premium_summary.value = derive.premiumSummary(source);
     form.elements.program_notes.value = derive.description(source);
+    renderExtraFieldsEditor(source);
   }
 
   function findDuplicates({ title = '', nola = '', excludeId = '' } = {}) {
@@ -483,6 +631,7 @@
   function handleEditorInput() {
     if (!state.detailEditMode) {
       if (els.detailTimingEditor) els.detailTimingEditor.innerHTML = '';
+      if (els.detailExtraFieldsEditor) els.detailExtraFieldsEditor.innerHTML = '';
       return;
     }
     const form = els.detailEditForm;
@@ -631,7 +780,8 @@
       source_format: utils.normalizeText(form.elements.source_format.value) || null,
       rights_notes: utils.normalizeText(form.elements.rights_notes.value) || null,
       premium_summary: utils.normalizeText(form.elements.premium_summary.value) || null,
-      program_notes: utils.normalizeText(form.elements.program_notes.value) || null
+      program_notes: utils.normalizeText(form.elements.program_notes.value) || null,
+      ...extraFieldPayload()
     };
     const rightsBegin = utils.parseFlexibleDateInput(form.elements.rights_start.value);
     const rightsEnd = utils.parseFlexibleDateInput(form.elements.rights_end.value);

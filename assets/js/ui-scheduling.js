@@ -2240,8 +2240,15 @@
       if (!scheduleId) return;
       activateScheduleById(scheduleId, { focusCalendar: true });
     };
+    const reopenSelectedSchedule = (event) => {
+      const scheduleId = String(event.target?.value || state.activeScheduleId || '');
+      if (!scheduleId) return;
+      activateScheduleById(scheduleId, { focusCalendar: true });
+    };
     els.scheduleDesktopSelect?.addEventListener('change', handleScheduleSelectChange);
     els.scheduleMobileSelect?.addEventListener('change', handleScheduleSelectChange);
+    els.scheduleDesktopSelect?.addEventListener('click', reopenSelectedSchedule);
+    els.scheduleMobileSelect?.addEventListener('click', reopenSelectedSchedule);
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });
     els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: false, activateFirst: true }); });
     els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: true, activateFirst: true }); });
