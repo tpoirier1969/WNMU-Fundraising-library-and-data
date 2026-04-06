@@ -2792,7 +2792,7 @@ button.primary {
 .performance-confidence.confidence-none { background: rgba(120, 120, 120, 0.1); color: #666; border-color: rgba(120, 120, 120, 0.18); }
 
 
-/* v0.20.55 library earnings tint + compact editor */
+/* v0.20.56 scheduler quick filters + library earnings tint + compact editor */
 .programs-table tbody tr.library-earnings-high .title-cell {
   box-shadow: inset 4px 0 0 rgba(18, 134, 127, 0.95);
   background: rgba(36, 176, 168, 0.11);
@@ -2881,4 +2881,13 @@ button.primary {
   .detail-form-row-split {
     grid-template-columns: 1fr;
   }
+}
+
+
+.schedule-picker-filters-row {
+  padding-top: 4px;
+  border-top: 1px dashed rgba(255,255,255,0.10);
+}
+.schedule-picker-filters-row .schedule-inline-check span {
+  white-space: nowrap;
 }

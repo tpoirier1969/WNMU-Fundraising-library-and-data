@@ -1036,6 +1036,37 @@
     return 1;
   }
 
+  function scheduleSlotYear(dateKey = '') {
+    const raw = utils.normalizeText(dateKey);
+    const match = raw.match(/^(\d{4})-/);
+    return match ? Number(match[1]) : null;
+  }
+
+  function scheduleEntryHasAired(row) {
+    const aired = utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at);
+    if (utils.normalizeText(aired)) return true;
+    const fundraiserCount = Number(utils.firstNonEmpty(row?.fundraiser_count, row?.drive_count, row?.fundraiser_total, row?.drive_total, 0)) || 0;
+    if (fundraiserCount > 0) return true;
+    const avg = Number(derive.avgPerFundraiser(row) || 0) || 0;
+    const total = Number(derive.totalRaised(row) || 0) || 0;
+    return avg > 0 || total > 0;
+  }
+
+  function scheduleEntryPassesExtraFilters(row, slotDateKey, usingNonPledge = false) {
+    if (!row) return false;
+    if (!usingNonPledge && state.scheduleFilterUnaired && scheduleEntryHasAired(row)) return false;
+    if (state.scheduleFilterRightsStartYear) {
+      const targetYear = scheduleSlotYear(slotDateKey) || scheduleSlotYear(getActiveSchedule()?.startDate || '') || new Date().getFullYear();
+      const rightsYear = scheduleSlotYear(derive.rightsBegin(row));
+      if (!rightsYear || rightsYear != targetYear) return false;
+    }
+    if (!usingNonPledge && state.scheduleFilterTopEarner) {
+      const avg = Number(derive.avgPerFundraiser(row) || 0) || 0;
+      if (avg < 500) return false;
+    }
+    return true;
+  }
+
   function scheduleLookupEntries(usingNonPledge = false) {
     const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
     const seen = new Set();
@@ -1083,7 +1114,8 @@
     const hasTopic = Boolean(topicKey);
     const hasSearch = searchTokens.length > 0 && text.length >= scheduleSearchMinChars();
     const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
-    if (!hasTopic && !hasSearch) return [];
+    const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
+    if (!hasTopic && !hasSearch && !hasExtraFilters) return [];
     return scheduleLookupEntries(usingNonPledge)
       .filter((entry) => {
         if (!hasTopic) return true;
@@ -1094,6 +1126,7 @@
         const haystack = `${entry.titleKey} ${entry.nolaKey}`.trim();
         return searchTokens.every((token) => haystack.includes(token));
       })
+      .filter((entry) => scheduleEntryPassesExtraFilters(entry.row, slotDateKey, usingNonPledge))
       .map((entry) => ({ row: entry.row, rights: rightsCheckForDate(entry.row, slotDateKey), isNonPledge: usingNonPledge }))
       .sort((a, b) => {
         if (a.rights.ok !== b.rights.ok) return a.rights.ok ? -1 : 1;
@@ -1106,6 +1139,9 @@
     state.selectedScheduleSlot = slot;
     state.scheduleProgramQuery = '';
     state.scheduleProgramTopicFilter = '';
+    state.scheduleFilterUnaired = false;
+    state.scheduleFilterRightsStartYear = false;
+    state.scheduleFilterTopEarner = false;
     showScheduleModalWarning('', '');
     const schedule = getActiveSchedule();
     const placement = slot && schedule ? findPlacementForSlot(schedule, slot.key) : null;
@@ -1514,10 +1550,23 @@
       els.scheduleProgramTopicSelect.disabled = !editable;
     }
     if (els.scheduleLiveBreakFlag) els.scheduleLiveBreakFlag.disabled = !editable;
+    const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
+    if (els.scheduleFilterUnaired) {
+      els.scheduleFilterUnaired.checked = Boolean(state.scheduleFilterUnaired);
+      els.scheduleFilterUnaired.disabled = !editable || usingNonPledge;
+    }
+    if (els.scheduleFilterRightsStartYear) {
+      els.scheduleFilterRightsStartYear.checked = Boolean(state.scheduleFilterRightsStartYear);
+      els.scheduleFilterRightsStartYear.disabled = !editable;
+    }
+    if (els.scheduleFilterTopEarner) {
+      els.scheduleFilterTopEarner.checked = Boolean(state.scheduleFilterTopEarner);
+      els.scheduleFilterTopEarner.disabled = !editable || usingNonPledge;
+    }
     const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
     const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
     const hasSearch = utils.normalizeLookupKey(state.scheduleProgramQuery || '').length >= scheduleSearchMinChars();
-    const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
+    const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
 
     if (!editable) {
@@ -1538,10 +1587,17 @@
       els.scheduleProgramResults.innerHTML = '<div class="schedule-hint">Viewer mode. Empty slots cannot be edited until an admin signs in.</div>';
     } else if (!sourceCount) {
       els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No readable ${usingNonPledge ? 'Program Library' : 'pledge'} titles are loaded for scheduling right now.</div>`;
-    } else if (!hasTopic && !hasSearch) {
-      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Choose a topic to browse or type ${scheduleSearchMinChars()}+ letter${scheduleSearchMinChars() === 1 ? '' : 's'} to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title.</div>`;
+    } else if (!hasTopic && !hasSearch && !hasExtraFilters) {
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">Choose a topic to browse, type ${scheduleSearchMinChars()}+ letter${scheduleSearchMinChars() === 1 ? '' : 's'} to match an existing ${usingNonPledge ? 'Program Library' : 'pledge'} title, or use the quick filters below.</div>`;
     } else if (!matches.length) {
-      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched this topic/search combination.</div>`;
+      const filterBits = [];
+      if (hasTopic) filterBits.push('topic');
+      if (hasSearch) filterBits.push('title search');
+      if (state.scheduleFilterUnaired) filterBits.push('unaired only');
+      if (state.scheduleFilterRightsStartYear) filterBits.push(`rights start ${scheduleSlotYear(slot.dateKey) || 'this year'}`);
+      if (state.scheduleFilterTopEarner) filterBits.push('top earner');
+      const descriptor = filterBits.length ? filterBits.join(' + ') : 'this filter';
+      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched ${utils.escapeHtml(descriptor)}.</div>`;
     } else {
       els.scheduleProgramResults.innerHTML = matches.map(({ row, rights, isNonPledge }) => {
         const runtimeLabel = lengthMetaLabel(row);
@@ -1576,7 +1632,13 @@
       if (!editable) {
         els.scheduleAssignmentNote.textContent = 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
       } else if (usingNonPledge) {
-        els.scheduleAssignmentNote.textContent = 'Non-pledge markers come from the WNMU Program Library, render in light green, and stay out of the pledge detail list below.';
+        els.scheduleAssignmentNote.textContent = 'Non-pledge markers come from the WNMU Program Library, render in light green, and stay out of the pledge detail list below. Earnings filters stay off in this mode.';
+      } else if (state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner) {
+        const notes = [];
+        if (state.scheduleFilterUnaired) notes.push('unaired only');
+        if (state.scheduleFilterRightsStartYear) notes.push(`rights begin in ${scheduleSlotYear(slot.dateKey) || 'this year'}`);
+        if (state.scheduleFilterTopEarner) notes.push('top earners only');
+        els.scheduleAssignmentNote.textContent = `Quick filters active: ${notes.join(' · ')}.`;
       } else {
         els.scheduleAssignmentNote.textContent = 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.';
       }
@@ -2150,7 +2212,18 @@
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
-    els.scheduleNonPledgeToggle?.addEventListener('change', (event) => { state.scheduleNonPledgeMode = Boolean(event.target.checked); state.scheduleProgramTopicFilter = ''; renderProgramPicker(); });
+    els.scheduleNonPledgeToggle?.addEventListener('change', (event) => {
+      state.scheduleNonPledgeMode = Boolean(event.target.checked);
+      state.scheduleProgramTopicFilter = '';
+      if (state.scheduleNonPledgeMode) {
+        state.scheduleFilterUnaired = false;
+        state.scheduleFilterTopEarner = false;
+      }
+      renderProgramPicker();
+    });
+    els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
+    els.scheduleFilterRightsStartYear?.addEventListener('change', (event) => { state.scheduleFilterRightsStartYear = Boolean(event.target.checked); renderProgramPicker(); });
+    els.scheduleFilterTopEarner?.addEventListener('change', (event) => { state.scheduleFilterTopEarner = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-program-id]');
       if (!btn) return;
