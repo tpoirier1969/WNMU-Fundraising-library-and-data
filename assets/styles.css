@@ -2748,3 +2748,23 @@ button.primary {
 .import-file-details summary { cursor: pointer; }
 .import-file-details-list { margin-top: 0.35rem; display: grid; gap: 0.35rem; white-space: normal; min-width: 20rem; }
 .import-file-detail-line { line-height: 1.35; }
+
+
+.performance-confidence {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(18, 62, 107, 0.18);
+  background: rgba(18, 62, 107, 0.08);
+  color: #123e6b;
+}
+.performance-confidence.confidence-high { background: rgba(26, 127, 55, 0.12); color: #1a7f37; border-color: rgba(26, 127, 55, 0.18); }
+.performance-confidence.confidence-medium { background: rgba(0, 102, 204, 0.1); color: #0b5cad; border-color: rgba(0, 102, 204, 0.18); }
+.performance-confidence.confidence-low,
+.performance-confidence.confidence-very-low { background: rgba(160, 98, 0, 0.12); color: #8a5400; border-color: rgba(160, 98, 0, 0.18); }
+.performance-confidence.confidence-none { background: rgba(120, 120, 120, 0.1); color: #666; border-color: rgba(120, 120, 120, 0.18); }

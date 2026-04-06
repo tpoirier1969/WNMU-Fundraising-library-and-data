@@ -13,6 +13,8 @@
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const DAY_ORDER = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart', 'topic_time']);
+  const MIN_SAMPLE_DEFAULT = 1;
+  const MIN_SAMPLE_TOPIC_AVERAGE = 2;
 
   function perf() { return state.performance; }
 
@@ -774,6 +776,33 @@
     return `${value} (${utils.formatCount(group.airingCount)})`;
   }
 
+
+  function minSampleThreshold() {
+    const criterion = perf().criterion;
+    const metric = perf().metric;
+    if ((criterion === 'topic' || criterion === 'topic_time') && metric === 'avg_dollars') return MIN_SAMPLE_TOPIC_AVERAGE;
+    return MIN_SAMPLE_DEFAULT;
+  }
+
+  function confidenceForGroup(group) {
+    const count = Number(group?.airingCount || 0);
+    if (count >= 6) return 'High';
+    if (count >= 3) return 'Medium';
+    if (count >= 2) return 'Low';
+    if (count >= 1) return 'Very low';
+    return 'None';
+  }
+
+  function confidenceClassForGroup(group) {
+    const label = confidenceForGroup(group).toLowerCase().replace(/\s+/g, '-');
+    return `confidence-${label}`;
+  }
+
+  function minSampleExplanation() {
+    const threshold = minSampleThreshold();
+    if (threshold <= 1) return 'No minimum group-size screen is active for this comparison.';
+    return `Average-based topic views hide groups with fewer than ${utils.formatCount(threshold)} airings so one-offs do not pretend to be stable winners.`;
+  }
   function chartTypeLabel(type) {
     switch (type) {
       case 'line': return 'Line chart';
@@ -870,6 +899,8 @@
       programOpenId: group.programIds.size === 1 ? [...group.programIds][0] : ''
     }));
 
+    const minGroupAirings = minSampleThreshold();
+
     let sorted = grouped.sort((a, b) => {
       if (effectiveChartType() === 'line' && isLineFriendly(criterion)) {
         const ak = criterionOrderKey(a, criterion);
@@ -881,6 +912,10 @@
       if (diff !== 0) return diff;
       return utils.compareText(a.label, b.label);
     });
+
+    if (minGroupAirings > 1) {
+      sorted = sorted.filter((group) => group.airingCount >= minGroupAirings);
+    }
 
     if (perf().quickFilter === 'weak_returns') {
       sorted = sorted
@@ -912,6 +947,8 @@
     perf().filteredRecords = records;
     perf().groups = limited;
     perf().analysisMeta = {
+      minGroupAirings,
+      hiddenSmallSampleGroupCount: Math.max(0, grouped.length - sorted.length),
       criterion,
       postFilterCount: scopedRecords.length,
       integrityEligibleCount: integrityFiltered.length,
@@ -1059,7 +1096,7 @@
         <div class="topic-time-header"><div class="topic-time-corner">Day / hour</div>${header}</div>
         <div class="topic-time-grid">${rows}</div>
       </div>
-      <div class="performance-chart-note">Each filled cell is one day-and-hour slot for the current topic filter. Darker cells indicate stronger ${utils.escapeHtml(metricLabel().toLowerCase())}.</div>
+      <div class="performance-chart-note">Each filled cell is one day-and-hour slot for the current topic filter. Darker cells indicate stronger ${utils.escapeHtml(metricLabel().toLowerCase())}. Cells with fewer than ${utils.escapeHtml(utils.formatCount(minSampleThreshold()))} airings are hidden in average-based topic-time views.</div>
     `;
   }
 
@@ -1089,7 +1126,7 @@
     if (!els.performanceTableBody) return;
     if (els.performanceTableGroupHeader) els.performanceTableGroupHeader.textContent = criterionDisplayName();
     if (!groups.length) {
-      els.performanceTableBody.innerHTML = '<tr><td colspan="5" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
+      els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
       return;
     }
     els.performanceTableBody.innerHTML = groups.map((group) => {
@@ -1102,6 +1139,7 @@
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
         <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
+        <td><span class="performance-confidence ${utils.escapeHtml(confidenceClassForGroup(group))}">${utils.escapeHtml(confidenceForGroup(group))}</span></td>
         <td>${utils.escapeHtml(utils.formatCount(group.titleCount))}</td>
       </tr>
     `;
@@ -1151,6 +1189,11 @@
         <div class="performance-criteria-pill warn"><span class="label">Unreconciled to saved schedule</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedScheduleMismatchCount))}</span></div>
       `;
     }
+    if (analysisMeta.hiddenSmallSampleGroupCount) {
+      els.performanceCriteriaBar.innerHTML += `
+        <div class="performance-criteria-pill warn"><span class="label">Hidden tiny-sample groups</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.hiddenSmallSampleGroupCount))}</span></div>
+      `;
+    }
     if (analysisMeta.excludedWeakTemporalCount && TEMPORAL_CRITERIA.has(perf().criterion)) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Excluded weak temporal rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedWeakTemporalCount))}</span></div>
@@ -1168,6 +1211,7 @@
       ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : 'Checks both primary and secondary topic text from the library where available.'],
       ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one day-and-hour slot. The chart becomes a weekly heatmap so the strongest slots stand out fast.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized events used in the comparison.'],
+      ['Minimum airing screen', meta.minGroupAirings > 1 ? `${utils.formatCount(meta.minGroupAirings)} airings` : 'None', minSampleExplanation()],
       ['Source basis', 'Strict imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows, but analytics now trust only rows with an explicit per-airing dollars field. Report totals are not allowed to masquerade as airing dollars.`],
       ['Program identity rule', 'Strict only', `Program/topic analytics now require a trustworthy identity path (program id, NOLA, or exact title match). Fuzzy title rematching is disabled.`],
       ['Schedule reconciliation', meta.excludedScheduleMismatchCount ? `${utils.formatCount(meta.excludedScheduleMismatchCount)} rows quarantined` : 'No known schedule mismatches in this filter', 'If a row falls inside a saved schedule window but does not reconcile to any scheduled placement, it is excluded instead of blended into the analytics.'],
@@ -1195,6 +1239,7 @@
     notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.scheduleMismatchRows || 0)} normalized events were quarantined because they do not reconcile to a saved schedule placement.`);
     if (shape.annotatedTitleRows) notes.push(`${utils.formatCount(shape.annotatedTitleRows || 0)} imported rows look like they contain title annotations or notes. Those rows are still allowed if their identity matches cleanly, but they are called out here because they deserve eyeballs.`);
     notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
+    if (meta.minGroupAirings > 1) notes.push(`This view hides groups with fewer than ${utils.formatCount(meta.minGroupAirings)} airings, so one lucky hit does not get crowned as a stable winner.`);
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
     if (meta.noTemporalSupport) notes.push('Day/date/time views are intentionally cautious now: weak unmatched rows are excluded, and if nothing trustworthy remains the comparison is marked unavailable instead of pretending to know.');
@@ -1283,8 +1328,10 @@
         return `“Recent” means the trailing 90 days ending on ${endText}. This is a recency-focused view, not yet a true prior-period momentum delta.`;
       case 'topic_time_performance':
         return perf().topicFilter
-          ? 'This view ranks day/hour slots for the selected main topic and also draws a weekly heatmap so you can see when that topic performs best.'
+          ? 'This view ranks day/hour slots for the selected main topic and also draws a weekly heatmap so you can see when that topic performs best. Tiny-sample slots are hidden.'
           : 'Pick a main topic to make this view useful. Without a topic filter, the heatmap blends every topic together.';
+      case 'topic_winners':
+        return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs, and tiny-sample topic groups are hidden.';
       default:
         return '';
     }
@@ -1348,7 +1395,7 @@
       ? 'Not enough trustworthy day/time evidence for this view yet.'
       : meta.lowConfidenceTemporal
         ? 'Small temporal sample — read it cautiously.'
-        : `${utils.formatCount(records.length)} filtered rows after quarantining ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows.`;
+        : `${utils.formatCount(records.length)} filtered rows after quarantining ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows${meta.hiddenSmallSampleGroupCount ? ` and hiding ${utils.formatCount(meta.hiddenSmallSampleGroupCount)} tiny-sample groups` : ''}.`;
     const quickTail = quickFilterExplanation();
     setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }
