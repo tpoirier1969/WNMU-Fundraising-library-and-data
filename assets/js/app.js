@@ -60,43 +60,6 @@
     }
   }
 
-  function programOpenTrigger(target) {
-    return target?.closest?.('[data-program-open-id], [data-open-id]') || null;
-  }
-
-  function resolvedProgramOpenId(trigger) {
-    if (!trigger) return '';
-    const candidate = trigger.dataset?.programOpenId || trigger.dataset?.openId || '';
-    return App.programLinks?.resolveId(candidate) || '';
-  }
-
-  function openProgramFromTrigger(trigger, event = null) {
-    const programId = resolvedProgramOpenId(trigger);
-    if (!programId) return false;
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    void App.detailUi.loadProgramDetail(programId);
-    return true;
-  }
-
-  function bindProgramOpenDelegation() {
-    document.addEventListener('click', (event) => {
-      const trigger = programOpenTrigger(event.target);
-      if (!trigger) return;
-      openProgramFromTrigger(trigger, event);
-    }, true);
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      const trigger = programOpenTrigger(event.target);
-      if (!trigger) return;
-      const isKeyboardTarget = trigger.hasAttribute('tabindex') || trigger.tagName === 'A' || trigger.tagName === 'BUTTON';
-      if (!isKeyboardTarget) return;
-      openProgramFromTrigger(trigger, event);
-    }, true);
-  }
 
   function bindEvents() {
     let searchTimer = null;
@@ -280,10 +243,10 @@
     await refreshAll({ workspace: 'library' });
   }
 
-  App.app = { init, refreshAll, bindEvents, openProgramFromTrigger };
+  App.app = { init, refreshAll, bindEvents };
 
   window.addEventListener('DOMContentLoaded', () => {
-    bindProgramOpenDelegation();
+    App.programOpen?.bindDelegation?.();
     bindEvents();
     ensureMobileModeControls();
     window.addEventListener('resize', ensureMobileModeControls);

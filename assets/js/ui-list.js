@@ -40,20 +40,15 @@
     return true;
   }
 
+  function sameLookupValue(a, b) {
+    return utils.normalizeLookupKey(a) === utils.normalizeLookupKey(b);
+  }
+
   function rowMatchesFilters(row) {
     if (!rowMatchesStatus(row)) return false;
-    if (state.topicFilter) {
-      const topicKey = utils.normalizeLookupKey(derive.topicPrimary(row));
-      if (topicKey !== state.topicFilter) return false;
-    }
-    if (state.secondaryTopicFilter) {
-      const secondaryKey = utils.normalizeLookupKey(derive.topicSecondary(row));
-      if (secondaryKey !== state.secondaryTopicFilter) return false;
-    }
-    if (state.distributorFilter) {
-      const distributorKey = utils.normalizeLookupKey(derive.distributor(row));
-      if (distributorKey !== state.distributorFilter) return false;
-    }
+    if (state.topicFilter && !sameLookupValue(derive.topicPrimary(row), state.topicFilter)) return false;
+    if (state.secondaryTopicFilter && !sameLookupValue(derive.topicSecondary(row), state.secondaryTopicFilter)) return false;
+    if (state.distributorFilter && !sameLookupValue(derive.distributor(row), state.distributorFilter)) return false;
     if (state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
     return rowMatchesSearch(row);
   }
@@ -69,7 +64,7 @@
       case 'rights_end':
         return utils.compareDate(derive.rightsEnd(a), derive.rightsEnd(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'last_aired':
-        return utils.compareDate(derive.lastAiredValue(a), derive.lastAiredValue(b)) || utils.compareText(derive.title(a), derive.title(b));
+        return utils.compareDate(utils.firstNonEmpty(a?.last_aired_at, a?.last_aired, a?.aired_at), utils.firstNonEmpty(b?.last_aired_at, b?.last_aired, b?.aired_at)) || utils.compareText(derive.title(a), derive.title(b));
       case 'avg_per_fundraiser':
         return utils.compareNumber(derive.avgPerFundraiser(a), derive.avgPerFundraiser(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'topic':
@@ -99,43 +94,43 @@
     return `<div class="premium-lines">${premiumLines(value).map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
   }
 
-  function optionRows(exceptField = '') {
-    return (state.rawRows || []).filter((row) => {
-      if (!rowMatchesStatus(row) || !rowMatchesSearch(row)) return false;
-      if (exceptField !== 'topic' && state.topicFilter && utils.normalizeLookupKey(derive.topicPrimary(row)) !== state.topicFilter) return false;
-      if (exceptField !== 'secondary' && state.secondaryTopicFilter && utils.normalizeLookupKey(derive.topicSecondary(row)) !== state.secondaryTopicFilter) return false;
-      if (exceptField !== 'distributor' && state.distributorFilter && utils.normalizeLookupKey(derive.distributor(row)) !== state.distributorFilter) return false;
-      if (exceptField !== 'length' && state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
-      return true;
-    });
+
+  function scoreOptionLabel(value) {
+    const text = utils.normalizeText(value);
+    if (!text) return -1;
+    const hasLower = /[a-z]/.test(text);
+    const hasUpper = /[A-Z]/.test(text);
+    const isAllCaps = hasUpper && !hasLower;
+    if (isAllCaps) return 1;
+    if (hasUpper && hasLower) return 3;
+    return 2;
   }
 
-  function syncFilterValue(selectEl, stateKey, options = []) {
-    const hasValue = options.some((entry) => String(entry?.value ?? entry ?? '') === String(state[stateKey] || ''));
-    if (!hasValue) state[stateKey] = '';
-    if (selectEl) selectEl.value = state[stateKey] || '';
+  function canonicalOptionEntries(values = []) {
+    const map = new Map();
+    (values || []).forEach((value) => {
+      const label = utils.normalizeText(value);
+      const key = utils.normalizeLookupKey(label);
+      if (!key) return;
+      const existing = map.get(key);
+      if (!existing || scoreOptionLabel(label) > scoreOptionLabel(existing.label) || utils.compareText(label, existing.label) < 0) {
+        map.set(key, { value: label, label });
+      }
+    });
+    return [...map.values()].sort((a, b) => utils.compareText(a.label, b.label));
   }
 
   function buildFilterOptions() {
-    const topicOptions = utils.canonicalTextOptions(optionRows('topic').map((row) => derive.topicPrimary(row)));
-    const secondaryTopicOptions = utils.canonicalTextOptions(optionRows('secondary').map((row) => derive.topicSecondary(row)));
-    const distributorOptions = utils.canonicalTextOptions(optionRows('distributor').map((row) => derive.distributor(row)));
-    const lengthOptions = Array.from(new Set(optionRows('length').map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b));
+    const rows = (state.rawRows || []).filter(rowMatchesStatus);
+    state.topicOptions = canonicalOptionEntries(rows.map((row) => derive.topicPrimary(row)).filter(Boolean));
+    state.secondaryTopicOptions = canonicalOptionEntries(rows.map((row) => derive.topicSecondary(row)).filter(Boolean));
+    state.distributorOptions = canonicalOptionEntries(rows.map((row) => derive.distributor(row)).filter(Boolean));
+    state.lengthOptions = Array.from(new Set(rows.map((row) => derive.lengthLabel(row)).filter((value) => value && value !== '—'))).sort((a, b) => Number(a) - Number(b));
 
-    state.topicOptions = topicOptions;
-    state.secondaryTopicOptions = secondaryTopicOptions;
-    state.distributorOptions = distributorOptions;
-    state.lengthOptions = lengthOptions;
-
-    syncFilterValue(els.topicFilter, 'topicFilter', topicOptions);
-    syncFilterValue(els.secondaryTopicFilter, 'secondaryTopicFilter', secondaryTopicOptions);
-    syncFilterValue(els.distributorFilter, 'distributorFilter', distributorOptions);
-    if (!lengthOptions.includes(state.lengthFilter)) state.lengthFilter = '';
-
-    renderSelectOptions(els.topicFilter, topicOptions, state.topicFilter, 'All topics');
-    renderSelectOptions(els.secondaryTopicFilter, secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
+    renderSelectOptions(els.topicFilter, state.topicOptions, state.topicFilter, 'All topics');
+    renderSelectOptions(els.secondaryTopicFilter, state.secondaryTopicOptions, state.secondaryTopicFilter, 'All secondary topics');
     renderSelectOptions(els.lengthFilter, state.lengthOptions, state.lengthFilter, 'All lengths');
-    renderSelectOptions(els.distributorFilter, distributorOptions, state.distributorFilter, 'All distributors');
+    renderSelectOptions(els.distributorFilter, state.distributorOptions, state.distributorFilter, 'All distributors');
     if (els.sortFieldSelect) els.sortFieldSelect.value = state.sortField;
     if (els.sortDirectionButton) els.sortDirectionButton.textContent = state.sortDirection === 'desc' ? '↓ Desc' : '↑ Asc';
     syncSortHeaders();
@@ -186,13 +181,10 @@
 
   function updateSummary() {
     const filters = [];
-    const topicLabel = state.topicOptions.find((entry) => entry.value === state.topicFilter)?.label || state.topicFilter;
-    const secondaryTopicLabel = state.secondaryTopicOptions.find((entry) => entry.value === state.secondaryTopicFilter)?.label || state.secondaryTopicFilter;
-    const distributorLabel = state.distributorOptions.find((entry) => entry.value === state.distributorFilter)?.label || state.distributorFilter;
-    if (state.topicFilter) filters.push(`topic: ${topicLabel}`);
-    if (state.secondaryTopicFilter) filters.push(`secondary: ${secondaryTopicLabel}`);
+    if (state.topicFilter) filters.push(`topic: ${state.topicFilter}`);
+    if (state.secondaryTopicFilter) filters.push(`secondary: ${state.secondaryTopicFilter}`);
     if (state.lengthFilter) filters.push(`length: ${state.lengthFilter}`);
-    if (state.distributorFilter) filters.push(`distributor: ${distributorLabel}`);
+    if (state.distributorFilter) filters.push(`distributor: ${state.distributorFilter}`);
     filters.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
     filters.push(`sorted by ${utils.sortLabel(state.sortField)} ${state.sortDirection === 'desc' ? 'descending' : 'ascending'}`);
     const sourceName = state.librarySource ? `source: ${state.librarySource.name}` : 'source: unknown';
@@ -206,7 +198,6 @@
   }
 
   function applyLibraryView() {
-    buildFilterOptions();
     const sourceRows = state.rawRows || [];
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));
     state.totalRows = state.rows.length;

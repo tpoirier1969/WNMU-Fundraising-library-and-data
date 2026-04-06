@@ -377,28 +377,64 @@
     return -1 * ((base + noise) % 2147483000 || 1);
   }
 
+  function attemptSignature(payload = {}) {
+    return JSON.stringify(Object.keys(payload).sort().map((key) => [key, payload[key]]));
+  }
+
+  function extractMissingColumnName(message = '') {
+    const exact = String(message || '').match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/i);
+    if (exact?.[1]) return exact[1];
+    const generic = String(message || '').match(/column ['"]?([a-zA-Z0-9_]+)['"]? does not exist/i);
+    return generic?.[1] || '';
+  }
+
+  function omitKeys(payload = {}, keys = []) {
+    const next = { ...payload };
+    keys.forEach((key) => { delete next[key]; });
+    return next;
+  }
+
   async function createProgram(payload) {
     const hasSourceRowNumber = Object.prototype.hasOwnProperty.call(payload, 'source_row_number');
     const hasWorkspaceKey = Object.prototype.hasOwnProperty.call(payload, 'workspace_key');
-    const attempts = [{ ...payload }];
+    const attempts = [];
+    const queued = new Set();
 
-    if (!hasWorkspaceKey) attempts.push({ ...payload, workspace_key: 'default' });
-    if (!hasSourceRowNumber) attempts.push({ ...payload, source_row_number: buildManualSourceRowNumber() });
-    if (!hasSourceRowNumber && !hasWorkspaceKey) attempts.push({ ...payload, workspace_key: 'default', source_row_number: buildManualSourceRowNumber() });
+    const pushAttempt = (attempt, priority = false) => {
+      const signature = attemptSignature(attempt);
+      if (queued.has(signature)) return;
+      queued.add(signature);
+      if (priority) attempts.unshift(attempt);
+      else attempts.push(attempt);
+    };
+
+    pushAttempt({ ...payload });
+    if (!hasSourceRowNumber) pushAttempt({ ...payload, source_row_number: buildManualSourceRowNumber() });
+    if (!hasWorkspaceKey) pushAttempt({ ...payload, workspace_key: 'default' });
+    if (!hasSourceRowNumber && !hasWorkspaceKey) pushAttempt({ ...payload, workspace_key: 'default', source_row_number: buildManualSourceRowNumber() });
 
     let lastResponse = null;
-    for (const attempt of attempts) {
+    while (attempts.length) {
+      const attempt = attempts.shift();
       const response = await state.client.from(constants.BASE_TABLE).insert(attempt).select('*').single();
       lastResponse = response;
       if (!response.error) return response;
       const message = String(response.error?.message || '');
+      const missingColumn = extractMissingColumnName(message);
+
+      if (missingColumn === 'workspace_key' && Object.prototype.hasOwnProperty.call(attempt, 'workspace_key')) {
+        pushAttempt(omitKeys(attempt, ['workspace_key']), true);
+        continue;
+      }
+      if (missingColumn === 'source_row_number' && Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
+        pushAttempt(omitKeys(attempt, ['source_row_number']), true);
+        continue;
+      }
       if (/workspace_key/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'workspace_key')) continue;
       if (/source_row_number/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) continue;
       if (/source_row_number/i.test(message) && /duplicate key value|unique constraint/i.test(message) && Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
-        const retryAttempt = { ...attempt, source_row_number: buildManualSourceRowNumber() };
-        const retryResponse = await state.client.from(constants.BASE_TABLE).insert(retryAttempt).select('*').single();
-        lastResponse = retryResponse;
-        if (!retryResponse.error) return retryResponse;
+        pushAttempt({ ...attempt, source_row_number: buildManualSourceRowNumber() }, true);
+        continue;
       }
       return response;
     }

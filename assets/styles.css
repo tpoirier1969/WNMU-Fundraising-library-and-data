@@ -585,19 +585,6 @@ button.small { padding: 6px 7px; }
   max-height: calc(100vh - 214px);
 }
 
-.schedule-picker-flags-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  align-items: center;
-}
-
-.schedule-inline-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .description-snippet {
   margin-top: 4px;
   font-size: .76rem;
@@ -1139,14 +1126,32 @@ button.primary {
   .scheduled-program-line-bottom { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 }
 
+
+@media (min-width: 761px) {
+  [data-workspace-pane="library"] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  [data-workspace-pane="library"] .list-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  [data-workspace-pane="library"] .table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 @media (min-width: 761px) {
   html, body { height: 100%; overflow: hidden; }
   .app-shell { height: 100vh; overflow: hidden; }
   .workspace-pane { flex: 1 1 auto; min-height: 0; overflow: auto; margin-top: 12px; padding-right: 2px; }
-  [data-workspace-pane="library"] { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  [data-workspace-pane="library"] .controls { flex: 0 0 auto; }
-  [data-workspace-pane="library"] .list-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-  [data-workspace-pane="library"] .all-rows-wrap { flex: 1 1 auto; min-height: 0; max-height: none; }
 }
 
 @media (max-width: 760px) {
