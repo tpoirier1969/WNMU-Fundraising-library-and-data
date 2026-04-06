@@ -1,6 +1,6 @@
 (() => {
   const App = window.PledgeLib;
-  const { state, utils } = App;
+  const { state, utils, constants } = App;
   const { els, setNotice, setBuildMeta, setDetailNotice } = App.dom;
 
   const refreshAll = (...args) => App.libraryLoader.refreshAll(...args);
@@ -195,6 +195,14 @@
     bindEvents();
     ensureMobileModeControls();
     window.addEventListener('resize', ensureMobileModeControls);
-    void init();
+    void init().catch((error) => {
+      console.error(error);
+      const message = error?.message || 'App startup failed.';
+      setNotice(message, 'warn');
+      if (els.libraryBody) {
+        els.libraryBody.innerHTML = `<tr><td colspan="10" class="placeholder-row">${utils.escapeHtml(message)}</td></tr>`;
+      }
+      if (els.resultSummary) els.resultSummary.textContent = 'Load failed.';
+    });
   });
 })();
