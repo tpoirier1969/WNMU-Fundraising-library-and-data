@@ -1340,6 +1340,7 @@
     if (els.fundraiserPledgesTotal) els.fundraiserPledgesTotal.value = utils.formatCount(importedPledges);
     if (els.fundraiserImportTotal) els.fundraiserImportTotal.value = utils.formatMoney(imported);
     if (els.fundraiserImportDifference) els.fundraiserImportDifference.value = utils.formatMoney(diff);
+    if (els.fundraiserNonSpecificTotal) els.fundraiserNonSpecificTotal.value = utils.formatMoney(importedNonSpecific);
     if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
     if (els.fundraiserBroadcastDiagnostic) {
       const show = imported > 0;

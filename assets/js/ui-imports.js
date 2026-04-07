@@ -1477,6 +1477,124 @@
     renderExistingUnlinkedRows();
   }
 
+
+  async function refreshSuspectRows(options = {}) {
+    imp().suspectRowsError = '';
+    try {
+      if (App.performanceUi?.refreshData) await App.performanceUi.refreshData({ silent: true });
+      imp().suspectRows = (App.performanceUi?.getExcludedReviewRows?.() || []).map((row) => ({ ...row }));
+    } catch (error) {
+      imp().suspectRows = [];
+      imp().suspectRowsError = error?.message || String(error);
+      if (!options.silent) setNotice(`Could not load excluded suspect rows. ${imp().suspectRowsError}`, 'warn');
+    }
+    renderSuspectRows();
+  }
+
+  async function updateImportedRowsByHashes(rowHashes = [], payload = {}) {
+    const hashes = [...new Set((Array.isArray(rowHashes) ? rowHashes : []).filter(Boolean))];
+    for (const rowHash of hashes) {
+      const response = await App.data.updateImportedAiringByHash(rowHash, payload);
+      if (response.error) throw response.error;
+    }
+  }
+
+  async function deleteImportedRowsByHashes(rowHashes = []) {
+    const hashes = [...new Set((Array.isArray(rowHashes) ? rowHashes : []).filter(Boolean))];
+    for (const rowHash of hashes) {
+      const response = await App.data.deleteImportedAiringByHash(rowHash);
+      if (response.error) throw response.error;
+    }
+  }
+
+
+  function filteredSuspectRows() {
+    const rows = imp().suspectRows || [];
+    const needle = utils.normalizeLookupKey(imp().suspectFilterText || '');
+    if (!needle) return rows;
+    return rows.filter((row) => utils.normalizeLookupKey([
+      row.imported_program_title,
+      row.nola_code,
+      row.air_date,
+      row.air_time,
+      row.source_file_name,
+      row.reason_text,
+      row.matched_library_title
+    ].join(' ')).includes(needle));
+  }
+
+  function renderSuspectPreview() {
+    if (!els.importSuspectPreview) return;
+    const rows = imp().suspectRows || [];
+    const selected = rows.find((row) => row.id === imp().selectedSuspectId) || filteredSuspectRows()[0] || null;
+    if (!selected) {
+      els.importSuspectPreview.innerHTML = 'Choose a suspect row to inspect the imported fields and review exactly why analytics excluded it.';
+      return;
+    }
+    imp().selectedSuspectId = selected.id;
+    const raw = selected.raw || {};
+    const entries = Object.keys(raw)
+      .filter((key) => raw[key] != null && raw[key] !== '' && !/^__/.test(key))
+      .sort(utils.compareText)
+      .slice(0, 24)
+      .map((key) => `<div class="import-quarantine-preview-row"><dt>${escape(key.replace(/_/g, ' '))}</dt><dd>${escape(typeof raw[key] === 'object' ? JSON.stringify(raw[key]) : String(raw[key]))}</dd></div>`)
+      .join('');
+    const hashNote = selected.row_hashes?.length ? `${utils.formatCount(selected.row_hashes.length)} imported row${selected.row_hashes.length === 1 ? '' : 's'}` : 'No direct imported row hash available';
+    els.importSuspectPreview.innerHTML = `
+      <div class="import-quarantine-preview-head">
+        <strong>${escape(selected.imported_program_title || 'Untitled imported row')}</strong>
+        <span class="mini-chip">${escape(selected.nola_code || 'No NOLA')}</span>
+        <span class="mini-chip">${escape(selected.air_date || 'No date')}</span>
+        <span class="mini-chip">${escape(selected.source_file_name || 'No file')}</span>
+      </div>
+      <div class="muted">${escape(selected.reason_text || 'Excluded by analytics integrity rules')} · ${escape(hashNote)}</div>
+      <dl class="import-quarantine-preview-grid">${entries || '<div class="placeholder-row">No imported fields were available for preview.</div>'}</dl>`;
+  }
+
+  function renderSuspectRows() {
+    const allRows = imp().suspectRows || [];
+    if (els.importSuspectPill) els.importSuspectPill.textContent = `${utils.formatCount(allRows.length)} rows`;
+    const bodyEl = els.importSuspectBody;
+    if (!bodyEl) return;
+    if (imp().suspectRowsError) {
+      bodyEl.innerHTML = `<tr><td colspan="8" class="placeholder-row">${escape(imp().suspectRowsError)}</td></tr>`;
+      renderSuspectPreview();
+      return;
+    }
+    const rows = filteredSuspectRows();
+    if (!rows.length) {
+      bodyEl.innerHTML = '<tr><td colspan="8" class="placeholder-row">No excluded suspect rows match this filter right now.</td></tr>';
+      renderSuspectPreview();
+      return;
+    }
+    if (!rows.some((row) => row.id === imp().selectedSuspectId)) imp().selectedSuspectId = rows[0]?.id || '';
+    bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
+      const options = buildLibraryProgramOptions(row.imported_program_title || row.nola_code || '');
+      const optionHtml = ['<option value="">Select a pledge title…</option>']
+        .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${String(row.pending_link_program_id || '') === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
+        .join('');
+      const selectedClass = row.id === imp().selectedSuspectId ? ' import-quarantine-row-selected' : '';
+      return `
+      <tr class="import-quarantine-row${selectedClass}" data-suspect-id="${escape(row.id)}">
+        <td>${escape(row.imported_program_title || '—')}</td>
+        <td>${escape(row.nola_code || '—')}</td>
+        <td>${escape(row.air_date || '—')}</td>
+        <td>${escape(row.air_time || '—')}</td>
+        <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
+        <td>${escape(row.reason_text || 'Excluded by analytics integrity rules')}</td>
+        <td><select class="import-suspect-link-select" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>${optionHtml}</select></td>
+        <td>
+          <div class="import-match-actions">
+            <button type="button" class="ghost import-suspect-link-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Link</button>
+            <button type="button" class="ghost import-suspect-approve-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Approve</button>
+            <button type="button" class="ghost import-suspect-delete-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Delete</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+    renderSuspectPreview();
+  }
+
   function renderPreviewRows(rows, bodyEl, columns, emptyMessage) {
     if (!bodyEl) return;
     if (!rows.length) {
@@ -1658,6 +1776,60 @@
     setStatus('Quarantined imported row deleted.');
     setResultBanner('Quarantined imported row deleted.');
     setNotice('Quarantined imported row deleted.');
+  }
+
+
+  async function linkSuspectRow(suspectId, programId) {
+    const suspect = (imp().suspectRows || []).find((row) => row.id === suspectId);
+    const targetRow = selectedProgramRow(programId);
+    if (!suspect || !targetRow) {
+      setNotice('Choose a pledge-library title before linking this suspect row.', 'warn');
+      return;
+    }
+    const payload = {
+      program_id: derive.programId(targetRow) || null,
+      pledge_program_id: derive.programId(targetRow) || null,
+      matched_library_title: derive.title(targetRow) || '',
+      match_method: 'manual_library',
+      match_reason: 'Linked manually from excluded suspect rows review',
+      approved_unlinked: false,
+      review_status: null,
+      is_non_specific: false
+    };
+    await updateImportedRowsByHashes(suspect.row_hashes, payload);
+    await refreshExistingUnlinkedRows({ silent: true });
+    await refreshTableStatus({ silent: true });
+    await refreshSuspectRows({ silent: true });
+    setStatus('Excluded suspect row linked to the library.');
+    setResultBanner('Excluded suspect row linked to the library.');
+    setNotice('Excluded suspect row linked.');
+  }
+
+  async function approveSuspectRow(suspectId) {
+    const suspect = (imp().suspectRows || []).find((row) => row.id === suspectId);
+    if (!suspect) return;
+    await updateImportedRowsByHashes(suspect.row_hashes, {
+      approved_unlinked: true,
+      review_status: 'approved_unlinked',
+      match_reason: 'Approved from excluded suspect rows review'
+    });
+    await refreshExistingUnlinkedRows({ silent: true });
+    await refreshSuspectRows({ silent: true });
+    setStatus('Excluded suspect row approved for analytics.');
+    setResultBanner('Excluded suspect row approved for analytics.');
+    setNotice('Excluded suspect row approved.');
+  }
+
+  async function deleteSuspectRow(suspectId) {
+    const suspect = (imp().suspectRows || []).find((row) => row.id === suspectId);
+    if (!suspect) return;
+    await deleteImportedRowsByHashes(suspect.row_hashes);
+    await refreshExistingUnlinkedRows({ silent: true });
+    await refreshTableStatus({ silent: true });
+    await refreshSuspectRows({ silent: true });
+    setStatus('Excluded suspect row deleted.');
+    setResultBanner('Excluded suspect row deleted.');
+    setNotice('Excluded suspect row deleted.');
   }
 
   async function createAndLinkNewProgram(rowHash) {
@@ -1903,6 +2075,7 @@
     renderFileAudit();
     renderAccountingLedger();
     renderPreviews();
+    renderSuspectRows();
     renderActions();
   }
 
@@ -1912,6 +2085,7 @@
       imp().reportTotalsByFile = utils.storageGet(IMPORT_REPORT_TOTALS_STORAGE_KEY, {});
       await refreshTableStatus({ silent: true });
       await refreshExistingUnlinkedRows({ silent: true });
+      await refreshSuspectRows({ silent: true });
       imp().ready = true;
     }
     renderAll();
@@ -1962,15 +2136,24 @@
     els.importRefreshButton?.addEventListener('click', async () => {
       await refreshTableStatus();
       await refreshExistingUnlinkedRows({ silent: true });
+      await refreshSuspectRows({ silent: true });
       setStatus('Table probe refreshed.');
     });
     els.importRefreshQuarantineButton?.addEventListener('click', async () => {
       await refreshExistingUnlinkedRows();
       setStatus('Quarantined imported rows refreshed.');
     });
+    els.importRefreshSuspectButton?.addEventListener('click', async () => {
+      await refreshSuspectRows();
+      setStatus('Excluded suspect rows refreshed.');
+    });
     els.importQuarantineFilter?.addEventListener('input', (event) => {
       imp().quarantineFilterText = event.target.value || '';
       renderExistingUnlinkedRows();
+    });
+    els.importSuspectFilter?.addEventListener('input', (event) => {
+      imp().suspectFilterText = event.target.value || '';
+      renderSuspectRows();
     });
     els.importExportAiringsButton?.addEventListener('click', () => {
       const matchedRows = getMatchedRows();
@@ -2083,6 +2266,47 @@
       if (event.target.closest('select, option, input, textarea, button, a')) return;
       imp().selectedExistingUnlinkedHash = rowHash;
       renderExistingUnlinkedRows();
+    });
+    els.importSuspectBody?.addEventListener('change', (event) => {
+      const select = event.target.closest('.import-suspect-link-select');
+      if (!select) return;
+      const suspectId = select.getAttribute('data-suspect-id') || '';
+      const target = (imp().suspectRows || []).find((row) => row.id === suspectId);
+      if (target) target.pending_link_program_id = select.value || '';
+    });
+    els.importSuspectBody?.addEventListener('click', (event) => {
+      const suspectId = event.target.closest('[data-suspect-id]')?.getAttribute('data-suspect-id') || '';
+      if (!suspectId) return;
+      const linkButton = event.target.closest('.import-suspect-link-button');
+      if (linkButton) {
+        imp().selectedSuspectId = suspectId;
+        const select = els.importSuspectBody.querySelector(`.import-suspect-link-select[data-suspect-id="${suspectId}"]`);
+        const selectedRow = (imp().suspectRows || []).find((row) => row.id === suspectId);
+        const selectedProgramId = select?.value || selectedRow?.pending_link_program_id || '';
+        void linkSuspectRow(suspectId, selectedProgramId).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
+        return;
+      }
+      const approveButton = event.target.closest('.import-suspect-approve-button');
+      if (approveButton) {
+        imp().selectedSuspectId = suspectId;
+        void approveSuspectRow(suspectId).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
+        return;
+      }
+      const deleteButton = event.target.closest('.import-suspect-delete-button');
+      if (deleteButton) {
+        imp().selectedSuspectId = suspectId;
+        void deleteSuspectRow(suspectId).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
+        return;
+      }
+      if (event.target.closest('select, option, input, textarea, button, a')) return;
+      imp().selectedSuspectId = suspectId;
+      renderSuspectRows();
     });
   }
 

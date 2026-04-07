@@ -3,29 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.70</title>
+  <title>WNMU Pledge Program Library v0.20.71</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.70">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.71">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.70"></script>
-  <script defer src="assets/js/program-filters.js?v=0.20.70"></script>
-  <script defer src="assets/js/dom.js?v=0.20.70"></script>
-  <script defer src="assets/js/data.js?v=0.20.70"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.70"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.70"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.70"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.70"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.70"></script>
-  <script defer src="assets/js/auth.js?v=0.20.70"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.70"></script>
-  <script defer src="assets/js/program-open.js?v=0.20.70"></script>
-  <script defer src="assets/js/library-load.js?v=0.20.70"></script>
-  <script defer src="assets/js/app.js?v=0.20.70"></script>
-  <script defer src="assets/js/app-init.js?v=0.20.70"></script>
+  <script defer src="assets/js/core.js?v=0.20.71"></script>
+  <script defer src="assets/js/program-filters.js?v=0.20.71"></script>
+  <script defer src="assets/js/dom.js?v=0.20.71"></script>
+  <script defer src="assets/js/data.js?v=0.20.71"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.71"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.71"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.71"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.71"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.71"></script>
+  <script defer src="assets/js/auth.js?v=0.20.71"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.71"></script>
+  <script defer src="assets/js/program-open.js?v=0.20.71"></script>
+  <script defer src="assets/js/library-load.js?v=0.20.71"></script>
+  <script defer src="assets/js/app.js?v=0.20.71"></script>
+  <script defer src="assets/js/app-init.js?v=0.20.71"></script>
 </head>
 <body>
 
@@ -55,7 +55,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.70</span>
+            <span class="version-pill" id="version-flag">v0.20.71</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -266,6 +266,10 @@
                 <label class="filter-field narrow">
                   <span class="filter-label">Mail $</span>
                   <input id="fundraiser-mail-input" type="number" min="0" step="0.01" placeholder="0.00">
+                </label>
+                <label class="filter-field narrow">
+                  <span class="filter-label">Non-Specific $</span>
+                  <input id="fundraiser-non-specific-total" type="text" value="$0.00" readonly>
                 </label>
                 <label class="filter-field narrow">
                   <span class="filter-label">Total raised $</span>
@@ -637,6 +641,40 @@
           </div>
           <div id="import-quarantine-preview" class="import-quarantine-preview">Choose a quarantined row to inspect the imported fields and review why it is still unlinked.</div>
         </section>
+
+        <section class="performance-card">
+          <div class="performance-card-head import-unmatched-head">
+            <div>
+              <h3>Excluded suspect rows</h3>
+              <p class="muted">These are imported airing events that analytics excluded under the current analysis criteria. Review the reason, then link, approve, or delete the underlying imported rows here instead of letting them vanish offstage.</p>
+            </div>
+            <div class="import-unmatched-head-actions">
+              <input type="search" id="import-suspect-filter" class="import-quarantine-filter" placeholder="Filter suspect rows by title, NOLA, date, file, or reason">
+              <button type="button" class="ghost" id="import-refresh-suspect-button">Refresh</button>
+              <span class="mini-chip" id="import-suspect-pill">0 rows</span>
+            </div>
+          </div>
+          <div class="table-wrap import-preview-wrap import-unmatched-wrap">
+            <table class="programs-table import-preview-table import-unmatched-table import-suspect-table">
+              <thead>
+                <tr>
+                  <th>Imported title</th>
+                  <th>NOLA</th>
+                  <th>Air date</th>
+                  <th>Air time</th>
+                  <th>Dollars</th>
+                  <th>Why excluded</th>
+                  <th>Match to library title</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="import-suspect-body">
+                <tr><td colspan="8" class="placeholder-row">Refresh to load suspect rows from the current analytics criteria.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="import-suspect-preview" class="import-quarantine-preview">Choose a suspect row to inspect the imported fields and review exactly why analytics excluded it.</div>
+        </section>
       </section>
     </section>
 
@@ -966,7 +1004,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.70</div>
+      <div id="footer-version">v0.20.71</div>
     </footer>
   </div>
 </body>

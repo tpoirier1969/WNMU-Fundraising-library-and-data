@@ -513,7 +513,10 @@
           integrityFlags: [],
           titleAnnotated: false,
           isNonSpecific: false,
-          sourceFiles: new Set()
+          approvedOverride: false,
+          sourceFiles: new Set(),
+          sourceRowHashes: new Set(),
+          sampleSourceRows: []
         });
       }
       return events.get(id);
@@ -530,6 +533,7 @@
       record.identityTrusted = Boolean(record.identityTrusted || identity?.trusted);
       record.titleAnnotated = Boolean(record.titleAnnotated || importedTitleLooksAnnotated(record.importedTitle));
       record.isNonSpecific = Boolean(record.isNonSpecific || isNonSpecificRecord(row));
+      record.approvedOverride = Boolean(record.approvedOverride || row?.approved_unlinked === true || String(row?.review_status || '').toLowerCase() === 'approved_unlinked');
       if (record.isNonSpecific) {
         record.importedTitle = utils.canonicalNonSpecificTitle();
         record.matchedLibraryTitle = utils.canonicalNonSpecificTitle();
@@ -581,6 +585,8 @@
       const record = getOrCreate(signature || utils.makeId('perf-airing'), dateKey, timeKey);
       record.airingRows += 1;
       record.estimatedOnly = false;
+      if (row?.row_hash) record.sourceRowHashes.add(String(row.row_hash));
+      if (record.sampleSourceRows.length < 6) record.sampleSourceRows.push({ ...row });
       const money = resolveMoney(row, 'airing');
       if (money.trusted) {
         moneyTrustedRows += 1;
@@ -662,7 +668,10 @@
       topicTime: topicTimeLabel(record),
       topicTimeSortKey: topicTimeSortKey(record),
       moneySource: record.moneySources[0] || 'missing',
-      sourceFiles: [...record.sourceFiles].sort((a, b) => utils.compareText(a, b))
+      sourceFiles: [...record.sourceFiles].sort((a, b) => utils.compareText(a, b)),
+      sourceRowHashes: [...record.sourceRowHashes],
+      sampleSourceRows: [...record.sampleSourceRows],
+      approvedOverride: Boolean(record.approvedOverride)
     }));
 
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
@@ -850,11 +859,49 @@
   }
 
   function integrityEligible(record, criterion) {
+    if (record?.approvedOverride) return true;
     if (!record?.moneyTrusted) return false;
     if (record?.excludedForIntegrity) return false;
     if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time') && !record?.identityTrusted) return false;
     if ((criterion === 'topic' || criterion === 'topic_time') && !(record?.topicTokens || []).length) return false;
     return true;
+  }
+
+
+  function exclusionReasons(record, criterion) {
+    const reasons = [];
+    if (!record?.moneyTrusted) reasons.push('Missing trusted dollars');
+    if (record?.excludedForIntegrity) reasons.push(record.scheduleIntegrityLabel || 'Unreconciled to saved schedule');
+    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time') && !record?.identityTrusted) reasons.push('Weak program identity');
+    if ((criterion === 'topic' || criterion === 'topic_time') && !(record?.topicTokens || []).length) reasons.push('Missing main topic');
+    return [...new Set(reasons.filter(Boolean))];
+  }
+
+  function buildExcludedReviewRows(scopedRecords, criterion) {
+    return (scopedRecords || [])
+      .filter((record) => !isNonSpecificRecord(record) && !record?.approvedOverride && !integrityEligible(record, criterion))
+      .map((record, index) => {
+        const sample = Array.isArray(record.sampleSourceRows) ? record.sampleSourceRows.filter(Boolean) : [];
+        const first = sample[0] || {};
+        const rowHashes = Array.isArray(record.sourceRowHashes) ? record.sourceRowHashes.filter(Boolean) : [];
+        const reasons = exclusionReasons(record, criterion);
+        return {
+          id: record.id || `suspect-${index}`,
+          row_hashes: rowHashes,
+          imported_program_title: record.importedTitle || record.title || first.imported_program_title || first.title || 'Untitled imported row',
+          matched_library_title: record.matchedLibraryTitle || first.matched_library_title || '',
+          nola_code: record.nolaCode || first.nola_code || first.nola || '',
+          air_date: first.air_date || record.date || '',
+          air_time: first.air_time || (record.hasExplicitTime && record.when instanceof Date ? utils.formatTime(record.when) : ''),
+          dollars: Number.isFinite(record.amount) ? record.amount : Number(first.dollars || 0) || 0,
+          reason_text: reasons.join(' · ') || 'Excluded by analytics integrity rules',
+          source_file_name: (record.sourceFiles || [])[0] || first.source_file_name || '',
+          sample_source_rows: sample,
+          raw: first,
+          program_id: record.programId || first.program_id || first.pledge_program_id || null,
+          pending_link_program_id: ''
+        };
+      });
   }
 
   function filterAndGroupRecords() {
@@ -965,6 +1012,7 @@
     perf().filteredRecords = records;
     perf().groups = limited;
     const nonSpecificScoped = scopedRecords.filter((record) => isNonSpecificRecord(record));
+    perf().excludedReviewRows = buildExcludedReviewRows(scopedRecords, criterion);
     perf().analysisMeta = {
       minGroupAirings,
       hiddenSmallSampleGroupCount: 0,
@@ -1210,11 +1258,6 @@
         <div class="performance-criteria-pill warn"><span class="label">Unreconciled to saved schedule</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedScheduleMismatchCount))}</span></div>
       `;
     }
-    if (analysisMeta.nonSpecificRevenueCount) {
-      els.performanceCriteriaBar.innerHTML += `
-        <div class="performance-criteria-pill info"><span class="label">Non-specific fundraiser rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.nonSpecificRevenueCount))}</span></div>
-      `;
-    }
     if ((analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount)) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Low-sample groups</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount))}</span></div>
@@ -1420,7 +1463,7 @@
       ? 'Not enough trustworthy day/time evidence for this view yet.'
       : meta.lowConfidenceTemporal
         ? 'Small temporal sample — read it cautiously.'
-        : `${utils.formatCount(records.length)} filtered rows after excluding ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows${meta.nonSpecificRevenueCount ? ` while tracking ${utils.formatCount(meta.nonSpecificRevenueCount)} non-specific fundraiser rows separately` : ''}.`;
+        : `${utils.formatCount(records.length)} filtered rows after excluding ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows.`;
     const quickTail = quickFilterExplanation();
     setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }
@@ -1462,6 +1505,7 @@
     perf().warnings = [];
     perf().lastLoadedAt = '';
     perf().analysisMeta = {};
+    perf().excludedReviewRows = [];
   }
 
 
@@ -1550,5 +1594,11 @@
     });
   }
 
-  App.performanceUi = { ensureReady, refreshData, renderAll, bindEvents, reset, populateControls };
+  function getExcludedReviewRows() {
+    if (!perf().ready) return [];
+    filterAndGroupRecords();
+    return [...(perf().excludedReviewRows || [])];
+  }
+
+  App.performanceUi = { ensureReady, refreshData, renderAll, bindEvents, reset, populateControls, getExcludedReviewRows };
 })();

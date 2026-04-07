@@ -3287,7 +3287,7 @@ button.primary {
 }
 
 
-/* v0.20.70 version flag + low-sample wording cleanup */
+/* v0.20.71 analytics/import suspect-row cleanup */
 .performance-shell {
   gap: 0.8rem;
 }
@@ -3358,4 +3358,19 @@ button.primary {
   .performance-stat-grid-inline {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+
+.import-suspect-table th:nth-child(7),
+.import-suspect-table td:nth-child(7) {
+  width: 18.5rem;
+}
+
+.import-suspect-table th:nth-child(8),
+.import-suspect-table td:nth-child(8) {
+  width: 12.25rem;
+}
+
+.schedule-money-row-combined {
+  grid-template-columns: repeat(8, minmax(110px, 1fr));
 }
