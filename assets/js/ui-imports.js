@@ -29,16 +29,15 @@
   }
 
   function isNonSpecificTitle(title = '') {
-    const key = importTitleKey(title).replace(/[^a-z0-9]+/g, ' ').trim();
-    return key === 'non specific pledges' || key.endsWith('non specific pledges');
+    return utils.isNonSpecificTitle(title);
   }
 
   function isNonSpecificNola(nola = '') {
-    return utils.normalizeLookupKey(nola || '').replace(/\s+/g, '') === 'nspl';
+    return utils.isNonSpecificNola(nola);
   }
 
   function isNonSpecificRow(row = {}) {
-    return Boolean(row?.is_non_specific || isNonSpecificNola(row?.nola_code) || isNonSpecificTitle(row?.imported_program_title || row?.title));
+    return utils.isNonSpecificRow(row);
   }
 
   function isImportMatched(row) {
@@ -174,8 +173,12 @@
   function normalizeExistingUnlinkedRow(row = {}) {
     const normalized = {
       row_hash: String(row.row_hash || ''),
-      imported_program_title: utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '—',
-      nola_code: utils.normalizeText(row.nola_code) || '—',
+      imported_program_title: isNonSpecificRow(row)
+        ? utils.canonicalNonSpecificTitle()
+        : (utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '—'),
+      nola_code: isNonSpecificRow(row)
+        ? utils.canonicalNonSpecificNola()
+        : (utils.normalizeText(row.nola_code) || '—'),
       air_date: utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '—',
       air_time: utils.normalizeText(row.air_time) || '—',
       dollars: Number.isFinite(Number(row.dollars)) ? Number(row.dollars) : null,

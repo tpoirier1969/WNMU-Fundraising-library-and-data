@@ -293,6 +293,36 @@ window.PledgeLib = window.PledgeLib || {};
         .trim();
     },
 
+    canonicalNonSpecificTitle() {
+      return 'Non-Specific Pledges';
+    },
+
+    canonicalNonSpecificNola() {
+      return 'NONOLA';
+    },
+
+    isNonSpecificTitle(value) {
+      const key = utils.normalizeLookupKey(value || '');
+      return key === 'non specific pledges' || key.endsWith('non specific pledges');
+    },
+
+    isNonSpecificNola(value) {
+      const key = utils.normalizeLookupKey(value || '').replace(/\s+/g, '');
+      return key === 'nspl' || key === 'nonola';
+    },
+
+    isNonSpecificRow(row = {}) {
+      if (!row || typeof row !== 'object') return false;
+      return Boolean(
+        row.is_non_specific === true
+        || row.isNonSpecific === true
+        || String(row.match_method || '').toLowerCase() === 'non_specific'
+        || String(row.review_status || '').toLowerCase() === 'non_specific'
+        || utils.isNonSpecificNola(utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''))
+        || utils.isNonSpecificTitle(utils.firstNonEmpty(row.imported_program_title, row.title, row.program_title, row.name, ''))
+      );
+    },
+
     isBlank(value) {
       return !utils.normalizeText(value);
     },
@@ -546,10 +576,12 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     title(row) {
+      if (utils.isNonSpecificRow(row)) return utils.canonicalNonSpecificTitle();
       return utils.firstNonEmpty(row?.title, row?.program_title, row?.name) || 'Untitled program';
     },
 
     nola(row) {
+      if (utils.isNonSpecificRow(row)) return utils.canonicalNonSpecificNola();
       return utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola) || '';
     },
 

@@ -530,8 +530,16 @@
       record.identityTrusted = Boolean(record.identityTrusted || identity?.trusted);
       record.titleAnnotated = Boolean(record.titleAnnotated || importedTitleLooksAnnotated(record.importedTitle));
       record.isNonSpecific = Boolean(record.isNonSpecific || isNonSpecificRecord(row));
+      if (record.isNonSpecific) {
+        record.importedTitle = utils.canonicalNonSpecificTitle();
+        record.matchedLibraryTitle = utils.canonicalNonSpecificTitle();
+        record.nolaCode = utils.canonicalNonSpecificNola();
+        record.signature = 'non_specific';
+      }
       if (row?.source_file_name) record.sourceFiles.add(String(row.source_file_name));
-      if (record.identityTrusted && programRow) {
+      if (record.isNonSpecific) {
+        record.title = utils.canonicalNonSpecificTitle();
+      } else if (record.identityTrusted && programRow) {
         record.title = derive.title(programRow);
       } else if (!record.title || record.title === 'Unknown title') {
         record.title = utils.firstNonEmpty(record.importedTitle, record.matchedLibraryTitle, row?.title, row?.program_title, row?.name, 'Unknown title');
@@ -721,7 +729,7 @@
 
   function criterionLabel(record, criterion) {
     switch (criterion) {
-      case 'program': return record.title || 'Unknown title';
+      case 'program': return isNonSpecificRecord(record) ? utils.canonicalNonSpecificTitle() : (record.title || 'Unknown title');
       case 'date': return record.date || 'Unknown date';
       case 'day': return record.day || 'Unknown day';
       case 'daypart': return daypartLabel(record);
@@ -831,12 +839,7 @@
   }
 
   function isNonSpecificRecord(record) {
-    return Boolean(
-      record?.isNonSpecific
-      || record?.is_non_specific === true
-      || String(record?.match_method || '').toLowerCase() === 'non_specific'
-      || String(record?.review_status || '').toLowerCase() === 'non_specific'
-    );
+    return utils.isNonSpecificRow(record);
   }
 
   function temporalEligibility(record, criterion) {
