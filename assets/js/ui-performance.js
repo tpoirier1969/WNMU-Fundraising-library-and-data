@@ -402,6 +402,14 @@
 
 
   function scheduleIntegrityForRecord(record, placementIndex) {
+    if (isNonSpecificRecord(record)) {
+      return {
+        coveredBySchedule: false,
+        shouldExclude: false,
+        reason: 'non_specific_revenue',
+        label: 'Non-specific fundraiser revenue'
+      };
+    }
     const dateKey = record?.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? localDateKey(record.when) : '';
     const coveredBySchedule = Boolean(dateKey && placementIndex?.coveredDates?.has(dateKey));
     if (!dateKey || !(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record?.hasExplicitTime) {
@@ -521,7 +529,7 @@
       record.matchSource = record.matchSource === 'unmatched' ? (identity?.matchSource || record.matchSource) : record.matchSource;
       record.identityTrusted = Boolean(record.identityTrusted || identity?.trusted);
       record.titleAnnotated = Boolean(record.titleAnnotated || importedTitleLooksAnnotated(record.importedTitle));
-      record.isNonSpecific = Boolean(record.isNonSpecific || row?.is_non_specific === true);
+      record.isNonSpecific = Boolean(record.isNonSpecific || isNonSpecificRecord(row));
       if (row?.source_file_name) record.sourceFiles.add(String(row.source_file_name));
       if (record.identityTrusted && programRow) {
         record.title = derive.title(programRow);
@@ -673,6 +681,7 @@
       missingMoneyRows,
       annotatedTitleRows,
       scheduleMismatchRows,
+      nonSpecificRows: records.filter((record) => isNonSpecificRecord(record)).length,
       quarantinedEvents: records.filter((record) => record.excludedForIntegrity).length,
       recordsWithMoney: records.filter((record) => record.moneyTrusted).length,
       recordsWithDateTime: records.filter((record) => record.hasDate).length,
@@ -821,6 +830,15 @@
     return perf().chartType;
   }
 
+  function isNonSpecificRecord(record) {
+    return Boolean(
+      record?.isNonSpecific
+      || record?.is_non_specific === true
+      || String(record?.match_method || '').toLowerCase() === 'non_specific'
+      || String(record?.review_status || '').toLowerCase() === 'non_specific'
+    );
+  }
+
   function temporalEligibility(record, criterion) {
     if (criterion === 'time') return record.hasExplicitTime && !record.estimatedOnly;
     if (criterion === 'topic_time') return record.hasDate && record.hasExplicitTime && !record.estimatedOnly;
@@ -943,6 +961,7 @@
     const limited = usesTemporalAxis ? sorted : (limit >= 999 ? sorted : sorted.slice(0, limit));
     perf().filteredRecords = records;
     perf().groups = limited;
+    const nonSpecificScoped = scopedRecords.filter((record) => isNonSpecificRecord(record));
     perf().analysisMeta = {
       minGroupAirings,
       hiddenSmallSampleGroupCount: 0,
@@ -952,11 +971,12 @@
       integrityEligibleCount: integrityFiltered.length,
       eligibleTemporalCount: eligibleTemporal.length,
       excludedWeakTemporalCount: Math.max(0, integrityFiltered.length - eligibleTemporal.length),
-      excludedIntegrityCount: Math.max(0, scopedRecords.length - integrityFiltered.length),
-      excludedScheduleMismatchCount: scopedRecords.filter((record) => record.excludedForIntegrity).length,
-      excludedWeakIdentityCount: scopedRecords.filter((record) => !record.identityTrusted).length,
-      excludedMissingMoneyCount: scopedRecords.filter((record) => !record.moneyTrusted).length,
-      excludedMissingTopicCount: scopedRecords.filter((record) => !(record.topicTokens || []).length).length,
+      excludedIntegrityCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !integrityEligible(record, criterion)).length,
+      excludedScheduleMismatchCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && record.excludedForIntegrity).length,
+      excludedWeakIdentityCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !record.identityTrusted).length,
+      excludedMissingMoneyCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !record.moneyTrusted).length,
+      excludedMissingTopicCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !(record.topicTokens || []).length).length,
+      nonSpecificRevenueCount: nonSpecificScoped.length,
       lowConfidenceTemporal: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length > 0 && eligibleTemporal.length < 12,
       noTemporalSupport: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length === 0 && integrityFiltered.length > 0
     };
@@ -1125,7 +1145,7 @@
     if (!els.performanceTableBody) return;
     if (els.performanceTableGroupHeader) els.performanceTableGroupHeader.textContent = criterionDisplayName();
     if (!groups.length) {
-      els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
+      els.performanceTableBody.innerHTML = '<tr><td colspan="5" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
       return;
     }
     els.performanceTableBody.innerHTML = groups.map((group) => {
@@ -1141,7 +1161,6 @@
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
         <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
-        <td><span class="performance-confidence ${utils.escapeHtml(confidenceClassForGroup(group))}">${utils.escapeHtml(confidenceForGroup(group))}</span></td>
         <td>${utils.escapeHtml(utils.formatCount(group.titleCount))}</td>
       </tr>
     `;
@@ -1172,10 +1191,7 @@
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
       ['Chart', perf().criterion === 'topic_time' ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
-      ['Confidence', confidenceLabel()],
-      ['Source basis', source],
-      ['Integrity-eligible', utils.formatCount(analysisMeta.integrityEligibleCount || records.length)],
-      ['Filtered rows', utils.formatCount(records.length)]
+      ['Integrity-eligible', utils.formatCount(analysisMeta.integrityEligibleCount || records.length)]
     ];
     if (!els.performanceCriteriaBar) return;
     els.performanceCriteriaBar.innerHTML = perf().criteriaSummary.map(([label, value]) => `
@@ -1183,12 +1199,17 @@
     `).join('');
     if (analysisMeta.excludedIntegrityCount) {
       els.performanceCriteriaBar.innerHTML += `
-        <div class="performance-criteria-pill warn"><span class="label">Quarantined suspect rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedIntegrityCount))}</span></div>
+        <div class="performance-criteria-pill warn"><span class="label">Excluded suspect rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedIntegrityCount))}</span></div>
       `;
     }
     if (analysisMeta.excludedScheduleMismatchCount) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Unreconciled to saved schedule</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedScheduleMismatchCount))}</span></div>
+      `;
+    }
+    if (analysisMeta.nonSpecificRevenueCount) {
+      els.performanceCriteriaBar.innerHTML += `
+        <div class="performance-criteria-pill info"><span class="label">Non-specific fundraiser rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.nonSpecificRevenueCount))}</span></div>
       `;
     }
     if ((analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount)) {
@@ -1216,7 +1237,7 @@
       ['Minimum airing warning', meta.minGroupAirings > 1 ? `${utils.formatCount(meta.minGroupAirings)} airings` : 'None', minSampleExplanation()],
       ['Source basis', 'Strict imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows, but analytics now trust only rows with an explicit per-airing dollars field. Report totals are not allowed to masquerade as airing dollars.`],
       ['Program identity rule', 'Strict only', `Program/topic analytics now require a trustworthy identity path (program id, NOLA, or exact title match). Fuzzy title rematching is disabled.`],
-      ['Schedule reconciliation', meta.excludedScheduleMismatchCount ? `${utils.formatCount(meta.excludedScheduleMismatchCount)} rows quarantined` : 'No known schedule mismatches in this filter', 'If a row falls inside a saved schedule window but does not reconcile to any scheduled placement, it is excluded instead of blended into the analytics.'],
+      ['Schedule reconciliation', meta.excludedScheduleMismatchCount ? `${utils.formatCount(meta.excludedScheduleMismatchCount)} rows excluded` : 'No known schedule mismatches in this filter', 'Rows marked as non-specific fundraiser revenue are not counted as schedule mismatches. Only title-attributed rows that fall inside a saved schedule window and still fail to reconcile are excluded here.'],
       ['Temporal confidence', confidenceLabel(), meta.noTemporalSupport ? 'Day/date/time comparisons do not have enough trustworthy airing-date evidence for this filter yet.' : meta.lowConfidenceTemporal ? 'There are some temporal matches, but the sample is small enough that the result can wobble.' : 'This comparison has enough temporal support to be usable, but still read the airing count.'],
       ['Premium metadata', 'Not actual viewer choice data', 'Premium comparisons currently mean “programs carrying premium metadata,” not which premium item viewers actually chose.'],
       ['How sturdy is this?', `${utils.formatCount(records.length)} rows from ${utils.formatCount(postFilter.length)} rows after non-label filters`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
@@ -1397,7 +1418,7 @@
       ? 'Not enough trustworthy day/time evidence for this view yet.'
       : meta.lowConfidenceTemporal
         ? 'Small temporal sample — read it cautiously.'
-        : `${utils.formatCount(records.length)} filtered rows after quarantining ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows${meta.lowSampleGroupCount ? ` and flagging ${utils.formatCount(meta.lowSampleGroupCount)} tiny-sample groups` : ''}.`;
+        : `${utils.formatCount(records.length)} filtered rows after excluding ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows${meta.lowSampleGroupCount ? ` and flagging ${utils.formatCount(meta.lowSampleGroupCount)} tiny-sample groups` : ''}${meta.nonSpecificRevenueCount ? ` while tracking ${utils.formatCount(meta.nonSpecificRevenueCount)} non-specific fundraiser rows separately` : ''}.`;
     const quickTail = quickFilterExplanation();
     setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }

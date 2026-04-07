@@ -3,29 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.67</title>
+  <title>WNMU Pledge Program Library v0.20.68</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.67">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.68">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.67"></script>
-  <script defer src="assets/js/program-filters.js?v=0.20.67"></script>
-  <script defer src="assets/js/dom.js?v=0.20.67"></script>
-  <script defer src="assets/js/data.js?v=0.20.67"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.67"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.67"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.67"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.67"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.67"></script>
-  <script defer src="assets/js/auth.js?v=0.20.67"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.67"></script>
-  <script defer src="assets/js/program-open.js?v=0.20.67"></script>
-  <script defer src="assets/js/library-load.js?v=0.20.67"></script>
-  <script defer src="assets/js/app.js?v=0.20.67"></script>
-  <script defer src="assets/js/app-init.js?v=0.20.67"></script>
+  <script defer src="assets/js/core.js?v=0.20.68"></script>
+  <script defer src="assets/js/program-filters.js?v=0.20.68"></script>
+  <script defer src="assets/js/dom.js?v=0.20.68"></script>
+  <script defer src="assets/js/data.js?v=0.20.68"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.68"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.68"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.68"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.68"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.68"></script>
+  <script defer src="assets/js/auth.js?v=0.20.68"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.68"></script>
+  <script defer src="assets/js/program-open.js?v=0.20.68"></script>
+  <script defer src="assets/js/library-load.js?v=0.20.68"></script>
+  <script defer src="assets/js/app.js?v=0.20.68"></script>
+  <script defer src="assets/js/app-init.js?v=0.20.68"></script>
 </head>
 <body>
 
@@ -55,7 +55,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.67</span>
+            <span class="version-pill" id="version-flag">v0.20.68</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -763,17 +763,17 @@
 
         <section class="performance-card performance-criteria-card">
           <div class="performance-card-head">
-            <h3>Current analysis criteria</h3>
+            <h3>Current analysis snapshot</h3>
             
           </div>
           <div id="performance-criteria-bar" class="performance-criteria-bar"></div>
-        </section>
-
-        <section class="performance-stat-grid" id="performance-stat-grid">
-          <article class="performance-stat-card"><div class="performance-stat-label">Records</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Titles represented</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Dollars represented</div><div class="performance-stat-value">—</div></article>
-          <article class="performance-stat-card"><div class="performance-stat-label">Airings with dollars / dated</div><div class="performance-stat-value">—</div></article>
+          <div class="performance-snapshot-divider"></div>
+          <section class="performance-stat-grid performance-stat-grid-inline" id="performance-stat-grid">
+            <article class="performance-stat-card"><div class="performance-stat-label">Records</div><div class="performance-stat-value">—</div></article>
+            <article class="performance-stat-card"><div class="performance-stat-label">Titles represented</div><div class="performance-stat-value">—</div></article>
+            <article class="performance-stat-card"><div class="performance-stat-label">Dollars represented</div><div class="performance-stat-value">—</div></article>
+            <article class="performance-stat-card"><div class="performance-stat-label">Airings with dollars / dated</div><div class="performance-stat-value">—</div></article>
+          </section>
         </section>
 
         <section class="performance-main-grid">
@@ -798,12 +798,11 @@
                     <th>Airings</th>
                     <th>Total dollars</th>
                     <th>Avg dollars / airing</th>
-                    <th>Confidence</th>
                     <th>Titles</th>
                   </tr>
                 </thead>
                 <tbody id="performance-table-body">
-                  <tr><td colspan="6" class="placeholder-row">Open Pledge Performance to load comparison data.</td></tr>
+                  <tr><td colspan="5" class="placeholder-row">Open Pledge Performance to load comparison data.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -967,7 +966,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.67</div>
+      <div id="footer-version">v0.20.68</div>
     </footer>
   </div>
 </body>

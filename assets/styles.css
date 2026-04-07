@@ -3159,6 +3159,7 @@ button.primary {
 }
 
 /* v0.20.67 quarantine dropdown fix */
+
 .detail-extra-fields-editor {
   display: grid;
   gap: 10px;
@@ -3282,5 +3283,79 @@ button.primary {
   .import-quarantine-filter {
     min-width: 0;
     width: 100%;
+  }
+}
+
+
+/* v0.20.68 analytics compacting + non-specific cleanup */
+.performance-shell {
+  gap: 0.8rem;
+}
+
+.performance-toolbar-card,
+.performance-card,
+.performance-criteria-card {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.performance-toolbar-card .list-summary {
+  margin-top: 0.15rem;
+}
+
+.performance-criteria-card {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.performance-criteria-bar {
+  margin-bottom: 0.5rem;
+}
+
+.performance-criteria-pill.info {
+  background: #2f5f90;
+}
+
+.performance-snapshot-divider {
+  height: 1px;
+  background: rgba(18, 62, 107, 0.12);
+  margin: 0.2rem 0 0.65rem;
+}
+
+.performance-stat-grid-inline {
+  gap: 0.65rem;
+}
+
+.performance-stat-grid-inline .performance-stat-card {
+  padding: 0.72rem 0.9rem;
+  border-radius: 12px;
+}
+
+.performance-stat-grid-inline .performance-stat-label {
+  font-size: 0.75rem;
+}
+
+.performance-stat-grid-inline .performance-stat-value {
+  margin-top: 0.15rem;
+  font-size: 1.22rem;
+}
+
+.performance-table td:nth-child(2),
+.performance-table th:nth-child(2),
+.performance-table td:nth-child(5),
+.performance-table th:nth-child(5) {
+  width: 9%;
+}
+
+.performance-table td:nth-child(3),
+.performance-table th:nth-child(3),
+.performance-table td:nth-child(4),
+.performance-table th:nth-child(4) {
+  width: 14%;
+}
+
+@media (max-width: 760px) {
+  .performance-stat-grid-inline {
+    grid-template-columns: 1fr 1fr;
   }
 }
