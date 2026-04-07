@@ -863,14 +863,20 @@
     return summary;
   }
 
+  function preferredVisibleEndMinutes(startMinutes, endMinutes) {
+    const trimmed = Number(endMinutes) - 150;
+    return Math.max(Number(startMinutes) + 240, trimmed);
+  }
+
   function applyScheduleToView(schedule) {
     if (!schedule) return;
     state.activeScheduleId = schedule.id;
     const windowConfig = getScheduleWindow(schedule);
+    const visibleEndMinutes = preferredVisibleEndMinutes(windowConfig.startMinutes, windowConfig.endMinutes);
     state.scheduleView.dayStartMinutes = windowConfig.startMinutes;
-    state.scheduleView.dayEndMinutes = windowConfig.endMinutes;
+    state.scheduleView.dayEndMinutes = visibleEndMinutes;
     state.scheduleView.dayStartHour = Math.floor(windowConfig.startMinutes / 60);
-    state.scheduleView.dayEndHour = Math.floor(windowConfig.endMinutes / 60);
+    state.scheduleView.dayEndHour = Math.floor(visibleEndMinutes / 60);
     state.scheduleDraft.title = schedule.title || '';
     state.scheduleDraft.startDate = schedule.startDate || '';
     state.scheduleDraft.endDate = schedule.endDate || '';
@@ -1312,9 +1318,9 @@
       mailDollars: 0
     };
     state.scheduleView.dayStartMinutes = constants.DEFAULT_DAY_START_MINUTES;
-    state.scheduleView.dayEndMinutes = constants.DEFAULT_DAY_END_MINUTES;
+    state.scheduleView.dayEndMinutes = preferredVisibleEndMinutes(constants.DEFAULT_DAY_START_MINUTES, constants.DEFAULT_DAY_END_MINUTES);
     state.scheduleView.dayStartHour = constants.DEFAULT_DAY_START_HOUR;
-    state.scheduleView.dayEndHour = constants.DEFAULT_DAY_END_HOUR;
+    state.scheduleView.dayEndHour = Math.floor(state.scheduleView.dayEndMinutes / 60);
     renderAll();
     App.app?.ensureMobileModeControls?.();
     els.fundraiserTitleInput?.focus();
