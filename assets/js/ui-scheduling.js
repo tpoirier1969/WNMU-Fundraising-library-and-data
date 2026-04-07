@@ -1616,13 +1616,10 @@
       const computedHistoricalTotal = rawTotalRaised > 0
         ? rawTotalRaised
         : (avgPerFundraiser > 0 ? (fundraiserCount > 0 ? (avgPerFundraiser * fundraiserCount) : avgPerFundraiser) : 0);
-      const historicalTotalDisplay = computedHistoricalTotal > 0 ? utils.formatMoney(computedHistoricalTotal) : 'Pending report import';
-      const historicalAvgDisplay = avgPerFundraiser > 0 ? utils.formatMoney(avgPerFundraiser) : 'Pending report import';
-      const fundraiserCountDisplay = fundraiserCount > 0 ? utils.formatCount(fundraiserCount) : '—';
-      const currentFundraiserDollars = occurrences.reduce((sum, item) => sum + (Number(item.importedBroadcastDollars || 0) || 0), 0);
-      const currentFundraiserAvg = occurrences.length ? (currentFundraiserDollars / occurrences.length) : 0;
-      const currentFundraiserDisplay = currentFundraiserDollars > 0 ? utils.formatMoney(currentFundraiserDollars) : '—';
-      const currentFundraiserAvgDisplay = currentFundraiserAvg > 0 ? utils.formatMoney(currentFundraiserAvg) : '—';
+      const historicalTotalDisplay = computedHistoricalTotal > 0 ? utils.formatMoney(computedHistoricalTotal) : 'N/A';
+      const historicalAvgDisplay = avgPerFundraiser > 0
+        ? `${utils.formatMoney(avgPerFundraiser)}${fundraiserCount > 0 ? ` (${utils.formatCount(fundraiserCount)})` : ''}`
+        : 'N/A';
       const scheduledRows = occurrences
         .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
         .map((item) => `
@@ -1645,13 +1642,9 @@
           </div>
           <div class="scheduled-program-line scheduled-program-line-bottom">
             <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">This fundraiser $</span><span>${utils.escapeHtml(currentFundraiserDisplay)}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">This fundraiser avg / airing</span><span>${utils.escapeHtml(currentFundraiserAvgDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span></div>
-            <div class="scheduled-data-chunk scheduled-break-chunk"><span class="mini-label inline">Break detail</span>${breakHtml}</div>
             <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(row) || '—')}</div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Fundraisers with data</span><span>${utils.escapeHtml(fundraiserCountDisplay)}</span></div>
             <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Breaks in ProTrack</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
           </div>
         </article>
