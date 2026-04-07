@@ -1118,7 +1118,7 @@
         <div class="topic-time-header"><div class="topic-time-corner">Day / hour</div>${header}</div>
         <div class="topic-time-grid">${rows}</div>
       </div>
-      <div class="performance-chart-note">Each filled cell is one day-and-hour slot for the current topic filter. Darker cells indicate stronger ${utils.escapeHtml(metricLabel().toLowerCase())}. Cells with fewer than ${utils.escapeHtml(utils.formatCount(minSampleThreshold()))} airings stay visible but are flagged as low-sample in average-based topic-time views.</div>
+      <div class="performance-chart-note">Each filled cell is one day-and-hour slot for the current topic filter. Darker cells indicate stronger ${utils.escapeHtml(metricLabel().toLowerCase())}.</div>
     `;
   }
 
@@ -1217,7 +1217,7 @@
     }
     if ((analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount)) {
       els.performanceCriteriaBar.innerHTML += `
-        <div class="performance-criteria-pill warn"><span class="label">Tiny-sample groups shown</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount))}</span></div>
+        <div class="performance-criteria-pill warn"><span class="label">Low-sample groups</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount))}</span></div>
       `;
     }
     if (analysisMeta.excludedWeakTemporalCount && TEMPORAL_CRITERIA.has(perf().criterion)) {
@@ -1265,7 +1265,6 @@
     notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.scheduleMismatchRows || 0)} normalized events were quarantined because they do not reconcile to a saved schedule placement.`);
     if (shape.annotatedTitleRows) notes.push(`${utils.formatCount(shape.annotatedTitleRows || 0)} imported rows look like they contain title annotations or notes. Those rows are still allowed if their identity matches cleanly, but they are called out here because they deserve eyeballs.`);
     notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
-    if (meta.minGroupAirings > 1) notes.push(`This view keeps groups with fewer than ${utils.formatCount(meta.minGroupAirings)} airings visible, but flags them as low-sample so one lucky hit does not get crowned as a stable winner.`);
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
     if (meta.noTemporalSupport) notes.push('Day/date/time views are intentionally cautious now: weak unmatched rows are excluded, and if nothing trustworthy remains the comparison is marked unavailable instead of pretending to know.');
@@ -1354,10 +1353,10 @@
         return `“Recent” means the trailing 90 days ending on ${endText}. This is a recency-focused view, not yet a true prior-period momentum delta.`;
       case 'topic_time_performance':
         return perf().topicFilter
-          ? 'This view ranks day/hour slots for the selected main topic and also draws a weekly heatmap so you can see when that topic performs best. Tiny-sample slots stay visible but are flagged as low-sample.'
+          ? 'This view ranks day/hour slots for the selected main topic and also draws a weekly heatmap so you can see when that topic performs best.'
           : 'Pick a main topic to make this view useful. Without a topic filter, the heatmap blends every topic together.';
       case 'topic_winners':
-        return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs, and tiny-sample topic groups stay visible with a warning.';
+        return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs.';
       default:
         return '';
     }
@@ -1421,7 +1420,7 @@
       ? 'Not enough trustworthy day/time evidence for this view yet.'
       : meta.lowConfidenceTemporal
         ? 'Small temporal sample — read it cautiously.'
-        : `${utils.formatCount(records.length)} filtered rows after excluding ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows${meta.lowSampleGroupCount ? ` and flagging ${utils.formatCount(meta.lowSampleGroupCount)} tiny-sample groups` : ''}${meta.nonSpecificRevenueCount ? ` while tracking ${utils.formatCount(meta.nonSpecificRevenueCount)} non-specific fundraiser rows separately` : ''}.`;
+        : `${utils.formatCount(records.length)} filtered rows after excluding ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows${meta.nonSpecificRevenueCount ? ` while tracking ${utils.formatCount(meta.nonSpecificRevenueCount)} non-specific fundraiser rows separately` : ''}.`;
     const quickTail = quickFilterExplanation();
     setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }

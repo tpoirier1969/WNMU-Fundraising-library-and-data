@@ -3287,7 +3287,7 @@ button.primary {
 }
 
 
-/* v0.20.68 analytics compacting + non-specific cleanup */
+/* v0.20.70 version flag + low-sample wording cleanup */
 .performance-shell {
   gap: 0.8rem;
 }
