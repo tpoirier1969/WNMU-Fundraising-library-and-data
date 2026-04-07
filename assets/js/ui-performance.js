@@ -265,17 +265,27 @@
   }
 
   function resolveProgramIdentity(row, indexes) {
-    const importedTitle = utils.firstNonEmpty(row?.imported_program_title, row?.title, row?.program_title, row?.name, '');
-    const matchedLibraryTitle = utils.firstNonEmpty(row?.matched_library_title, '');
-    const id = utils.normalizeLookupKey(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, row?.id));
+    const normalizedRow = utils.isNonSpecificRow(row || {}) ? utils.canonicalizeNonSpecificRow(row || {}) : (row || {});
+    const importedTitle = utils.firstNonEmpty(normalizedRow?.imported_program_title, normalizedRow?.title, normalizedRow?.program_title, normalizedRow?.name, '');
+    const matchedLibraryTitle = utils.firstNonEmpty(normalizedRow?.matched_library_title, '');
+    if (utils.isNonSpecificRow(normalizedRow)) {
+      return {
+        programRow: null,
+        matchSource: 'non_specific',
+        trusted: true,
+        importedTitle: utils.canonicalNonSpecificTitle(),
+        matchedLibraryTitle: utils.canonicalNonSpecificTitle()
+      };
+    }
+    const id = utils.normalizeLookupKey(utils.firstNonEmpty(normalizedRow?.program_id, normalizedRow?.pledge_program_id, normalizedRow?.id));
     if (id && indexes.byId.has(id)) {
       return { programRow: indexes.byId.get(id), matchSource: 'program_id', trusted: true, importedTitle, matchedLibraryTitle };
     }
-    const nola = utils.normalizeLookupKey(utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola));
+    const nola = utils.normalizeLookupKey(utils.firstNonEmpty(normalizedRow?.nola_code, normalizedRow?.nola, normalizedRow?.program_nola));
     if (nola && indexes.byNola.has(nola)) {
       return { programRow: indexes.byNola.get(nola), matchSource: 'nola', trusted: true, importedTitle, matchedLibraryTitle };
     }
-    const titleCandidates = [matchedLibraryTitle, utils.firstNonEmpty(row?.title, row?.program_title, row?.name), importedTitle]
+    const titleCandidates = [matchedLibraryTitle, utils.firstNonEmpty(normalizedRow?.title, normalizedRow?.program_title, normalizedRow?.name), importedTitle]
       .map((value) => utils.normalizeLookupKey(value))
       .filter(Boolean);
     for (const titleKey of titleCandidates) {
@@ -291,7 +301,7 @@
     }
     return {
       programRow: null,
-      matchSource: utils.normalizeText(row?.match_method) || 'unmatched',
+      matchSource: utils.normalizeText(normalizedRow?.match_method) || 'unmatched',
       trusted: false,
       importedTitle,
       matchedLibraryTitle
@@ -324,20 +334,24 @@
   }
 
   function signatureForProgram(programRow, fallback = {}) {
+    const candidate = utils.isNonSpecificRow(programRow || {})
+      ? utils.canonicalizeNonSpecificRow(programRow || {})
+      : (utils.isNonSpecificRow(fallback || {}) ? utils.canonicalizeNonSpecificRow(fallback || {}) : (fallback || {}));
+    if (utils.isNonSpecificRow(candidate)) return 'non_specific';
     return utils.normalizeLookupKey(
       utils.firstNonEmpty(
         programRow ? derive.programId(programRow) : '',
-        fallback?.programId,
-        fallback?.program_id,
-        fallback?.pledge_program_id,
+        candidate?.programId,
+        candidate?.program_id,
+        candidate?.pledge_program_id,
         programRow ? derive.nola(programRow) : '',
-        fallback?.nola_code,
-        fallback?.nola,
+        candidate?.nola_code,
+        candidate?.nola,
         programRow ? derive.title(programRow) : '',
-        fallback?.programTitle,
-        fallback?.program_title,
-        fallback?.title,
-        fallback?.name
+        candidate?.programTitle,
+        candidate?.program_title,
+        candidate?.title,
+        candidate?.name
       )
     );
   }
@@ -573,7 +587,8 @@
       record.monthIndex = record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when.getMonth() : null;
     }
 
-    airingRows.forEach((row) => {
+    airingRows.forEach((sourceRow) => {
+      const row = utils.isNonSpecificRow(sourceRow || {}) ? utils.canonicalizeNonSpecificRow(sourceRow || {}) : sourceRow;
       const identity = resolveProgramIdentity(row, indexes);
       if (identity.trusted) identityTrustedRows += 1;
       else weakIdentityRows += 1;
@@ -609,7 +624,8 @@
       }
     });
 
-    driveRows.forEach((row, index) => {
+    driveRows.forEach((sourceRow, index) => {
+      const row = utils.isNonSpecificRow(sourceRow || {}) ? utils.canonicalizeNonSpecificRow(sourceRow || {}) : sourceRow;
       const identity = resolveProgramIdentity(row, indexes);
       const temporal = parseTemporal(row);
       const signature = signatureForProgram(identity.programRow, row);
@@ -1345,11 +1361,16 @@
 
   function collectProgramOptions() {
     const labels = new Map();
+    const nonSpecificValue = utils.normalizeLookupKey(utils.canonicalNonSpecificNola());
     const addOption = (value, label) => {
-      const safeValue = utils.normalizeLookupKey(value || '');
       const safeLabel = utils.normalizeText(label || '');
-      if (!safeValue || !safeLabel) return;
-      if (!labels.has(safeValue)) labels.set(safeValue, safeLabel);
+      const normalizedNonSpecific = utils.isNonSpecificTitle(safeLabel) || utils.isNonSpecificNola(value || '');
+      const safeValue = normalizedNonSpecific
+        ? nonSpecificValue
+        : utils.normalizeLookupKey(value || '');
+      const finalLabel = normalizedNonSpecific ? utils.canonicalNonSpecificTitle() : safeLabel;
+      if (!safeValue || !finalLabel) return;
+      if (!labels.has(safeValue)) labels.set(safeValue, finalLabel);
     };
     (perf().records || []).forEach((record) => {
       addOption(record.programId || record.nolaCode || record.title || '', record.title || 'Unknown title');

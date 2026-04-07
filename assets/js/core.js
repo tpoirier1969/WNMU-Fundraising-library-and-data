@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.71',
+    APP_VERSION: 'v0.20.72',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -325,6 +325,24 @@ window.PledgeLib = window.PledgeLib || {};
         || utils.isNonSpecificNola(utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''))
         || utils.isNonSpecificTitle(utils.firstNonEmpty(row.imported_program_title, row.title, row.program_title, row.name, ''))
       );
+    },
+
+    canonicalizeNonSpecificRow(row = {}) {
+      if (!utils.isNonSpecificRow(row)) return row || {};
+      const normalized = { ...(row || {}) };
+      normalized.is_non_specific = true;
+      normalized.isNonSpecific = true;
+      normalized.match_method = 'non_specific';
+      if (Object.prototype.hasOwnProperty.call(normalized, 'review_status') && utils.isBlank(normalized.review_status)) normalized.review_status = 'non_specific';
+      normalized.imported_program_title = utils.canonicalNonSpecificTitle();
+      normalized.matched_library_title = utils.canonicalNonSpecificTitle();
+      normalized.title = utils.canonicalNonSpecificTitle();
+      normalized.program_title = utils.canonicalNonSpecificTitle();
+      normalized.name = utils.canonicalNonSpecificTitle();
+      normalized.nola_code = utils.canonicalNonSpecificNola();
+      normalized.nola = utils.canonicalNonSpecificNola();
+      normalized.program_nola = utils.canonicalNonSpecificNola();
+      return normalized;
     },
 
     isBlank(value) {
