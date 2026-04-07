@@ -427,7 +427,7 @@
         ? Promise.resolve({ data: null, error: null })
         : fetchOneById(constants.BASE_TABLE, programId);
       const sectionPromise = Promise.all([
-        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true),
+        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false }),
         fetchManyByContext(constants.DRIVE_RESULTS_TABLE, initialContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false),
         fetchManyByContext(constants.AIRINGS_TABLE, initialContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false })
       ]);
@@ -440,7 +440,7 @@
 
       if (needsContextRetry(initialContext, enrichedContext)) {
         if (!(timingResp.data || []).length) {
-          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true);
+          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false });
         }
         if (!(driveResp.data || []).length) {
           driveResp = await fetchManyByContext(constants.DRIVE_RESULTS_TABLE, enrichedContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false);

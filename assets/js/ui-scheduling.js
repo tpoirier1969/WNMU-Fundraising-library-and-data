@@ -1392,22 +1392,15 @@
   }
 
   function timingRowSummary(row = {}) {
-    const segment = utils.firstNonEmpty(row.segment_number, row.slot_number);
-    const actSeconds = timingValue(row, ['act_seconds', 'program_segment_length_seconds', 'segment_seconds']);
-    const breakSeconds = timingValue(row, ['break_seconds', 'pledge_break_seconds', 'break_length_seconds']);
+    const segment = Number(utils.firstNonEmpty(row.segment_number, row.slot_number));
+    const actLabel = Number.isFinite(segment) && segment > 0 ? `Act ${segment}` : 'Act';
+    const actSeconds = timingValue(row, ['program_segment_length_seconds', 'segment_seconds', 'act_seconds']);
+    const breakSeconds = timingValue(row, ['pledge_break_seconds', 'break_length_seconds', 'break_seconds']);
     const localCutinSeconds = timingValue(row, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
-    const segmentStart = timingValue(row, ['act_offset_seconds', 'segment_start_seconds']);
-    let breakAt = timingValue(row, ['break_offset_seconds', 'break_time_seconds']);
-    if (!Number.isFinite(breakAt) && Number.isFinite(segmentStart) && Number.isFinite(actSeconds)) {
-      breakAt = segmentStart + actSeconds;
-    }
-    const parts = [];
-    if (segment != null && segment !== '') parts.push(`Seg ${segment}`);
-    if (Number.isFinite(segmentStart)) parts.push(`Start ${utils.formatSeconds(segmentStart)}`);
+    const parts = [actLabel];
     if (Number.isFinite(actSeconds)) parts.push(`Program ${utils.formatSeconds(actSeconds)}`);
     if (Number.isFinite(breakSeconds)) parts.push(`Break ${utils.formatSeconds(breakSeconds)}`);
-    if (Number.isFinite(breakAt)) parts.push(`At ${utils.formatSeconds(breakAt)}`);
-    if (Number.isFinite(localCutinSeconds) && localCutinSeconds > 0) parts.push(`Local cut-in ${utils.formatSeconds(localCutinSeconds)}`);
+    if (Number.isFinite(localCutinSeconds) && localCutinSeconds > 0) parts.push(`Local Cut In ${utils.formatSeconds(localCutinSeconds)}`);
     const note = utils.normalizeText(row.notes || row.description || row.segment_title || row.segment_name);
     if (note) parts.push(note);
     return parts;

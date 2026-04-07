@@ -429,10 +429,92 @@
     renderTimingEditor(next);
   }
 
+  function timingMetricSeconds(row = {}, keys = []) {
+    for (const key of keys) {
+      const raw = row?.[key];
+      const num = Number(raw);
+      if (Number.isFinite(num)) return num;
+      if (raw === 0) return 0;
+    }
+    return null;
+  }
+
+  function timingLabel(row = {}, fallbackIndex = 0) {
+    const direct = Number(utils.firstNonEmpty(row.segment_number, row.slot_number));
+    const seq = Number.isFinite(direct) && direct > 0 ? direct : fallbackIndex + 1;
+    return `Act ${seq}`;
+  }
+
+  function timingNotes(row = {}) {
+    return utils.normalizeText(utils.firstNonEmpty(
+      row.notes,
+      row.description,
+      row.segment_title,
+      row.segment_name,
+      row.timing_note,
+      row.timing_notes
+    ));
+  }
+
+  function normalizeTimingRows(timings = []) {
+    return [...(Array.isArray(timings) ? timings : [])]
+      .map((row, index) => {
+        const programSeconds = timingMetricSeconds(row, ['program_segment_length_seconds', 'segment_seconds', 'act_seconds']);
+        const breakSeconds = timingMetricSeconds(row, ['pledge_break_seconds', 'break_length_seconds', 'break_seconds']);
+        const localCutInSeconds = timingMetricSeconds(row, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
+        return {
+          row,
+          sortKey: Number(utils.firstNonEmpty(row.segment_number, row.slot_number, index + 1)) || (index + 1),
+          label: timingLabel(row, index),
+          programSeconds,
+          breakSeconds,
+          localCutInSeconds,
+          note: timingNotes(row)
+        };
+      })
+      .sort((a, b) => a.sortKey - b.sortKey);
+  }
+
+  function timingTableHasStructuredData(rows = []) {
+    return rows.some((row) => Number.isFinite(row.programSeconds) || Number.isFinite(row.breakSeconds) || Number.isFinite(row.localCutInSeconds));
+  }
+
   function renderTiming(timings) {
     els.timingCountChip.textContent = `${timings.length}`;
     if (!timings.length) {
       els.timingList.innerHTML = '<div class="timing-card">No detailed timing rows are available for this title.</div>';
+      return;
+    }
+    const normalizedRows = normalizeTimingRows(timings);
+    if (timingTableHasStructuredData(normalizedRows)) {
+      els.timingList.innerHTML = `
+        <article class="timing-card">
+          <div class="segment-table-wrap">
+            <table class="segment-table timing-acts-table">
+              <thead>
+                <tr>
+                  <th>Segment</th>
+                  <th>Program</th>
+                  <th>Break</th>
+                  <th>Local Cut In</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${normalizedRows.map((entry) => `
+                  <tr>
+                    <td>${utils.escapeHtml(entry.label)}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(entry.note || '—')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      `;
       return;
     }
     const rows = [...timings].sort((a, b) => Number(a.segment_number || a.slot_number || 0) - Number(b.segment_number || b.slot_number || 0));
