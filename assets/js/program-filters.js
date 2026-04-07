@@ -101,6 +101,7 @@
   }
 
   function identityKey(row = {}) {
+    if (utils.isNonSpecificRow(row)) return 'non_specific';
     const direct = String(derive.programId(row) || '').trim();
     if (direct) return `id:${direct}`;
     const nolaKey = utils.normalizeLookupKey(derive.nola(row));

@@ -104,6 +104,7 @@
     scheduleModalWarning: document.getElementById('schedule-modal-warning'),
     scheduleProgramResults: document.getElementById('schedule-program-results'),
     scheduleSelectedPreview: document.getElementById('schedule-selected-preview'),
+    scheduleLiveBreakFlag: document.getElementById('schedule-live-break-flag'),
     scheduleFilterUnaired: document.getElementById('schedule-filter-unaired'),
     scheduleFilterRightsStartYear: document.getElementById('schedule-filter-rights-start-year'),
     scheduleFilterTopEarner: document.getElementById('schedule-filter-top-earner'),

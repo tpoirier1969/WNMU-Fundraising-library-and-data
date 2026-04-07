@@ -3374,3 +3374,23 @@ button.primary {
 .schedule-money-row-combined {
   grid-template-columns: repeat(8, minmax(110px, 1fr));
 }
+
+
+.import-suspect-link-select {
+  display: block;
+  width: 100%;
+  max-width: 17.5rem;
+  min-width: 0;
+}
+.import-suspect-table .toolbar-actions {
+  flex-wrap: wrap;
+}
+.schedule-live-break-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 8px;
+}
+.schedule-live-break-row .schedule-inline-check {
+  margin: 0;
+}

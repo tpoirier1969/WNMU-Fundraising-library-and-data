@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.72',
+    APP_VERSION: 'v0.20.73',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -204,6 +204,7 @@ window.PledgeLib = window.PledgeLib || {};
       suspectRowsError: '',
       suspectFilterText: '',
       selectedSuspectId: '',
+      suspectLinkSelections: {},
       scheduleAiringHistoryMap: {},
       scheduleAiringHistoryLoading: false,
       scheduleAiringHistoryLoaded: false,
@@ -307,7 +308,11 @@ window.PledgeLib = window.PledgeLib || {};
 
     isNonSpecificTitle(value) {
       const key = utils.normalizeLookupKey(value || '');
-      return key === 'non specific pledges' || key.endsWith('non specific pledges');
+      return key === 'non specific pledges'
+        || key.endsWith('non specific pledges')
+        || key === 'non specific pledge'
+        || key.endsWith('non specific pledge')
+        || /(^| )non specific pledge(s)?($| )/.test(key);
     },
 
     isNonSpecificNola(value) {

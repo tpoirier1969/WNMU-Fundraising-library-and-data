@@ -1760,6 +1760,10 @@
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = true;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
+    if (els.scheduleLiveBreakFlag) {
+      els.scheduleLiveBreakFlag.checked = Boolean(currentPlacement?.liveBreakFlag);
+      els.scheduleLiveBreakFlag.disabled = !editable;
+    }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
     if (els.scheduleAssignmentNote) {
       if (!editable) {
@@ -2329,6 +2333,7 @@
     els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterRightsStartYear?.addEventListener('change', (event) => { state.scheduleFilterRightsStartYear = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterTopEarner?.addEventListener('change', (event) => { state.scheduleFilterTopEarner = Boolean(event.target.checked); renderProgramPicker(); });
+    els.scheduleLiveBreakFlag?.addEventListener('change', () => { void updateLiveBreakFlag().catch((error) => setNotice(error?.message || 'Could not update live-break flag.', 'warn')); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
       const btn = event.target.closest('.schedule-program-assign-button');
       if (!btn) return;

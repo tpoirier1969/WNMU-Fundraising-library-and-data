@@ -1483,6 +1483,8 @@
     try {
       if (App.performanceUi?.refreshData) await App.performanceUi.refreshData({ silent: true });
       imp().suspectRows = (App.performanceUi?.getExcludedReviewRows?.() || []).map((row) => ({ ...row }));
+      const validIds = new Set((imp().suspectRows || []).map((row) => row.id));
+      imp().suspectLinkSelections = Object.fromEntries(Object.entries(imp().suspectLinkSelections || {}).filter(([id]) => validIds.has(id)));
     } catch (error) {
       imp().suspectRows = [];
       imp().suspectRowsError = error?.message || String(error);
@@ -1797,6 +1799,9 @@
       is_non_specific: false
     };
     await updateImportedRowsByHashes(suspect.row_hashes, payload);
+    if (imp().suspectLinkSelections) delete imp().suspectLinkSelections[suspectId];
+    await App.performanceUi?.refreshData?.({ silent: true });
+    App.performanceUi?.renderAll?.();
     await refreshExistingUnlinkedRows({ silent: true });
     await refreshTableStatus({ silent: true });
     await refreshSuspectRows({ silent: true });
@@ -1808,11 +1813,20 @@
   async function approveSuspectRow(suspectId) {
     const suspect = (imp().suspectRows || []).find((row) => row.id === suspectId);
     if (!suspect) return;
+    const selectedProgramId = imp().suspectLinkSelections?.[suspectId] || suspect.pending_link_program_id || '';
+    if (selectedProgramId) {
+      await linkSuspectRow(suspectId, selectedProgramId);
+      return;
+    }
     await updateImportedRowsByHashes(suspect.row_hashes, {
       approved_unlinked: true,
       review_status: 'approved_unlinked',
+      match_method: 'approved_unlinked',
       match_reason: 'Approved from excluded suspect rows review'
     });
+    if (imp().suspectLinkSelections) delete imp().suspectLinkSelections[suspectId];
+    await App.performanceUi?.refreshData?.({ silent: true });
+    App.performanceUi?.renderAll?.();
     await refreshExistingUnlinkedRows({ silent: true });
     await refreshSuspectRows({ silent: true });
     setStatus('Excluded suspect row approved for analytics.');
@@ -2273,6 +2287,7 @@
       const suspectId = select.getAttribute('data-suspect-id') || '';
       const target = (imp().suspectRows || []).find((row) => row.id === suspectId);
       if (target) target.pending_link_program_id = select.value || '';
+      imp().suspectLinkSelections = { ...(imp().suspectLinkSelections || {}), [suspectId]: (select.value || '') };
     });
     els.importSuspectBody?.addEventListener('click', (event) => {
       const suspectId = event.target.closest('[data-suspect-id]')?.getAttribute('data-suspect-id') || '';
