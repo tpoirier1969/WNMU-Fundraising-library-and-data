@@ -131,14 +131,68 @@
     return { ...(state.detailExtraFieldDraft || {}) };
   }
 
+  function contributionAmount(row = {}) {
+    return Number(utils.firstNonEmpty(
+      row?.contribution_amount,
+      row?.total_contributions,
+      row?.total_dollars,
+      row?.dollars,
+      row?.contributed
+    ) || 0) || 0;
+  }
+
+  function historyGroupKey(row = {}) {
+    return utils.normalizeLookupKey([
+      row?.fundraiser_label || row?.drive_label || row?.drive_column || '',
+      row?.drive_start_date || row?.drive_date || row?.air_date || utils.dateKeyFromDate(row?.aired_at) || '',
+      row?.drive_end_date || ''
+    ].join('|'));
+  }
+
+  function buildDriveFallbackMaps(driveResults = [], exactAirings = []) {
+    const driveByGroup = new Map();
+    (driveResults || []).forEach((row) => {
+      const key = historyGroupKey(row);
+      if (!key) return;
+      const prior = driveByGroup.get(key) || { amount: 0, rows: [] };
+      prior.amount += contributionAmount(row);
+      prior.rows.push(row);
+      driveByGroup.set(key, prior);
+    });
+    const airingCountByGroup = new Map();
+    (exactAirings || []).forEach((row) => {
+      const key = historyGroupKey(row);
+      if (!key) return;
+      airingCountByGroup.set(key, Number(airingCountByGroup.get(key) || 0) + 1);
+    });
+    return { driveByGroup, airingCountByGroup };
+  }
+
+  function resolvedExactAiringRows(exactAirings = [], driveResults = []) {
+    const { driveByGroup, airingCountByGroup } = buildDriveFallbackMaps(driveResults, exactAirings);
+    return (exactAirings || []).map((row) => {
+      const directAmount = contributionAmount(row);
+      const key = historyGroupKey(row);
+      const group = key ? driveByGroup.get(key) : null;
+      const airingCount = key ? Number(airingCountByGroup.get(key) || 0) : 0;
+      const fallbackAmount = group && airingCount === 1 ? Number(group.amount || 0) || 0 : 0;
+      const resolvedAmount = directAmount > 0 ? directAmount : fallbackAmount;
+      return {
+        ...row,
+        __resolved_contribution_amount: resolvedAmount,
+        __resolved_contribution_source: directAmount > 0 ? 'airing' : (fallbackAmount > 0 ? 'drive_rollup' : 'none')
+      };
+    });
+  }
+
   function buildGraphSeries(driveResults = [], exactAirings = []) {
-    const sourceRows = exactAirings.length ? exactAirings : driveResults;
+    const sourceRows = exactAirings.length ? resolvedExactAiringRows(exactAirings, driveResults) : (driveResults || []);
     const grouped = new Map();
     sourceRows.forEach((row) => {
-      const iso = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.date_key);
+      const iso = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date, row?.date_key);
       const dateKey = utils.dateKeyFromDate(iso) || utils.normalizeText(iso);
       const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column)) || (dateKey || 'Unknown');
-      const amount = Number(utils.firstNonEmpty(row?.contribution_amount, row?.total_contributions, row?.dollars, row?.contributed) || 0) || 0;
+      const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
       if (!dateKey && !label) return;
       const key = `${dateKey || label}|${label}`;
       const prior = grouped.get(key) || { label, dateKey: dateKey || label, amount: 0 };
@@ -407,18 +461,25 @@
 
   function renderDriveResults(driveResults, exactAirings) {
     const combined = [];
-    exactAirings.forEach((row) => {
-      combined.push({
-        when: utils.formatDateTime(utils.firstNonEmpty(row.aired_at, row.air_date), 'N/A'),
-        contributed: utils.firstNonEmpty(row.contribution_amount, row.total_contributions, row.contributed),
-        note: utils.normalizeText(utils.firstNonEmpty(row.fundraiser_label, row.drive_label, row.notes)) || '—'
+    const resolvedAirings = resolvedExactAiringRows(exactAirings, driveResults);
+    if (resolvedAirings.length) {
+      resolvedAirings.forEach((row) => {
+        const sourceNote = row.__resolved_contribution_source === 'drive_rollup' ? ' · fundraiser rollup' : '';
+        combined.push({
+          when: utils.formatDateTime(utils.firstNonEmpty(row.aired_at, row.air_date), 'N/A'),
+          contributed: utils.firstNonEmpty(row.__resolved_contribution_amount, contributionAmount(row)),
+          note: `${utils.normalizeText(utils.firstNonEmpty(row.fundraiser_label, row.drive_label, row.notes)) || '—'}${sourceNote}`
+        });
       });
-    });
-    driveResults.forEach((row) => {
-      const label = utils.normalizeText(utils.firstNonEmpty(row.drive_label, row.drive_column, row.fundraiser_label)) || 'Drive';
-      const when = row.drive_date ? `${utils.formatDate(row.drive_date)}${row.drive_window_text ? ` · ${row.drive_window_text}` : ''}` : label;
-      combined.push({ when, contributed: utils.firstNonEmpty(row.contribution_amount, row.total_contributions, row.contributed), note: label });
-    });
+    } else {
+      driveResults.forEach((row) => {
+        const label = utils.normalizeText(utils.firstNonEmpty(row.drive_label, row.drive_column, row.fundraiser_label)) || 'Drive';
+        const when = utils.firstNonEmpty(row.drive_date, row.drive_start_date)
+          ? `${utils.formatDate(utils.firstNonEmpty(row.drive_date, row.drive_start_date))}${row.drive_window_text ? ` · ${row.drive_window_text}` : ''}`
+          : label;
+        combined.push({ when, contributed: contributionAmount(row), note: label });
+      });
+    }
     els.airingCountChip.textContent = `${combined.length}`;
     if (!combined.length) {
       els.airingList.innerHTML = '<div class="premium-card">No readable drive or airing history is available for this title.</div>';

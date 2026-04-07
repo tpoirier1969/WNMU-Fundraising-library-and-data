@@ -172,7 +172,7 @@
   }
 
   function normalizeExistingUnlinkedRow(row = {}) {
-    return {
+    const normalized = {
       row_hash: String(row.row_hash || ''),
       imported_program_title: utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '—',
       nola_code: utils.normalizeText(row.nola_code) || '—',
@@ -182,8 +182,15 @@
       source_file_name: utils.normalizeText(row.source_file_name) || '—',
       match_reason: existingUnlinkedReason(row),
       approved_unlinked: Boolean(row.approved_unlinked || row.review_status === 'approved_unlinked' || row.match_method === 'approved_unlinked'),
+      is_non_specific: Boolean(
+        row.is_non_specific
+        || String(row.review_status || '').toLowerCase() === 'non_specific'
+        || String(row.match_method || '').toLowerCase() === 'non_specific'
+        || isNonSpecificRow(row)
+      ),
       raw: row
     };
+    return normalized;
   }
 
   function setStatus(text, type = '') {
@@ -1621,6 +1628,25 @@
     setNotice('Quarantined imported row approved.');
   }
 
+  async function markExistingUnlinkedRowNonSpecific(rowHash) {
+    const response = await App.data.updateImportedAiringByHash(rowHash, {
+      program_id: null,
+      pledge_program_id: null,
+      matched_library_title: null,
+      is_non_specific: true,
+      approved_unlinked: true,
+      review_status: 'non_specific',
+      match_method: 'non_specific',
+      match_reason: 'Marked as non-specific fundraiser revenue during quarantine review'
+    });
+    if (response.error) throw response.error;
+    await refreshExistingUnlinkedRows({ silent: true });
+    await refreshTableStatus({ silent: true });
+    setStatus('Imported row marked as non-specific fundraiser revenue.');
+    setResultBanner('Imported row marked as non-specific fundraiser revenue.');
+    setNotice('Imported row marked as non-specific fundraiser revenue.');
+  }
+
   async function deleteExistingUnlinkedRow(rowHash) {
     const response = await App.data.deleteImportedAiringByHash(rowHash);
     if (response.error) throw response.error;
@@ -1750,7 +1776,7 @@
         <span class="mini-chip">${escape(selected.air_date || 'No date')}</span>
         <span class="mini-chip">${escape(selected.source_file_name || 'No file')}</span>
       </div>
-      <div class="muted">${escape(selected.match_reason || 'No reason recorded')}${selected.approved_unlinked ? ' · approved to remain unlinked' : ''}</div>
+      <div class="muted">${escape(selected.match_reason || 'No reason recorded')}${selected.is_non_specific ? ' · non-specific fundraiser revenue' : ''}${selected.approved_unlinked && !selected.is_non_specific ? ' · approved to remain unlinked' : ''}</div>
       <dl class="import-quarantine-preview-grid">${entries || '<div class="placeholder-row">No additional imported fields were available for preview.</div>'}</dl>`;
   }
 
@@ -1777,6 +1803,9 @@
         .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${String(row.pending_link_program_id || '') === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
         .join('');
       const selectedClass = row.row_hash === imp().selectedExistingUnlinkedHash ? ' import-quarantine-row-selected' : '';
+      const statusBits = [row.match_reason || 'No library link', row.source_file_name || '—'];
+      if (row.is_non_specific) statusBits.push('candidate non-specific');
+      else if (row.approved_unlinked) statusBits.push('approved');
       return `
       <tr class="import-quarantine-row${selectedClass}" data-row-hash="${escape(row.row_hash)}">
         <td>${escape(row.imported_program_title || '—')}</td>
@@ -1784,12 +1813,12 @@
         <td>${escape(row.air_date || '—')}</td>
         <td>${escape(row.air_time || '—')}</td>
         <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
-        <td>${escape(`${row.match_reason || 'No library link'} · ${row.source_file_name || '—'}${row.approved_unlinked ? ' · approved' : ''}`)}</td>
+        <td>${escape(statusBits.join(' · '))}</td>
         <td><select class="import-existing-link-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select></td>
         <td>
           <div class="import-match-actions">
             <button type="button" class="ghost import-existing-apply-button" data-row-hash="${escape(row.row_hash)}">Link</button>
-            <button type="button" class="ghost import-existing-approve-button" data-row-hash="${escape(row.row_hash)}">Approve</button>
+            ${row.is_non_specific ? `<button type="button" class="ghost import-existing-nonspecific-button" data-row-hash="${escape(row.row_hash)}">Mark non-specific</button>` : `<button type="button" class="ghost import-existing-approve-button" data-row-hash="${escape(row.row_hash)}">Approve</button>`}
             <button type="button" class="ghost import-existing-delete-button" data-row-hash="${escape(row.row_hash)}">Delete</button>
           </div>
         </td>
@@ -2013,10 +2042,9 @@
     els.importExistingUnlinkedBody?.addEventListener('click', (event) => {
       const rowHash = event.target.closest('[data-row-hash]')?.getAttribute('data-row-hash') || '';
       if (!rowHash) return;
-      imp().selectedExistingUnlinkedHash = rowHash;
-      renderExistingUnlinkedRows();
       const linkButton = event.target.closest('.import-existing-apply-button');
       if (linkButton) {
+        imp().selectedExistingUnlinkedHash = rowHash;
         const select = els.importExistingUnlinkedBody.querySelector(`.import-existing-link-select[data-row-hash="${rowHash}"]`);
         const selectedRow = (imp().existingUnlinkedRows || []).find((row) => row.row_hash === rowHash);
         const selectedProgramId = select?.value || selectedRow?.pending_link_program_id || '';
@@ -2025,8 +2053,17 @@
         });
         return;
       }
+      const markNonSpecificButton = event.target.closest('.import-existing-nonspecific-button');
+      if (markNonSpecificButton) {
+        imp().selectedExistingUnlinkedHash = rowHash;
+        void markExistingUnlinkedRowNonSpecific(rowHash).catch((error) => {
+          setNotice(error?.message || String(error), 'warn');
+        });
+        return;
+      }
       const approveButton = event.target.closest('.import-existing-approve-button');
       if (approveButton) {
+        imp().selectedExistingUnlinkedHash = rowHash;
         void approveExistingUnlinkedRow(rowHash).catch((error) => {
           setNotice(error?.message || String(error), 'warn');
         });
@@ -2034,10 +2071,15 @@
       }
       const deleteButton = event.target.closest('.import-existing-delete-button');
       if (deleteButton) {
+        imp().selectedExistingUnlinkedHash = rowHash;
         void deleteExistingUnlinkedRow(rowHash).catch((error) => {
           setNotice(error?.message || String(error), 'warn');
         });
+        return;
       }
+      if (event.target.closest('select, option, input, textarea, button, a')) return;
+      imp().selectedExistingUnlinkedHash = rowHash;
+      renderExistingUnlinkedRows();
     });
   }
 

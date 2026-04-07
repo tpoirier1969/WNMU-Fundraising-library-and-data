@@ -706,7 +706,12 @@
     const rows = await fetchAllRows(constants.AIRINGS_TABLE);
     return (rows || []).filter((row) => {
       const hasProgram = String(row?.program_id || row?.pledge_program_id || '').trim();
-      return !hasProgram;
+      const isNonSpecific = Boolean(
+        row?.is_non_specific === true
+        || String(row?.match_method || '').toLowerCase() === 'non_specific'
+        || String(row?.review_status || '').toLowerCase() === 'non_specific'
+      );
+      return !hasProgram && !isNonSpecific;
     });
   }
 

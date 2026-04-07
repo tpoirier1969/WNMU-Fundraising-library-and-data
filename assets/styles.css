@@ -3158,7 +3158,7 @@ button.primary {
   }
 }
 
-/* v0.20.65 detail editing + graph + quarantine review */
+/* v0.20.67 quarantine dropdown fix */
 .detail-extra-fields-editor {
   display: grid;
   gap: 10px;
@@ -3217,6 +3217,19 @@ button.primary {
 }
 .import-quarantine-filter {
   min-width: 260px;
+}
+.import-existing-link-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 18rem;
+}
+.import-unlinked-table th:nth-child(7),
+.import-unlinked-table td:nth-child(7) {
+  width: 18.5rem;
+}
+.import-unlinked-table th:nth-child(8),
+.import-unlinked-table td:nth-child(8) {
+  width: 12rem;
 }
 .import-quarantine-row-selected td {
   background: rgba(18, 118, 185, 0.08);
