@@ -46,7 +46,7 @@
       if (options.preserveDetail && state.selectedProgramId && !els.detailModal.classList.contains('hidden')) {
         await App.detailUi.loadProgramDetail(state.selectedProgramId, { preserveMode: state.detailEditMode });
       }
-      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} titles. Scheduling title match is ready.`);
+      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} source rows. Scheduling title match is ready.`);
     } catch (error) {
       console.error(error);
       const rawMessage = error?.message || 'Load failed.';

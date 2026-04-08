@@ -184,7 +184,7 @@
     }).join('');
   }
 
-  function updateSummary() {
+  function updateSummary(sourceRowCount = state.sourceCollapsedCount || 0) {
     const filters = [];
     if (state.topicFilter) filters.push(`topic: ${state.topicFilter}`);
     if (state.secondaryTopicFilter) filters.push(`secondary: ${state.secondaryTopicFilter}`);
@@ -193,7 +193,10 @@
     filters.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
     filters.push(`sorted by ${utils.sortLabel(state.sortField)} ${state.sortDirection === 'desc' ? 'descending' : 'ascending'}`);
     const sourceName = state.librarySource ? `source: ${state.librarySource.name}` : 'source: unknown';
-    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles · ${filters.join(' · ')} · ${sourceName}`;
+    const sourceBit = sourceRowCount && sourceRowCount !== state.totalRows
+      ? ` · ${sourceRowCount.toLocaleString()} loaded before merge/filter`
+      : '';
+    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles${sourceBit} · ${filters.join(' · ')} · ${sourceName}`;
   }
 
   function syncSelectedRows() {
@@ -204,11 +207,12 @@
 
   function applyLibraryView() {
     const sourceRows = filters.collapseRows(state.rawRows || [], { statusPreference: state.statusFilter });
+    state.sourceCollapsedCount = sourceRows.length;
     buildFilterOptions();
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));
     state.totalRows = state.rows.length;
     renderRows();
-    updateSummary();
+    updateSummary(sourceRows.length);
     syncSelectedRows();
     syncSortHeaders();
 
@@ -218,7 +222,14 @@
     }
 
     const statusLabel = state.statusFilter === 'active' ? 'active ' : state.statusFilter === 'archived' ? 'archived ' : '';
-    setNotice(`Loaded ${utils.formatCount(state.totalRows)} ${statusLabel}titles from ${state.librarySource?.name || 'the pledge library source'}.`);
+    const rawCount = Array.isArray(state.rawRows) ? state.rawRows.length : 0;
+    const reductionNote = rawCount && rawCount !== sourceRows.length
+      ? ` (${utils.formatCount(rawCount)} source rows collapsed to ${utils.formatCount(sourceRows.length)} titles)`
+      : '';
+    const filterNote = state.totalRows !== sourceRows.length
+      ? ` Showing ${utils.formatCount(state.totalRows)} after current filters.`
+      : '';
+    setNotice(`Loaded ${utils.formatCount(sourceRows.length)} ${statusLabel}titles from ${state.librarySource?.name || 'the pledge library source'}.${reductionNote}${filterNote}`);
   }
 
   function resetFilters() {

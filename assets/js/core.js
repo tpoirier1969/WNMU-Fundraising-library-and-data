@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.78',
+    APP_VERSION: 'v0.20.79',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -654,11 +654,30 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     avgPerFundraiser(row) {
-      return utils.firstNonEmpty(row?.avg_contribution_per_drive, row?.average_per_fundraiser, row?.avg_per_fundraiser, row?.avg_contribution) || null;
+      return utils.firstNonEmpty(
+        row?.avg_contribution_per_drive,
+        row?.average_per_fundraiser,
+        row?.avg_per_fundraiser,
+        row?.avg_contribution,
+        row?.average_contribution_per_drive,
+        row?.avg_dollars_per_drive,
+        row?.avg_dollars,
+        row?.average_dollars
+      ) || null;
     },
 
     totalRaised(row) {
-      return utils.firstNonEmpty(row?.total_contributions, row?.total_raised, row?.sum_contributions, row?.gross_contributions) || null;
+      return utils.firstNonEmpty(
+        row?.total_contributions,
+        row?.total_raised,
+        row?.sum_contributions,
+        row?.gross_contributions,
+        row?.contribution_total,
+        row?.total_dollars,
+        row?.revenue_total,
+        row?.gross_revenue,
+        row?.revenue
+      ) || null;
     },
 
     runtimeMinutes(row) {
