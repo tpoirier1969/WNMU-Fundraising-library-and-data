@@ -417,6 +417,77 @@
     return fetchManyByAttempts(tableName, rawFieldAttempts, orderFields, ascending);
   }
 
+  async function fetchManyByFieldIn(tableName, field, values = [], orderFields = [], ascending = true) {
+    const uniqueValues = [...new Set((Array.isArray(values) ? values : [values])
+      .map((value) => utils.isBlank(value) ? '' : `${value}`.trim())
+      .filter(Boolean))];
+    if (!field || !uniqueValues.length) return { data: [], error: null, field };
+    const normalizedOrderFields = Array.isArray(orderFields)
+      ? orderFields.filter(Boolean)
+      : [orderFields].filter(Boolean);
+    const orderAttempts = prioritizeOrderAttempts(tableName, [...normalizedOrderFields, null]);
+    let lastError = null;
+    let sawSchemaOnlyError = false;
+    for (const orderField of orderAttempts) {
+      let query = state.client.from(tableName).select('*').in(field, uniqueValues);
+      if (orderField) query = query.order(orderField, { ascending });
+      const response = await query;
+      if (!response.error) {
+        if (Array.isArray(response.data)) {
+          cacheDetailQueryHint(tableName, field, orderField);
+          return { ...response, field };
+        }
+        lastError = null;
+        continue;
+      }
+      lastError = response.error;
+      if (isSchemaOnlyError(response.error.message || '')) {
+        sawSchemaOnlyError = true;
+        continue;
+      }
+      break;
+    }
+    if (lastError && sawSchemaOnlyError && isSchemaOnlyError(lastError.message || '')) {
+      return { data: [], error: null, field };
+    }
+    return { data: [], error: lastError, field };
+  }
+
+  async function fetchManyByFieldSet(tableName, fields = [], values = [], orderFields = [], ascending = true) {
+    const fieldAttempts = prioritizeFieldAttempts(tableName, (Array.isArray(fields) ? fields : [fields]).filter(Boolean).map((field) => [field, true]));
+    let lastError = null;
+    let sawSchemaOnlyError = false;
+    for (const [field] of fieldAttempts) {
+      const response = await fetchManyByFieldIn(tableName, field, values, orderFields, ascending);
+      if (!response.error && Array.isArray(response.data) && response.data.length) return response;
+      if (!response.error) {
+        lastError = null;
+        continue;
+      }
+      lastError = response.error;
+      if (isSchemaOnlyError(response.error.message || '')) {
+        sawSchemaOnlyError = true;
+        continue;
+      }
+      break;
+    }
+    if (lastError && sawSchemaOnlyError && isSchemaOnlyError(lastError.message || '')) {
+      return { data: [], error: null, field: null };
+    }
+    return { data: [], error: lastError, field: null };
+  }
+
+  function groupRowsByField(rows = [], field = '') {
+    const map = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const key = utils.isBlank(row?.[field]) ? '' : `${row[field]}`.trim();
+      if (!key) return;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    });
+    return map;
+  }
+
   async function fetchManyByTitleFallback(tableName, context = {}, orderFields = [], ascending = true) {
     const rawFieldAttempts = [
       ['title', context.title],
@@ -451,6 +522,64 @@
       });
     });
     return merged;
+  }
+
+  async function fetchProgramDetailsBatch(programIds = [], options = {}) {
+    const requestedIds = [...new Set((Array.isArray(programIds) ? programIds : [programIds])
+      .map((value) => `${value || ''}`.trim())
+      .filter(Boolean))];
+    const useCache = options.useCache !== false;
+    const resultMap = {};
+    requestedIds.forEach((programId) => {
+      if (useCache && state.detailCache[programId]) {
+        resultMap[programId] = state.detailCache[programId];
+      }
+    });
+    const pendingIds = requestedIds.filter((programId) => !(useCache && state.detailCache[programId]) && !isLookupOnlyProgram(programId));
+    const lookupOnlyIds = requestedIds.filter((programId) => isLookupOnlyProgram(programId));
+    lookupOnlyIds.forEach((programId) => {
+      const summaryRow = resolveProgramSummaryRow(programId);
+      const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, {}), summaryRow || {});
+      resultMap[programId] = {
+        program: Object.keys(detailProgram).length ? detailProgram : null,
+        timings: [],
+        driveResults: [],
+        airings: [],
+        warnings: []
+      };
+      if (useCache) state.detailCache[programId] = resultMap[programId];
+    });
+    if (!pendingIds.length) return resultMap;
+
+    const baseResp = await fetchManyByFieldIn(constants.BASE_TABLE, 'id', pendingIds, [], true);
+    const timingResp = await fetchManyByFieldSet(constants.TIMING_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true);
+    const driveResp = await fetchManyByFieldSet(constants.DRIVE_RESULTS_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false);
+    const airingsResp = await fetchManyByFieldSet(constants.AIRINGS_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['aired_at', 'air_date', 'drive_date', 'created_at'], false);
+
+    const baseById = new Map((baseResp.data || []).map((row) => [`${row?.id || ''}`.trim(), row]));
+    const timingField = timingResp.field || 'program_id';
+    const driveField = driveResp.field || 'program_id';
+    const airingsField = airingsResp.field || 'program_id';
+    const timingsByProgram = groupRowsByField(timingResp.data || [], timingField);
+    const drivesByProgram = groupRowsByField(driveResp.data || [], driveField);
+    const airingsByProgram = groupRowsByField(airingsResp.data || [], airingsField);
+
+    pendingIds.forEach((programId) => {
+      const summaryRow = resolveProgramSummaryRow(programId);
+      const baseRow = baseById.get(programId) || null;
+      const detailProgram = enrichResolvedFields(utils.mergeRows(summaryRow || {}, baseRow || {}), baseRow || summaryRow || {});
+      const detail = {
+        program: Object.keys(detailProgram).length ? detailProgram : null,
+        timings: timingsByProgram.get(programId) || [],
+        driveResults: drivesByProgram.get(programId) || [],
+        airings: airingsByProgram.get(programId) || [],
+        warnings: buildDetailWarnings(baseResp, timingResp, driveResp, airingsResp)
+      };
+      resultMap[programId] = detail;
+      if (useCache) state.detailCache[programId] = detail;
+    });
+
+    return resultMap;
   }
 
   async function fetchProgramDetail(programId, options = {}) {
@@ -936,6 +1065,7 @@
     refreshRawRows,
     getProbeStatusMessage,
     fetchProgramDetail,
+    fetchProgramDetailsBatch,
     resolveProgramSnapshot,
     resetDetailCaches,
     updateProgram,

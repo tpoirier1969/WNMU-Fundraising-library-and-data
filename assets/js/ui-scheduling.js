@@ -3,8 +3,6 @@
   const { state, constants, utils, derive } = App;
   const filters = App.programFilters;
   const { els, setNotice } = App.dom;
-  const scheduledDetailQueue = new Set();
-  let scheduledDetailPumpActive = false;
   let scheduledDetailRerenderTimer = 0;
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
@@ -1057,17 +1055,7 @@
       .map((item) => String(item.programId || '').trim())
       .filter(Boolean))];
     if (!state.client || !programIds.length) return;
-    await Promise.all(programIds.map(async (programId) => {
-      const cache = state.scheduleDetailCache[programId];
-      if (cache?.loaded || cache?.loading) return;
-      state.scheduleDetailCache[programId] = { loading: true, loaded: false };
-      try {
-        const detail = await App.data.fetchProgramDetail(programId);
-        state.scheduleDetailCache[programId] = { loading: false, loaded: true, detail };
-      } catch (error) {
-        state.scheduleDetailCache[programId] = { loading: false, loaded: true, error };
-      }
-    }));
+    await ensureScheduledDetailsBatch(programIds);
   }
 
   function lengthMetaLabel(row = {}) {
@@ -1672,33 +1660,40 @@
     }, 60);
   }
 
-  async function pumpScheduledDetailQueue() {
-    if (scheduledDetailPumpActive || !scheduledDetailQueue.size) return;
-    scheduledDetailPumpActive = true;
-    try {
-      while (scheduledDetailQueue.size) {
-        const batch = [...scheduledDetailQueue].slice(0, 2);
-        batch.forEach((programId) => scheduledDetailQueue.delete(programId));
-        await Promise.all(batch.map(async (programId) => {
-          try {
-            const detail = await App.data.fetchProgramDetail(programId);
-            state.scheduleDetailCache[programId] = { loading: false, loaded: true, detail };
-          } catch (error) {
-            state.scheduleDetailCache[programId] = { loading: false, loaded: true, error };
-          }
-        }));
+  async function ensureScheduledDetailsBatch(programIds = []) {
+    const wantedIds = [...new Set((Array.isArray(programIds) ? programIds : [programIds])
+      .map((value) => `${value || ''}`.trim())
+      .filter(Boolean))];
+    const neededIds = wantedIds.filter((programId) => !state.scheduleDetailCache[programId]?.loaded && !state.scheduleDetailCache[programId]?.loading);
+    if (!neededIds.length || !state.client) return;
+    if (!state.scheduleDetailBatchPending) state.scheduleDetailBatchPending = {};
+    const batchKey = neededIds.slice().sort().join('|');
+    if (state.scheduleDetailBatchPending[batchKey]) return state.scheduleDetailBatchPending[batchKey];
+    neededIds.forEach((programId) => {
+      state.scheduleDetailCache[programId] = {
+        ...(state.scheduleDetailCache[programId] || {}),
+        loading: true,
+        loaded: false
+      };
+    });
+    const task = (async () => {
+      try {
+        const detailMap = await App.data.fetchProgramDetailsBatch(neededIds);
+        neededIds.forEach((programId) => {
+          const detail = detailMap?.[programId] || { program: null, timings: [], driveResults: [], airings: [], warnings: [] };
+          state.scheduleDetailCache[programId] = { loading: false, loaded: true, detail };
+        });
+      } catch (error) {
+        neededIds.forEach((programId) => {
+          state.scheduleDetailCache[programId] = { loading: false, loaded: true, error };
+        });
+      } finally {
+        delete state.scheduleDetailBatchPending[batchKey];
         scheduleScheduledProgramDetailsRerender();
       }
-    } finally {
-      scheduledDetailPumpActive = false;
-    }
-  }
-
-  function loadScheduledDetail(programId) {
-    if (!programId || state.scheduleDetailCache[programId]?.loaded || state.scheduleDetailCache[programId]?.loading || !state.client) return;
-    state.scheduleDetailCache[programId] = { loading: true, loaded: false };
-    scheduledDetailQueue.add(programId);
-    void pumpScheduledDetailQueue();
+    })();
+    state.scheduleDetailBatchPending[batchKey] = task;
+    return task;
   }
 
   function renderScheduledProgramDetails() {
@@ -1731,10 +1726,10 @@
       grouped.get(key).push(placement);
     });
     const groupedEntries = [...grouped.entries()];
+    void ensureScheduledDetailsBatch(groupedEntries.map(([programId]) => programId));
 
     els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences]) => {
       const row = getProgramRowById(programId) || {};
-      loadScheduledDetail(programId);
       const cache = state.scheduleDetailCache[programId];
       const detail = cache?.detail || null;
       const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
