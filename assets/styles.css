@@ -1130,6 +1130,9 @@ button.primary {
 .mini-label.inline { display: block; margin-bottom: 4px; }
 .scheduled-break-inline { display: flex; flex-wrap: wrap; gap: 6px; }
 .scheduled-break-chip { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; background: #eef5fb; border: 1px solid #d6e5ef; font-size: .84rem; color: var(--text); }
+.scheduled-break-detail-chunk { grid-column: 1 / -1; }
+.scheduled-break-detail-table-wrap { margin-top: 6px; }
+.scheduled-break-detail-table th, .scheduled-break-detail-table td { font-size: .84rem; }
 .scheduled-premium-lines { display: grid; gap: 2px; }
 .scheduled-premium-line { line-height: 1.25; }
 .scheduled-occurrence-list { display: grid; gap: 4px; }

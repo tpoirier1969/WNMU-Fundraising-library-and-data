@@ -1401,9 +1401,40 @@
     if (Number.isFinite(actSeconds)) parts.push(`Program ${utils.formatSeconds(actSeconds)}`);
     if (Number.isFinite(breakSeconds)) parts.push(`Break ${utils.formatSeconds(breakSeconds)}`);
     if (Number.isFinite(localCutinSeconds) && localCutinSeconds > 0) parts.push(`Local Cut In ${utils.formatSeconds(localCutinSeconds)}`);
-    const note = utils.normalizeText(row.notes || row.description || row.segment_title || row.segment_name);
+    const note = utils.normalizeText(row.notes || row.description || row.segment_title || row.segment_name || row.timing_note || row.timing_notes);
     if (note) parts.push(note);
     return parts;
+  }
+
+  function scheduledTimingLabel(row = {}, fallbackIndex = 0) {
+    const direct = Number(utils.firstNonEmpty(row.segment_number, row.slot_number));
+    const seq = Number.isFinite(direct) && direct > 0 ? direct : fallbackIndex + 1;
+    return `Act ${seq}`;
+  }
+
+  function scheduledTimingNote(row = {}) {
+    return utils.normalizeText(utils.firstNonEmpty(
+      row.notes,
+      row.description,
+      row.segment_title,
+      row.segment_name,
+      row.timing_note,
+      row.timing_notes
+    ));
+  }
+
+  function normalizeScheduledTimingRows(timings = []) {
+    return [...(Array.isArray(timings) ? timings : [])]
+      .map((row, index) => ({
+        row,
+        sortKey: Number(utils.firstNonEmpty(row.segment_number, row.slot_number, index + 1)) || (index + 1),
+        label: scheduledTimingLabel(row, index),
+        programSeconds: timingValue(row, ['program_segment_length_seconds', 'segment_seconds', 'act_seconds']),
+        breakSeconds: timingValue(row, ['pledge_break_seconds', 'break_length_seconds', 'break_seconds']),
+        localCutInSeconds: timingValue(row, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']),
+        note: scheduledTimingNote(row)
+      }))
+      .sort((a, b) => a.sortKey - b.sortKey);
   }
 
   function premiumLines(value) {
@@ -1532,7 +1563,33 @@
   function timingSummaryHtml(cacheEntry) {
     const timings = cacheEntry?.timings || [];
     if (!timings.length) return '<div class="scheduled-program-note">Detailed break information not loaded yet.</div>';
-    return `<div class="scheduled-break-inline">${timings.slice(0, 12).map((row) => `<div class="scheduled-break-chip">${utils.escapeHtml(timingRowSummary(row).join(' · ') || 'Timing row')}</div>`).join('')}</div>`;
+    const rows = normalizeScheduledTimingRows(timings);
+    return `
+      <div class="segment-table-wrap scheduled-break-detail-table-wrap">
+        <table class="segment-table timing-acts-table scheduled-break-detail-table">
+          <thead>
+            <tr>
+              <th>Act</th>
+              <th>Program</th>
+              <th>Break</th>
+              <th>Local Cut In</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((entry) => `
+              <tr>
+                <td>${utils.escapeHtml(entry.label)}</td>
+                <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—')}</td>
+                <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : '—')}</td>
+                <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : '—')}</td>
+                <td>${utils.escapeHtml(entry.note || '—')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   function scheduleScheduledProgramDetailsRerender() {

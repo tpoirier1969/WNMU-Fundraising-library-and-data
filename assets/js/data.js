@@ -364,22 +364,8 @@
     return /column .* does not exist|schema cache/i.test(message || '');
   }
 
-  async function fetchManyByContext(tableName, context = {}, orderFields = [], ascending = true, options = {}) {
-    const rawFieldAttempts = [
-      ['program_id', context.programId],
-      ['pledge_program_id', context.programId],
-      ['id', context.programId],
-      ['nola_code', context.nola],
-      ['nola', context.nola],
-      ['program_nola', context.nola],
-      ...(options.allowTitleFields === false ? [] : [
-        ['title', context.title],
-        ['program_title', context.title],
-        ['name', context.title]
-      ])
-    ].filter((entry) => !utils.isBlank(entry[1]));
-
-    const fieldAttempts = prioritizeFieldAttempts(tableName, rawFieldAttempts);
+  async function fetchManyByAttempts(tableName, rawFieldAttempts = [], orderFields = [], ascending = true) {
+    const fieldAttempts = prioritizeFieldAttempts(tableName, (Array.isArray(rawFieldAttempts) ? rawFieldAttempts : []).filter((entry) => Array.isArray(entry) && !utils.isBlank(entry[1])));
     const normalizedOrderFields = Array.isArray(orderFields)
       ? orderFields.filter(Boolean)
       : [orderFields].filter(Boolean);
@@ -412,6 +398,59 @@
       return { data: [], error: null };
     }
     return { data: [], error: lastError };
+  }
+
+  async function fetchManyByContext(tableName, context = {}, orderFields = [], ascending = true, options = {}) {
+    const rawFieldAttempts = [
+      ['program_id', context.programId],
+      ['pledge_program_id', context.programId],
+      ['id', context.programId],
+      ['nola_code', context.nola],
+      ['nola', context.nola],
+      ['program_nola', context.nola],
+      ...(options.allowTitleFields === false ? [] : [
+        ['title', context.title],
+        ['program_title', context.title],
+        ['name', context.title]
+      ])
+    ];
+    return fetchManyByAttempts(tableName, rawFieldAttempts, orderFields, ascending);
+  }
+
+  async function fetchManyByTitleFallback(tableName, context = {}, orderFields = [], ascending = true) {
+    const rawFieldAttempts = [
+      ['title', context.title],
+      ['program_title', context.title],
+      ['name', context.title]
+    ];
+    return fetchManyByAttempts(tableName, rawFieldAttempts, orderFields, ascending);
+  }
+
+  function timingRowMergeKey(row = {}, fallbackIndex = 0) {
+    const stableId = utils.firstNonEmpty(row.id, row.timing_id, row.segment_id, row.source_row_number);
+    if (!utils.isBlank(stableId)) return `id:${stableId}`;
+    return [
+      utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.program_title, row.title, row.name, ''),
+      utils.firstNonEmpty(row.segment_number, row.slot_number, fallbackIndex + 1),
+      utils.firstNonEmpty(row.program_segment_length_seconds, row.segment_seconds, row.act_seconds, ''),
+      utils.firstNonEmpty(row.pledge_break_seconds, row.break_length_seconds, row.break_seconds, ''),
+      utils.firstNonEmpty(row.local_cutin_seconds, row.local_cutin, row.local_cutin_length_seconds, ''),
+      utils.firstNonEmpty(row.notes, row.description, row.segment_title, row.segment_name, row.timing_note, row.timing_notes, '')
+    ].map((value) => `${value ?? ''}`).join('|');
+  }
+
+  function mergeTimingRows(...lists) {
+    const merged = [];
+    const seen = new Set();
+    lists.forEach((list) => {
+      (Array.isArray(list) ? list : []).forEach((row, index) => {
+        const key = timingRowMergeKey(row, index);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(row);
+      });
+    });
+    return merged;
   }
 
   async function fetchProgramDetail(programId, options = {}) {
@@ -447,6 +486,18 @@
         }
         if (!(airingsResp.data || []).length) {
           airingsResp = await fetchManyByContext(constants.AIRINGS_TABLE, enrichedContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false });
+        }
+      }
+
+      const sparseTimingRows = (timingResp.data || []).length <= 1;
+      if (sparseTimingRows && !utils.isBlank(enrichedContext.title)) {
+        const titleTimingResp = await fetchManyByTitleFallback(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true);
+        const mergedTimingRows = mergeTimingRows(timingResp.data || [], titleTimingResp.data || []);
+        if (mergedTimingRows.length > (timingResp.data || []).length) {
+          timingResp = {
+            data: mergedTimingRows,
+            error: timingResp.error || titleTimingResp.error || null
+          };
         }
       }
 
