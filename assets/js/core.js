@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.79',
+    APP_VERSION: 'v0.20.80',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -662,12 +662,19 @@ window.PledgeLib = window.PledgeLib || {};
         row?.average_contribution_per_drive,
         row?.avg_dollars_per_drive,
         row?.avg_dollars,
-        row?.average_dollars
+        row?.average_dollars,
+        row?.avg_per_event,
+        row?.average_per_event,
+        row?.event_average,
+        row?.historical_average_per_fundraiser,
+        row?.historical_avg_per_fundraiser,
+        row?.historical_average,
+        row?.historical_avg
       ) || null;
     },
 
     totalRaised(row) {
-      return utils.firstNonEmpty(
+      const direct = utils.firstNonEmpty(
         row?.total_contributions,
         row?.total_raised,
         row?.sum_contributions,
@@ -676,8 +683,36 @@ window.PledgeLib = window.PledgeLib || {};
         row?.total_dollars,
         row?.revenue_total,
         row?.gross_revenue,
-        row?.revenue
-      ) || null;
+        row?.revenue,
+        row?.historical_total,
+        row?.historical_total_dollars,
+        row?.historical_broadcast_total,
+        row?.broadcast_total,
+        row?.broadcast_total_dollars,
+        row?.imported_program_specific_broadcast_total_dollars,
+        row?.program_specific_broadcast_total_dollars,
+        row?.lifetime_total,
+        row?.lifetime_total_dollars
+      );
+      if (!utils.isBlank(direct)) return direct;
+
+      const avg = Number(derive.avgPerFundraiser(row) || 0);
+      if (!(avg > 0)) return null;
+
+      const count = Number(utils.firstNonEmpty(
+        row?.fundraiser_count,
+        row?.drive_count,
+        row?.fundraiser_total,
+        row?.drive_total,
+        row?.airing_count,
+        row?.aired_count,
+        row?.times_aired,
+        row?.total_airings,
+        row?.event_count,
+        row?.events_count
+      ) || 0);
+      if (Number.isFinite(count) && count > 0) return Math.round(avg * count * 100) / 100;
+      return Math.round(avg * 100) / 100;
     },
 
     runtimeMinutes(row) {
