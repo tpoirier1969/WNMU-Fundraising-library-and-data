@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.81',
+    APP_VERSION: 'v0.20.83',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -241,6 +241,7 @@ window.PledgeLib = window.PledgeLib || {};
     slotCompareA: '',
     slotCompareB: '',
     quickFilter: '',
+    includeExpiredPrograms: false,
     records: [],
     filteredRecords: [],
     groups: [],

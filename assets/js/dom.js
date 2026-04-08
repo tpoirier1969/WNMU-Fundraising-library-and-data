@@ -164,6 +164,7 @@
     performanceStartDate: document.getElementById('performance-start-date'),
     performanceEndDate: document.getElementById('performance-end-date'),
     performanceUseAllDates: document.getElementById('performance-use-all-dates'),
+    performanceIncludeExpired: document.getElementById('performance-include-expired'),
     performanceMonthSelect: document.getElementById('performance-month-select'),
     performanceTopicSelect: document.getElementById('performance-topic-select'),
     performanceQuickFilterPill: document.getElementById('performance-quick-filter-pill'),

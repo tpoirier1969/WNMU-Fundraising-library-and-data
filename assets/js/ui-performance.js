@@ -258,6 +258,31 @@
     }
   }
 
+  function localTodayKey() {
+    return localDateKey(new Date());
+  }
+
+  function normalizedRightsEndValue(programRow) {
+    if (!programRow) return '';
+    const parsed = utils.parseFlexibleDateInput(derive.rightsEnd(programRow));
+    if (parsed?.valid && parsed?.iso) return parsed.iso;
+    const raw = utils.normalizeText(derive.rightsEnd(programRow));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    return '';
+  }
+
+  function programIsExpired(programRow) {
+    const rightsEnd = normalizedRightsEndValue(programRow);
+    return Boolean(rightsEnd && rightsEnd < localTodayKey());
+  }
+
+  function recordIncludedByProgramScope(record) {
+    if (perf().includeExpiredPrograms) return true;
+    if (!record || record.isNonSpecific) return true;
+    if (record.libraryProgramKnown) return Boolean(record.libraryProgramActive && !record.libraryRightsExpired);
+    return true;
+  }
+
   function matchesDaySet(record, value) {
     if (!value) return true;
     const key = daySetKeyForRecord(record);
@@ -618,6 +643,10 @@
           scheduleIntegrityLabel: '',
           scheduleIntegrityReason: '',
           excludedForIntegrity: false,
+          libraryProgramKnown: false,
+          libraryProgramActive: true,
+          libraryRightsEnd: '',
+          libraryRightsExpired: false,
           nolaCode: '',
           signature: '',
           matchSource: 'unmatched',
@@ -648,6 +677,12 @@
       record.titleAnnotated = Boolean(record.titleAnnotated || importedTitleLooksAnnotated(record.importedTitle));
       record.isNonSpecific = Boolean(record.isNonSpecific || isNonSpecificRecord(row));
       record.approvedOverride = Boolean(record.approvedOverride || row?.approved_unlinked === true || String(row?.review_status || '').toLowerCase() === 'approved_unlinked');
+      if (programRow) {
+        record.libraryProgramKnown = true;
+        record.libraryProgramActive = derive.isActive(programRow);
+        record.libraryRightsEnd = record.libraryRightsEnd || normalizedRightsEndValue(programRow);
+        record.libraryRightsExpired = Boolean(record.libraryRightsExpired || programIsExpired(programRow));
+      }
       if (record.isNonSpecific) {
         record.importedTitle = utils.canonicalNonSpecificTitle();
         record.matchedLibraryTitle = utils.canonicalNonSpecificTitle();
@@ -1120,6 +1155,7 @@
       if (startDate && (!filterDate || filterDate < startDate)) return false;
       if (endDate && (!filterDate || filterDate > endDate)) return false;
       if (perf().quickFilter === 'live_break_impact' && !record.scheduleMatched) return false;
+      if (!recordIncludedByProgramScope(record)) return false;
       return true;
     });
 
@@ -1265,6 +1301,8 @@
       excludedMissingMoneyCount: analyticsScopedRecords.filter((record) => !record.moneyTrusted).length,
       excludedMissingTopicCount: analyticsScopedRecords.filter((record) => !(record.topicTokens || []).length).length,
       nonSpecificRevenueCount: nonSpecificScoped.length,
+      activeProgramScope: perf().includeExpiredPrograms ? 'all_programming' : 'active_only',
+      scopedExpiredProgramCount: scopedRecords.filter((record) => record.libraryProgramKnown && (!record.libraryProgramActive || record.libraryRightsExpired)).length,
       lowConfidenceTemporal: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length > 0 && eligibleTemporal.length < 12,
       noTemporalSupport: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length === 0 && integrityFiltered.length > 0
     };
@@ -1286,6 +1324,7 @@
       ['Dollars represented', utils.formatMoney(dollars)],
       ['Pledges / sustainers', `${utils.formatCount(pledges)} / ${utils.formatCount(sustainers)}`],
       ['Program minutes', utils.formatCount(minutes)],
+      ['Program scope', perf().includeExpiredPrograms ? 'Active + expired' : 'Active only'],
       ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
       ['Airings with dollars / dates', `${utils.formatCount(moneyCount)} / ${utils.formatCount(datedCount)}`]
     ];
@@ -1717,6 +1756,7 @@
       ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
       ['Fundraiser month', month],
       ['Day set', daySetLabel(perf().daySetFilter)],
+      ['Program scope', perf().includeExpiredPrograms ? 'Active + expired' : 'Active only'],
       ['Topic filter', topic],
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
@@ -1775,6 +1815,7 @@
       ['Quick filter', quickFilterLabel() || 'None', quickFilterExplanation() || 'No quick-filter-specific interpretation is active.'],
       ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row whose broadcast date lands in December.'],
       ['Day set', daySetLabel(perf().daySetFilter), perf().daySetFilter ? 'This limits the comparison to the selected slice of the week.' : 'Leave this on All week to see the full filter window. For day-part or topic timing work, split Mon-Fri, Saturday, and Sunday when the weekly average is too coarse.'],
+      ['Program scope', perf().includeExpiredPrograms ? 'Active + expired programming' : 'Active programs only', perf().includeExpiredPrograms ? 'Expired-rights or inactive library titles are being included in this comparison.' : 'By default analytics exclude library titles that are inactive or whose rights end date is already in the past.'],
       ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : perf().criterion === 'topic_dayset' ? 'This view becomes especially useful with no topic filter because it compares each topic across Mon-Fri, Saturday, and Sunday.' : 'Checks primary topic metadata inherited from the library.'],
       ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one broadcast-day and hour slot. The chart becomes a weekly heatmap so strong slots stand out fast.' : perf().criterion === 'topic_dayset' ? 'Each row in the heatmap is one topic split into Mon-Fri, Saturday, and Sunday.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), metricReadText()],
@@ -1806,6 +1847,9 @@
     notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.scheduleMismatchRows || 0)} normalized events were quarantined because they do not reconcile to a saved schedule placement.`);
     notes.push(`Imported airings currently represent ${utils.formatCount(shape.totalPledges || 0)} pledges, ${utils.formatCount(shape.totalSustainers || 0)} sustainers, and ${utils.formatCount(shape.totalMinutes || 0)} program minutes in this analytics layer.`);
     notes.push(`Broadcast-day logic starts at ${utils.minutesToLabel(broadcastDayStartHour() * 60)}, so post-midnight airings before that time are treated as part of the previous TV day.`);
+    notes.push(perf().includeExpiredPrograms
+      ? 'Expired or inactive library titles are included in this analytics pass because the Include expired programming checkbox is on.'
+      : 'Analytics defaults to active library titles only. Programs marked inactive or already past their rights end date are excluded unless you explicitly include expired programming.');
     if (shape.annotatedTitleRows) notes.push(`${utils.formatCount(shape.annotatedTitleRows || 0)} imported rows look like they contain title annotations or notes. Those rows are still allowed if their identity matches cleanly, but they are called out here because they deserve eyeballs.`);
     notes.push('Average dollars per airing is still the safest headline metric when sample sizes differ, but the added pledge, sustainer, and per-minute metrics help expose cases where dollars alone lie by omission.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
@@ -2057,6 +2101,7 @@
     }
     if (els.performanceFilterInput) els.performanceFilterInput.value = perf().labelFilter || '';
     if (els.performanceUseAllDates) els.performanceUseAllDates.checked = Boolean(perf().useAllDates);
+    if (els.performanceIncludeExpired) els.performanceIncludeExpired.checked = Boolean(perf().includeExpiredPrograms);
     const oldestDate = perf().dataShape?.oldestDate || '';
     const newestDate = perf().dataShape?.newestDate || '';
     if (els.performanceStartDate) {
@@ -2107,7 +2152,8 @@
         ? 'Small temporal sample — read it cautiously.'
         : `${utils.formatCount(records.length)} filtered rows after excluding ${utils.formatCount(meta.excludedIntegrityCount || 0)} suspect rows.`;
     const quickTail = quickFilterExplanation();
-    setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
+    const scopeTail = perf().includeExpiredPrograms ? ' Expired programming is included.' : ' Active programs only by default.';
+    setStatus(`Comparing ${criterionDisplayName().toLowerCase()} using ${metricLabel().toLowerCase()}. ${tail}${scopeTail}${quickTail ? ` ${quickTail}` : ''}`, warn ? 'warn' : '');
   }
 
   async function refreshData(options = {}) {
@@ -2226,6 +2272,7 @@
     els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().useAllDates = false; rerender(); });
     els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().useAllDates = false; rerender(); });
     els.performanceUseAllDates?.addEventListener('change', (event) => { perf().useAllDates = Boolean(event.target.checked); rerender(); });
+    els.performanceIncludeExpired?.addEventListener('change', (event) => { perf().includeExpiredPrograms = Boolean(event.target.checked); rerender(); });
     els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; rerender(); });
     els.performanceDaySetSelect?.addEventListener('change', (event) => { perf().daySetFilter = event.target.value || ''; rerender(); });
     els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; rerender(); });

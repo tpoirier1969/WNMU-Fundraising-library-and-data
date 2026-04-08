@@ -1529,81 +1529,10 @@
     renderScheduledProgramDetails();
   }
 
-  function scheduleTimingMetricSeconds(row = {}, keys = []) {
-    for (const key of keys) {
-      const raw = row?.[key];
-      const num = Number(raw);
-      if (Number.isFinite(num)) return num;
-      if (raw === 0) return 0;
-    }
-    return null;
-  }
-
-  function scheduleTimingLabel(row = {}, fallbackIndex = 0) {
-    const direct = Number(utils.firstNonEmpty(row.segment_number, row.slot_number));
-    const seq = Number.isFinite(direct) && direct > 0 ? direct : fallbackIndex + 1;
-    return `Act ${seq}`;
-  }
-
-  function scheduleTimingNotes(row = {}) {
-    return utils.normalizeText(utils.firstNonEmpty(
-      row.notes,
-      row.description,
-      row.segment_title,
-      row.segment_name,
-      row.timing_note,
-      row.timing_notes
-    ));
-  }
-
-  function normalizeScheduleTimingRows(timings = []) {
-    return [...(Array.isArray(timings) ? timings : [])]
-      .map((row, index) => {
-        const programSeconds = scheduleTimingMetricSeconds(row, ['program_segment_length_seconds', 'segment_seconds', 'act_seconds', 'act_offset_seconds']);
-        const breakSeconds = scheduleTimingMetricSeconds(row, ['pledge_break_seconds', 'break_length_seconds', 'break_seconds', 'break_offset_seconds']);
-        const localCutInSeconds = scheduleTimingMetricSeconds(row, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
-        return {
-          row,
-          sortKey: Number(utils.firstNonEmpty(row.segment_number, row.slot_number, index + 1)) || (index + 1),
-          label: scheduleTimingLabel(row, index),
-          programSeconds,
-          breakSeconds,
-          localCutInSeconds,
-          note: scheduleTimingNotes(row)
-        };
-      })
-      .sort((a, b) => a.sortKey - b.sortKey);
-  }
-
   function timingSummaryHtml(cacheEntry) {
     const timings = cacheEntry?.timings || [];
     if (!timings.length) return '<div class="scheduled-program-note">Detailed break information not loaded yet.</div>';
-    const rows = normalizeScheduleTimingRows(timings);
-    return `
-      <div class="scheduled-break-detail-table-wrap">
-        <table class="segment-table timing-acts-table scheduled-break-detail-table">
-          <thead>
-            <tr>
-              <th>Act</th>
-              <th>Program</th>
-              <th>Break</th>
-              <th>Local Cut In</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map((entry) => `
-              <tr>
-                <td>${utils.escapeHtml(entry.label)}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—')}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : '—')}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : '—')}</td>
-                <td>${utils.escapeHtml(entry.note || '—')}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>`;
+    return `<div class="scheduled-break-inline">${timings.slice(0, 12).map((row) => `<div class="scheduled-break-chip">${utils.escapeHtml(timingRowSummary(row).join(' · ') || 'Timing row')}</div>`).join('')}</div>`;
   }
 
   function scheduleScheduledProgramDetailsRerender() {
