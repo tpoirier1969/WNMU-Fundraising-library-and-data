@@ -966,9 +966,16 @@
   }
 
   function timingExportSummary(timings = []) {
-    if (!Array.isArray(timings) || !timings.length) return 'Break timings: none found';
-    const summaries = timings
-      .map((row) => timingRowSummary(row).join(' · '))
+    const rows = normalizeScheduledTimingRows(timings);
+    if (!rows.length) return 'Break timings: TBD';
+    const summaries = rows
+      .map((entry) => [
+        entry.label,
+        `Program ${Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—'}`,
+        `Break ${Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : 'TBD'}`,
+        `Local Cut In ${Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : 'TBD'}`,
+        entry.note || ''
+      ].filter(Boolean).join(' | '))
       .map((value) => utils.normalizeText(value))
       .filter(Boolean);
     if (summaries.length) {
@@ -977,6 +984,71 @@
       return `Break timings: ${preview}${suffix}`;
     }
     return timingLocalCutinSummary(timings);
+  }
+
+  function timingExportLines(timings = []) {
+    const rows = normalizeScheduledTimingRows(timings);
+    if (!rows.length) return ['Break timings: TBD'];
+    const actLabelWidth = Math.max(5, ...rows.map((entry) => String(entry.label || '').length));
+    return ['Break timings:'].concat(rows.map((entry) => {
+      const label = String(entry.label || 'Act').padEnd(actLabelWidth, ' ');
+      const program = Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—';
+      const breakValue = Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : 'TBD';
+      const localValue = Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : 'TBD';
+      const note = entry.note ? ` | ${entry.note}` : '';
+      return `  ${label} | Program ${program} | Break ${breakValue} | Local Cut In ${localValue}${note}`;
+    }));
+  }
+
+  function historyGroupKey(row = {}) {
+    return utils.normalizeLookupKey([
+      row?.fundraiser_label || row?.drive_label || row?.drive_column || '',
+      row?.drive_start_date || row?.drive_date || row?.air_date || utils.dateKeyFromDate(row?.aired_at) || '',
+      row?.drive_end_date || ''
+    ].join('|'));
+  }
+
+  function historicalFundraiserCount(row = {}, detail = null) {
+    const direct = Number(utils.firstNonEmpty(
+      row?.fundraiser_count,
+      row?.drive_count,
+      row?.fundraiser_total,
+      row?.historical_fundraiser_count
+    ) || 0) || 0;
+    if (direct > 0) return direct;
+    const groups = new Set();
+    const driveResults = Array.isArray(detail?.driveResults) ? detail.driveResults : [];
+    const airings = Array.isArray(detail?.airings) ? detail.airings : [];
+    driveResults.forEach((entry) => {
+      const key = historyGroupKey(entry);
+      if (key) groups.add(key);
+    });
+    airings.forEach((entry) => {
+      const key = historyGroupKey(entry);
+      if (key) groups.add(key);
+    });
+    return groups.size;
+  }
+
+  function historicalAiringHistoryLines(detail = null) {
+    const airings = Array.isArray(detail?.airings) ? detail.airings : [];
+    const driveResults = Array.isArray(detail?.driveResults) ? detail.driveResults : [];
+    const rows = airings.length ? airings : driveResults;
+    const seen = new Set();
+    const values = [];
+    rows.forEach((row) => {
+      const raw = airings.length
+        ? utils.firstNonEmpty(row?.aired_at, row?.air_date)
+        : utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date);
+      const label = row?.aired_at
+        ? utils.formatDateTime(raw, '')
+        : (row?.air_date ? utils.formatDateTime(raw, '') : utils.formatDate(raw, ''));
+      const normalized = utils.normalizeText(label);
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+      values.push(normalized);
+    });
+    return values.sort((a, b) => a.localeCompare(b));
   }
 
   async function ensureScheduleExportDetails(rows = []) {
@@ -1562,8 +1634,8 @@
 
   function timingSummaryHtml(cacheEntry) {
     const timings = cacheEntry?.timings || [];
-    if (!timings.length) return '<div class="scheduled-program-note">Detailed break information not loaded yet.</div>';
     const rows = normalizeScheduledTimingRows(timings);
+    if (!rows.length) return '<div class="scheduled-program-note">TBD</div>';
     return `
       <div class="segment-table-wrap scheduled-break-detail-table-wrap">
         <table class="segment-table timing-acts-table scheduled-break-detail-table">
@@ -1581,8 +1653,8 @@
               <tr>
                 <td>${utils.escapeHtml(entry.label)}</td>
                 <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—')}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : '—')}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : '—')}</td>
+                <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : 'TBD')}</td>
+                <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : 'TBD')}</td>
                 <td>${utils.escapeHtml(entry.note || '—')}</td>
               </tr>
             `).join('')}
@@ -1659,24 +1731,28 @@
       grouped.get(key).push(placement);
     });
     const groupedEntries = [...grouped.entries()];
-    const autoLoadLimit = groupedEntries.length > 12 ? 6 : 12;
 
-    els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences], entryIndex) => {
+    els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences]) => {
       const row = getProgramRowById(programId) || {};
-      if (entryIndex < autoLoadLimit) loadScheduledDetail(programId);
+      loadScheduledDetail(programId);
       const cache = state.scheduleDetailCache[programId];
+      const detail = cache?.detail || null;
       const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
       const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
       const avgPerFundraiser = Number(derive.avgPerFundraiser(row) || 0) || 0;
-      const fundraiserCount = Number(row?.fundraiser_count || row?.drive_count || row?.fundraiser_total || 0) || 0;
+      const fundraiserCount = historicalFundraiserCount(row, detail);
       const rawTotalRaised = Number(derive.totalRaised(row) || 0) || 0;
       const computedHistoricalTotal = rawTotalRaised > 0
         ? rawTotalRaised
         : (avgPerFundraiser > 0 ? (fundraiserCount > 0 ? (avgPerFundraiser * fundraiserCount) : avgPerFundraiser) : 0);
       const historicalTotalDisplay = computedHistoricalTotal > 0 ? utils.formatMoney(computedHistoricalTotal) : 'N/A';
       const historicalAvgDisplay = avgPerFundraiser > 0
-        ? `${utils.formatMoney(avgPerFundraiser)}${fundraiserCount > 0 ? ` (${utils.formatCount(fundraiserCount)})` : ''}`
+        ? `${utils.formatMoney(avgPerFundraiser)} (${utils.formatCount(Math.max(fundraiserCount, 0))})`
         : 'N/A';
+      const historicalAiringLines = historicalAiringHistoryLines(detail);
+      const historicalAiringHtml = historicalAiringLines.length
+        ? `<div class="scheduled-premium-lines scheduled-history-lines">${historicalAiringLines.map((line) => `<div class="scheduled-premium-line scheduled-history-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`
+        : `<div class="scheduled-program-note">${cache?.loaded ? 'TBD' : 'Loading…'}</div>`;
       const scheduledRows = occurrences
         .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
         .map((item) => `
@@ -1685,9 +1761,8 @@
             <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${hasLiveBreakFlag(item) ? ' · live-break' : ''}</span>
           </label>
         `).join('');
-      let breakHtml = '<div class="scheduled-program-note">Loading break detail…</div>';
-      if (entryIndex >= autoLoadLimit && !cache?.loaded) breakHtml = '<div class="scheduled-program-note">Break detail deferred so large fundraisers open faster.</div>';
-      else if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
+      let breakHtml = '<div class="scheduled-program-note">Loading…</div>';
+      if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
       else if (cache?.loaded) breakHtml = timingSummaryHtml(cache.detail);
       return `
         <article class="scheduled-program-card compact-program-card">
@@ -1700,7 +1775,7 @@
           <div class="scheduled-program-line scheduled-program-line-bottom">
             <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span>${historicalAiringHtml}</div>
             <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(row) || '—')}</div>
             <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Breaks in ProTrack</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
             <div class="scheduled-data-chunk scheduled-break-detail-chunk"><span class="mini-label inline">Break Detail</span>${breakHtml}</div>
@@ -2267,14 +2342,14 @@
         if (item.isNonPledge) markerBits.push('non-pledge marker');
         if (hasLiveBreakFlag(item)) markerBits.push('live-break');
         lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${markerBits.length ? ` | ${markerBits.join(' · ')}` : ''}`);
-        let breakLine = 'Break timings: none found';
+        let breakLines = ['Break timings: TBD'];
         if (!item.isNonPledge && item.programId) {
           const cache = state.scheduleDetailCache[item.programId];
-          if (cache?.detail?.timings) breakLine = timingExportSummary(cache.detail.timings);
-          else if (cache?.error) breakLine = `Break timings unavailable: ${cache.error.message || 'load failed'}`;
-          else breakLine = 'Break timings unavailable';
+          if (cache?.detail?.timings) breakLines = timingExportLines(cache.detail.timings);
+          else if (cache?.error) breakLines = [`Break timings unavailable: ${cache.error.message || 'load failed'}`];
+          else breakLines = ['Break timings: Loading…'];
         }
-        lines.push(`  ${breakLine}`);
+        breakLines.forEach((line) => lines.push(`  ${line}`));
       }
       lines.push('');
     }

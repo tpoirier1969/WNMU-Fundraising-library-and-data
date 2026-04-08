@@ -1135,6 +1135,8 @@ button.primary {
 .scheduled-break-detail-table th, .scheduled-break-detail-table td { font-size: .84rem; }
 .scheduled-premium-lines { display: grid; gap: 2px; }
 .scheduled-premium-line { line-height: 1.25; }
+.scheduled-history-lines { margin-top: 6px; }
+.scheduled-history-line { font-size: .84rem; color: var(--muted); }
 .scheduled-occurrence-list { display: grid; gap: 4px; }
 .segment-table th { white-space: nowrap; }
 @media (max-width: 1180px) {
