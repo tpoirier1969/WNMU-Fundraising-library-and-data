@@ -152,6 +152,65 @@
     return 'zero';
   }
 
+  function earningsToneLabel(tone) {
+    const map = {
+      none: 'Not aired yet',
+      high: 'Strong earnings',
+      good: 'Good earnings',
+      mid: 'Moderate earnings',
+      low: 'Low earnings',
+      zero: 'Aired, but no revenue logged'
+    };
+    return map[tone] || 'No earnings signal';
+  }
+
+  function topicColor(topic) {
+    const text = utils.normalizeText(topic);
+    if (!text) return null;
+    let hash = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      hash = ((hash * 31) + text.charCodeAt(i)) % 360;
+    }
+    const hue = hash;
+    return {
+      background: `hsla(${hue}, 58%, 78%, 0.34)`,
+      border: `hsla(${hue}, 56%, 42%, 0.38)`,
+      text: `hsl(${hue}, 42%, 24%)`
+    };
+  }
+
+  function rightsEndTone(rightsEndValue) {
+    const raw = utils.normalizeText(rightsEndValue);
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000);
+
+    if (diffDays < 0) {
+      return {
+        days: diffDays,
+        label: `${Math.abs(diffDays)} day${Math.abs(diffDays) === 1 ? '' : 's'} past rights end`,
+        style: 'background: rgba(95, 115, 131, 0.14); color: #425466;'
+      };
+    }
+
+    const spanDays = 1095;
+    const clamped = Math.max(0, Math.min(spanDays, diffDays));
+    const ratio = clamped / spanDays;
+    const hue = 2 + (118 * ratio);
+    const saturation = 58 - (ratio * 10);
+    const lightness = 88 - (ratio * 8);
+    const borderAlpha = 0.24 + (ratio * 0.08);
+    return {
+      days: diffDays,
+      label: `${diffDays} day${diffDays === 1 ? '' : 's'} until rights end`,
+      style: `background: hsla(${hue}, ${saturation}%, ${lightness}%, 0.48); color: hsl(${hue}, 34%, 22%); box-shadow: inset 3px 0 0 hsla(${hue}, ${Math.max(38, saturation)}%, 42%, ${borderAlpha});`
+    };
+  }
+
   function renderRows() {
     if (!state.rows.length) {
       els.libraryBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">No matching pledge titles found.</td></tr>';
@@ -161,9 +220,19 @@
     els.libraryBody.innerHTML = state.rows.map((row) => {
       const programId = App.programLinks?.resolveId?.(row) || derive.programId(row);
       const tone = earningsTone(row);
+      const toneLabel = earningsToneLabel(tone);
+      const topic = derive.topicPrimary(row) || '—';
+      const topicTone = topicColor(topic);
+      const topicStyle = topicTone
+        ? `background:${topicTone.background}; color:${topicTone.text}; box-shadow: inset 3px 0 0 ${topicTone.border};`
+        : '';
+      const rightsEnd = derive.rightsEnd(row);
+      const rightsEndToneInfo = rightsEndTone(rightsEnd);
+      const rightsEndStyle = rightsEndToneInfo?.style || '';
+      const rightsEndTitle = rightsEndToneInfo?.label || 'No rights-end heat color';
       return `
         <tr data-id="${utils.escapeHtml(programId)}" class="library-earnings-${utils.escapeHtml(tone)} ${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
-          <td class="title-cell">
+          <td class="title-cell" title="${utils.escapeHtml(`Title tint: ${toneLabel}`)}">
             <button type="button" class="title-open-button" data-open-id="${utils.escapeHtml(programId)}" aria-label="Open details for ${utils.escapeHtml(derive.title(row))}">
               <strong>${utils.escapeHtml(derive.title(row))}</strong>
               <div class="sub">${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(derive.distributor(row) || 'No distributor')}</div>
@@ -171,13 +240,13 @@
             </button>
           </td>
           <td>${utils.escapeHtml(derive.lengthLabel(row))}</td>
-          <td>${utils.escapeHtml(derive.topicPrimary(row) || '—')}</td>
+          <td class="topic-color-cell" style="${utils.escapeHtml(topicStyle)}" title="${utils.escapeHtml(`Topic color: ${topic}`)}">${utils.escapeHtml(topic)}</td>
           <td>${utils.escapeHtml(derive.distributor(row) || '—')}</td>
           <td class="total-cell">${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</td>
           <td class="avg-cell">${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</td>
           <td class="premiums-cell">${premiumSummaryHtml(derive.premiumSummary(row))}</td>
           <td>${utils.escapeHtml(utils.formatDate(derive.rightsBegin(row)))}</td>
-          <td>${utils.escapeHtml(utils.formatDate(derive.rightsEnd(row)))}</td>
+          <td class="rights-end-heat-cell" style="${utils.escapeHtml(rightsEndStyle)}" title="${utils.escapeHtml(rightsEndTitle)}">${utils.escapeHtml(utils.formatDate(rightsEnd))}</td>
           <td>${utils.escapeHtml(derive.lastAiredDisplay(row))}</td>
         </tr>
       `;

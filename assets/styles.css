@@ -3640,3 +3640,13 @@ button.primary {
   color: #526174;
   font-size: 0.86rem;
 }
+
+
+/* v0.20.81 program-list topic palette + rights-end heat */
+.programs-table td.topic-color-cell,
+.programs-table td.rights-end-heat-cell {
+  transition: background-color .18s ease, box-shadow .18s ease, color .18s ease;
+}
+.programs-table td.topic-color-cell {
+  font-weight: 700;
+}
