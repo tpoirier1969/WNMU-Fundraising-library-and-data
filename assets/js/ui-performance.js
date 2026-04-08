@@ -6,6 +6,9 @@
   const DATETIME_KEYS = ['aired_at', 'air_datetime', 'air_date', 'drive_date', 'broadcast_at', 'scheduled_at', 'date_time', 'datetime', 'airing_at', 'airing_date'];
   const TIME_ONLY_KEYS = ['air_time', 'time_of_day', 'scheduled_time', 'slot_time', 'airtime', 'broadcast_time'];
   const AIRING_MONEY_KEYS = ['dollars'];
+  const AIRING_PLEDGE_KEYS = ['pledge_count', 'pledges'];
+  const AIRING_SUSTAINER_KEYS = ['sustainer_count', 'sustainers'];
+  const AIRING_MINUTES_KEYS = ['program_minutes', 'minutes'];
   const DRIVE_MONEY_KEYS = ['total_dollars', 'dollars'];
   const LOCAL_BREAK_KEYS = ['local_breaks', 'local_break_count', 'local_cutins_count', 'local_cutin_count', 'local_cutins', 'legacy_has_local_cutins_raw'];
   const LIVE_BREAK_KEYS = ['live_breaks', 'live_break_count', 'live_break_flag', 'live_break_notes', 'live_break_note'];
@@ -19,11 +22,36 @@
     { key: 'prime_time', label: 'Prime time', range: '7:00 PM–10:59 PM', startHour: 19, endHour: 23 },
     { key: 'late_night', label: 'Late night', range: '11:00 PM–11:59 PM', startHour: 23, endHour: 24 }
   ];
-  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart', 'topic_time']);
+  const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart', 'topic_time', 'topic_dayset']);
   const MIN_SAMPLE_DEFAULT = 1;
   const MIN_SAMPLE_TOPIC_AVERAGE = 2;
 
   function perf() { return state.performance; }
+
+  function broadcastDayStartHour() {
+    const hour = Number(perf().broadcastDayStartHour);
+    return Number.isFinite(hour) ? hour : 7;
+  }
+
+  function broadcastAnchorDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    const shifted = new Date(date.getTime());
+    if (shifted.getHours() < broadcastDayStartHour()) shifted.setDate(shifted.getDate() - 1);
+    return shifted;
+  }
+
+  function recordFilterDate(record) {
+    return record?.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime())
+      ? record.broadcastWhen
+      : (record?.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null);
+  }
+
+  function scheduleDateKeyForRecord(record) {
+    const date = record?.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime())
+      ? record.broadcastWhen
+      : (record?.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null);
+    return date ? localDateKey(date) : '';
+  }
 
   function setStatus(text, type = '') {
     if (!els.performanceStatus) return;
@@ -72,6 +100,7 @@
     const rawTimeOnly = candidateValue(row, TIME_ONLY_KEYS, /(air_?time|slot_?time|scheduled_?time|time_?of_?day|airtime|broadcast_?time)/i);
     const out = {
       when: null,
+      broadcastWhen: null,
       hasDate: false,
       hasExplicitTime: false,
       rawDateText: '',
@@ -85,6 +114,7 @@
       const parsed = new Date(text);
       if (!Number.isNaN(parsed.getTime())) {
         out.when = parsed;
+        out.broadcastWhen = broadcastAnchorDate(parsed);
         out.hasDate = true;
         out.hasExplicitTime = hasExplicitTime;
         return out;
@@ -97,6 +127,7 @@
           const merged = new Date(`${text}T${timeText}`);
           if (!Number.isNaN(merged.getTime())) {
             out.when = merged;
+            out.broadcastWhen = broadcastAnchorDate(merged);
             out.hasExplicitTime = true;
             return out;
           }
@@ -104,6 +135,7 @@
         const midday = new Date(`${text}T12:00:00`);
         if (!Number.isNaN(midday.getTime())) {
           out.when = midday;
+          out.broadcastWhen = broadcastAnchorDate(midday);
           out.hasExplicitTime = false;
           return out;
         }
@@ -136,6 +168,13 @@
     return `${day} · ${hour}`;
   }
 
+  function topicWeekSplitLabel(record) {
+    const topic = record?.topicDisplay || record?.topic || 'Unassigned';
+    const slice = daySetLabel(daySetKeyForRecord(record));
+    if (!topic || slice === 'All week') return 'Unknown topic week split';
+    return `${topic} · ${slice}`;
+  }
+
   function topicTimeSortKey(record) {
     if (!record?.hasDate || !record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return Number.MAX_SAFE_INTEGER;
     const dayIndex = DAY_ORDER.indexOf(dayLabel(record));
@@ -144,13 +183,19 @@
   }
 
   function dayLabel(record) {
-    if (!record?.hasDate || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown day';
-    return record.when.toLocaleDateString(undefined, { weekday: 'long' });
+    const date = record?.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime())
+      ? record.broadcastWhen
+      : (record?.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null);
+    if (!record?.hasDate || !date) return 'Unknown day';
+    return date.toLocaleDateString(undefined, { weekday: 'long' });
   }
 
   function dateLabel(record) {
-    if (!record?.hasDate || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return 'Unknown date';
-    return record.when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const date = record?.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime())
+      ? record.broadcastWhen
+      : (record?.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null);
+    if (!record?.hasDate || !date) return 'Unknown date';
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
   function splitTopicTokens(...values) {
@@ -360,6 +405,16 @@
     return { amount: null, source: 'missing', trusted: false };
   }
 
+  function resolveAggregateValue(row, keys = [], parser = parseInteger) {
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(row || {}, key)) {
+        const value = parser(row?.[key]);
+        if (value != null) return value;
+      }
+    }
+    return null;
+  }
+
   function pushIntegrityFlag(record, flag) {
     if (!flag) return;
     if (!Array.isArray(record.integrityFlags)) record.integrityFlags = [];
@@ -439,7 +494,7 @@
     }
     const signature = record.signature || signatureForProgram(null, record);
     if (!signature) return { label: 'Unknown / not matched to schedule', matched: false };
-    const dateKey = localDateKey(record.when);
+    const dateKey = scheduleDateKeyForRecord(record);
     const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
     const exactMatches = placementIndex?.exact?.get(`${signature}|${dateKey}|${minutes}`) || [];
     if (exactMatches.length) {
@@ -465,7 +520,7 @@
         label: 'Non-specific fundraiser revenue'
       };
     }
-    const dateKey = record?.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? localDateKey(record.when) : '';
+    const dateKey = record?.hasDate ? scheduleDateKeyForRecord(record) : '';
     const coveredBySchedule = Boolean(dateKey && placementIndex?.coveredDates?.has(dateKey));
     if (!dateKey || !(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record?.hasExplicitTime) {
       return {
@@ -535,11 +590,15 @@
           dateKey,
           timeKey,
           amount: 0,
+          pledges: 0,
+          sustainers: 0,
+          minutes: 0,
           driveRows: 0,
           airingRows: 0,
           matchedDriveRows: 0,
           estimatedOnly: false,
           when: null,
+          broadcastWhen: null,
           hasDate: false,
           hasExplicitTime: false,
           programId: '',
@@ -617,6 +676,7 @@
       record.premiums = record.premiums === 'No premium metadata' ? premiumLabel(row, programRow) : record.premiums;
       record.localBreaks = record.localBreaks === 'No local breaks' ? localBreakLabel(row, programRow) : record.localBreaks;
       if (!record.when && temporal?.when) record.when = temporal.when;
+      if (!record.broadcastWhen && temporal?.broadcastWhen) record.broadcastWhen = temporal.broadcastWhen;
       if (temporal?.hasDate) record.hasDate = true;
       if (temporal?.hasExplicitTime) record.hasExplicitTime = true;
       record.day = dayLabel(record);
@@ -624,8 +684,10 @@
       record.time = timeBucketLabel(record);
       record.hour = hourBucketLabel(record);
       record.topicTime = topicTimeLabel(record);
+      record.topicWeekSplit = topicWeekSplitLabel(record);
       record.topicTimeSortKey = topicTimeSortKey(record);
-      record.monthIndex = record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when.getMonth() : null;
+      const dateForMonth = record.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime()) ? record.broadcastWhen : record.when;
+      record.monthIndex = record.hasDate && dateForMonth instanceof Date && !Number.isNaN(dateForMonth.getTime()) ? dateForMonth.getMonth() : null;
     }
 
     airingRows.forEach((sourceRow) => {
@@ -653,6 +715,12 @@
         missingMoneyRows += 1;
         pushIntegrityFlag(record, 'missing_explicit_dollars');
       }
+      const pledges = resolveAggregateValue(row, AIRING_PLEDGE_KEYS);
+      const sustainers = resolveAggregateValue(row, AIRING_SUSTAINER_KEYS);
+      const minutes = resolveAggregateValue(row, AIRING_MINUTES_KEYS);
+      record.pledges += Number.isFinite(pledges) ? pledges : 0;
+      record.sustainers += Number.isFinite(sustainers) ? sustainers : 0;
+      record.minutes += Number.isFinite(minutes) ? minutes : 0;
       applyMetadata(record, row, identity, temporal);
       if (!identity.trusted && !record.isNonSpecific) pushIntegrityFlag(record, 'weak_program_identity');
       if (record.titleAnnotated) pushIntegrityFlag(record, 'annotated_import_title');
@@ -716,6 +784,9 @@
     const records = [...events.values()].map((record) => ({
       ...record,
       amount: Number.isFinite(record.amount) ? record.amount : 0,
+      pledges: Number.isFinite(record.pledges) ? record.pledges : 0,
+      sustainers: Number.isFinite(record.sustainers) ? record.sustainers : 0,
+      minutes: Number.isFinite(record.minutes) ? record.minutes : 0,
       topicDisplay: record.topicDisplay || 'Unspecified topic',
       topic: record.topicDisplay || 'Unspecified topic',
       time: timeBucketLabel(record),
@@ -723,6 +794,7 @@
       day: dayLabel(record),
       date: dateLabel(record),
       topicTime: topicTimeLabel(record),
+      topicWeekSplit: topicWeekSplitLabel(record),
       topicTimeSortKey: topicTimeSortKey(record),
       moneySource: record.moneySources[0] || 'missing',
       sourceFiles: [...record.sourceFiles].sort((a, b) => utils.compareText(a, b)),
@@ -738,10 +810,10 @@
     if (weakIdentityRows) warnings.push(`${utils.formatCount(weakIdentityRows)} imported airings rows had weak program identity and will not drive program/topic analytics unless they reconcile cleanly.`);
 
     const datedRecords = records
-      .filter((record) => record.hasDate && record.when instanceof Date && !Number.isNaN(record.when.getTime()))
-      .sort((a, b) => a.when.getTime() - b.when.getTime());
-    const oldestDate = datedRecords.length ? localDateKey(datedRecords[0].when) : '';
-    const newestDate = datedRecords.length ? localDateKey(datedRecords[datedRecords.length - 1].when) : '';
+      .filter((record) => record.hasDate && recordFilterDate(record))
+      .sort((a, b) => recordFilterDate(a).getTime() - recordFilterDate(b).getTime());
+    const oldestDate = datedRecords.length ? localDateKey(recordFilterDate(datedRecords[0])) : '';
+    const newestDate = datedRecords.length ? localDateKey(recordFilterDate(datedRecords[datedRecords.length - 1])) : '';
 
     perf().dataShape = {
       driveRows: driveRows.length,
@@ -758,9 +830,12 @@
       nonSpecificRows: records.filter((record) => isNonSpecificRecord(record)).length,
       quarantinedEvents: records.filter((record) => record.excludedForIntegrity).length,
       recordsWithMoney: records.filter((record) => record.moneyTrusted).length,
-      recordsWithDateTime: records.filter((record) => record.hasDate).length,
+      recordsWithDateTime: records.filter((record) => record.hasDate && recordFilterDate(record)).length,
       recordsWithExplicitTime: records.filter((record) => record.hasExplicitTime).length,
       recordsWithTopic: records.filter((record) => record.topicTokens.length).length,
+      totalPledges: records.reduce((sum, record) => sum + (Number(record.pledges || 0) || 0), 0),
+      totalSustainers: records.reduce((sum, record) => sum + (Number(record.sustainers || 0) || 0), 0),
+      totalMinutes: records.reduce((sum, record) => sum + (Number(record.minutes || 0) || 0), 0),
       recordsMatchedToSchedule: records.filter((record) => record.scheduleMatched).length,
       temporalEligibleDayDate: records.filter((record) => record.hasDate && !record.estimatedOnly && !record.excludedForIntegrity).length,
       temporalEligibleTime: records.filter((record) => record.hasExplicitTime && !record.estimatedOnly && !record.excludedForIntegrity).length,
@@ -784,6 +859,7 @@
       case 'weekpart': return 'Weekend vs weekday';
       case 'time': return 'Time';
       case 'topic_time': return 'Topic time slot';
+      case 'topic_dayset': return 'Topic week split';
       case 'topic': return 'Main topic';
       case 'local_breaks': return 'Local cut-ins';
       case 'live_breaks': return 'Live breaks';
@@ -802,6 +878,7 @@
       case 'weekpart': return weekpartLabel(record);
       case 'time': return record.time || 'Unknown time';
       case 'topic_time': return record.topicTime || 'Unknown topic time slot';
+      case 'topic_dayset': return topicWeekSplitLabel(record);
       case 'topic': return record.topicDisplay || 'Unassigned';
       case 'local_breaks': return record.localBreaks || 'No local cut-ins';
       case 'live_breaks': return record.liveBreaks || 'Unknown / not matched to schedule';
@@ -816,6 +893,7 @@
     if (criterion === 'time') return group.minMinutes ?? Number.MAX_SAFE_INTEGER;
     if (criterion === 'day') return DAY_ORDER.indexOf(group.label);
     if (criterion === 'topic_time') return group.topicTimeSortKey ?? Number.MAX_SAFE_INTEGER;
+    if (criterion === 'topic_dayset') return group.topicDaySetSortKey ?? Number.MAX_SAFE_INTEGER;
     if (criterion === 'weekpart') return group.label === 'Weekday' ? 0 : group.label === 'Weekend' ? 1 : 99;
     if (criterion === 'daypart') return [...DAYPART_DEFS.map((entry) => `${entry.label} (${entry.range})`), 'Unknown day-part'].indexOf(group.label);
     return group.label;
@@ -825,6 +903,13 @@
     switch (metric) {
       case 'total_dollars': return 'Total dollars';
       case 'airings': return 'Airing count';
+      case 'avg_pledges': return 'Average pledges / airing';
+      case 'total_pledges': return 'Total pledges';
+      case 'avg_sustainers': return 'Average sustainers / airing';
+      case 'total_sustainers': return 'Total sustainers';
+      case 'dollars_per_pledge': return 'Dollars / pledge';
+      case 'dollars_per_minute': return 'Dollars / minute';
+      case 'pledges_per_minute': return 'Pledges / minute';
       case 'avg_dollars':
       default: return 'Average dollars / airing';
     }
@@ -834,8 +919,36 @@
     switch (metric) {
       case 'total_dollars': return group.totalDollars;
       case 'airings': return group.airingCount;
+      case 'avg_pledges': return group.avgPledges;
+      case 'total_pledges': return group.totalPledges;
+      case 'avg_sustainers': return group.avgSustainers;
+      case 'total_sustainers': return group.totalSustainers;
+      case 'dollars_per_pledge': return group.dollarsPerPledge;
+      case 'dollars_per_minute': return group.dollarsPerMinute;
+      case 'pledges_per_minute': return group.pledgesPerMinute;
       case 'avg_dollars':
       default: return group.avgDollars;
+    }
+  }
+
+  function formatMetricValue(value, metric = perf().metric) {
+    const num = Number(value);
+    switch (metric) {
+      case 'total_dollars':
+      case 'avg_dollars':
+      case 'dollars_per_pledge':
+      case 'dollars_per_minute':
+        return utils.formatMoney(num);
+      case 'airings':
+      case 'total_pledges':
+      case 'total_sustainers':
+        return utils.formatCount(Math.round(num || 0));
+      case 'avg_pledges':
+      case 'avg_sustainers':
+      case 'pledges_per_minute':
+        return Number.isFinite(num) ? num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 }) : '—';
+      default:
+        return Number.isFinite(num) ? String(num) : '—';
     }
   }
 
@@ -850,6 +963,27 @@
       case 'airings':
         value = utils.formatCount(group.airingCount);
         break;
+      case 'avg_pledges':
+        value = formatMetricValue(group.avgPledges, metric);
+        break;
+      case 'total_pledges':
+        value = utils.formatCount(group.totalPledges);
+        break;
+      case 'avg_sustainers':
+        value = formatMetricValue(group.avgSustainers, metric);
+        break;
+      case 'total_sustainers':
+        value = utils.formatCount(group.totalSustainers);
+        break;
+      case 'dollars_per_pledge':
+        value = group.totalPledges > 0 ? utils.formatMoney(group.dollarsPerPledge) : 'N/A';
+        break;
+      case 'dollars_per_minute':
+        value = group.totalMinutes > 0 ? utils.formatMoney(group.dollarsPerMinute) : 'N/A';
+        break;
+      case 'pledges_per_minute':
+        value = group.totalMinutes > 0 ? formatMetricValue(group.pledgesPerMinute, metric) : 'N/A';
+        break;
       case 'avg_dollars':
       default:
         value = utils.formatMoney(group.avgDollars);
@@ -863,7 +997,7 @@
   function minSampleThreshold() {
     const criterion = perf().criterion;
     const metric = perf().metric;
-    if ((criterion === 'topic' || criterion === 'topic_time') && metric === 'avg_dollars') return MIN_SAMPLE_TOPIC_AVERAGE;
+    if ((criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && ['avg_dollars', 'avg_pledges', 'avg_sustainers', 'dollars_per_pledge', 'dollars_per_minute', 'pledges_per_minute'].includes(metric)) return MIN_SAMPLE_TOPIC_AVERAGE;
     return MIN_SAMPLE_DEFAULT;
   }
 
@@ -901,10 +1035,10 @@
   }
 
   function effectiveChartType() {
-    if (perf().criterion === 'topic_time') return 'heatmap';
+    if (perf().criterion === 'topic_time' || perf().criterion === 'topic_dayset') return 'heatmap';
     if (perf().chartType === 'auto') return perf().criterion === 'daypart' ? 'split_line' : (isLineFriendly(perf().criterion) ? 'line' : 'bar');
     if (perf().chartType === 'line' && !isLineFriendly(perf().criterion)) return 'bar';
-    if ((perf().chartType === 'split_line' || perf().chartType === 'heatmap') && perf().criterion !== 'daypart') {
+    if ((perf().chartType === 'split_line' || perf().chartType === 'heatmap') && !['daypart', 'topic_time', 'topic_dayset'].includes(perf().criterion)) {
       return isLineFriendly(perf().criterion) ? 'line' : 'bar';
     }
     return perf().chartType;
@@ -917,6 +1051,7 @@
   function temporalEligibility(record, criterion) {
     if (criterion === 'time') return record.hasExplicitTime && !record.estimatedOnly;
     if (criterion === 'topic_time') return record.hasDate && record.hasExplicitTime && !record.estimatedOnly;
+    if (criterion === 'topic_dayset') return record.hasDate && !record.estimatedOnly;
     if (criterion === 'date' || criterion === 'day') return record.hasDate && !record.estimatedOnly;
     return true;
   }
@@ -925,8 +1060,8 @@
     if (record?.approvedOverride) return true;
     if (!record?.moneyTrusted) return false;
     if (record?.excludedForIntegrity) return false;
-    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time') && !record?.identityTrusted) return false;
-    if ((criterion === 'topic' || criterion === 'topic_time') && !(record?.topicTokens || []).length) return false;
+    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !record?.identityTrusted) return false;
+    if ((criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !(record?.topicTokens || []).length) return false;
     return true;
   }
 
@@ -935,8 +1070,8 @@
     const reasons = [];
     if (!record?.moneyTrusted) reasons.push('Missing trusted dollars');
     if (record?.excludedForIntegrity) reasons.push(record.scheduleIntegrityLabel || 'Unreconciled to saved schedule');
-    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time') && !record?.identityTrusted) reasons.push('Weak program identity');
-    if ((criterion === 'topic' || criterion === 'topic_time') && !(record?.topicTokens || []).length) reasons.push('Missing main topic');
+    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !record?.identityTrusted) reasons.push('Weak program identity');
+    if ((criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !(record?.topicTokens || []).length) reasons.push('Missing main topic');
     return [...new Set(reasons.filter(Boolean))];
   }
 
@@ -981,13 +1116,15 @@
       if (perf().daySetFilter && !matchesDaySet(record, perf().daySetFilter)) return false;
       if (perf().daypartScope && daypartBaseLabel(record) !== perf().daypartScope) return false;
       if (perf().weekpartScope && weekpartLabel(record) !== perf().weekpartScope) return false;
-      if (startDate && (!(record.when instanceof Date) || record.when < startDate)) return false;
-      if (endDate && (!(record.when instanceof Date) || record.when > endDate)) return false;
+      const filterDate = recordFilterDate(record);
+      if (startDate && (!filterDate || filterDate < startDate)) return false;
+      if (endDate && (!filterDate || filterDate > endDate)) return false;
       if (perf().quickFilter === 'live_break_impact' && !record.scheduleMatched) return false;
       return true;
     });
 
-    const integrityFiltered = scopedRecords.filter((record) => integrityEligible(record, criterion));
+    const analyticsScopedRecords = scopedRecords.filter((record) => !isNonSpecificRecord(record));
+    const integrityFiltered = analyticsScopedRecords.filter((record) => integrityEligible(record, criterion));
     const eligibleTemporal = TEMPORAL_CRITERIA.has(criterion)
       ? integrityFiltered.filter((record) => temporalEligibility(record, criterion))
       : integrityFiltered;
@@ -1001,19 +1138,49 @@
     records.forEach((record) => {
       const label = criterionLabel(record, criterion);
       if (!groups.has(label)) {
-        groups.set(label, { label, airingCount: 0, totalDollars: 0, moneyCount: 0, avgDollars: 0, titles: new Set(), programIds: new Set(), minTime: null, minMinutes: null, topicTimeSortKey: null, dayIndex: null, hourOfDay: null });
+        groups.set(label, {
+          label,
+          airingCount: 0,
+          totalDollars: 0,
+          totalPledges: 0,
+          totalSustainers: 0,
+          totalMinutes: 0,
+          moneyCount: 0,
+          avgDollars: 0,
+          avgPledges: 0,
+          avgSustainers: 0,
+          dollarsPerPledge: 0,
+          dollarsPerMinute: 0,
+          pledgesPerMinute: 0,
+          titles: new Set(),
+          programIds: new Set(),
+          minTime: null,
+          minMinutes: null,
+          topicTimeSortKey: null,
+          topicDaySetSortKey: null,
+          dayIndex: null,
+          hourOfDay: null
+        });
       }
       const group = groups.get(label);
       group.airingCount += 1;
       group.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
+      group.totalPledges += Number.isFinite(record.pledges) ? record.pledges : 0;
+      group.totalSustainers += Number.isFinite(record.sustainers) ? record.sustainers : 0;
+      group.totalMinutes += Number.isFinite(record.minutes) ? record.minutes : 0;
       group.moneyCount += 1;
       group.titles.add(record.title || 'Unknown title');
       if (record.programId) group.programIds.add(String(record.programId));
       if (Number.isFinite(record.topicTimeSortKey)) {
         group.topicTimeSortKey = group.topicTimeSortKey == null ? record.topicTimeSortKey : Math.min(group.topicTimeSortKey, record.topicTimeSortKey);
       }
+      const topicDaySetOrder = ['Mon-Fri', 'Saturday', 'Sunday'];
+      const slice = daySetLabel(daySetKeyForRecord(record));
+      const sliceIndex = topicDaySetOrder.indexOf(slice);
+      if (sliceIndex >= 0) group.topicDaySetSortKey = group.topicDaySetSortKey == null ? sliceIndex : Math.min(group.topicDaySetSortKey, sliceIndex);
       if (record.when instanceof Date && !Number.isNaN(record.when.getTime())) {
-        const ts = record.when.getTime();
+        const filterDate = recordFilterDate(record) || record.when;
+        const ts = filterDate.getTime();
         group.minTime = group.minTime == null ? ts : Math.min(group.minTime, ts);
         const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
         group.minMinutes = group.minMinutes == null ? minutes : Math.min(group.minMinutes, minutes);
@@ -1027,6 +1194,11 @@
     const grouped = [...groups.values()].map((group) => ({
       ...group,
       avgDollars: group.airingCount ? group.totalDollars / group.airingCount : 0,
+      avgPledges: group.airingCount ? group.totalPledges / group.airingCount : 0,
+      avgSustainers: group.airingCount ? group.totalSustainers / group.airingCount : 0,
+      dollarsPerPledge: group.totalPledges > 0 ? group.totalDollars / group.totalPledges : 0,
+      dollarsPerMinute: group.totalMinutes > 0 ? group.totalDollars / group.totalMinutes : 0,
+      pledgesPerMinute: group.totalMinutes > 0 ? group.totalPledges / group.totalMinutes : 0,
       titleCount: group.titles.size,
       titles: [...group.titles].sort((a, b) => utils.compareText(a, b)),
       programOpenId: group.programIds.size === 1 ? [...group.programIds][0] : '',
@@ -1074,10 +1246,10 @@
     const limit = Math.max(1, Number(perf().topN) || 12);
     const limited = usesTemporalAxis ? sorted : (limit >= 999 ? sorted : sorted.slice(0, limit));
     perf().filteredRecords = records;
-    perf().scopedRecords = scopedRecords;
+    perf().scopedRecords = analyticsScopedRecords;
     perf().groups = limited;
     const nonSpecificScoped = scopedRecords.filter((record) => isNonSpecificRecord(record));
-    perf().excludedReviewRows = buildExcludedReviewRows(scopedRecords, criterion);
+    perf().excludedReviewRows = buildExcludedReviewRows(analyticsScopedRecords, criterion);
     perf().analysisMeta = {
       minGroupAirings,
       hiddenSmallSampleGroupCount: 0,
@@ -1087,11 +1259,11 @@
       integrityEligibleCount: integrityFiltered.length,
       eligibleTemporalCount: eligibleTemporal.length,
       excludedWeakTemporalCount: Math.max(0, integrityFiltered.length - eligibleTemporal.length),
-      excludedIntegrityCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !integrityEligible(record, criterion)).length,
-      excludedScheduleMismatchCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && record.excludedForIntegrity).length,
-      excludedWeakIdentityCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !record.identityTrusted).length,
-      excludedMissingMoneyCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !record.moneyTrusted).length,
-      excludedMissingTopicCount: scopedRecords.filter((record) => !isNonSpecificRecord(record) && !(record.topicTokens || []).length).length,
+      excludedIntegrityCount: analyticsScopedRecords.filter((record) => !integrityEligible(record, criterion)).length,
+      excludedScheduleMismatchCount: analyticsScopedRecords.filter((record) => record.excludedForIntegrity).length,
+      excludedWeakIdentityCount: analyticsScopedRecords.filter((record) => !record.identityTrusted).length,
+      excludedMissingMoneyCount: analyticsScopedRecords.filter((record) => !record.moneyTrusted).length,
+      excludedMissingTopicCount: analyticsScopedRecords.filter((record) => !(record.topicTokens || []).length).length,
       nonSpecificRevenueCount: nonSpecificScoped.length,
       lowConfidenceTemporal: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length > 0 && eligibleTemporal.length < 12,
       noTemporalSupport: TEMPORAL_CRITERIA.has(criterion) && eligibleTemporal.length === 0 && integrityFiltered.length > 0
@@ -1103,12 +1275,18 @@
     if (!els.performanceStatGrid) return;
     const programs = new Set(records.map((record) => utils.normalizeLookupKey(utils.firstNonEmpty(record.programId, record.nolaCode, record.title))).filter(Boolean));
     const dollars = records.reduce((sum, record) => sum + (Number.isFinite(record.amount) ? record.amount : 0), 0);
+    const pledges = records.reduce((sum, record) => sum + (Number(record.pledges || 0) || 0), 0);
+    const sustainers = records.reduce((sum, record) => sum + (Number(record.sustainers || 0) || 0), 0);
+    const minutes = records.reduce((sum, record) => sum + (Number(record.minutes || 0) || 0), 0);
     const moneyCount = records.filter((record) => record.moneyTrusted).length;
-    const datedCount = records.filter((record) => record.hasDate).length;
+    const datedCount = records.filter((record) => record.hasDate && recordFilterDate(record)).length;
     const stats = [
       ['Airings used', utils.formatCount(records.length)],
       ['Programs represented', utils.formatCount(programs.size)],
       ['Dollars represented', utils.formatMoney(dollars)],
+      ['Pledges / sustainers', `${utils.formatCount(pledges)} / ${utils.formatCount(sustainers)}`],
+      ['Program minutes', utils.formatCount(minutes)],
+      ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
       ['Airings with dollars / dates', `${utils.formatCount(moneyCount)} / ${utils.formatCount(datedCount)}`]
     ];
     els.performanceStatGrid.innerHTML = stats.map(([label, value]) => `
@@ -1134,7 +1312,7 @@
     const ticks = [0, .25, .5, .75, 1].map((ratio) => ({ y: top + chartH - (ratio * chartH), value: max * ratio }));
     const grid = ticks.map((tick) => `
       <line x1="${left}" y1="${tick.y}" x2="${left + chartW}" y2="${tick.y}" stroke="#dce8f6" stroke-width="1"></line>
-      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(perf().metric === 'airings' ? utils.formatCount(Math.round(tick.value)) : utils.formatMoney(tick.value))}</text>
+      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(formatMetricValue(tick.value))}</text>
     `).join('');
     const bars = groups.map((group, index) => {
       const value = metricValue(group);
@@ -1185,7 +1363,7 @@
     `).join('');
     const grid = yTicks.map((tick) => `
       <line x1="${left}" y1="${tick.y}" x2="${left + chartW}" y2="${tick.y}" stroke="#dce8f6" stroke-width="1"></line>
-      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(perf().metric === 'airings' ? utils.formatCount(Math.round(tick.value)) : utils.formatMoney(tick.value))}</text>
+      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(formatMetricValue(tick.value))}</text>
     `).join('');
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">
       ${grid}
@@ -1235,6 +1413,30 @@
     `;
   }
 
+  function aggregateMetricCell(target, record) {
+    target.airingCount += 1;
+    target.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
+    target.totalPledges += Number.isFinite(record.pledges) ? record.pledges : 0;
+    target.totalSustainers += Number.isFinite(record.sustainers) ? record.sustainers : 0;
+    target.totalMinutes += Number.isFinite(record.minutes) ? record.minutes : 0;
+  }
+
+  function finalizeMetricCell(cell) {
+    return {
+      ...cell,
+      avgDollars: cell.airingCount ? (cell.totalDollars / cell.airingCount) : 0,
+      avgPledges: cell.airingCount ? (cell.totalPledges / cell.airingCount) : 0,
+      avgSustainers: cell.airingCount ? (cell.totalSustainers / cell.airingCount) : 0,
+      dollarsPerPledge: cell.totalPledges > 0 ? (cell.totalDollars / cell.totalPledges) : 0,
+      dollarsPerMinute: cell.totalMinutes > 0 ? (cell.totalDollars / cell.totalMinutes) : 0,
+      pledgesPerMinute: cell.totalMinutes > 0 ? (cell.totalPledges / cell.totalMinutes) : 0
+    };
+  }
+
+  function emptyMetricCell(label = '') {
+    return { label, airingCount: 0, totalDollars: 0, totalPledges: 0, totalSustainers: 0, totalMinutes: 0, avgDollars: 0, avgPledges: 0, avgSustainers: 0, dollarsPerPledge: 0, dollarsPerMinute: 0, pledgesPerMinute: 0 };
+  }
+
   function buildDaypartDaySetGroups(records) {
     const rowDefs = perf().daySetFilter
       ? [{ key: perf().daySetFilter, label: daySetLabel(perf().daySetFilter) }]
@@ -1253,23 +1455,13 @@
       const bucket = daypartLabel(record);
       if (bucket === 'Unknown day-part') return;
       const key = `${rowKey}|${bucket}`;
-      if (!matrix.has(key)) matrix.set(key, { airingCount: 0, totalDollars: 0 });
-      const cell = matrix.get(key);
-      cell.airingCount += 1;
-      cell.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
+      if (!matrix.has(key)) matrix.set(key, emptyMetricCell(bucket));
+      aggregateMetricCell(matrix.get(key), record);
     });
     const rows = rowDefs.map((row) => ({
       key: row.key,
       label: row.label,
-      cells: bucketOrder.map((bucket) => {
-        const cell = matrix.get(`${row.key}|${bucket}`) || { airingCount: 0, totalDollars: 0 };
-        return {
-          label: bucket,
-          airingCount: cell.airingCount,
-          totalDollars: cell.totalDollars,
-          avgDollars: cell.airingCount ? (cell.totalDollars / cell.airingCount) : 0
-        };
-      })
+      cells: bucketOrder.map((bucket) => finalizeMetricCell(matrix.get(`${row.key}|${bucket}`) || emptyMetricCell(bucket)))
     }));
     return { rows, bucketOrder };
   }
@@ -1279,14 +1471,14 @@
     if (!rows.some((row) => row.cells.some((cell) => cell.airingCount > 0))) {
       return '<div class="performance-chart-empty">Day-part heatmap needs trustworthy dated rows in the active filter window.</div>';
     }
-    const maxMetric = Math.max(1, ...rows.flatMap((row) => row.cells.map((cell) => perf().metric === 'total_dollars' ? cell.totalDollars : perf().metric === 'airings' ? cell.airingCount : cell.avgDollars)));
+    const maxMetric = Math.max(1, ...rows.flatMap((row) => row.cells.map((cell) => metricValue(cell))));
     const header = bucketOrder.map((label) => `<div class="topic-time-header-cell">${utils.escapeHtml(label)}</div>`).join('');
     const body = rows.map((row) => {
       const cells = row.cells.map((cell) => {
         if (!cell.airingCount) return '<div class="topic-time-cell empty">—</div>';
-        const value = perf().metric === 'total_dollars' ? cell.totalDollars : perf().metric === 'airings' ? cell.airingCount : cell.avgDollars;
+        const value = metricValue(cell);
         const alpha = Math.max(0.12, Math.min(0.92, value / maxMetric)).toFixed(3);
-        const display = perf().metric === 'total_dollars' ? utils.formatMoney(cell.totalDollars) : perf().metric === 'airings' ? utils.formatCount(cell.airingCount) : utils.formatMoney(cell.avgDollars);
+        const display = metricDisplay(cell);
         const title = `${row.label} · ${cell.label}: ${display} (${utils.formatCount(cell.airingCount)} airings)`;
         return `<div class="topic-time-cell" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(display)}</span><small>${utils.escapeHtml(utils.formatCount(cell.airingCount))}</small></div>`;
       }).join('');
@@ -1298,6 +1490,47 @@
         <div class="topic-time-grid">${body}</div>
       </div>
       <div class="performance-chart-note">This heatmap splits day-parts into Mon-Fri, Saturday, and Sunday so weekend behavior does not get mashed into the weekday pattern.</div>
+    `;
+  }
+
+  function buildTopicDaySetHeatmap(groups) {
+    const orderedRows = [];
+    const rowMap = new Map();
+    const colOrder = ['Mon-Fri', 'Saturday', 'Sunday'];
+    (groups || []).forEach((group) => {
+      const bits = String(group.label || '').split(' · ');
+      const col = bits.pop();
+      const topic = bits.join(' · ') || group.label;
+      if (!colOrder.includes(col)) return;
+      if (!rowMap.has(topic)) rowMap.set(topic, { topic, cells: new Map() });
+      rowMap.get(topic).cells.set(col, group);
+    });
+    orderedRows.push(...[...rowMap.values()].sort((a, b) => {
+      const aBest = Math.max(...colOrder.map((col) => metricValue(a.cells.get(col) || emptyMetricCell())));
+      const bBest = Math.max(...colOrder.map((col) => metricValue(b.cells.get(col) || emptyMetricCell())));
+      if (bBest !== aBest) return bBest - aBest;
+      return utils.compareText(a.topic, b.topic);
+    }));
+    if (!orderedRows.length) return '<div class="performance-chart-empty">Topic week split needs trustworthy dated rows with topic metadata in the active filter window.</div>';
+    const maxMetric = Math.max(1, ...orderedRows.flatMap((row) => colOrder.map((col) => metricValue(row.cells.get(col) || emptyMetricCell()))));
+    const header = colOrder.map((label) => `<div class="topic-time-header-cell">${utils.escapeHtml(label)}</div>`).join('');
+    const body = orderedRows.map((row) => {
+      const cells = colOrder.map((col) => {
+        const group = row.cells.get(col) || null;
+        if (!group) return '<div class="topic-time-cell empty">—</div>';
+        const alpha = Math.max(0.12, Math.min(0.92, metricValue(group) / maxMetric)).toFixed(3);
+        const title = `${row.topic} · ${col}: ${metricDisplay(group, { includeCount: true })}`;
+        const badge = group.belowSampleThreshold ? ' · low sample' : '';
+        return `<div class="topic-time-cell${group.belowSampleThreshold ? ' low-sample' : ''}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(metricDisplay(group))}</span><small>${utils.escapeHtml(utils.formatCount(group.airingCount))}${badge}</small></div>`;
+      }).join('');
+      return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(row.topic)}</div>${cells}</div>`;
+    }).join('');
+    return `
+      <div class="topic-time-heatmap-wrap">
+        <div class="topic-time-header"><div class="topic-time-corner">Topic / week slice</div>${header}</div>
+        <div class="topic-time-grid">${body}</div>
+      </div>
+      <div class="performance-chart-note">This view splits each topic into Mon-Fri, Saturday, and Sunday so you can see where each topic actually breathes.</div>
     `;
   }
 
@@ -1315,13 +1548,13 @@
     const bottom = 88;
     const chartW = width - left - right;
     const chartH = height - top - bottom;
-    const metricFor = (cell) => perf().metric === 'total_dollars' ? cell.totalDollars : perf().metric === 'airings' ? cell.airingCount : cell.avgDollars;
+    const metricFor = (cell) => metricValue(cell);
     const max = Math.max(1, ...activeRows.flatMap((row) => row.cells.map(metricFor)));
     const palette = ['#123e6b', '#2a7a45', '#8a3f0f'];
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({ y: top + chartH - (ratio * chartH), value: max * ratio }));
     const grid = yTicks.map((tick) => `
       <line x1="${left}" y1="${tick.y}" x2="${left + chartW}" y2="${tick.y}" stroke="#dce8f6" stroke-width="1"></line>
-      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(perf().metric === 'airings' ? utils.formatCount(Math.round(tick.value)) : utils.formatMoney(tick.value))}</text>
+      <text x="${left - 8}" y="${tick.y + 4}" font-size="11" text-anchor="end" fill="#526174">${utils.escapeHtml(formatMetricValue(tick.value))}</text>
     `).join('');
     const xPoints = bucketOrder.map((label, index) => ({ label, x: left + (bucketOrder.length <= 1 ? chartW / 2 : (index * chartW / (bucketOrder.length - 1))) }));
     const seriesSvg = activeRows.map((row, rowIndex) => {
@@ -1334,7 +1567,7 @@
       const path = pts.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
       const dots = pts.map((point) => `
         <circle cx="${point.x}" cy="${point.y}" r="4" fill="${color}">
-          <title>${utils.escapeHtml(`${row.label} · ${point.label}: ${perf().metric === 'total_dollars' ? utils.formatMoney(point.cell.totalDollars) : perf().metric === 'airings' ? utils.formatCount(point.cell.airingCount) : utils.formatMoney(point.cell.avgDollars)} (${utils.formatCount(point.cell.airingCount)} airings)`)}</title>
+          <title>${utils.escapeHtml(`${row.label} · ${point.label}: ${metricDisplay(point.cell)} (${utils.formatCount(point.cell.airingCount)} airings)`)}</title>
         </circle>
       `).join('');
       return `<path d="${path}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>${dots}`;
@@ -1365,13 +1598,17 @@
       els.performanceChart.innerHTML = buildTopicTimeHeatmap(groups);
       return;
     }
+    if (perf().criterion === 'topic_dayset') {
+      els.performanceChart.innerHTML = buildTopicDaySetHeatmap(groups);
+      return;
+    }
     const chartType = effectiveChartType();
     if (perf().criterion === 'daypart' && chartType === 'heatmap') {
-      els.performanceChart.innerHTML = buildDaypartHeatmap(perf().scopedRecords || perf().filteredRecords || []);
+      els.performanceChart.innerHTML = buildDaypartHeatmap(perf().filteredRecords || []);
       return;
     }
     if (perf().criterion === 'daypart' && chartType === 'split_line') {
-      els.performanceChart.innerHTML = buildDaypartSplitLineSvg(perf().scopedRecords || perf().filteredRecords || []);
+      els.performanceChart.innerHTML = buildDaypartSplitLineSvg(perf().filteredRecords || []);
       return;
     }
     const svg = chartType === 'line' ? buildLineSvg(groups) : buildBarSvg(groups);
@@ -1381,11 +1618,63 @@
     els.performanceChart.innerHTML = `${svg}${note}`;
   }
 
+  function renderDaypartComparisonTable(records) {
+    if (!els.performanceTableBody) return false;
+    const { rows } = buildDaypartDaySetGroups(records || []);
+    const flat = rows.flatMap((row) => row.cells
+      .filter((cell) => cell.airingCount > 0)
+      .map((cell) => ({
+        label: `${row.label} · ${cell.label}`,
+        airingCount: cell.airingCount,
+        totalDollars: cell.totalDollars,
+        titleCount: 0,
+        belowSampleThreshold: minSampleThreshold() > 1 && cell.airingCount < minSampleThreshold(),
+        avgDollars: cell.avgDollars,
+        avgPledges: cell.avgPledges,
+        avgSustainers: cell.avgSustainers,
+        dollarsPerPledge: cell.dollarsPerPledge,
+        dollarsPerMinute: cell.dollarsPerMinute,
+        pledgesPerMinute: cell.pledgesPerMinute,
+        totalPledges: cell.totalPledges,
+        totalSustainers: cell.totalSustainers,
+        totalMinutes: cell.totalMinutes
+      })));
+    if (els.performanceTableGroupHeader) els.performanceTableGroupHeader.textContent = 'Day set · day-part';
+    if (els.performanceTableMetricHeader) els.performanceTableMetricHeader.textContent = metricLabel();
+    if (els.performanceTableConfidenceHeader) els.performanceTableConfidenceHeader.textContent = 'Confidence';
+    if (!flat.length) {
+      els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No day-part slices match this filter yet.</td></tr>';
+      return true;
+    }
+    els.performanceTableBody.innerHTML = flat.map((group) => {
+      const sampleNote = group.belowSampleThreshold
+        ? `<div class="sample-warning-inline">Low sample</div>`
+        : '';
+      const confidence = confidenceForGroup(group);
+      return `
+      <tr>
+        <td>${utils.escapeHtml(group.label)}${sampleNote}</td>
+        <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
+        <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
+        <td><span class="performance-confidence-badge ${utils.escapeHtml(confidenceClassForGroup(group))}">${utils.escapeHtml(confidence)}</span></td>
+        <td>—</td>
+      </tr>
+    `;
+    }).join('');
+    return true;
+  }
+
   function renderTable(groups) {
     if (!els.performanceTableBody) return;
+    if (perf().criterion === 'daypart' && ['split_line', 'heatmap'].includes(effectiveChartType())) {
+      if (renderDaypartComparisonTable(perf().filteredRecords || [])) return;
+    }
     if (els.performanceTableGroupHeader) els.performanceTableGroupHeader.textContent = criterionDisplayName();
+    if (els.performanceTableMetricHeader) els.performanceTableMetricHeader.textContent = metricLabel();
+    if (els.performanceTableConfidenceHeader) els.performanceTableConfidenceHeader.textContent = 'Confidence';
     if (!groups.length) {
-      els.performanceTableBody.innerHTML = '<tr><td colspan="5" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
+      els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
       return;
     }
     els.performanceTableBody.innerHTML = groups.map((group) => {
@@ -1395,12 +1684,14 @@
       const sampleNote = group.belowSampleThreshold
         ? `<div class="sample-warning-inline">Low sample</div>`
         : '';
+      const confidence = confidenceForGroup(group);
       return `
       <tr>
         <td>${labelHtml}${sampleNote}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
         <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
+        <td><span class="performance-confidence-badge ${utils.escapeHtml(confidenceClassForGroup(group))}">${utils.escapeHtml(confidence)}</span></td>
         <td>${utils.escapeHtml(utils.formatCount(group.titleCount))}</td>
       </tr>
     `;
@@ -1420,18 +1711,17 @@
     const month = perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month';
     const topic = perf().topicFilter || 'All topics';
     const quick = quickFilterLabel() || 'None';
-    const shape = perf().dataShape || {};
     const analysisMeta = perf().analysisMeta || {};
-    const source = `Strict airings view · ${utils.formatCount(shape.airingRows || 0)} airings rows`;
     perf().criteriaSummary = [
       ['Date window', perf().useAllDates ? 'All available dates' : `${start} to ${end}`],
+      ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
       ['Fundraiser month', month],
       ['Day set', daySetLabel(perf().daySetFilter)],
       ['Topic filter', topic],
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
-      ['Chart', perf().criterion === 'topic_time' ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
+      ['Chart', ['topic_time', 'topic_dayset'].includes(perf().criterion) ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
       ['Integrity-eligible', utils.formatCount(analysisMeta.integrityEligibleCount || records.length)]
     ];
     if (!els.performanceCriteriaBar) return;
@@ -1460,24 +1750,41 @@
     }
   }
 
+  function metricReadText() {
+    switch (perf().metric) {
+      case 'avg_dollars': return 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.';
+      case 'total_dollars': return 'This is raw dollars represented by the filtered events, so groups with more events can dominate.';
+      case 'airings': return 'This is the count of normalized events used in the comparison.';
+      case 'avg_pledges': return 'This is total pledges divided by airings, useful when you care more about response volume than dollars alone.';
+      case 'total_pledges': return 'This is raw pledge count represented by the filtered events.';
+      case 'avg_sustainers': return 'This is total sustainers divided by airings, useful when you want to spot sustained giving strength.';
+      case 'total_sustainers': return 'This is raw sustainer count represented by the filtered events.';
+      case 'dollars_per_pledge': return 'This shows how much money each pledge was worth on average. Small pledge counts can make this wobble.';
+      case 'dollars_per_minute': return 'This shows revenue efficiency by on-air minute, using imported program_minutes values.';
+      case 'pledges_per_minute': return 'This shows response-rate efficiency by on-air minute.';
+      default: return 'This is the selected metric for the current comparison.';
+    }
+  }
+
   function renderExplainTable(records, postFilter) {
     if (!els.performanceExplainBody) return;
     const meta = perf().analysisMeta || {};
     const rows = [
-      ['Date window', perf().useAllDates ? 'All available dates' : (perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates'), 'Only records whose usable date falls inside this window are included.'],
+      ['Date window', perf().useAllDates ? 'All available dates' : (perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates'), 'Filters use broadcast-day dates, so overnight hours before the boundary roll into the prior TV day.'],
+      ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`, 'Anything before this hour is treated as part of the previous broadcast day for weekday/weekend and topic-slot logic.'],
       ['Quick filter', quickFilterLabel() || 'None', quickFilterExplanation() || 'No quick-filter-specific interpretation is active.'],
-      ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row that lands in December.'],
-      ['Day set', daySetLabel(perf().daySetFilter), perf().daySetFilter ? 'This limits the comparison to the selected slice of the week.' : 'Leave this on All week to see the full filter window. For day-part work, use Mon-Fri, Saturday, or Sunday when the weekly average is too coarse.'],
-      ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : 'Checks both primary and secondary topic text from the library where available.'],
-      ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one day-and-hour slot. The chart becomes a weekly heatmap so the strongest slots stand out fast.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
-      ['Metric', metricLabel(), perf().metric === 'avg_dollars' ? 'This is total dollars divided by the number of normalized events in the comparison group. It is safer than raw totals when sample sizes differ.' : perf().metric === 'total_dollars' ? 'This is raw dollars represented by the filtered events, so groups with more events can dominate.' : 'This is the count of normalized events used in the comparison.'],
+      ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row whose broadcast date lands in December.'],
+      ['Day set', daySetLabel(perf().daySetFilter), perf().daySetFilter ? 'This limits the comparison to the selected slice of the week.' : 'Leave this on All week to see the full filter window. For day-part or topic timing work, split Mon-Fri, Saturday, and Sunday when the weekly average is too coarse.'],
+      ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : perf().criterion === 'topic_dayset' ? 'This view becomes especially useful with no topic filter because it compares each topic across Mon-Fri, Saturday, and Sunday.' : 'Checks primary topic metadata inherited from the library.'],
+      ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one broadcast-day and hour slot. The chart becomes a weekly heatmap so strong slots stand out fast.' : perf().criterion === 'topic_dayset' ? 'Each row in the heatmap is one topic split into Mon-Fri, Saturday, and Sunday.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
+      ['Metric', metricLabel(), metricReadText()],
       ['Minimum airing warning', meta.minGroupAirings > 1 ? `${utils.formatCount(meta.minGroupAirings)} airings` : 'None', minSampleExplanation()],
-      ['Source basis', 'Strict imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows, but analytics now trust only rows with an explicit per-airing dollars field. Report totals are not allowed to masquerade as airing dollars.`],
-      ['Program identity rule', 'Strict only', `Program/topic analytics now require a trustworthy identity path (program id, NOLA, or exact title match). Fuzzy title rematching is disabled.`],
-      ['Schedule reconciliation', meta.excludedScheduleMismatchCount ? `${utils.formatCount(meta.excludedScheduleMismatchCount)} rows excluded` : 'No known schedule mismatches in this filter', 'Rows marked as non-specific fundraiser revenue are not counted as schedule mismatches. Only title-attributed rows that fall inside a saved schedule window and still fail to reconcile are excluded here.'],
+      ['Source basis', 'Strict imported airings layer', `The app is reading ${utils.formatCount((perf().dataShape || {}).airingRows || 0)} imported airings rows, analytics trust only rows with explicit per-airing dollars, and non-specific fundraiser revenue is excluded from general analytics. Report totals are not allowed to masquerade as airing dollars.`],
+      ['Program identity rule', 'Strict only', 'Program and topic analytics require a trustworthy identity path such as program id, NOLA, or exact title match. Fuzzy rematching is disabled.'],
+      ['Schedule reconciliation', meta.excludedScheduleMismatchCount ? `${utils.formatCount(meta.excludedScheduleMismatchCount)} rows excluded` : 'No known schedule mismatches in this filter', 'Non-specific fundraiser revenue is not counted as a schedule mismatch. Only title-attributed rows inside a saved schedule window that still fail to reconcile are excluded here.'],
       ['Temporal confidence', confidenceLabel(), meta.noTemporalSupport ? 'Day/date/time comparisons do not have enough trustworthy airing-date evidence for this filter yet.' : meta.lowConfidenceTemporal ? 'There are some temporal matches, but the sample is small enough that the result can wobble.' : 'This comparison has enough temporal support to be usable, but still read the airing count.'],
       ['Premium metadata', 'Not actual viewer choice data', 'Premium comparisons currently mean “programs carrying premium metadata,” not which premium item viewers actually chose.'],
-      ['How sturdy is this?', `${utils.formatCount(records.length)} rows from ${utils.formatCount(postFilter.length)} rows after non-label filters`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count next to every value.']
+      ['How sturdy is this?', `${utils.formatCount(records.length)} rows from ${utils.formatCount(postFilter.length)} rows after non-label filters`, 'Small counts can make a result look dramatic while still being flimsy. Read the airing count and confidence badge next to every value.']
     ];
     els.performanceExplainBody.innerHTML = rows.map(([setting, value, read]) => `
       <tr>
@@ -1494,11 +1801,13 @@
     const shape = perf().dataShape || {};
     const meta = perf().analysisMeta || {};
     notes.push(`Pledge Performance is normalizing ${utils.formatCount(shape.airingRows || 0)} imported airings rows into ${utils.formatCount(shape.normalizedEvents || 0)} comparison events.`);
-    notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} normalized events include a usable date. ${utils.formatCount(shape.recordsWithExplicitTime || 0)} include an explicit time.`);
+    notes.push(`${utils.formatCount(shape.recordsWithDateTime || 0)} normalized events include a usable broadcast date. ${utils.formatCount(shape.recordsWithExplicitTime || 0)} include an explicit time.`);
     notes.push(`${utils.formatCount(shape.identityTrustedRows || 0)} imported airings rows had trustworthy program identity. ${utils.formatCount(shape.weakIdentityRows || 0)} had weak identity and are blocked from program/topic analytics.`);
     notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.scheduleMismatchRows || 0)} normalized events were quarantined because they do not reconcile to a saved schedule placement.`);
+    notes.push(`Imported airings currently represent ${utils.formatCount(shape.totalPledges || 0)} pledges, ${utils.formatCount(shape.totalSustainers || 0)} sustainers, and ${utils.formatCount(shape.totalMinutes || 0)} program minutes in this analytics layer.`);
+    notes.push(`Broadcast-day logic starts at ${utils.minutesToLabel(broadcastDayStartHour() * 60)}, so post-midnight airings before that time are treated as part of the previous TV day.`);
     if (shape.annotatedTitleRows) notes.push(`${utils.formatCount(shape.annotatedTitleRows || 0)} imported rows look like they contain title annotations or notes. Those rows are still allowed if their identity matches cleanly, but they are called out here because they deserve eyeballs.`);
-    notes.push('Average dollars per airing is the safest headline metric for comparisons like local breaks vs no local breaks because it reduces the distortion from unequal sample sizes.');
+    notes.push('Average dollars per airing is still the safest headline metric when sample sizes differ, but the added pledge, sustainer, and per-minute metrics help expose cases where dollars alone lie by omission.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
     notes.push('Letter campaign pledges and online pledges are not wired into this performance layer yet, so they are not included in these totals.');
     if (meta.noTemporalSupport) notes.push('Day/date/time views are intentionally cautious now: weak unmatched rows are excluded, and if nothing trustworthy remains the comparison is marked unavailable instead of pretending to know.');
@@ -1507,15 +1816,135 @@
         const best = [...groups].sort((a, b) => metricValue(b) - metricValue(a))[0];
         if (best) notes.push(`${perf().topicFilter} is currently strongest at ${best.label} based on ${utils.formatCount(best.airingCount)} airing${best.airingCount === 1 ? '' : 's'} in the active filter window.`);
       } else {
-        notes.push('Topic Time Performance is most useful with a main topic selected. Without that, it blends all topics into one weekly pattern.');
+        notes.push('Topic Time Performance is most useful with a main topic selected. Without a topic filter, the heatmap blends every topic together.');
       }
     }
+    if (perf().criterion === 'topic_dayset') notes.push('Topic week split is the fast read for whether a topic behaves differently on weekdays, Saturday, and Sunday.');
     if (perf().warnings?.length) notes.push(...perf().warnings);
     els.performanceSourceNotes.innerHTML = `
       <ul class="performance-note-list">
         ${notes.map((note) => `<li>${utils.escapeHtml(note)}</li>`).join('')}
       </ul>
       <div class="performance-footnote"><strong>Filtered scope:</strong> ${utils.escapeHtml(utils.formatCount(records.length))} events feeding ${utils.escapeHtml(utils.formatCount(groups.length))} comparison groups.</div>
+    `;
+  }
+
+  function buildTopicIntelligenceGroups() {
+    const source = (perf().scopedRecords || []).filter((record) => integrityEligible(record, 'topic_time') && temporalEligibility(record, 'topic_time'));
+    const slotMap = new Map();
+    const daySetMap = new Map();
+    source.forEach((record) => {
+      const slotLabel = topicTimeLabel(record);
+      if (!slotMap.has(slotLabel)) slotMap.set(slotLabel, { label: slotLabel, airingCount: 0, totalDollars: 0, totalPledges: 0, totalSustainers: 0, totalMinutes: 0, titles: new Set(), titleCount: 0, dayIndex: DAY_ORDER.indexOf(dayLabel(record)), hourOfDay: record.when?.getHours?.() ?? null, topicTimeSortKey: topicTimeSortKey(record), belowSampleThreshold: false });
+      const slot = slotMap.get(slotLabel);
+      slot.airingCount += 1;
+      slot.totalDollars += Number(record.amount || 0) || 0;
+      slot.totalPledges += Number(record.pledges || 0) || 0;
+      slot.totalSustainers += Number(record.sustainers || 0) || 0;
+      slot.totalMinutes += Number(record.minutes || 0) || 0;
+      slot.titles.add(record.title || 'Unknown title');
+      const slice = daySetLabel(daySetKeyForRecord(record));
+      if (!daySetMap.has(slice)) daySetMap.set(slice, { label: slice, airingCount: 0, totalDollars: 0, totalPledges: 0, totalSustainers: 0, totalMinutes: 0, titles: new Set(), titleCount: 0 });
+      const bucket = daySetMap.get(slice);
+      bucket.airingCount += 1;
+      bucket.totalDollars += Number(record.amount || 0) || 0;
+      bucket.totalPledges += Number(record.pledges || 0) || 0;
+      bucket.totalSustainers += Number(record.sustainers || 0) || 0;
+      bucket.totalMinutes += Number(record.minutes || 0) || 0;
+      bucket.titles.add(record.title || 'Unknown title');
+    });
+    const finalize = (group) => ({
+      ...group,
+      avgDollars: group.airingCount ? group.totalDollars / group.airingCount : 0,
+      avgPledges: group.airingCount ? group.totalPledges / group.airingCount : 0,
+      avgSustainers: group.airingCount ? group.totalSustainers / group.airingCount : 0,
+      dollarsPerPledge: group.totalPledges > 0 ? group.totalDollars / group.totalPledges : 0,
+      dollarsPerMinute: group.totalMinutes > 0 ? group.totalDollars / group.totalMinutes : 0,
+      pledgesPerMinute: group.totalMinutes > 0 ? group.totalPledges / group.totalMinutes : 0,
+      titleCount: group.titles.size,
+      titles: [...group.titles],
+      belowSampleThreshold: minSampleThreshold() > 1 && group.airingCount < minSampleThreshold()
+    });
+    return {
+      slotGroups: [...slotMap.values()].map(finalize).sort((a, b) => {
+        const diff = metricValue(b) - metricValue(a);
+        if (diff !== 0) return diff;
+        return (a.topicTimeSortKey ?? 9999) - (b.topicTimeSortKey ?? 9999);
+      }),
+      daySetGroups: [...daySetMap.values()].map(finalize).sort((a, b) => {
+        const order = { 'Mon-Fri': 0, 'Saturday': 1, 'Sunday': 2 };
+        return (order[a.label] ?? 99) - (order[b.label] ?? 99);
+      })
+    };
+  }
+
+  function renderSchedulingIntelligence() {
+    if (!els.performanceIntelligence) return;
+    if (els.performanceIntelligencePill) els.performanceIntelligencePill.textContent = perf().topicFilter ? `For ${perf().topicFilter}` : 'Choose a main topic';
+    if (!perf().topicFilter) {
+      renderSelectOptions(els.performanceSlotCompareA, [], '', 'Choose a topic first');
+      renderSelectOptions(els.performanceSlotCompareB, [], '', 'Choose a topic first');
+      els.performanceIntelligence.innerHTML = '<div class="performance-intelligence-empty">Choose a main topic to see the best slot overall, the best Mon-Fri/Saturday/Sunday slices, and a head-to-head slot comparison.</div>';
+      return;
+    }
+    const { slotGroups, daySetGroups } = buildTopicIntelligenceGroups();
+    if (!slotGroups.length) {
+      renderSelectOptions(els.performanceSlotCompareA, [], '', 'No slot data');
+      renderSelectOptions(els.performanceSlotCompareB, [], '', 'No slot data');
+      els.performanceIntelligence.innerHTML = '<div class="performance-intelligence-empty">Not enough trustworthy dated rows are available for this topic in the current filter window.</div>';
+      return;
+    }
+    const options = slotGroups.map((group) => ({ value: group.label, label: `${group.label} · ${metricDisplay(group)}` }));
+    if (!perf().slotCompareA || !slotGroups.some((group) => group.label === perf().slotCompareA)) perf().slotCompareA = slotGroups[0]?.label || '';
+    if (!perf().slotCompareB || !slotGroups.some((group) => group.label === perf().slotCompareB) || perf().slotCompareB === perf().slotCompareA) perf().slotCompareB = slotGroups[1]?.label || slotGroups[0]?.label || '';
+    renderSelectOptions(els.performanceSlotCompareA, options, perf().slotCompareA, 'Choose slot');
+    renderSelectOptions(els.performanceSlotCompareB, options, perf().slotCompareB, 'Choose slot');
+    const bestOverall = slotGroups[0];
+    const bySlice = {
+      weekday: daySetGroups.find((group) => group.label === 'Mon-Fri') || null,
+      saturday: daySetGroups.find((group) => group.label === 'Saturday') || null,
+      sunday: daySetGroups.find((group) => group.label === 'Sunday') || null
+    };
+    const slotA = slotGroups.find((group) => group.label === perf().slotCompareA) || bestOverall;
+    const slotB = slotGroups.find((group) => group.label === perf().slotCompareB) || slotGroups[1] || bestOverall;
+    const insightCard = (title, group, extra = '') => {
+      if (!group) return `<article class="performance-insight-card"><h4>${utils.escapeHtml(title)}</h4><div class="performance-insight-value">No data</div><div class="performance-insight-meta">Nothing trustworthy in this slice yet.</div></article>`;
+      return `<article class="performance-insight-card"><h4>${utils.escapeHtml(title)}</h4><div class="performance-insight-value">${utils.escapeHtml(group.label)}</div><div class="performance-insight-meta">${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}${extra ? ` · ${utils.escapeHtml(extra)}` : ''}</div></article>`;
+    };
+    const compareRows = [
+      ['Airings', utils.formatCount(slotA.airingCount), utils.formatCount(slotB.airingCount)],
+      ['Total dollars', utils.formatMoney(slotA.totalDollars), utils.formatMoney(slotB.totalDollars)],
+      ['Total pledges', utils.formatCount(slotA.totalPledges), utils.formatCount(slotB.totalPledges)],
+      ['Total sustainers', utils.formatCount(slotA.totalSustainers), utils.formatCount(slotB.totalSustainers)],
+      ['Program minutes', utils.formatCount(slotA.totalMinutes), utils.formatCount(slotB.totalMinutes)],
+      [metricLabel(), metricDisplay(slotA), metricDisplay(slotB)],
+      ['Confidence', confidenceForGroup(slotA), confidenceForGroup(slotB)]
+    ];
+    const delta = metricValue(slotA) - metricValue(slotB);
+    const winnerText = delta === 0 ? 'These two slots are tied on the selected metric in the current filter window.' : `${delta > 0 ? slotA.label : slotB.label} is currently ahead on ${metricLabel().toLowerCase()}.`;
+    els.performanceIntelligence.innerHTML = `
+      <div class="performance-mini-note">Scheduling intelligence respects the current date window, month filter, and broadcast-day boundary. Overnight airings before ${utils.escapeHtml(utils.minutesToLabel(broadcastDayStartHour() * 60))} are rolled into the previous TV day.</div>
+      <div class="performance-intelligence-grid">
+        ${insightCard('Best slot overall', bestOverall, confidenceForGroup(bestOverall))}
+        ${insightCard('Best Mon-Fri slice', bySlice.weekday, confidenceForGroup(bySlice.weekday || {}))}
+        ${insightCard('Best Saturday slice', bySlice.saturday, confidenceForGroup(bySlice.saturday || {}))}
+        ${insightCard('Best Sunday slice', bySlice.sunday, confidenceForGroup(bySlice.sunday || {}))}
+      </div>
+      <div class="performance-slot-compare-wrap table-wrap">
+        <table class="programs-table performance-slot-compare-table">
+          <thead>
+            <tr>
+              <th>Measure</th>
+              <th>${utils.escapeHtml(slotA?.label || 'Slot A')}</th>
+              <th>${utils.escapeHtml(slotB?.label || 'Slot B')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${compareRows.map(([label, a, b]) => `<tr><td>${utils.escapeHtml(label)}</td><td>${utils.escapeHtml(String(a))}</td><td>${utils.escapeHtml(String(b))}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="performance-mini-note">${utils.escapeHtml(winnerText)}</div>
     `;
   }
 
@@ -1570,6 +1999,7 @@
       repeat_fatigue: 'Repeat fatigue',
       topic_winners: 'Top Topics',
       topic_time_performance: 'Topic Time Performance',
+      topic_week_split: 'Topic week split',
       recent_momentum: 'Recent momentum',
       weekend_weekday: 'Weekend vs weekday earnings',
       day_of_week: 'Day of week comparisons',
@@ -1600,6 +2030,8 @@
           : 'Pick a main topic to make this view useful. Without a topic filter, the heatmap blends every topic together.';
       case 'topic_winners':
         return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs.';
+      case 'topic_week_split':
+        return 'Splits topics into Mon-Fri, Saturday, and Sunday buckets so you can stop pretending the whole week behaves the same way.';
       case 'weekday_dayparts':
       case 'saturday_dayparts':
       case 'sunday_dayparts':
@@ -1653,13 +2085,16 @@
     renderExplainTable(records, postFilter);
     renderChart(perf().groups);
     renderTable(perf().groups);
+    renderSchedulingIntelligence();
     renderNotes(records, perf().groups);
     if (els.performanceChartTitle) {
-      const focus = perf().criterion === 'topic_time' && perf().topicFilter ? ` · ${perf().topicFilter}` : (perf().criterion === 'daypart' && perf().daySetFilter ? ` · ${daySetLabel(perf().daySetFilter)}` : '');
+      const focus = (['topic_time', 'topic_dayset'].includes(perf().criterion) && perf().topicFilter)
+        ? ` · ${perf().topicFilter}`
+        : (perf().criterion === 'daypart' && perf().daySetFilter ? ` · ${daySetLabel(perf().daySetFilter)}` : '');
       els.performanceChartTitle.textContent = `${metricLabel()} by ${criterionDisplayName()}${focus}`;
     }
     if (els.performanceChartPill) {
-      const vizLabel = perf().criterion === 'topic_time' ? 'Heatmap' : chartTypeLabel(effectiveChartType());
+      const vizLabel = ['topic_time', 'topic_dayset'].includes(perf().criterion) ? 'Heatmap' : chartTypeLabel(effectiveChartType());
       els.performanceChartPill.textContent = perf().ready ? `${vizLabel} · ${criterionDisplayName()}` : 'Awaiting data';
     }
     if (els.performanceTablePill) els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
@@ -1725,6 +2160,7 @@
     repeat_fatigue: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_time_performance: { criterion: 'topic_time', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
+    topic_week_split: { criterion: 'topic_dayset', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     recent_momentum: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     weekend_weekday: { criterion: 'weekpart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     day_of_week: { criterion: 'day', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
@@ -1785,17 +2221,18 @@
     els.performanceCriterionSelect?.addEventListener('change', (event) => { perf().criterion = event.target.value || 'topic'; perf().quickFilter = ''; rerender(); });
     els.performanceMetricSelect?.addEventListener('change', (event) => { perf().metric = event.target.value || 'avg_dollars'; perf().quickFilter = ''; rerender(); });
     els.performanceChartTypeSelect?.addEventListener('change', (event) => { perf().chartType = event.target.value || 'auto'; perf().quickFilter = ''; rerender(); });
-    els.performanceTopnSelect?.addEventListener('change', (event) => { perf().topN = Number(event.target.value || 12); perf().quickFilter = ''; rerender(); });
-    els.performanceFilterInput?.addEventListener('input', (event) => { perf().labelFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
-    els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().useAllDates = false; perf().quickFilter = ''; rerender(); });
-    els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().useAllDates = false; perf().quickFilter = ''; rerender(); });
-    els.performanceUseAllDates?.addEventListener('change', (event) => { perf().useAllDates = Boolean(event.target.checked); perf().quickFilter = ''; rerender(); });
-    els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; perf().quickFilter = ''; rerender(); });
-    els.performanceDaySetSelect?.addEventListener('change', (event) => { perf().daySetFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
-    els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; perf().quickFilter = ''; rerender(); });
+    els.performanceTopnSelect?.addEventListener('change', (event) => { perf().topN = Number(event.target.value || 12); rerender(); });
+    els.performanceFilterInput?.addEventListener('input', (event) => { perf().labelFilter = event.target.value || ''; rerender(); });
+    els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().useAllDates = false; rerender(); });
+    els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().useAllDates = false; rerender(); });
+    els.performanceUseAllDates?.addEventListener('change', (event) => { perf().useAllDates = Boolean(event.target.checked); rerender(); });
+    els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; rerender(); });
+    els.performanceDaySetSelect?.addEventListener('change', (event) => { perf().daySetFilter = event.target.value || ''; rerender(); });
+    els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; rerender(); });
+    els.performanceSlotCompareA?.addEventListener('change', (event) => { perf().slotCompareA = event.target.value || ''; renderSchedulingIntelligence(); });
+    els.performanceSlotCompareB?.addEventListener('change', (event) => { perf().slotCompareB = event.target.value || ''; renderSchedulingIntelligence(); });
     els.performanceProgramSelect?.addEventListener('change', (event) => {
       perf().programFilter = event.target.value || '';
-      perf().quickFilter = '';
       if (perf().programFilter && perf().criterion === 'program') perf().criterion = 'date';
       rerender();
     });

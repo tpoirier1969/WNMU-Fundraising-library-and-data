@@ -3568,3 +3568,75 @@ button.primary {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+
+/* v0.20.77 analytics scheduling intelligence */
+.performance-slot-compare-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.performance-intelligence {
+  display: grid;
+  gap: 14px;
+}
+.performance-intelligence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.performance-insight-card {
+  border: 1px solid #d7e2ef;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #f8fbff;
+}
+.performance-insight-card h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.performance-insight-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #123e6b;
+}
+.performance-insight-meta {
+  margin-top: 4px;
+  color: #526174;
+  font-size: 0.88rem;
+}
+.performance-intelligence-empty {
+  border: 1px dashed #c6d4e5;
+  border-radius: 14px;
+  padding: 14px;
+  color: #526174;
+  background: #fbfdff;
+}
+.performance-slot-compare-table th,
+.performance-slot-compare-table td {
+  white-space: nowrap;
+}
+.performance-slot-compare-wrap {
+  overflow-x: auto;
+}
+.performance-confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #e8eef6;
+  color: #1f3d5a;
+}
+.performance-confidence-badge.confidence-high { background: #e2f2e6; color: #245336; }
+.performance-confidence-badge.confidence-medium { background: #eef3d9; color: #55611a; }
+.performance-confidence-badge.confidence-low { background: #fff0d9; color: #7a4c09; }
+.performance-confidence-badge.confidence-very-low,
+.performance-confidence-badge.confidence-none { background: #f5e6e6; color: #7a3030; }
+.performance-mini-note {
+  color: #526174;
+  font-size: 0.86rem;
+}

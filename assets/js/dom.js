@@ -166,6 +166,7 @@
     performanceUseAllDates: document.getElementById('performance-use-all-dates'),
     performanceMonthSelect: document.getElementById('performance-month-select'),
     performanceTopicSelect: document.getElementById('performance-topic-select'),
+    performanceQuickFilterPill: document.getElementById('performance-quick-filter-pill'),
     performanceRefreshButton: document.getElementById('performance-refresh-button'),
     performanceExportButton: document.getElementById('performance-export-button'),
     performanceStatGrid: document.getElementById('performance-stat-grid'),
@@ -175,8 +176,14 @@
     performanceChartPill: document.getElementById('performance-chart-pill'),
     performanceChart: document.getElementById('performance-chart'),
     performanceTableGroupHeader: document.getElementById('performance-table-group-header'),
+    performanceTableMetricHeader: document.getElementById('performance-table-metric-header'),
+    performanceTableConfidenceHeader: document.getElementById('performance-table-confidence-header'),
     performanceTablePill: document.getElementById('performance-table-pill'),
     performanceTableBody: document.getElementById('performance-table-body'),
+    performanceIntelligencePill: document.getElementById('performance-intelligence-pill'),
+    performanceIntelligence: document.getElementById('performance-intelligence'),
+    performanceSlotCompareA: document.getElementById('performance-slot-compare-a'),
+    performanceSlotCompareB: document.getElementById('performance-slot-compare-b'),
     performanceNotesPill: document.getElementById('performance-notes-pill'),
     performanceSourceNotes: document.getElementById('performance-source-notes')
   };

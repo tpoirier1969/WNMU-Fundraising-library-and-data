@@ -3,29 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.20.76</title>
+  <title>WNMU Pledge Program Library v0.20.78</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.20.76">
+  <link rel="stylesheet" href="assets/styles.css?v=0.20.78">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.20.76"></script>
-  <script defer src="assets/js/program-filters.js?v=0.20.76"></script>
-  <script defer src="assets/js/dom.js?v=0.20.76"></script>
-  <script defer src="assets/js/data.js?v=0.20.76"></script>
-  <script defer src="assets/js/ui-list.js?v=0.20.76"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.20.76"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.20.76"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.20.76"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.20.76"></script>
-  <script defer src="assets/js/auth.js?v=0.20.76"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.20.76"></script>
-  <script defer src="assets/js/program-open.js?v=0.20.76"></script>
-  <script defer src="assets/js/library-load.js?v=0.20.76"></script>
-  <script defer src="assets/js/app.js?v=0.20.76"></script>
-  <script defer src="assets/js/app-init.js?v=0.20.76"></script>
+  <script defer src="assets/js/core.js?v=0.20.78"></script>
+  <script defer src="assets/js/program-filters.js?v=0.20.78"></script>
+  <script defer src="assets/js/dom.js?v=0.20.78"></script>
+  <script defer src="assets/js/data.js?v=0.20.78"></script>
+  <script defer src="assets/js/ui-list.js?v=0.20.78"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.20.78"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.20.78"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.20.78"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.20.78"></script>
+  <script defer src="assets/js/auth.js?v=0.20.78"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.20.78"></script>
+  <script defer src="assets/js/program-open.js?v=0.20.78"></script>
+  <script defer src="assets/js/library-load.js?v=0.20.78"></script>
+  <script defer src="assets/js/app.js?v=0.20.78"></script>
+  <script defer src="assets/js/app-init.js?v=0.20.78"></script>
 </head>
 <body>
 
@@ -55,7 +55,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.20.76</span>
+            <span class="version-pill" id="version-flag">v0.20.78</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -726,6 +726,7 @@
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="repeat_fatigue">Repeat fatigue</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Top Topics</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_time_performance">Topic Time Performance</button>
+              <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_week_split">Topic week split</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="recent_momentum">Recent momentum</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="weekend_weekday">Weekend vs weekday earnings</button>
               <button type="button" class="quick-filter-btn" data-performance-quick-filter="day_of_week">Day of week comparisons</button>
@@ -780,6 +781,7 @@
                 <option value="weekpart">Weekend vs weekday</option>
                 <option value="time">Time</option>
                 <option value="topic_time">Topic time slot</option>
+                <option value="topic_dayset">Topic week split</option>
                 <option value="topic" selected>Topic</option>
                 <option value="local_breaks">Local cut-ins</option>
                 <option value="live_breaks">Live breaks</option>
@@ -793,6 +795,13 @@
                 <option value="avg_dollars">Average dollars / airing</option>
                 <option value="total_dollars">Total dollars</option>
                 <option value="airings">Airing count</option>
+                <option value="avg_pledges">Average pledges / airing</option>
+                <option value="total_pledges">Total pledges</option>
+                <option value="avg_sustainers">Average sustainers / airing</option>
+                <option value="total_sustainers">Total sustainers</option>
+                <option value="dollars_per_pledge">Dollars / pledge</option>
+                <option value="dollars_per_minute">Dollars / minute</option>
+                <option value="pledges_per_minute">Pledges / minute</option>
               </select>
             </label>
             <label class="filter-field narrow">
@@ -858,16 +867,35 @@
                     <th id="performance-table-group-header">Group</th>
                     <th>Airings</th>
                     <th>Total dollars</th>
-                    <th>Avg dollars / airing</th>
+                    <th id="performance-table-metric-header">Avg dollars / airing</th>
+                    <th id="performance-table-confidence-header">Confidence</th>
                     <th>Titles</th>
                   </tr>
                 </thead>
                 <tbody id="performance-table-body">
-                  <tr><td colspan="5" class="placeholder-row">Open Pledge Performance to load comparison data.</td></tr>
+                  <tr><td colspan="6" class="placeholder-row">Open Pledge Performance to load comparison data.</td></tr>
                 </tbody>
               </table>
             </div>
           </article>
+        </section>
+
+        <section class="performance-card performance-intelligence-card">
+          <div class="performance-card-head">
+            <h3>Scheduling intelligence</h3>
+            <span class="mini-chip" id="performance-intelligence-pill">Topic-aware</span>
+          </div>
+          <div class="performance-slot-compare-controls">
+            <label class="filter-field narrow">
+              <span class="filter-label">Slot A</span>
+              <select id="performance-slot-compare-a"></select>
+            </label>
+            <label class="filter-field narrow">
+              <span class="filter-label">Slot B</span>
+              <select id="performance-slot-compare-b"></select>
+            </label>
+          </div>
+          <div id="performance-intelligence" class="performance-intelligence">Choose a main topic to see best slots, weekday/Saturday/Sunday splits, and a head-to-head slot comparison.</div>
         </section>
 
         <section class="performance-card performance-explain-card">
@@ -1027,7 +1055,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.20.76</div>
+      <div id="footer-version">v0.20.78</div>
     </footer>
   </div>
 </body>

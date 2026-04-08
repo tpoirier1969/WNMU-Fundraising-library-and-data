@@ -1982,6 +1982,8 @@
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
+    if (App.performanceUi?.refreshData) await App.performanceUi.refreshData({ silent: true });
+    App.performanceUi?.renderAll?.();
   }
 
   function adjustZoom(delta) {
