@@ -1646,6 +1646,7 @@
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span></div>
             <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(row) || '—')}</div>
             <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Breaks in ProTrack</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
+            <div class="scheduled-data-chunk scheduled-break-detail-chunk"><span class="mini-label inline">Break Detail</span>${breakHtml}</div>
           </div>
         </article>
       `;
