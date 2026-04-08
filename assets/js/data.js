@@ -404,7 +404,7 @@
     const rawFieldAttempts = [
       ['program_id', context.programId],
       ['pledge_program_id', context.programId],
-      ['id', context.programId],
+      ...(options.allowIdField === false ? [] : [['id', context.programId]]),
       ['nola_code', context.nola],
       ['nola', context.nola],
       ['program_nola', context.nola],
@@ -466,9 +466,9 @@
         ? Promise.resolve({ data: null, error: null })
         : fetchOneById(constants.BASE_TABLE, programId);
       const sectionPromise = Promise.all([
-        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false }),
-        fetchManyByContext(constants.DRIVE_RESULTS_TABLE, initialContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false),
-        fetchManyByContext(constants.AIRINGS_TABLE, initialContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false })
+        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false, allowIdField: false }),
+        fetchManyByContext(constants.DRIVE_RESULTS_TABLE, initialContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false, { allowIdField: false }),
+        fetchManyByContext(constants.AIRINGS_TABLE, initialContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false, allowIdField: false })
       ]);
 
       const baseResp = await basePromise;
@@ -479,13 +479,13 @@
 
       if (needsContextRetry(initialContext, enrichedContext)) {
         if (!(timingResp.data || []).length) {
-          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false });
+          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false, allowIdField: false });
         }
         if (!(driveResp.data || []).length) {
-          driveResp = await fetchManyByContext(constants.DRIVE_RESULTS_TABLE, enrichedContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false);
+          driveResp = await fetchManyByContext(constants.DRIVE_RESULTS_TABLE, enrichedContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false, { allowIdField: false });
         }
         if (!(airingsResp.data || []).length) {
-          airingsResp = await fetchManyByContext(constants.AIRINGS_TABLE, enrichedContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false });
+          airingsResp = await fetchManyByContext(constants.AIRINGS_TABLE, enrichedContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false, allowIdField: false });
         }
       }
 
@@ -538,7 +538,7 @@
 
   async function saveTimingRows(programId, rows = []) {
     const wanted = Array.isArray(rows) ? rows.map((row) => sanitizeTimingRow({ ...row, program_id: programId })).filter((row) => Object.keys(row).length) : [];
-    const currentResp = await fetchManyByContext(constants.TIMING_TABLE, { programId }, ['segment_number', 'slot_number'], true);
+    const currentResp = await fetchManyByContext(constants.TIMING_TABLE, { programId }, ['segment_number', 'slot_number'], true, { allowIdField: false });
     const currentRows = Array.isArray(currentResp?.data) ? currentResp.data : [];
     const currentIds = new Set(currentRows.map((row) => String(row.id || '')).filter(Boolean));
     const wantedIds = new Set(wanted.map((row) => String(row.id || '')).filter(Boolean));
