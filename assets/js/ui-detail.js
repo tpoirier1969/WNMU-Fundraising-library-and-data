@@ -198,34 +198,82 @@
     return shifted;
   }
 
+  function detailNormalizedDateKey(value) {
+    const text = utils.normalizeText(value);
+    if (!text) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const parsedInput = utils.parseFlexibleDateInput(text);
+    if (parsedInput?.valid && parsedInput?.iso) return parsedInput.iso;
+    const parsed = new Date(text);
+    if (!Number.isNaN(parsed.getTime())) return utils.dateKeyFromDate(parsed);
+    return '';
+  }
+
+  function detailNormalizedTimeValue(value) {
+    const text = utils.normalizeText(value);
+    if (!text) return '';
+    if (/^\d{1,2}:\d{2}:\d{2}$/.test(text)) return text;
+    if (/^\d{1,2}:\d{2}$/.test(text)) return `${text}:00`;
+    if (/^\d{3,4}$/.test(text)) {
+      const padded = text.padStart(4, '0');
+      return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:00`;
+    }
+    return text;
+  }
+
+  function detailDateFromParts(dateValue, timeValue = '', fallbackHour = 12) {
+    const dateKey = detailNormalizedDateKey(dateValue);
+    if (!dateKey) return null;
+    const normalizedTime = detailNormalizedTimeValue(timeValue);
+    if (normalizedTime) {
+      const merged = new Date(`${dateKey}T${normalizedTime}`);
+      if (!Number.isNaN(merged.getTime())) return merged;
+    }
+    const fallback = new Date(`${dateKey}T${String(fallbackHour).padStart(2, '0')}:00:00`);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
+
   function detailRecordDate(row = {}) {
+    const rawTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
+    const exactLocal = detailDateFromParts(row?.air_date, rawTime, 12);
+    if (exactLocal) return exactLocal;
+
     const rawDateTime = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date, row?.date_key);
     if (!utils.isBlank(rawDateTime)) {
       const text = String(rawDateTime).trim();
       const parsed = new Date(text);
       if (!Number.isNaN(parsed.getTime())) return parsed;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-        const rawTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
-        if (!utils.isBlank(rawTime)) {
-          const merged = new Date(`${text}T${String(rawTime).trim()}`);
-          if (!Number.isNaN(merged.getTime())) return merged;
-        }
-        const midday = new Date(`${text}T12:00:00`);
-        if (!Number.isNaN(midday.getTime())) return midday;
-      }
+      const localFallback = detailDateFromParts(text, rawTime, 12);
+      if (localFallback) return localFallback;
     }
+
+    const driveDate = detailDateFromParts(utils.firstNonEmpty(row?.drive_date, row?.drive_start_date, row?.date_key), '', 12);
+    if (driveDate) return driveDate;
     return null;
   }
 
 
   function detailRecordHasExplicitTime(row = {}) {
+    const rawTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
+    if (!utils.isBlank(rawTime)) return true;
     const rawDateTime = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date, row?.date_key);
     if (!utils.isBlank(rawDateTime)) {
       const text = String(rawDateTime).trim();
       if (/\d{1,2}:\d{2}/.test(text) || /T\d{2}:\d{2}/i.test(text)) return true;
     }
-    const rawTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
-    return !utils.isBlank(rawTime);
+    return false;
+  }
+
+  function detailDisplayDate(row = {}, fallback = 'N/A') {
+    const when = detailRecordDate(row);
+    if (!(when instanceof Date) || Number.isNaN(when.getTime())) return fallback;
+    return detailDateLabel(when);
+  }
+
+  function detailDisplayDateTime(row = {}, fallback = 'N/A') {
+    const when = detailRecordDate(row);
+    if (!(when instanceof Date) || Number.isNaN(when.getTime())) return fallback;
+    return detailRecordHasExplicitTime(row) ? `${detailDateLabel(when)} · ${detailTimeLabel(when)}` : detailDateLabel(when);
   }
 
   function detailDateLabel(date) {
@@ -457,7 +505,7 @@
     const grouped = new Map();
     sourceRows.forEach((row) => {
       const iso = utils.firstNonEmpty(row?.drive_date, row?.drive_start_date, row?.aired_at, row?.date_key);
-      const dateKey = utils.dateKeyFromDate(iso) || utils.normalizeText(iso);
+      const dateKey = detailNormalizedDateKey(iso) || utils.dateKeyFromDate(iso) || utils.normalizeText(iso);
       const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column)) || (dateKey || 'Unknown');
       const amount = Number(contributionAmount(row) || 0) || 0;
       if (!dateKey && !label) return;
@@ -608,9 +656,9 @@
   function renderOverview(program, driveResults = [], exactAirings = []) {
     const topicValue = [derive.topicPrimary(program), derive.topicSecondary(program)].filter(Boolean).join(' / ') || '—';
     const lastAired = exactAirings.length
-      ? utils.formatDate(utils.firstNonEmpty(exactAirings[0].aired_at, exactAirings[0].air_date), 'N/A')
+      ? detailDisplayDateTime(exactAirings[0], 'N/A')
       : driveResults.length
-        ? utils.formatDate(utils.firstNonEmpty(driveResults[0].drive_date, driveResults[0].aired_at), 'N/A')
+        ? detailDisplayDateTime(driveResults[0], 'N/A')
         : derive.lastAiredDisplay(program);
 
     els.overviewGrid.innerHTML = [
@@ -863,7 +911,7 @@
       resolvedAirings.forEach((row) => {
         const sourceNote = row.__resolved_contribution_source === 'drive_rollup' ? ' · fundraiser rollup' : '';
         combined.push({
-          when: utils.formatDateTime(utils.firstNonEmpty(row.aired_at, row.air_date), 'N/A'),
+          when: detailDisplayDateTime(row, 'N/A'),
           contributed: utils.firstNonEmpty(row.__resolved_contribution_amount, contributionAmount(row)),
           note: `${utils.normalizeText(utils.firstNonEmpty(row.fundraiser_label, row.drive_label, row.notes)) || '—'}${sourceNote}`
         });
@@ -872,7 +920,7 @@
       driveResults.forEach((row) => {
         const label = utils.normalizeText(utils.firstNonEmpty(row.drive_label, row.drive_column, row.fundraiser_label)) || 'Drive';
         const when = utils.firstNonEmpty(row.drive_date, row.drive_start_date)
-          ? `${utils.formatDate(utils.firstNonEmpty(row.drive_date, row.drive_start_date))}${row.drive_window_text ? ` · ${row.drive_window_text}` : ''}`
+          ? `${detailDisplayDate(row, 'N/A')}${row.drive_window_text ? ` · ${row.drive_window_text}` : ''}`
           : label;
         combined.push({ when, contributed: contributionAmount(row), note: label });
       });
