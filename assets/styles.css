@@ -3223,10 +3223,54 @@ button.primary {
   stroke: #1576b9;
   stroke-width: 3;
 }
+.detail-graph-expected-line {
+  stroke: #f4b06a;
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+}
 .detail-graph-dot {
   fill: #1576b9;
   stroke: #fff;
   stroke-width: 2;
+}
+.detail-graph-expected-dot {
+  fill: #f4b06a;
+  stroke: #fff;
+  stroke-width: 2;
+}
+.detail-graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+.detail-graph-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  margin-right: 6px;
+  border-top: 3px solid transparent;
+  vertical-align: middle;
+}
+.detail-graph-swatch-actual {
+  border-top-color: #1576b9;
+}
+.detail-graph-swatch-expected {
+  border-top-color: #f4b06a;
+}
+.detail-graph-label-line {
+  stroke: rgba(18, 62, 107, 0.18);
+  stroke-width: 1;
+}
+.detail-graph-point-label {
+  fill: #344454;
+  font-size: 10px;
+}
+.detail-graph-point-note {
+  fill: #667789;
+  font-size: 9px;
 }
 .detail-airing-context-wrap {
   margin-top: 8px;

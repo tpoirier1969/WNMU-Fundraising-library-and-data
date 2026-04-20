@@ -438,6 +438,7 @@
   function buildAiringInsightRows(program, driveResults = [], exactAirings = []) {
     const cache = getDetailBenchmarkCache();
     const topic = derive.topicPrimary(program);
+    const topicKey = utils.normalizeLookupKey(topic);
     const resolvedAirings = resolvedExactAiringRows(exactAirings, driveResults)
       .map((row) => ({ ...row, __detail_when: detailRecordDate(row) }))
       .sort((a, b) => {
@@ -445,21 +446,25 @@
         const bTime = b.__detail_when instanceof Date && !Number.isNaN(b.__detail_when.getTime()) ? b.__detail_when.getTime() : Number.POSITIVE_INFINITY;
         return aTime - bTime;
       });
-    const nonZeroAmounts = resolvedAirings
-      .map((row) => Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0)
-      .filter((value) => Number.isFinite(value));
-    const titleAverage = nonZeroAmounts.length ? (nonZeroAmounts.reduce((sum, value) => sum + value, 0) / nonZeroAmounts.length) : 0;
     return resolvedAirings.map((row) => {
       const when = row.__detail_when;
       const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
       const pledges = detailPledges(row);
       const slotLabel = detailSlotLabel(when);
       const overallSlot = slotLabel && cache ? cache.overallSlotMap.get(slotLabel) : null;
-      const topicSlot = slotLabel && cache && topic ? cache.topicSlotMap.get(`${utils.normalizeLookupKey(topic)}|${slotLabel}`) : null;
+      const topicSlot = slotLabel && cache && topicKey ? cache.topicSlotMap.get(`${topicKey}|${slotLabel}`) : null;
+      const expectedTopicAmount = Number.isFinite(Number(topicSlot?.avgDollars)) ? Number(topicSlot.avgDollars) : null;
+      const vsTopicNote = !Number.isFinite(expectedTopicAmount) || expectedTopicAmount <= 0
+        ? 'Topic thin'
+        : amount >= (expectedTopicAmount * 1.15)
+          ? 'Above topic'
+          : amount <= (expectedTopicAmount * 0.85)
+            ? 'Below topic'
+            : 'On topic';
       const noteBits = [
         overallSlotNote(overallSlot, cache),
         topicSlotNote(topic, topicSlot, cache),
-        titleRelativeNote(amount, titleAverage)
+        vsTopicNote
       ].filter(Boolean);
       return {
         row,
@@ -471,11 +476,13 @@
         pledges,
         overallNote: overallSlotNote(overallSlot, cache),
         topicNote: topicSlotNote(topic, topicSlot, cache),
-        titleNote: titleRelativeNote(amount, titleAverage),
+        expectedTopicAmount,
+        vsTopicNote,
         combinedNote: noteBits.join(' · ')
       };
     });
   }
+
 
 
   function buildGraphSeries(driveResults = [], exactAirings = []) {
@@ -530,18 +537,41 @@
     }
     els.detailGraphPill.textContent = `${series.length} point${series.length === 1 ? '' : 's'}`;
     const width = 760;
-    const height = 220;
-    const margin = { top: 18, right: 22, bottom: 44, left: 58 };
+    const height = 240;
+    const margin = { top: 18, right: 22, bottom: 52, left: 58 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
-    const maxAmount = Math.max(...series.map((entry) => Number(entry.amount || 0) || 0), 1);
+    const expectedValues = insightRows
+      .map((entry) => Number(entry?.expectedTopicAmount))
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    const maxAmount = Math.max(
+      ...series.map((entry) => Number(entry.amount || 0) || 0),
+      ...expectedValues,
+      1
+    );
     const xStep = series.length > 1 ? innerW / (series.length - 1) : 0;
+    const topicName = utils.normalizeText(derive.topicPrimary(program) || 'topic');
     const points = series.map((entry, index) => {
+      const expectedTopicAmount = Number(insightRows[index]?.expectedTopicAmount);
       const x = series.length > 1 ? margin.left + (xStep * index) : margin.left + (innerW / 2);
       const y = margin.top + innerH - ((Number(entry.amount || 0) || 0) / maxAmount * innerH);
-      return { ...entry, x, y };
+      const expectedY = Number.isFinite(expectedTopicAmount) && expectedTopicAmount >= 0
+        ? margin.top + innerH - (expectedTopicAmount / maxAmount * innerH)
+        : null;
+      return {
+        ...entry,
+        insight: insightRows[index] || null,
+        expectedTopicAmount: Number.isFinite(expectedTopicAmount) ? expectedTopicAmount : null,
+        x,
+        y,
+        expectedY
+      };
     });
     const polyline = points.map((pt) => `${pt.x},${pt.y}`).join(' ');
+    const expectedPolyline = points
+      .filter((pt) => Number.isFinite(pt.expectedY))
+      .map((pt) => `${pt.x},${pt.expectedY}`)
+      .join(' ');
     const yTicks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
       const y = margin.top + innerH - (innerH * fraction);
       const value = maxAmount * fraction;
@@ -549,66 +579,69 @@
     }).join('');
     const xLabels = points.map((pt, index) => {
       if (!(index === 0 || index === points.length - 1 || index % Math.max(1, Math.ceil(points.length / 4)) === 0)) return '';
-      const label = pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)}\n${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : utils.formatDate(pt.dateKey, pt.dateKey);
-      const lines = String(label).split('\n');
-      return `<text x="${pt.x}" y="${height - 16}" text-anchor="middle" class="detail-graph-axis">${lines.map((line, lineIndex) => `<tspan x="${pt.x}" dy="${lineIndex === 0 ? 0 : 12}">${utils.escapeHtml(line)}</tspan>`).join('')}</text>`;
+      const label = pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? detailDateLabel(pt.when) : utils.formatDate(pt.dateKey, pt.dateKey);
+      return `<text x="${pt.x}" y="${height - 18}" text-anchor="middle" class="detail-graph-axis">${utils.escapeHtml(label)}</text>`;
     }).join('');
-    const dots = points.map((pt, index) => {
-      const insight = insightRows[index] || null;
+    const expectedDots = points.map((pt) => {
+      if (!Number.isFinite(pt.expectedY)) return '';
+      const tooltip = [
+        pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
+        `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}`,
+        pt.insight?.topicNote || ''
+      ].filter(Boolean).join(' | ');
+      return `<g><circle cx="${pt.x}" cy="${pt.expectedY}" r="3.5" class="detail-graph-expected-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
+    }).join('');
+    const dots = points.map((pt) => {
       const tooltip = [
         pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
         `${utils.formatMoney(pt.amount)}${Number.isFinite(pt.pledges) && pt.pledges > 0 ? ` · ${utils.formatCount(pt.pledges)} pledges` : ''}`,
-        insight?.combinedNote || ''
+        pt.expectedTopicAmount != null ? `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}` : 'Topic expectation thin',
+        pt.insight?.combinedNote || ''
       ].filter(Boolean).join(' | ');
       return `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
     }).join('');
+    const pointLabels = points.map((pt, index) => {
+      const shortDay = utils.escapeHtml((pt.dayLabel || 'Day').slice(0, 3));
+      const timeText = utils.escapeHtml(pt.timeLabel || 'Unknown time');
+      const slotLine = `${shortDay} ${timeText}`;
+      const noteLine = utils.escapeHtml(pt.insight?.vsTopicNote || pt.insight?.topicNote || 'Topic expectation thin');
+      const anchor = index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle';
+      const labelX = index === 0 ? pt.x + 8 : index === points.length - 1 ? pt.x - 8 : pt.x;
+      const labelAbove = (index % 2 === 0 && pt.y > (margin.top + 30)) || pt.y > (margin.top + innerH * 0.72);
+      const baseY = labelAbove ? pt.y - 12 : pt.y + 18;
+      const connectorY = labelAbove ? pt.y - 4 : pt.y + 4;
+      return `<g>
+        <line x1="${pt.x}" y1="${connectorY}" x2="${labelX}" y2="${labelAbove ? baseY - 3 : baseY - 11}" class="detail-graph-label-line"></line>
+        <text x="${labelX}" y="${baseY}" text-anchor="${anchor}" class="detail-graph-point-label">
+          <tspan x="${labelX}" dy="0">${slotLine}</tspan>
+          <tspan x="${labelX}" dy="11" class="detail-graph-point-note">${noteLine}</tspan>
+        </text>
+      </g>`;
+    }).join('');
     const latest = points[points.length - 1];
     const latestWhen = latest.when instanceof Date && !Number.isNaN(latest.when.getTime()) ? `${detailDateLabel(latest.when)} · ${latest.row && detailRecordHasExplicitTime(latest.row) ? detailTimeLabel(latest.when) : 'Unknown time'}` : utils.formatDate(latest.dateKey, latest.dateKey);
-    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · ${utils.escapeHtml(utils.formatMoney(latest.amount))} most recently on ${utils.escapeHtml(latestWhen)}`;
-    const insightTable = insightRows.length
-      ? `
-      <div class="airing-table-wrap detail-airing-context-wrap">
-        <table class="segment-table detail-airing-context-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Day</th>
-              <th>Time</th>
-              <th>Dollars</th>
-              <th>Pledges</th>
-              <th>Overall slot</th>
-              <th>Topic fit</th>
-              <th>Vs title</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${insightRows.map((row) => `
-              <tr>
-                <td>${utils.escapeHtml(row.dateLabel)}</td>
-                <td>${utils.escapeHtml(row.dayLabel)}</td>
-                <td>${utils.escapeHtml(row.timeLabel)}</td>
-                <td>${utils.escapeHtml(utils.formatMoney(row.amount))}</td>
-                <td>${utils.escapeHtml(row.pledges ? utils.formatCount(row.pledges) : '—')}</td>
-                <td>${utils.escapeHtml(row.overallNote)}</td>
-                <td>${utils.escapeHtml(row.topicNote)}</td>
-                <td>${utils.escapeHtml(row.titleNote)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>`
-      : '';
+    const latestExpectedText = latest.expectedTopicAmount != null ? ` vs topic-expected ${utils.formatMoney(latest.expectedTopicAmount)}` : '';
+    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · blue = actual dollars, orange = topic expectation for that day/time slot. Latest: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} on ${utils.escapeHtml(latestWhen)}`;
+    const legend = `
+      <div class="detail-graph-legend" aria-hidden="true">
+        <span><span class="detail-graph-swatch detail-graph-swatch-actual"></span>Actual</span>
+        <span><span class="detail-graph-swatch detail-graph-swatch-expected"></span>Topic expected</span>
+      </div>`;
     els.detailPerformanceGraph.innerHTML = `
       <div class="detail-graph-summary">${summary}</div>
-      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart">
+      ${legend}
+      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart with actual dollars and topic-expected dollars by airing slot">
         ${yTicks}
         <line x1="${margin.left}" y1="${margin.top + innerH}" x2="${width - margin.right}" y2="${margin.top + innerH}" class="detail-graph-axis-line"></line>
+        ${expectedPolyline ? `<polyline fill="none" points="${expectedPolyline}" class="detail-graph-expected-line"></polyline>` : ''}
         ${points.length > 1 ? `<polyline fill="none" points="${polyline}" class="detail-graph-line"></polyline>` : ''}
+        ${expectedDots}
         ${dots}
+        ${pointLabels}
         ${xLabels}
-      </svg>
-      ${insightTable}`;
+      </svg>`;
   }
+
 
   function labelValue(label, value, extraClass = '') {
     return `
