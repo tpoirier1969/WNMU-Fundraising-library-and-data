@@ -485,6 +485,102 @@
 
 
 
+  function detailFundraiserAxisLabel(dateKey = '', label = '') {
+    const when = detailDateFromParts(dateKey, '', 12);
+    if (when instanceof Date && !Number.isNaN(when.getTime())) {
+      return when.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+    }
+    const text = utils.normalizeText(label);
+    if (!text) return 'Fundraiser';
+    return text.length > 16 ? `${text.slice(0, 16)}…` : text;
+  }
+
+  function detailFundraiserHoverLabel(startKey = '', endKey = '', label = '') {
+    const bits = [];
+    const text = utils.normalizeText(label);
+    if (text) bits.push(text);
+    const startText = startKey ? utils.formatDate(startKey, startKey) : '';
+    const endText = endKey ? utils.formatDate(endKey, endKey) : '';
+    if (startText && endText && startText !== endText) bits.push(`${startText} → ${endText}`);
+    else if (startText || endText) bits.push(startText || endText);
+    return bits.join(' · ') || 'Fundraiser';
+  }
+
+  function detailFundraiserDescriptor(row = {}) {
+    const startKey = detailNormalizedDateKey(utils.firstNonEmpty(row?.drive_start_date, row?.drive_date, row?.air_date, row?.aired_at, row?.date_key));
+    const endKey = detailNormalizedDateKey(utils.firstNonEmpty(row?.drive_end_date, row?.drive_start_date, row?.drive_date, row?.air_date, row?.aired_at, row?.date_key));
+    const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column, '')) || '';
+    const keyBase = startKey || detailNormalizedDateKey(utils.firstNonEmpty(row?.air_date, row?.aired_at, row?.drive_date, row?.date_key));
+    if (!keyBase && !label) return null;
+    const key = [keyBase || '', endKey || '', utils.normalizeLookupKey(label)].join('|');
+    return {
+      key,
+      startKey: keyBase || '',
+      endKey: endKey || '',
+      label,
+      axisLabel: detailFundraiserAxisLabel(keyBase || endKey || '', label),
+      hoverLabel: detailFundraiserHoverLabel(keyBase || '', endKey || '', label)
+    };
+  }
+
+  function detailFundraiserSourceRows() {
+    if (Array.isArray(state.imports?.airingsRows) && state.imports.airingsRows.length) return state.imports.airingsRows;
+    if (state.performance?.ready && Array.isArray(state.performance.records) && state.performance.records.length) {
+      return state.performance.records.flatMap((record) => Array.isArray(record?.sampleSourceRows) ? record.sampleSourceRows : []);
+    }
+    return [];
+  }
+
+  function buildDetailFundraiserTimelineFromRows(rows = []) {
+    const grouped = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const descriptor = detailFundraiserDescriptor(row);
+      if (!descriptor?.key) return;
+      const prior = grouped.get(descriptor.key) || { ...descriptor, count: 0 };
+      prior.count += 1;
+      if (!prior.startKey || (descriptor.startKey && descriptor.startKey < prior.startKey)) prior.startKey = descriptor.startKey;
+      if (!prior.endKey || (descriptor.endKey && descriptor.endKey > prior.endKey)) prior.endKey = descriptor.endKey;
+      if (!prior.label && descriptor.label) prior.label = descriptor.label;
+      prior.axisLabel = detailFundraiserAxisLabel(prior.startKey || prior.endKey || '', prior.label);
+      prior.hoverLabel = detailFundraiserHoverLabel(prior.startKey || '', prior.endKey || '', prior.label || '');
+      grouped.set(descriptor.key, prior);
+    });
+    return [...grouped.values()].sort((a, b) => {
+      const sortA = String(a.startKey || a.endKey || a.label || '');
+      const sortB = String(b.startKey || b.endKey || b.label || '');
+      return sortA.localeCompare(sortB) || utils.compareText(a.label || '', b.label || '');
+    });
+  }
+
+  function getDetailFundraiserTimeline() {
+    const sourceRows = detailFundraiserSourceRows();
+    if (!sourceRows.length) return null;
+    const sourceKey = Array.isArray(state.imports?.airingsRows) && state.imports.airingsRows.length
+      ? `imports:${state.imports.airingsRows.length}`
+      : `performance:${state.performance?.lastLoadedAt || ''}:${sourceRows.length}`;
+    if (state.detailFundraiserTimelineCache && state.detailFundraiserTimelineCache.sourceKey === sourceKey) {
+      return state.detailFundraiserTimelineCache;
+    }
+    const rows = buildDetailFundraiserTimelineFromRows(sourceRows);
+    const byKey = new Map(rows.map((entry, index) => [entry.key, { ...entry, index }]));
+    state.detailFundraiserTimelineCache = { sourceKey, rows, byKey };
+    return state.detailFundraiserTimelineCache;
+  }
+
+  function buildGraphFundraiserAxis(series = []) {
+    const timeline = getDetailFundraiserTimeline();
+    if (!timeline?.rows?.length || !timeline?.byKey || !Array.isArray(series) || !series.length) return null;
+    const matchedIndices = series
+      .map((entry) => timeline.byKey.get(entry?.fundraiser?.key)?.index)
+      .filter((value) => Number.isInteger(value));
+    if (!matchedIndices.length) return null;
+    const start = Math.min(...matchedIndices);
+    const end = Math.max(...matchedIndices);
+    const slots = timeline.rows.slice(start, end + 1);
+    const slotByKey = new Map(slots.map((slot, index) => [slot.key, { ...slot, localIndex: index }]));
+    return { slots, slotByKey };
+  }
+
   function buildGraphSeries(driveResults = [], exactAirings = []) {
     if (exactAirings.length) {
       return resolvedExactAiringRows(exactAirings, driveResults)
@@ -503,6 +599,7 @@
             dayLabel: detailDayLabel(when),
             timeLabel: detailRecordHasExplicitTime(row) ? detailTimeLabel(when) : 'Unknown time',
             pledges: detailPledges(row),
+            fundraiser: detailFundraiserDescriptor(row),
             row
           };
         })
@@ -517,7 +614,14 @@
       const amount = Number(contributionAmount(row) || 0) || 0;
       if (!dateKey && !label) return;
       const key = `${dateKey || label}|${label}`;
-      const prior = grouped.get(key) || { label, dateKey: dateKey || label, sortKey: dateKey || label, amount: 0 };
+      const prior = grouped.get(key) || {
+        label,
+        dateKey: dateKey || label,
+        sortKey: dateKey || label,
+        amount: 0,
+        fundraiser: detailFundraiserDescriptor(row),
+        row
+      };
       prior.amount += amount;
       grouped.set(key, prior);
     });
@@ -537,8 +641,8 @@
     }
     els.detailGraphPill.textContent = `${series.length} point${series.length === 1 ? '' : 's'}`;
     const width = 760;
-    const height = 240;
-    const margin = { top: 18, right: 22, bottom: 52, left: 58 };
+    const height = 252;
+    const margin = { top: 18, right: 22, bottom: 64, left: 58 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
     const expectedValues = insightRows
@@ -549,11 +653,33 @@
       ...expectedValues,
       1
     );
-    const xStep = series.length > 1 ? innerW / (series.length - 1) : 0;
     const topicName = utils.normalizeText(derive.topicPrimary(program) || 'topic');
-    const points = series.map((entry, index) => {
+    const axis = buildGraphFundraiserAxis(series);
+    const axisSlots = axis?.slots?.length
+      ? axis.slots
+      : series.map((entry, index) => ({
+        key: entry?.fundraiser?.key || `airing-${index}`,
+        axisLabel: entry?.fundraiser?.axisLabel || (entry.when instanceof Date && !Number.isNaN(entry.when.getTime()) ? detailDateLabel(entry.when) : `Airing ${index + 1}`),
+        hoverLabel: entry?.fundraiser?.hoverLabel || entry.label || `Airing ${index + 1}`
+      }));
+    const xStep = axisSlots.length > 1 ? innerW / (axisSlots.length - 1) : 0;
+    const seriesWithSlots = series.map((entry, index) => {
+      const mappedIndex = axis?.slotByKey?.get(entry?.fundraiser?.key)?.localIndex;
+      const slotIndex = Number.isInteger(mappedIndex) ? mappedIndex : Math.min(index, Math.max(axisSlots.length - 1, 0));
+      return { ...entry, slotIndex, slotKey: axisSlots[slotIndex]?.key || `slot-${slotIndex}` };
+    });
+    const slotCounts = new Map();
+    seriesWithSlots.forEach((entry) => slotCounts.set(entry.slotIndex, Number(slotCounts.get(entry.slotIndex) || 0) + 1));
+    const slotSeen = new Map();
+    const slotOffsetStep = axisSlots.length > 1 ? Math.min(16, Math.max(6, xStep * 0.22)) : 0;
+    const points = seriesWithSlots.map((entry, index) => {
       const expectedTopicAmount = Number(insightRows[index]?.expectedTopicAmount);
-      const x = series.length > 1 ? margin.left + (xStep * index) : margin.left + (innerW / 2);
+      const centerX = axisSlots.length > 1 ? margin.left + (xStep * entry.slotIndex) : margin.left + (innerW / 2);
+      const countInSlot = Number(slotCounts.get(entry.slotIndex) || 1);
+      const slotOrder = Number(slotSeen.get(entry.slotIndex) || 0);
+      slotSeen.set(entry.slotIndex, slotOrder + 1);
+      const offset = countInSlot > 1 ? (slotOrder - ((countInSlot - 1) / 2)) * slotOffsetStep : 0;
+      const x = centerX + offset;
       const y = margin.top + innerH - ((Number(entry.amount || 0) || 0) / maxAmount * innerH);
       const expectedY = Number.isFinite(expectedTopicAmount) && expectedTopicAmount >= 0
         ? margin.top + innerH - (expectedTopicAmount / maxAmount * innerH)
@@ -564,7 +690,9 @@
         expectedTopicAmount: Number.isFinite(expectedTopicAmount) ? expectedTopicAmount : null,
         x,
         y,
-        expectedY
+        expectedY,
+        centerX,
+        slotCount: countInSlot
       };
     });
     const polyline = points.map((pt) => `${pt.x},${pt.y}`).join(' ');
@@ -577,14 +705,26 @@
       const value = maxAmount * fraction;
       return `<g><line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" class="detail-graph-grid"></line><text x="${margin.left - 8}" y="${y + 4}" text-anchor="end" class="detail-graph-axis">${utils.escapeHtml(utils.formatMoney(value))}</text></g>`;
     }).join('');
-    const xLabels = points.map((pt, index) => {
-      if (!(index === 0 || index === points.length - 1 || index % Math.max(1, Math.ceil(points.length / 4)) === 0)) return '';
-      const label = pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? detailDateLabel(pt.when) : utils.formatDate(pt.dateKey, pt.dateKey);
-      return `<text x="${pt.x}" y="${height - 18}" text-anchor="middle" class="detail-graph-axis">${utils.escapeHtml(label)}</text>`;
+    const airedSlotIndices = new Set(points.map((pt) => pt.slotIndex));
+    const baselineY = margin.top + innerH;
+    const axisTicks = axisSlots.map((slot, index) => {
+      const x = axisSlots.length > 1 ? margin.left + (xStep * index) : margin.left + (innerW / 2);
+      const tickClass = airedSlotIndices.has(index) ? 'detail-graph-axis-tick detail-graph-axis-tick-aired' : 'detail-graph-axis-tick';
+      return `<g><line x1="${x}" y1="${baselineY}" x2="${x}" y2="${baselineY + 7}" class="${tickClass}"></line><title>${utils.escapeHtml(slot.hoverLabel || slot.axisLabel || 'Fundraiser')}</title></g>`;
+    }).join('');
+    const labelEvery = Math.max(1, Math.ceil(axisSlots.length / 6));
+    const xLabels = axisSlots.map((slot, index) => {
+      const shouldShow = index === 0 || index === axisSlots.length - 1 || airedSlotIndices.has(index) || index % labelEvery === 0;
+      if (!shouldShow) return '';
+      const x = axisSlots.length > 1 ? margin.left + (xStep * index) : margin.left + (innerW / 2);
+      const anchor = index === 0 ? 'start' : index === axisSlots.length - 1 ? 'end' : 'middle';
+      const xShift = index === 0 ? 4 : index === axisSlots.length - 1 ? -4 : 0;
+      return `<text x="${x + xShift}" y="${height - 16}" text-anchor="${anchor}" class="detail-graph-axis">${utils.escapeHtml(slot.axisLabel || 'Fundraiser')}</text>`;
     }).join('');
     const expectedDots = points.map((pt) => {
       if (!Number.isFinite(pt.expectedY)) return '';
       const tooltip = [
+        pt.fundraiser?.hoverLabel || '',
         pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
         `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}`,
         pt.insight?.topicNote || ''
@@ -593,6 +733,7 @@
     }).join('');
     const dots = points.map((pt) => {
       const tooltip = [
+        pt.fundraiser?.hoverLabel || '',
         pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
         `${utils.formatMoney(pt.amount)}${Number.isFinite(pt.pledges) && pt.pledges > 0 ? ` · ${utils.formatCount(pt.pledges)} pledges` : ''}`,
         pt.expectedTopicAmount != null ? `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}` : 'Topic expectation thin',
@@ -621,7 +762,8 @@
     const latest = points[points.length - 1];
     const latestWhen = latest.when instanceof Date && !Number.isNaN(latest.when.getTime()) ? `${detailDateLabel(latest.when)} · ${latest.row && detailRecordHasExplicitTime(latest.row) ? detailTimeLabel(latest.when) : 'Unknown time'}` : utils.formatDate(latest.dateKey, latest.dateKey);
     const latestExpectedText = latest.expectedTopicAmount != null ? ` vs topic-expected ${utils.formatMoney(latest.expectedTopicAmount)}` : '';
-    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · blue = actual dollars, orange = expected results by topic for that day/time slot. Latest: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} on ${utils.escapeHtml(latestWhen)}`;
+    const fundraiserSpanNote = axisSlots.length > points.length ? ` Timeline ticks show ${utils.formatCount(axisSlots.length)} fundraisers between the first and last airing.` : '';
+    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · blue = actual dollars, orange = expected results by topic for that day/time slot. Latest: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} on ${utils.escapeHtml(latestWhen)}.${utils.escapeHtml(fundraiserSpanNote)}`;
     const legend = `
       <div class="detail-graph-legend" aria-hidden="true">
         <span><span class="detail-graph-swatch detail-graph-swatch-actual"></span>Actual</span>
@@ -630,9 +772,10 @@
     els.detailPerformanceGraph.innerHTML = `
       <div class="detail-graph-summary">${summary}</div>
       ${legend}
-      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart with actual dollars and topic-expected dollars by airing slot">
+      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart with actual dollars, topic-expected dollars, and fundraiser timeline ticks between the first and last airing">
         ${yTicks}
-        <line x1="${margin.left}" y1="${margin.top + innerH}" x2="${width - margin.right}" y2="${margin.top + innerH}" class="detail-graph-axis-line"></line>
+        <line x1="${margin.left}" y1="${baselineY}" x2="${width - margin.right}" y2="${baselineY}" class="detail-graph-axis-line"></line>
+        ${axisTicks}
         ${expectedPolyline ? `<polyline fill="none" points="${expectedPolyline}" class="detail-graph-expected-line"></polyline>` : ''}
         ${points.length > 1 ? `<polyline fill="none" points="${polyline}" class="detail-graph-line"></polyline>` : ''}
         ${expectedDots}
@@ -641,8 +784,6 @@
         ${xLabels}
       </svg>`;
   }
-
-
   function labelValue(label, value, extraClass = '') {
     return `
       <div class="${utils.escapeHtml(extraClass)}">

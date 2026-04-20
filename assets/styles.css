@@ -3264,6 +3264,14 @@ button.primary {
   stroke-width: 1;
   font-size: 11px;
 }
+.detail-graph-axis-tick {
+  stroke: rgba(18, 62, 107, 0.24);
+  stroke-width: 1.25;
+}
+.detail-graph-axis-tick-aired {
+  stroke: rgba(18, 62, 107, 0.42);
+  stroke-width: 1.8;
+}
 .detail-graph-line {
   stroke: #1576b9;
   stroke-width: 3;
