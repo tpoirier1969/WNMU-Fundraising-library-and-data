@@ -1647,8 +1647,8 @@
         <td><select class="import-suspect-link-select" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>${optionHtml}</select></td>
         <td>
           <div class="import-match-actions">
-            <button type="button" class="ghost import-suspect-link-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Link</button>
-            <button type="button" class="ghost import-suspect-approve-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Approve</button>
+            <button type="button" class="ghost import-suspect-link-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Link selected title</button>
+            <button type="button" class="ghost import-suspect-approve-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Keep unlinked</button>
             <button type="button" class="ghost import-suspect-delete-button" data-suspect-id="${escape(row.id)}" ${row.row_hashes?.length ? '' : 'disabled'}>Delete</button>
           </div>
         </td>
@@ -1776,7 +1776,7 @@
   async function linkExistingUnlinkedRow(rowHash, programId) {
     const targetRow = selectedProgramRow(programId);
     if (!targetRow) {
-      setNotice('Choose a pledge-library title before linking this quarantined row.', 'warn');
+      setNotice('Choose a pledge-library title before using Link selected title.', 'warn');
       return;
     }
     const payload = {
@@ -1802,13 +1802,13 @@
       approved_unlinked: true,
       review_status: 'approved_unlinked',
       match_method: 'approved_unlinked',
-      match_reason: 'Approved to remain unlinked during quarantine review'
+      match_reason: 'Kept unlinked during quarantine review'
     });
     if (response.error) throw response.error;
     await refreshExistingUnlinkedRows({ silent: true });
-    setStatus('Quarantined imported row approved to remain unlinked.');
-    setResultBanner('Quarantined imported row approved to remain unlinked.');
-    setNotice('Quarantined imported row approved.');
+    setStatus('Quarantined imported row kept unlinked.');
+    setResultBanner('Quarantined imported row kept unlinked.');
+    setNotice('Quarantined imported row kept unlinked.');
   }
 
   async function markExistingUnlinkedRowNonSpecific(rowHash) {
@@ -2066,8 +2066,8 @@
         <td><select class="import-existing-link-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select></td>
         <td>
           <div class="import-match-actions">
-            <button type="button" class="ghost import-existing-apply-button" data-row-hash="${escape(row.row_hash)}">Link</button>
-            ${row.is_non_specific ? `<button type="button" class="ghost import-existing-nonspecific-button" data-row-hash="${escape(row.row_hash)}">Mark non-specific</button>` : `<button type="button" class="ghost import-existing-approve-button" data-row-hash="${escape(row.row_hash)}">Approve</button>`}
+            <button type="button" class="ghost import-existing-apply-button" data-row-hash="${escape(row.row_hash)}">Link selected title</button>
+            ${row.is_non_specific ? `<button type="button" class="ghost import-existing-nonspecific-button" data-row-hash="${escape(row.row_hash)}">Mark non-specific</button>` : `<button type="button" class="ghost import-existing-approve-button" data-row-hash="${escape(row.row_hash)}">Keep unlinked</button>`}
             <button type="button" class="ghost import-existing-delete-button" data-row-hash="${escape(row.row_hash)}">Delete</button>
           </div>
         </td>

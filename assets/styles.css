@@ -3766,3 +3766,19 @@ button.primary {
 .programs-table td.topic-color-cell {
   font-weight: 700;
 }
+
+
+.list-summary-legend {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #5a6b7c;
+}
+
+.schedule-detail-progress {
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(18, 62, 107, 0.08);
+  color: #23415f;
+  font-size: 13px;
+}

@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.20.95',
+    APP_VERSION: 'v0.20.96',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -241,7 +241,7 @@ window.PledgeLib = window.PledgeLib || {};
     slotCompareA: '',
     slotCompareB: '',
     quickFilter: '',
-    includeExpiredPrograms: false,
+    includeExpiredPrograms: true,
     records: [],
     filteredRecords: [],
     groups: [],
@@ -413,8 +413,8 @@ window.PledgeLib = window.PledgeLib || {};
 
     formatDate(value, fallback = '—') {
       if (!value) return fallback;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return String(value);
+      const date = utils.parseDateLike(value, { preferDateOnlyLocal: true });
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return String(value);
       return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     },
 
@@ -465,8 +465,10 @@ window.PledgeLib = window.PledgeLib || {};
 
     formatDateTime(value, fallback = 'N/A') {
       if (!value) return fallback;
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return String(value);
+      const text = utils.normalizeText(value);
+      const date = utils.parseDateLike(value, { preferDateOnlyLocal: true });
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return String(value);
+      if (text && /^\d{4}-\d{2}-\d{2}$/.test(text)) return utils.formatDate(text, fallback);
       return date.toLocaleString(undefined, {
         year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
       });
@@ -519,9 +521,31 @@ window.PledgeLib = window.PledgeLib || {};
       return aNum - bNum;
     },
 
+    parseDateLike(value, options = {}) {
+      const preferDateOnlyLocal = options.preferDateOnlyLocal !== false;
+      if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+      const text = utils.normalizeText(value);
+      if (!text) return null;
+      if (preferDateOnlyLocal && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        const [year, month, day] = text.split('-').map((part) => Number(part));
+        const local = new Date(year, month - 1, day);
+        return Number.isNaN(local.getTime()) ? null : local;
+      }
+      const flex = utils.parseFlexibleDateInput(text);
+      if (preferDateOnlyLocal && flex.valid && flex.iso && /^\d{4}-\d{2}-\d{2}$/.test(flex.iso)) {
+        const [year, month, day] = flex.iso.split('-').map((part) => Number(part));
+        const local = new Date(year, month - 1, day);
+        return Number.isNaN(local.getTime()) ? null : local;
+      }
+      const parsed = new Date(text);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    },
+
     compareDate(a, b) {
-      const aDate = a ? new Date(a).getTime() : Number.POSITIVE_INFINITY;
-      const bDate = b ? new Date(b).getTime() : Number.POSITIVE_INFINITY;
+      const aDateObj = a ? utils.parseDateLike(a) : null;
+      const bDateObj = b ? utils.parseDateLike(b) : null;
+      const aDate = aDateObj ? aDateObj.getTime() : Number.POSITIVE_INFINITY;
+      const bDate = bDateObj ? bDateObj.getTime() : Number.POSITIVE_INFINITY;
       if (!Number.isFinite(aDate) && !Number.isFinite(bDate)) return 0;
       return aDate - bDate;
     },
@@ -549,8 +573,8 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     dateKeyFromDate(value) {
-      const date = value instanceof Date ? value : new Date(value);
-      if (Number.isNaN(date.getTime())) return '';
+      const date = utils.parseDateLike(value, { preferDateOnlyLocal: true });
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
       const offset = date.getTimezoneOffset();
       const local = new Date(date.getTime() - (offset * 60000));
       return local.toISOString().slice(0, 10);
@@ -695,11 +719,8 @@ window.PledgeLib = window.PledgeLib || {};
         row?.lifetime_total,
         row?.lifetime_total_dollars
       );
-      if (!utils.isBlank(direct)) return direct;
 
       const avg = Number(derive.avgPerFundraiser(row) || 0);
-      if (!(avg > 0)) return null;
-
       const count = Number(utils.firstNonEmpty(
         row?.fundraiser_count,
         row?.drive_count,
@@ -712,6 +733,21 @@ window.PledgeLib = window.PledgeLib || {};
         row?.event_count,
         row?.events_count
       ) || 0);
+
+      if (!utils.isBlank(direct)) {
+        const directNum = Number(direct);
+        if (Number.isFinite(directNum)) {
+          if (directNum > 0) return directNum;
+          if (directNum === 0 && avg > 0) {
+            if (Number.isFinite(count) && count > 0) return Math.round(avg * count * 100) / 100;
+            return Math.round(avg * 100) / 100;
+          }
+          return directNum;
+        }
+        return direct;
+      }
+
+      if (!(avg > 0)) return null;
       if (Number.isFinite(count) && count > 0) return Math.round(avg * count * 100) / 100;
       return Math.round(avg * 100) / 100;
     },

@@ -1727,8 +1727,13 @@
     });
     const groupedEntries = [...grouped.entries()];
     void ensureScheduledDetailsBatch(groupedEntries.map(([programId]) => programId));
+    const loadingCount = groupedEntries.filter(([programId]) => state.scheduleDetailCache[programId]?.loading && !state.scheduleDetailCache[programId]?.loaded).length;
+    const loadedCount = groupedEntries.filter(([programId]) => state.scheduleDetailCache[programId]?.loaded).length;
+    const progressHtml = loadingCount
+      ? `<div class="schedule-detail-progress">Loading detailed break/history data for ${utils.escapeHtml(utils.formatCount(loadingCount))} of ${utils.escapeHtml(utils.formatCount(groupedEntries.length))} titles… ${utils.escapeHtml(utils.formatCount(loadedCount))} ready.</div>`
+      : '';
 
-    els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + groupedEntries.map(([programId, occurrences]) => {
+    els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + progressHtml + groupedEntries.map(([programId, occurrences]) => {
       const row = getProgramRowById(programId) || {};
       const cache = state.scheduleDetailCache[programId];
       const detail = cache?.detail || null;

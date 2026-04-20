@@ -167,9 +167,30 @@
         if (!Number(merged.airing_count)) merged.airing_count = maxCount;
       }
       const maxTotal = Math.max(0, ...(group.map((row) => Number(derive.totalRaised(row) || 0)).filter((value) => Number.isFinite(value))));
-      if (maxTotal > 0 && !(Number(derive.totalRaised(merged) || 0) > 0)) merged.total_contributions = maxTotal;
       const maxAvg = Math.max(0, ...(group.map((row) => Number(derive.avgPerFundraiser(row) || 0)).filter((value) => Number.isFinite(value))));
-      if (maxAvg > 0 && !(Number(derive.avgPerFundraiser(merged) || 0) > 0)) merged.avg_contribution_per_drive = maxAvg;
+      const mergedTotal = Number(derive.totalRaised(merged) || 0) || 0;
+      const mergedAvg = Number(derive.avgPerFundraiser(merged) || 0) || 0;
+      if (maxTotal > 0 && !(mergedTotal > 0)) merged.total_contributions = maxTotal;
+      if (maxAvg > 0 && !(mergedAvg > 0)) merged.avg_contribution_per_drive = maxAvg;
+      const repairedCount = Number(utils.firstNonEmpty(
+        merged?.fundraiser_count,
+        merged?.drive_count,
+        merged?.fundraiser_total,
+        merged?.drive_total,
+        merged?.airing_count,
+        merged?.aired_count,
+        merged?.times_aired,
+        merged?.total_airings,
+        0
+      ) || 0);
+      const repairedAvg = Number(derive.avgPerFundraiser(merged) || 0) || 0;
+      const repairedTotal = Number(derive.totalRaised(merged) || 0) || 0;
+      if (repairedAvg > 0 && repairedTotal <= 0) {
+        merged.total_contributions = repairedCount > 0 ? Math.round(repairedAvg * repairedCount * 100) / 100 : Math.round(repairedAvg * 100) / 100;
+      }
+      if (repairedTotal > 0 && !(repairedAvg > 0) && repairedCount > 0) {
+        merged.avg_contribution_per_drive = Math.round((repairedTotal / repairedCount) * 100) / 100;
+      }
       return merged;
     });
   }

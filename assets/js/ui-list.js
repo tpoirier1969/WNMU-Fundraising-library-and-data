@@ -265,7 +265,8 @@
     const sourceBit = sourceRowCount && sourceRowCount !== state.totalRows
       ? ` · ${sourceRowCount.toLocaleString()} loaded before merge/filter`
       : '';
-    els.resultSummary.textContent = `${state.totalRows.toLocaleString()} titles${sourceBit} · ${filters.join(' · ')} · ${sourceName}`;
+    const baseSummary = `${state.totalRows.toLocaleString()} titles${sourceBit} · ${filters.join(' · ')} · ${sourceName}`;
+    els.resultSummary.innerHTML = `${utils.escapeHtml(baseSummary)}<div class="list-summary-legend">Title tint = earnings · Topic color = topic family · Rights End heat = near red / far green / expired gray</div>`;
   }
 
   function syncSelectedRows() {
