@@ -1101,9 +1101,10 @@
   function integrityEligible(record, criterion) {
     if (record?.approvedOverride) return true;
     if (!record?.moneyTrusted) return false;
-    if (record?.excludedForIntegrity) return false;
-    if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !record?.identityTrusted) return false;
-    if ((criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !(record?.topicTokens || []).length) return false;
+    const needsTrustedIdentity = criterion === 'program' || criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset';
+    const needsMainTopic = criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset';
+    if (needsTrustedIdentity && !record?.identityTrusted) return false;
+    if (needsMainTopic && !(record?.topicTokens || []).length) return false;
     return true;
   }
 
@@ -1111,7 +1112,6 @@
   function exclusionReasons(record, criterion) {
     const reasons = [];
     if (!record?.moneyTrusted) reasons.push('Missing trusted dollars');
-    if (record?.excludedForIntegrity) reasons.push(record.scheduleIntegrityLabel || 'Unreconciled to saved schedule');
     if ((criterion === 'program' || criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !record?.identityTrusted) reasons.push('Weak program identity');
     if ((criterion === 'topic' || criterion === 'topic_time' || criterion === 'topic_dayset') && !(record?.topicTokens || []).length) reasons.push('Missing main topic');
     return [...new Set(reasons.filter(Boolean))];
