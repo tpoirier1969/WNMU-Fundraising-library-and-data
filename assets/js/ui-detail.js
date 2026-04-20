@@ -185,41 +185,311 @@
     });
   }
 
+
+  function detailBroadcastDayStartHour() {
+    const hour = Number(state.performance?.broadcastDayStartHour);
+    return Number.isFinite(hour) ? hour : 7;
+  }
+
+  function detailBroadcastAnchorDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    const shifted = new Date(date.getTime());
+    if (shifted.getHours() < detailBroadcastDayStartHour()) shifted.setDate(shifted.getDate() - 1);
+    return shifted;
+  }
+
+  function detailRecordDate(row = {}) {
+    const rawDateTime = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date, row?.date_key);
+    if (!utils.isBlank(rawDateTime)) {
+      const text = String(rawDateTime).trim();
+      const parsed = new Date(text);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        const rawTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
+        if (!utils.isBlank(rawTime)) {
+          const merged = new Date(`${text}T${String(rawTime).trim()}`);
+          if (!Number.isNaN(merged.getTime())) return merged;
+        }
+        const midday = new Date(`${text}T12:00:00`);
+        if (!Number.isNaN(midday.getTime())) return midday;
+      }
+    }
+    return null;
+  }
+
+
+  function detailRecordHasExplicitTime(row = {}) {
+    const rawDateTime = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date, row?.date_key);
+    if (!utils.isBlank(rawDateTime)) {
+      const text = String(rawDateTime).trim();
+      if (/\d{1,2}:\d{2}/.test(text) || /T\d{2}:\d{2}/i.test(text)) return true;
+    }
+    const rawTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
+    return !utils.isBlank(rawTime);
+  }
+
+  function detailDateLabel(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown date';
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function detailDayLabel(date) {
+    const anchor = detailBroadcastAnchorDate(date) || date;
+    if (!(anchor instanceof Date) || Number.isNaN(anchor.getTime())) return 'Unknown day';
+    return anchor.toLocaleDateString(undefined, { weekday: 'long' });
+  }
+
+  function detailTimeLabel(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown time';
+    const minutes = (date.getHours() * 60) + date.getMinutes();
+    return utils.minutesToLabel(minutes);
+  }
+
+  function detailHourLabel(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown hour';
+    return utils.minutesToLabel(date.getHours() * 60);
+  }
+
+  function detailSlotLabel(date) {
+    const day = detailDayLabel(date);
+    const hour = detailHourLabel(date);
+    if (day === 'Unknown day' || hour === 'Unknown hour') return '';
+    return `${day} · ${hour}`;
+  }
+
+  function detailPledges(row = {}) {
+    return Number(utils.firstNonEmpty(row?.pledge_count, row?.pledges, row?.total_pledges, row?.pledge_total) || 0) || 0;
+  }
+
+  function detailMetricCell(label = '') {
+    return { label, airingCount: 0, totalDollars: 0, totalPledges: 0, totalMinutes: 0, avgDollars: 0 };
+  }
+
+  function aggregateDetailMetricCell(cell, record) {
+    cell.airingCount += 1;
+    cell.totalDollars += Number(record?.amount || 0) || 0;
+    cell.totalPledges += Number(record?.pledges || 0) || 0;
+    cell.totalMinutes += Number(record?.minutes || 0) || 0;
+  }
+
+  function finalizeDetailMetricCell(cell) {
+    return {
+      ...cell,
+      avgDollars: cell.airingCount ? (cell.totalDollars / cell.airingCount) : 0,
+      avgPledges: cell.airingCount ? (cell.totalPledges / cell.airingCount) : 0,
+      dollarsPerMinute: cell.totalMinutes > 0 ? (cell.totalDollars / cell.totalMinutes) : 0
+    };
+  }
+
+  function strengthBand(value, orderedValues = []) {
+    const values = (orderedValues || []).filter((entry) => Number.isFinite(entry)).sort((a, b) => a - b);
+    if (!values.length || !Number.isFinite(value)) return 'unknown';
+    const lowIndex = Math.max(0, Math.floor((values.length - 1) * 0.33));
+    const highIndex = Math.max(0, Math.floor((values.length - 1) * 0.66));
+    const lowCut = values[lowIndex];
+    const highCut = values[highIndex];
+    if (value >= highCut) return 'strong';
+    if (value <= lowCut) return 'weak';
+    return 'okay';
+  }
+
+  function overallSlotNote(slotCell, cache) {
+    if (!slotCell || !cache) return 'Overall slot expectation unavailable';
+    const band = strengthBand(slotCell.avgDollars, cache.overallValues || []);
+    if (band === 'strong') return 'Strong overall slot';
+    if (band === 'weak') return 'Weak overall slot';
+    return 'Okay overall slot';
+  }
+
+  function topicSlotNote(topic, slotCell, cache) {
+    const topicText = utils.normalizeText(topic);
+    const topicKey = utils.normalizeLookupKey(topicText);
+    if (!topicKey || !slotCell || !cache) return 'Topic fit unavailable';
+    const values = cache.topicValueMap?.get(topicKey) || [];
+    const band = strengthBand(slotCell.avgDollars, values);
+    if (band === 'strong') return `Good for ${topicText}`;
+    if (band === 'weak') return `Weak for ${topicText}`;
+    return `Okay for ${topicText}`;
+  }
+
+  function titleRelativeNote(amount, averageAmount) {
+    if (!Number.isFinite(amount) || !Number.isFinite(averageAmount) || averageAmount <= 0) return 'Title baseline thin';
+    const ratio = amount / averageAmount;
+    if (ratio >= 1.15) return "Above this title's norm";
+    if (ratio <= 0.85) return "Below this title's norm";
+    return 'About typical for this title';
+  }
+
+  function buildDetailBenchmarkCache(records = []) {
+    const overallSlotMap = new Map();
+    const topicSlotMap = new Map();
+    const topicValueMap = new Map();
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      if (!record || record.isNonSpecific) return;
+      if (!record.moneyTrusted || record.excludedForIntegrity) return;
+      if (!record.hasDate || !record.hasExplicitTime || record.estimatedOnly) return;
+      if (!state.performance?.includeExpiredPrograms && record.libraryProgramKnown && (!record.libraryProgramActive || record.libraryRightsExpired)) return;
+      const slotLabel = `${record.day || detailDayLabel(record.broadcastWhen || record.when)} · ${detailHourLabel(record.when)}`;
+      if (!slotLabel || slotLabel.includes('Unknown')) return;
+      if (!overallSlotMap.has(slotLabel)) overallSlotMap.set(slotLabel, detailMetricCell(slotLabel));
+      aggregateDetailMetricCell(overallSlotMap.get(slotLabel), { amount: record.amount, pledges: record.pledges, minutes: record.minutes });
+      const topic = utils.normalizeText(record.topicDisplay || record.topic || '');
+      const topicKey = utils.normalizeLookupKey(topic);
+      if (!topicKey) return;
+      const combinedKey = `${topicKey}|${slotLabel}`;
+      if (!topicSlotMap.has(combinedKey)) topicSlotMap.set(combinedKey, detailMetricCell(combinedKey));
+      aggregateDetailMetricCell(topicSlotMap.get(combinedKey), { amount: record.amount, pledges: record.pledges, minutes: record.minutes });
+    });
+    const finalizedOverall = new Map();
+    const overallValues = [];
+    overallSlotMap.forEach((cell, key) => {
+      const finalCell = finalizeDetailMetricCell(cell);
+      finalizedOverall.set(key, finalCell);
+      overallValues.push(finalCell.avgDollars);
+    });
+    const finalizedTopic = new Map();
+    topicSlotMap.forEach((cell, key) => finalizedTopic.set(key, finalizeDetailMetricCell(cell)));
+    finalizedTopic.forEach((cell, key) => {
+      const [topicKey] = key.split('|');
+      if (!topicValueMap.has(topicKey)) topicValueMap.set(topicKey, []);
+      topicValueMap.get(topicKey).push(cell.avgDollars);
+    });
+    return {
+      overallSlotMap: finalizedOverall,
+      topicSlotMap: finalizedTopic,
+      overallValues,
+      topicValueMap
+    };
+  }
+
+  function getDetailBenchmarkCache() {
+    if (state.detailBenchmarkCache && state.detailBenchmarkCache.sourceKey === state.performance?.lastLoadedAt) return state.detailBenchmarkCache;
+    if (!state.performance?.ready || !Array.isArray(state.performance.records) || !state.performance.records.length) return null;
+    state.detailBenchmarkCache = {
+      sourceKey: state.performance.lastLoadedAt,
+      ...buildDetailBenchmarkCache(state.performance.records)
+    };
+    return state.detailBenchmarkCache;
+  }
+
+  function maybeRefreshDetailBenchmarks() {
+    if (state.performance?.ready || state.performance?.loading || state.detailBenchmarkPromise || !App.performanceUi?.refreshData) return;
+    const activeProgramId = state.selectedProgramId;
+    const activeToken = state.detailLoadToken;
+    state.detailBenchmarkPromise = App.performanceUi.refreshData({ silent: true })
+      .then(() => {
+        if (state.selectedProgramId !== activeProgramId || state.detailLoadToken !== activeToken || !state.currentDetailProgram) return;
+        renderPerformanceGraph(state.currentDetailProgram, state.currentDetailDriveResults || [], state.currentDetailAirings || []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        state.detailBenchmarkPromise = null;
+      });
+  }
+
+  function buildAiringInsightRows(program, driveResults = [], exactAirings = []) {
+    const cache = getDetailBenchmarkCache();
+    const topic = derive.topicPrimary(program);
+    const resolvedAirings = resolvedExactAiringRows(exactAirings, driveResults)
+      .map((row) => ({ ...row, __detail_when: detailRecordDate(row) }))
+      .sort((a, b) => {
+        const aTime = a.__detail_when instanceof Date && !Number.isNaN(a.__detail_when.getTime()) ? a.__detail_when.getTime() : Number.POSITIVE_INFINITY;
+        const bTime = b.__detail_when instanceof Date && !Number.isNaN(b.__detail_when.getTime()) ? b.__detail_when.getTime() : Number.POSITIVE_INFINITY;
+        return aTime - bTime;
+      });
+    const nonZeroAmounts = resolvedAirings
+      .map((row) => Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0)
+      .filter((value) => Number.isFinite(value));
+    const titleAverage = nonZeroAmounts.length ? (nonZeroAmounts.reduce((sum, value) => sum + value, 0) / nonZeroAmounts.length) : 0;
+    return resolvedAirings.map((row) => {
+      const when = row.__detail_when;
+      const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
+      const pledges = detailPledges(row);
+      const slotLabel = detailSlotLabel(when);
+      const overallSlot = slotLabel && cache ? cache.overallSlotMap.get(slotLabel) : null;
+      const topicSlot = slotLabel && cache && topic ? cache.topicSlotMap.get(`${utils.normalizeLookupKey(topic)}|${slotLabel}`) : null;
+      const noteBits = [
+        overallSlotNote(overallSlot, cache),
+        topicSlotNote(topic, topicSlot, cache),
+        titleRelativeNote(amount, titleAverage)
+      ].filter(Boolean);
+      return {
+        row,
+        when,
+        dateLabel: detailDateLabel(when),
+        dayLabel: detailDayLabel(when),
+        timeLabel: detailRecordHasExplicitTime(row) ? detailTimeLabel(when) : 'Unknown time',
+        amount,
+        pledges,
+        overallNote: overallSlotNote(overallSlot, cache),
+        topicNote: topicSlotNote(topic, topicSlot, cache),
+        titleNote: titleRelativeNote(amount, titleAverage),
+        combinedNote: noteBits.join(' · ')
+      };
+    });
+  }
+
+
   function buildGraphSeries(driveResults = [], exactAirings = []) {
-    const sourceRows = exactAirings.length ? resolvedExactAiringRows(exactAirings, driveResults) : (driveResults || []);
+    if (exactAirings.length) {
+      return resolvedExactAiringRows(exactAirings, driveResults)
+        .map((row, index) => {
+          const when = detailRecordDate(row);
+          const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
+          const baseLabel = when instanceof Date && !Number.isNaN(when.getTime())
+            ? `${detailDateLabel(when)} · ${detailTimeLabel(when)}`
+            : (utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.notes)) || `Airing ${index + 1}`);
+          return {
+            label: baseLabel,
+            dateKey: when instanceof Date && !Number.isNaN(when.getTime()) ? utils.dateKeyFromDate(when) : `${index + 1}`,
+            sortKey: when instanceof Date && !Number.isNaN(when.getTime()) ? when.getTime() : index,
+            amount,
+            when,
+            dayLabel: detailDayLabel(when),
+            timeLabel: detailRecordHasExplicitTime(row) ? detailTimeLabel(when) : 'Unknown time',
+            pledges: detailPledges(row),
+            row
+          };
+        })
+        .sort((a, b) => a.sortKey - b.sortKey);
+    }
+    const sourceRows = driveResults || [];
     const grouped = new Map();
     sourceRows.forEach((row) => {
-      const iso = utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date, row?.date_key);
+      const iso = utils.firstNonEmpty(row?.drive_date, row?.drive_start_date, row?.aired_at, row?.date_key);
       const dateKey = utils.dateKeyFromDate(iso) || utils.normalizeText(iso);
       const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column)) || (dateKey || 'Unknown');
-      const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
+      const amount = Number(contributionAmount(row) || 0) || 0;
       if (!dateKey && !label) return;
       const key = `${dateKey || label}|${label}`;
-      const prior = grouped.get(key) || { label, dateKey: dateKey || label, amount: 0 };
+      const prior = grouped.get(key) || { label, dateKey: dateKey || label, sortKey: dateKey || label, amount: 0 };
       prior.amount += amount;
       grouped.set(key, prior);
     });
-    return [...grouped.values()].sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+    return [...grouped.values()].sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)));
   }
+
 
   function renderPerformanceGraph(program, driveResults = [], exactAirings = []) {
     if (!els.detailPerformanceGraph || !els.detailGraphPill) return;
+    maybeRefreshDetailBenchmarks();
     const series = buildGraphSeries(driveResults, exactAirings);
-    if (series.length < 2) {
-      els.detailGraphPill.textContent = series.length ? 'Only 1 fundraiser' : 'Needs 2 fundraisers';
-      els.detailPerformanceGraph.innerHTML = '<div class="detail-graph-empty">This chart appears once the title has at least two fundraiser/airing contribution points.</div>';
+    const insightRows = buildAiringInsightRows(program, driveResults, exactAirings);
+    if (!series.length) {
+      els.detailGraphPill.textContent = 'Needs history';
+      els.detailPerformanceGraph.innerHTML = '<div class="detail-graph-empty">This section fills in once the title has readable airing or fundraiser history.</div>';
       return;
     }
-    els.detailGraphPill.textContent = `${series.length} points`;
+    els.detailGraphPill.textContent = `${series.length} point${series.length === 1 ? '' : 's'}`;
     const width = 760;
     const height = 220;
     const margin = { top: 18, right: 22, bottom: 44, left: 58 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
     const maxAmount = Math.max(...series.map((entry) => Number(entry.amount || 0) || 0), 1);
-    const xStep = series.length > 1 ? innerW / (series.length - 1) : innerW;
+    const xStep = series.length > 1 ? innerW / (series.length - 1) : 0;
     const points = series.map((entry, index) => {
-      const x = margin.left + (xStep * index);
+      const x = series.length > 1 ? margin.left + (xStep * index) : margin.left + (innerW / 2);
       const y = margin.top + innerH - ((Number(entry.amount || 0) || 0) / maxAmount * innerH);
       return { ...entry, x, y };
     });
@@ -231,20 +501,65 @@
     }).join('');
     const xLabels = points.map((pt, index) => {
       if (!(index === 0 || index === points.length - 1 || index % Math.max(1, Math.ceil(points.length / 4)) === 0)) return '';
-      return `<text x="${pt.x}" y="${height - 12}" text-anchor="middle" class="detail-graph-axis">${utils.escapeHtml(utils.formatDate(pt.dateKey, pt.dateKey))}</text>`;
+      const label = pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)}\n${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : utils.formatDate(pt.dateKey, pt.dateKey);
+      const lines = String(label).split('\n');
+      return `<text x="${pt.x}" y="${height - 16}" text-anchor="middle" class="detail-graph-axis">${lines.map((line, lineIndex) => `<tspan x="${pt.x}" dy="${lineIndex === 0 ? 0 : 12}">${utils.escapeHtml(line)}</tspan>`).join('')}</text>`;
     }).join('');
-    const dots = points.map((pt) => `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(`${pt.label}: ${utils.formatMoney(pt.amount)} on ${utils.formatDate(pt.dateKey, pt.dateKey)}`)}</title></g>`).join('');
+    const dots = points.map((pt, index) => {
+      const insight = insightRows[index] || null;
+      const tooltip = [
+        pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
+        `${utils.formatMoney(pt.amount)}${Number.isFinite(pt.pledges) && pt.pledges > 0 ? ` · ${utils.formatCount(pt.pledges)} pledges` : ''}`,
+        insight?.combinedNote || ''
+      ].filter(Boolean).join(' | ');
+      return `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
+    }).join('');
     const latest = points[points.length - 1];
-    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · ${utils.escapeHtml(utils.formatMoney(latest.amount))} most recently on ${utils.escapeHtml(utils.formatDate(latest.dateKey, latest.dateKey))}`;
+    const latestWhen = latest.when instanceof Date && !Number.isNaN(latest.when.getTime()) ? `${detailDateLabel(latest.when)} · ${latest.row && detailRecordHasExplicitTime(latest.row) ? detailTimeLabel(latest.when) : 'Unknown time'}` : utils.formatDate(latest.dateKey, latest.dateKey);
+    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · ${utils.escapeHtml(utils.formatMoney(latest.amount))} most recently on ${utils.escapeHtml(latestWhen)}`;
+    const insightTable = insightRows.length
+      ? `
+      <div class="airing-table-wrap detail-airing-context-wrap">
+        <table class="segment-table detail-airing-context-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Day</th>
+              <th>Time</th>
+              <th>Dollars</th>
+              <th>Pledges</th>
+              <th>Overall slot</th>
+              <th>Topic fit</th>
+              <th>Vs title</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${insightRows.map((row) => `
+              <tr>
+                <td>${utils.escapeHtml(row.dateLabel)}</td>
+                <td>${utils.escapeHtml(row.dayLabel)}</td>
+                <td>${utils.escapeHtml(row.timeLabel)}</td>
+                <td>${utils.escapeHtml(utils.formatMoney(row.amount))}</td>
+                <td>${utils.escapeHtml(row.pledges ? utils.formatCount(row.pledges) : '—')}</td>
+                <td>${utils.escapeHtml(row.overallNote)}</td>
+                <td>${utils.escapeHtml(row.topicNote)}</td>
+                <td>${utils.escapeHtml(row.titleNote)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>`
+      : '';
     els.detailPerformanceGraph.innerHTML = `
       <div class="detail-graph-summary">${summary}</div>
       <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart">
         ${yTicks}
         <line x1="${margin.left}" y1="${margin.top + innerH}" x2="${width - margin.right}" y2="${margin.top + innerH}" class="detail-graph-axis-line"></line>
-        <polyline fill="none" points="${polyline}" class="detail-graph-line"></polyline>
+        ${points.length > 1 ? `<polyline fill="none" points="${polyline}" class="detail-graph-line"></polyline>` : ''}
         ${dots}
         ${xLabels}
-      </svg>`;
+      </svg>
+      ${insightTable}`;
   }
 
   function labelValue(label, value, extraClass = '') {

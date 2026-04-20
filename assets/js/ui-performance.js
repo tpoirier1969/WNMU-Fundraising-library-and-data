@@ -1623,8 +1623,127 @@
     `;
   }
 
+
+  function setPerformanceTableHeaders(headers = []) {
+    const ths = els.performanceTableBody?.closest('table')?.querySelectorAll('thead th') || [];
+    headers.forEach((value, index) => {
+      if (ths[index]) ths[index].textContent = value;
+    });
+  }
+
+  function truncateTopicLabel(label = '', max = 18) {
+    const text = utils.normalizeText(label);
+    if (!text) return '—';
+    return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  }
+
+  function buildTopicSlotWinnerGroups(records) {
+    const slotMap = new Map();
+    (records || []).forEach((record) => {
+      if (!record?.moneyTrusted || record?.excludedForIntegrity) return;
+      if (!record?.identityTrusted || !(record?.topicTokens || []).length) return;
+      if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
+      const day = dayLabel(record);
+      const hour = record.when?.getHours?.();
+      if (!DAY_ORDER.includes(day) || !Number.isFinite(hour)) return;
+      const slotKey = `${DAY_ORDER.indexOf(day)}|${hour}`;
+      const slotLabel = `${day} · ${utils.minutesToLabel(hour * 60)}`;
+      if (!slotMap.has(slotKey)) slotMap.set(slotKey, { key: slotKey, label: slotLabel, dayIndex: DAY_ORDER.indexOf(day), hourOfDay: hour, topics: new Map() });
+      const slot = slotMap.get(slotKey);
+      const topic = record.topicDisplay || record.topic || 'Unassigned';
+      if (!slot.topics.has(topic)) slot.topics.set(topic, emptyMetricCell(topic));
+      aggregateMetricCell(slot.topics.get(topic), record);
+    });
+    return [...slotMap.values()].map((slot) => {
+      const rankedTopics = [...slot.topics.entries()].map(([topic, cell]) => ({
+        topic,
+        ...finalizeMetricCell(cell),
+        belowSampleThreshold: minSampleThreshold() > 1 && cell.airingCount < minSampleThreshold()
+      })).sort((a, b) => {
+        const diff = metricValue(b) - metricValue(a);
+        if (diff !== 0) return diff;
+        if (b.airingCount !== a.airingCount) return b.airingCount - a.airingCount;
+        return utils.compareText(a.topic, b.topic);
+      });
+      return {
+        ...slot,
+        rankedTopics,
+        winner: rankedTopics[0] || null,
+        runnerUp: rankedTopics[1] || null
+      };
+    }).sort((a, b) => {
+      if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+      return a.hourOfDay - b.hourOfDay;
+    });
+  }
+
+  function buildTopicSlotWinnerHeatmap(records) {
+    const slots = buildTopicSlotWinnerGroups(records);
+    if (!slots.length) return '<div class="performance-chart-empty">Topic winners by slot needs trustworthy dated rows with topic metadata and real air times.</div>';
+    const hours = [...new Set(slots.map((slot) => slot.hourOfDay))].sort((a, b) => a - b);
+    const matrix = new Map(slots.map((slot) => [`${slot.dayIndex}|${slot.hourOfDay}`, slot]));
+    const maxMetric = Math.max(1, ...slots.map((slot) => metricValue(slot.winner || emptyMetricCell())));
+    const header = hours.map((hour) => `<div class="topic-time-header-cell">${utils.escapeHtml(utils.minutesToLabel(hour * 60))}</div>`).join('');
+    const body = DAY_ORDER.map((day, dayIndex) => {
+      const cells = hours.map((hour) => {
+        const slot = matrix.get(`${dayIndex}|${hour}`) || null;
+        if (!slot || !slot.winner) return '<div class="topic-time-cell empty">—</div>';
+        const value = metricValue(slot.winner);
+        const alpha = Math.max(0.12, Math.min(0.92, value / maxMetric)).toFixed(3);
+        const runnerText = slot.runnerUp ? ` | Runner-up: ${slot.runnerUp.topic} (${metricDisplay(slot.runnerUp, { includeCount: true })})` : '';
+        const title = `${slot.label}: ${slot.winner.topic} wins with ${metricDisplay(slot.winner, { includeCount: true })}${runnerText}`;
+        const lowClass = slot.winner.belowSampleThreshold ? ' low-sample' : '';
+        return `<div class="topic-time-cell topic-winner-cell${lowClass}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(truncateTopicLabel(slot.winner.topic, 16))}</span><small>${utils.escapeHtml(metricDisplay(slot.winner))}</small></div>`;
+      }).join('');
+      return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(day)}</div>${cells}</div>`;
+    }).join('');
+    return `
+      <div class="topic-time-heatmap-wrap">
+        <div class="topic-time-header"><div class="topic-time-corner">Day / time</div>${header}</div>
+        <div class="topic-time-grid">${body}</div>
+      </div>
+      <div class="performance-chart-note">Each cell shows the top-performing topic for that day-and-hour slot in the current filter window. Open the comparison table below to see the runner-up and sample counts.</div>
+    `;
+  }
+
+  function renderTopicSlotWinnerTable(records) {
+    if (!els.performanceTableBody) return false;
+    const slots = buildTopicSlotWinnerGroups(records).filter((slot) => slot.winner);
+    setPerformanceTableHeaders(['Day + time', 'Winner airings', 'Winner total $', metricLabel(), 'Runner-up', 'Notes']);
+    if (!slots.length) {
+      els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No trustworthy topic-by-time winners match this filter yet.</td></tr>';
+      return true;
+    }
+    els.performanceTableBody.innerHTML = slots.map((slot) => {
+      const winner = slot.winner;
+      const runner = slot.runnerUp;
+      const runnerText = runner ? `${runner.topic} · ${metricDisplay(runner, { includeCount: true })}` : '—';
+      const note = winner.belowSampleThreshold ? 'Low sample winner' : `${winner.topic} is the current slot leader`;
+      return `
+        <tr>
+          <td>${utils.escapeHtml(slot.label)}</td>
+          <td>${utils.escapeHtml(utils.formatCount(winner.airingCount))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(winner.totalDollars))}</td>
+          <td>${utils.escapeHtml(`${winner.topic} · ${metricDisplay(winner, { includeCount: true })}`)}</td>
+          <td>${utils.escapeHtml(runnerText)}</td>
+          <td>${utils.escapeHtml(note)}</td>
+        </tr>
+      `;
+    }).join('');
+    return true;
+  }
+
   function renderChart(groups) {
     if (!els.performanceChart) return;
+    if (perf().quickFilter === 'topic_slot_winners') {
+      const records = perf().filteredRecords || [];
+      if (!records.length) {
+        els.performanceChart.innerHTML = '<div class="performance-chart-empty">No filtered rows match this topic-slot winner view yet.</div>';
+        return;
+      }
+      els.performanceChart.innerHTML = buildTopicSlotWinnerHeatmap(records);
+      return;
+    }
     if (!groups.length) {
       const analysisMeta = perf().analysisMeta || {};
       const msg = analysisMeta.noTemporalSupport
@@ -1678,9 +1797,7 @@
         totalSustainers: cell.totalSustainers,
         totalMinutes: cell.totalMinutes
       })));
-    if (els.performanceTableGroupHeader) els.performanceTableGroupHeader.textContent = 'Day set · day-part';
-    if (els.performanceTableMetricHeader) els.performanceTableMetricHeader.textContent = metricLabel();
-    if (els.performanceTableConfidenceHeader) els.performanceTableConfidenceHeader.textContent = 'Confidence';
+    setPerformanceTableHeaders(['Day set · day-part', 'Airings', 'Total dollars', metricLabel(), 'Confidence', 'Titles']);
     if (!flat.length) {
       els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No day-part slices match this filter yet.</td></tr>';
       return true;
@@ -1706,12 +1823,13 @@
 
   function renderTable(groups) {
     if (!els.performanceTableBody) return;
+    if (perf().quickFilter === 'topic_slot_winners') {
+      if (renderTopicSlotWinnerTable(perf().filteredRecords || [])) return;
+    }
     if (perf().criterion === 'daypart' && ['split_line', 'heatmap'].includes(effectiveChartType())) {
       if (renderDaypartComparisonTable(perf().filteredRecords || [])) return;
     }
-    if (els.performanceTableGroupHeader) els.performanceTableGroupHeader.textContent = criterionDisplayName();
-    if (els.performanceTableMetricHeader) els.performanceTableMetricHeader.textContent = metricLabel();
-    if (els.performanceTableConfidenceHeader) els.performanceTableConfidenceHeader.textContent = 'Confidence';
+    setPerformanceTableHeaders([criterionDisplayName(), 'Airings', 'Total dollars', metricLabel(), 'Confidence', 'Titles']);
     if (!groups.length) {
       els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
       return;
@@ -1761,7 +1879,7 @@
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
-      ['Chart', ['topic_time', 'topic_dayset'].includes(perf().criterion) ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
+      ['Chart', (['topic_time', 'topic_dayset'].includes(perf().criterion) || perf().quickFilter === 'topic_slot_winners') ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
       ['Integrity-eligible', utils.formatCount(analysisMeta.integrityEligibleCount || records.length)]
     ];
     if (!els.performanceCriteriaBar) return;
@@ -2043,6 +2161,7 @@
       repeat_fatigue: 'Repeat fatigue',
       topic_winners: 'Top Topics',
       topic_time_performance: 'Topic Time Performance',
+      topic_slot_winners: 'Topic winners by slot',
       topic_week_split: 'Topic week split',
       recent_momentum: 'Recent momentum',
       weekend_weekday: 'Weekend vs weekday earnings',
@@ -2074,6 +2193,8 @@
           : 'Pick a main topic to make this view useful. Without a topic filter, the heatmap blends every topic together.';
       case 'topic_winners':
         return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs.';
+      case 'topic_slot_winners':
+        return 'Shows which main topic currently wins each day-and-time slot, so you can stop guessing whether Thursday at 7:00 AM wants Health, Science, or something else.';
       case 'topic_week_split':
         return 'Splits topics into Mon-Fri, Saturday, and Sunday buckets so you can stop pretending the whole week behaves the same way.';
       case 'weekday_dayparts':
@@ -2136,11 +2257,13 @@
       const focus = (['topic_time', 'topic_dayset'].includes(perf().criterion) && perf().topicFilter)
         ? ` · ${perf().topicFilter}`
         : (perf().criterion === 'daypart' && perf().daySetFilter ? ` · ${daySetLabel(perf().daySetFilter)}` : '');
-      els.performanceChartTitle.textContent = `${metricLabel()} by ${criterionDisplayName()}${focus}`;
+      els.performanceChartTitle.textContent = perf().quickFilter === 'topic_slot_winners'
+        ? 'Top topic by day + time slot'
+        : `${metricLabel()} by ${criterionDisplayName()}${focus}`;
     }
     if (els.performanceChartPill) {
-      const vizLabel = ['topic_time', 'topic_dayset'].includes(perf().criterion) ? 'Heatmap' : chartTypeLabel(effectiveChartType());
-      els.performanceChartPill.textContent = perf().ready ? `${vizLabel} · ${criterionDisplayName()}` : 'Awaiting data';
+      const vizLabel = (['topic_time', 'topic_dayset'].includes(perf().criterion) || perf().quickFilter === 'topic_slot_winners') ? 'Heatmap' : chartTypeLabel(effectiveChartType());
+      els.performanceChartPill.textContent = perf().ready ? `${vizLabel} · ${perf().quickFilter === 'topic_slot_winners' ? 'Topic winners' : criterionDisplayName()}` : 'Awaiting data';
     }
     if (els.performanceTablePill) els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
     if (els.performanceNotesPill) els.performanceNotesPill.textContent = perf().lastLoadedAt ? `Loaded ${utils.formatDateTime(perf().lastLoadedAt)}` : 'Starter framework';
@@ -2206,6 +2329,7 @@
     repeat_fatigue: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_time_performance: { criterion: 'topic_time', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
+    topic_slot_winners: { criterion: 'time', metric: 'avg_dollars', chartType: 'heatmap', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_week_split: { criterion: 'topic_dayset', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     recent_momentum: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     weekend_weekday: { criterion: 'weekpart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },

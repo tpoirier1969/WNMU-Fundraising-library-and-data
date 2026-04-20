@@ -1476,6 +1476,13 @@ button.primary {
   font-weight: 600;
   opacity: 0.92;
 }
+.topic-time-cell.topic-winner-cell span {
+  font-size: 0.78rem;
+  line-height: 1.05;
+}
+.topic-time-cell.topic-winner-cell small {
+  font-size: 0.68rem;
+}
 .topic-time-cell.empty {
   background: rgba(18, 62, 107, 0.04);
   color: #91a0b1;
@@ -3220,6 +3227,13 @@ button.primary {
   fill: #1576b9;
   stroke: #fff;
   stroke-width: 2;
+}
+.detail-airing-context-wrap {
+  margin-top: 8px;
+}
+.detail-airing-context-table th,
+.detail-airing-context-table td {
+  white-space: nowrap;
 }
 .import-quarantine-filter {
   min-width: 260px;
