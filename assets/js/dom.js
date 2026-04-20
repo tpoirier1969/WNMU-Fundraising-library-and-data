@@ -176,6 +176,8 @@
     performanceChartTitle: document.getElementById('performance-chart-title'),
     performanceChartPill: document.getElementById('performance-chart-pill'),
     performanceChart: document.getElementById('performance-chart'),
+    performanceSlotDrillPill: document.getElementById('performance-slot-drill-pill'),
+    performanceSlotDrilldown: document.getElementById('performance-slot-drilldown'),
     performanceTableGroupHeader: document.getElementById('performance-table-group-header'),
     performanceTableMetricHeader: document.getElementById('performance-table-metric-header'),
     performanceTableConfidenceHeader: document.getElementById('performance-table-confidence-header'),

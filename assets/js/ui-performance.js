@@ -1682,12 +1682,16 @@
     return slots;
   }
 
+  function slotTopicLabel(record) {
+    return utils.normalizeText(record?.topicDisplay || record?.topic || '') || 'Unassigned topic';
+  }
+
   function buildTopicSlotWinnerGroups(records) {
     const slotMap = new Map();
     (records || []).forEach((record) => {
       if (!record?.moneyTrusted) return;
       if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
-      const topic = utils.normalizeText(record.topicDisplay || record.topic || '') || 'Unassigned topic';
+      const topic = slotTopicLabel(record);
       const occupiedSlots = buildOccupiedHalfHourSlots(record);
       if (!occupiedSlots.length) return;
       const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
@@ -1702,26 +1706,51 @@
             slotMinutes: slotPart.slotMinutes,
             topics: new Map(),
             totalSlotAirings: 0,
-            zeroIncomeAirings: 0
+            zeroIncomeAirings: 0,
+            contributions: []
           });
         }
         const slot = slotMap.get(slotKey);
-        if (!slot.topics.has(topic)) slot.topics.set(topic, emptyMetricCell(topic));
+        if (!slot.topics.has(topic)) {
+          const cell = emptyMetricCell(topic);
+          cell.titles = new Set();
+          cell.entries = [];
+          slot.topics.set(topic, cell);
+        }
         const share = Math.max(0, (Number(slotPart.overlapMinutes) || 0) / totalOverlapMinutes);
-        aggregateMetricCell(slot.topics.get(topic), {
-          amount: (Number(record.amount) || 0) * share,
-          pledges: (Number(record.pledges) || 0) * share,
-          sustainers: (Number(record.sustainers) || 0) * share,
-          minutes: Number(slotPart.overlapMinutes) || 0
-        });
+        const allocatedAmount = (Number(record.amount) || 0) * share;
+        const allocatedPledges = (Number(record.pledges) || 0) * share;
+        const allocatedSustainers = (Number(record.sustainers) || 0) * share;
+        const allocatedMinutes = Number(slotPart.overlapMinutes) || 0;
+        const cell = slot.topics.get(topic);
+        aggregateMetricCell(cell, { amount: allocatedAmount, pledges: allocatedPledges, sustainers: allocatedSustainers, minutes: allocatedMinutes });
+        cell.titles.add(record.title || 'Unknown title');
+        const contribution = {
+          topic,
+          record,
+          allocatedDollars: allocatedAmount,
+          allocatedPledges,
+          allocatedSustainers,
+          allocatedMinutes,
+          share
+        };
+        cell.entries.push(contribution);
+        slot.contributions.push(contribution);
         slot.totalSlotAirings += 1;
         if ((Number(record.amount) || 0) <= 0) slot.zeroIncomeAirings += 1;
       });
     });
     return [...slotMap.values()].map((slot) => {
-      const rankedTopics = [...slot.topics.entries()].map(([topic, cell]) => ({
+      const topicGroups = [...slot.topics.entries()].map(([topic, cell]) => ({
         topic,
         ...finalizeMetricCell(cell),
+        titles: [...(cell.titles || [])].sort((a, b) => utils.compareText(a, b)),
+        entries: [...(cell.entries || [])].sort((a, b) => {
+          const at = a?.record?.when instanceof Date && !Number.isNaN(a.record.when.getTime()) ? a.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+          const bt = b?.record?.when instanceof Date && !Number.isNaN(b.record.when.getTime()) ? b.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+          if (at !== bt) return at - bt;
+          return utils.compareText(a?.record?.title || '', b?.record?.title || '');
+        }),
         belowSampleThreshold: minSampleThreshold() > 1 && cell.airingCount < minSampleThreshold()
       })).sort((a, b) => {
         const diff = metricValue(b) - metricValue(a);
@@ -1729,14 +1758,20 @@
         if (b.airingCount !== a.airingCount) return b.airingCount - a.airingCount;
         return utils.compareText(a.topic, b.topic);
       });
-      const positiveTopics = rankedTopics.filter((topicGroup) => (Number(topicGroup.totalDollars) || 0) > 0);
+      const positiveTopics = topicGroups.filter((topicGroup) => (Number(topicGroup.totalDollars) || 0) > 0);
       return {
         ...slot,
-        rankedTopics,
+        topicGroups,
         winner: positiveTopics[0] || null,
         runnerUp: positiveTopics[1] || null,
         hasOnlyZeroIncome: !positiveTopics.length && slot.totalSlotAirings > 0,
-        zeroIncomeSummary: slot.zeroIncomeAirings > 0 ? `${utils.formatCount(slot.zeroIncomeAirings)} airings, no income` : ''
+        zeroIncomeSummary: slot.zeroIncomeAirings > 0 ? `${utils.formatCount(slot.zeroIncomeAirings)} airings, no income` : '',
+        contributions: [...slot.contributions].sort((a, b) => {
+          const at = a?.record?.when instanceof Date && !Number.isNaN(a.record.when.getTime()) ? a.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+          const bt = b?.record?.when instanceof Date && !Number.isNaN(b.record.when.getTime()) ? b.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+          if (at !== bt) return at - bt;
+          return utils.compareText(a?.record?.title || '', b?.record?.title || '');
+        })
       };
     }).sort((a, b) => {
       if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
@@ -1744,8 +1779,8 @@
     });
   }
 
-  function buildTopicSlotWinnerHeatmap(records) {
-    const slots = buildTopicSlotWinnerGroups(records);
+  function buildTopicSlotWinnerHeatmap(records, precomputedSlots = null) {
+    const slots = Array.isArray(precomputedSlots) ? precomputedSlots : buildTopicSlotWinnerGroups(records);
     if (!slots.length) return '<div class="performance-chart-empty">Topic winners by slot needs trustworthy dated rows with topic metadata and real air times.</div>';
     const occupiedSlotMinutes = [...new Set(slots.map((slot) => slot.slotMinutes))].sort((a, b) => a - b);
     const slotMinutes = occupiedSlotMinutes.length
@@ -1778,7 +1813,7 @@
         <div class="topic-time-header"><div class="topic-time-corner">Day / time</div>${header}</div>
         <div class="topic-time-grid">${body}</div>
       </div>
-      <div class="performance-chart-note">Each cell shows the top-performing topic for that day-and-30-minute slot in the current filter window. Long programs are split across the half-hour blocks they actually occupy. Open the comparison table below to see runner-up and sample details.</div>
+      <div class="performance-chart-note">Each cell shows the top-performing topic for that day-and-30-minute slot in the current filter window. Long programs are split across the half-hour blocks they actually occupy. Click a filled cell to see the exact titles, fundraisers, and allocated dollars behind it.</div>
     `;
   }
 
@@ -1794,7 +1829,7 @@
       if (!slot.winner && slot.hasOnlyZeroIncome) {
         return `
           <tr>
-            <td>${utils.escapeHtml(slot.label)}</td>
+            <td><button type="button" class="performance-slot-link-btn" data-slot-drill-key="${utils.escapeHtml(slot.key)}">${utils.escapeHtml(slot.label)}</button></td>
             <td>${utils.escapeHtml(utils.formatCount(slot.zeroIncomeAirings))}</td>
             <td>${utils.escapeHtml(utils.formatMoney(0))}</td>
             <td>No positive winner</td>
@@ -1809,7 +1844,7 @@
       const note = winner.belowSampleThreshold ? 'Low sample winner' : `${winner.topic} is the current slot leader`;
       return `
         <tr>
-          <td>${utils.escapeHtml(slot.label)}</td>
+          <td><button type="button" class="performance-slot-link-btn" data-slot-drill-key="${utils.escapeHtml(slot.key)}">${utils.escapeHtml(slot.label)}</button></td>
           <td>${utils.escapeHtml(utils.formatCount(winner.airingCount))}</td>
           <td>${utils.escapeHtml(utils.formatMoney(winner.totalDollars))}</td>
           <td>${utils.escapeHtml(`${winner.topic} · ${metricDisplay(winner, { includeCount: true })}`)}</td>
@@ -1821,15 +1856,101 @@
     return true;
   }
 
+  function currentTopicSlotWinnerGroups(records = null) {
+    if (Array.isArray(perf().topicSlotWinnerGroups)) return perf().topicSlotWinnerGroups;
+    const built = buildTopicSlotWinnerGroups(records || perf().filteredRecords || []);
+    perf().topicSlotWinnerGroups = built;
+    return built;
+  }
+
+  function renderSlotDrilldown() {
+    if (!els.performanceSlotDrilldown || !els.performanceSlotDrillPill) return;
+    if (perf().quickFilter !== 'topic_slot_winners') {
+      els.performanceSlotDrillPill.textContent = 'Slot drill-down';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Open <strong>Topic winners by slot</strong> and click a filled cell to inspect the exact titles, fundraisers, and slot-level dollars behind that result.</div>';
+      return;
+    }
+    const slots = currentTopicSlotWinnerGroups(perf().filteredRecords || []).filter((slot) => slot.winner || slot.hasOnlyZeroIncome);
+    if (!slots.length) {
+      els.performanceSlotDrillPill.textContent = 'No slot data';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">No slot-level rows match the current filter window yet.</div>';
+      return;
+    }
+    const selected = slots.find((slot) => slot.key === perf().slotDrillKey) || null;
+    if (!selected) {
+      els.performanceSlotDrillPill.textContent = 'Click a slot';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Click any filled slot in the heatmap or its row in the comparison table to see which titles and fundraisers are behind it.</div>';
+      return;
+    }
+    const topicGroups = (selected.topicGroups || []).filter((group) => group.airingCount > 0);
+    const topicRows = topicGroups.map((group) => `
+      <tr>
+        <td>${utils.escapeHtml(group.topic)}</td>
+        <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
+        <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
+      </tr>
+    `).join('');
+    const airingRows = (selected.contributions || []).map((entry) => {
+      const record = entry.record || {};
+      const when = record.when instanceof Date && !Number.isNaN(record.when.getTime())
+        ? record.when.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : utils.firstNonEmpty(record.date, 'Unknown date');
+      const titleHtml = App.programLinks?.render
+        ? App.programLinks.render({ programId: record.programId, title: record.title || 'Unknown title', className: 'performance-program-link' })
+        : utils.escapeHtml(record.title || 'Unknown title');
+      const firstSource = Array.isArray(record.sampleSourceRows) ? (record.sampleSourceRows[0] || {}) : {};
+      const fundraiser = utils.firstNonEmpty(firstSource.fundraiser_label, firstSource.drive_label, firstSource.fundraiser_name, firstSource.source_file_name, 'Unknown fundraiser');
+      return `
+        <tr>
+          <td>${utils.escapeHtml(when)}</td>
+          <td>${utils.escapeHtml(fundraiser)}</td>
+          <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(entry.topic || 'Unassigned topic')}</span></td>
+          <td>${utils.escapeHtml(utils.formatMoney(entry.allocatedDollars))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(record.amount || 0))}</td>
+        </tr>
+      `;
+    }).join('');
+    const summaryWinner = selected.winner ? `${selected.winner.topic} · ${metricDisplay(selected.winner, { includeCount: true })}` : (selected.zeroIncomeSummary || 'No positive winner');
+    els.performanceSlotDrillPill.textContent = selected.label;
+    els.performanceSlotDrilldown.innerHTML = `
+      <div class="performance-slot-drill-summary">
+        <div class="performance-slot-drill-stat"><span class="label">Slot</span><span class="value">${utils.escapeHtml(selected.label)}</span></div>
+        <div class="performance-slot-drill-stat"><span class="label">Current winner</span><span class="value">${utils.escapeHtml(summaryWinner)}</span></div>
+        <div class="performance-slot-drill-stat"><span class="label">Airings in slot</span><span class="value">${utils.escapeHtml(utils.formatCount(selected.totalSlotAirings))}</span></div>
+        <div class="performance-slot-drill-stat"><span class="label">Topics represented</span><span class="value">${utils.escapeHtml(utils.formatCount(topicGroups.length))}</span></div>
+      </div>
+      <div class="performance-slot-drill-note">These dollars are the amounts allocated to this specific 30-minute slot, not always the full-airing totals. Long programs are split across each half-hour block they occupy.</div>
+      <div class="performance-slot-drill-grid">
+        <div class="table-wrap">
+          <table class="programs-table">
+            <thead><tr><th>Topic</th><th>Airings</th><th>Allocated dollars</th><th>${utils.escapeHtml(metricLabel())}</th></tr></thead>
+            <tbody>${topicRows || '<tr><td colspan="4" class="placeholder-row">No topic totals found for this slot.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <table class="programs-table">
+            <thead><tr><th>Date / time</th><th>Fundraiser</th><th>Title</th><th>Allocated to slot</th><th>Total airing $</th></tr></thead>
+            <tbody>${airingRows || '<tr><td colspan="5" class="placeholder-row">No actual airings are attached to this slot yet.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderChart(groups) {
     if (!els.performanceChart) return;
     if (perf().quickFilter === 'topic_slot_winners') {
       const records = perf().filteredRecords || [];
       if (!records.length) {
+        perf().topicSlotWinnerGroups = [];
         els.performanceChart.innerHTML = '<div class="performance-chart-empty">No filtered rows match this topic-slot winner view yet.</div>';
         return;
       }
-      els.performanceChart.innerHTML = buildTopicSlotWinnerHeatmap(records);
+      const slots = buildTopicSlotWinnerGroups(records);
+      perf().topicSlotWinnerGroups = slots;
+      if (perf().slotDrillKey && !slots.some((slot) => slot.key === perf().slotDrillKey)) perf().slotDrillKey = '';
+      els.performanceChart.innerHTML = buildTopicSlotWinnerHeatmap(records, slots);
       return;
     }
     if (!groups.length) {
@@ -1912,7 +2033,7 @@
   function renderTable(groups) {
     if (!els.performanceTableBody) return;
     if (perf().quickFilter === 'topic_slot_winners') {
-      if (renderTopicSlotWinnerTable(perf().filteredRecords || [])) return;
+      if (renderTopicSlotWinnerTable(perf().filteredRecords || [], currentTopicSlotWinnerGroups(perf().filteredRecords || []))) return;
     }
     if (perf().criterion === 'daypart' && ['split_line', 'heatmap'].includes(effectiveChartType())) {
       if (renderDaypartComparisonTable(perf().filteredRecords || [])) return;
@@ -2495,8 +2616,10 @@
     renderStats(records);
     buildCriteriaSummary(records);
     renderExplainTable(records, postFilter);
+    perf().topicSlotWinnerGroups = null;
     renderChart(perf().groups);
     renderTable(perf().groups);
+    renderSlotDrilldown();
     renderSchedulingIntelligence();
     renderNotes(records, perf().groups);
     if (els.performanceChartTitle) {
@@ -2563,6 +2686,8 @@
     perf().lastLoadedAt = '';
     perf().analysisMeta = {};
     perf().excludedReviewRows = [];
+    perf().topicSlotWinnerGroups = null;
+    perf().slotDrillKey = '';
   }
 
 
@@ -2663,6 +2788,14 @@
       button.addEventListener('mouseleave', hideQuickFilterTooltip);
       button.addEventListener('blur', hideQuickFilterTooltip);
     });
+    const handleSlotDrillClick = (event) => {
+      const trigger = event.target?.closest?.('[data-slot-drill-key]');
+      if (!trigger) return;
+      perf().slotDrillKey = trigger.dataset.slotDrillKey || '';
+      renderAll();
+    };
+    els.performanceChart?.addEventListener('click', handleSlotDrillClick);
+    els.performanceTableBody?.addEventListener('click', handleSlotDrillClick);
     window.addEventListener('scroll', hideQuickFilterTooltip, { passive: true });
     window.addEventListener('resize', hideQuickFilterTooltip);
   }
