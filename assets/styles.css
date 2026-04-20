@@ -1492,6 +1492,10 @@ button.primary {
   outline: 2px dashed rgba(255,255,255,0.75);
   outline-offset: -3px;
 }
+.topic-time-cell.zero-income {
+  background: rgba(139, 71, 19, 0.82);
+  color: #fff8ef;
+}
 @media (max-width: 900px) {
   .topic-time-header,
   .topic-time-row {

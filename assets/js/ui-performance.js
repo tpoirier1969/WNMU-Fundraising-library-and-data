@@ -1639,22 +1639,76 @@
     return text.length > max ? `${text.slice(0, max - 1)}…` : text;
   }
 
+  function buildOccupiedHalfHourSlots(record) {
+    if (!record?.hasDate || !record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return [];
+    const rawMinutes = Number(record?.minutes);
+    const durationMinutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? rawMinutes : 30;
+    const start = new Date(record.when.getTime());
+    const end = new Date(start.getTime() + (durationMinutes * 60000));
+    const slots = [];
+    let cursor = new Date(start.getTime());
+    while (cursor < end) {
+      const bucketMinutes = Math.floor(((cursor.getHours() * 60) + cursor.getMinutes()) / 30) * 30;
+      const slotStart = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), Math.floor(bucketMinutes / 60), bucketMinutes % 60, 0, 0);
+      const slotEnd = new Date(slotStart.getTime() + (30 * 60000));
+      const overlapStart = Math.max(start.getTime(), slotStart.getTime());
+      const overlapEnd = Math.min(end.getTime(), slotEnd.getTime());
+      const overlapMinutes = Math.max(0, (overlapEnd - overlapStart) / 60000);
+      if (overlapMinutes > 0) {
+        const anchor = broadcastAnchorDate(slotStart) || slotStart;
+        const dayName = anchor.toLocaleDateString(undefined, { weekday: 'long' });
+        const dayIndex = DAY_ORDER.indexOf(dayName);
+        if (dayIndex >= 0) {
+          slots.push({
+            dayIndex,
+            slotMinutes: bucketMinutes,
+            hourOfDay: Math.floor(bucketMinutes / 60),
+            label: `${dayName} · ${utils.minutesToLabel(bucketMinutes)}`,
+            overlapMinutes
+          });
+        }
+      }
+      cursor = slotEnd;
+    }
+    return slots;
+  }
+
   function buildTopicSlotWinnerGroups(records) {
     const slotMap = new Map();
     (records || []).forEach((record) => {
-      if (!record?.moneyTrusted || record?.excludedForIntegrity) return;
-      if (!record?.identityTrusted || !(record?.topicTokens || []).length) return;
+      if (!record?.moneyTrusted) return;
       if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
-      const day = dayLabel(record);
-      const hour = record.when?.getHours?.();
-      if (!DAY_ORDER.includes(day) || !Number.isFinite(hour)) return;
-      const slotKey = `${DAY_ORDER.indexOf(day)}|${hour}`;
-      const slotLabel = `${day} · ${utils.minutesToLabel(hour * 60)}`;
-      if (!slotMap.has(slotKey)) slotMap.set(slotKey, { key: slotKey, label: slotLabel, dayIndex: DAY_ORDER.indexOf(day), hourOfDay: hour, topics: new Map() });
-      const slot = slotMap.get(slotKey);
       const topic = record.topicDisplay || record.topic || 'Unassigned';
-      if (!slot.topics.has(topic)) slot.topics.set(topic, emptyMetricCell(topic));
-      aggregateMetricCell(slot.topics.get(topic), record);
+      if (!utils.normalizeText(topic) || topic === 'Unassigned') return;
+      const occupiedSlots = buildOccupiedHalfHourSlots(record);
+      if (!occupiedSlots.length) return;
+      const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
+      occupiedSlots.forEach((slotPart) => {
+        const slotKey = `${slotPart.dayIndex}|${slotPart.slotMinutes}`;
+        if (!slotMap.has(slotKey)) {
+          slotMap.set(slotKey, {
+            key: slotKey,
+            label: slotPart.label,
+            dayIndex: slotPart.dayIndex,
+            hourOfDay: slotPart.hourOfDay,
+            slotMinutes: slotPart.slotMinutes,
+            topics: new Map(),
+            totalSlotAirings: 0,
+            zeroIncomeAirings: 0
+          });
+        }
+        const slot = slotMap.get(slotKey);
+        if (!slot.topics.has(topic)) slot.topics.set(topic, emptyMetricCell(topic));
+        const share = Math.max(0, (Number(slotPart.overlapMinutes) || 0) / totalOverlapMinutes);
+        aggregateMetricCell(slot.topics.get(topic), {
+          amount: (Number(record.amount) || 0) * share,
+          pledges: (Number(record.pledges) || 0) * share,
+          sustainers: (Number(record.sustainers) || 0) * share,
+          minutes: Number(slotPart.overlapMinutes) || 0
+        });
+        slot.totalSlotAirings += 1;
+        if ((Number(record.amount) || 0) <= 0) slot.zeroIncomeAirings += 1;
+      });
     });
     return [...slotMap.values()].map((slot) => {
       const rankedTopics = [...slot.topics.entries()].map(([topic, cell]) => ({
@@ -1667,29 +1721,38 @@
         if (b.airingCount !== a.airingCount) return b.airingCount - a.airingCount;
         return utils.compareText(a.topic, b.topic);
       });
+      const positiveTopics = rankedTopics.filter((topicGroup) => (Number(topicGroup.totalDollars) || 0) > 0);
       return {
         ...slot,
         rankedTopics,
-        winner: rankedTopics[0] || null,
-        runnerUp: rankedTopics[1] || null
+        winner: positiveTopics[0] || null,
+        runnerUp: positiveTopics[1] || null,
+        hasOnlyZeroIncome: !positiveTopics.length && slot.totalSlotAirings > 0,
+        zeroIncomeSummary: slot.zeroIncomeAirings > 0 ? `${utils.formatCount(slot.zeroIncomeAirings)} airings, no income` : ''
       };
     }).sort((a, b) => {
       if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
-      return a.hourOfDay - b.hourOfDay;
+      return a.slotMinutes - b.slotMinutes;
     });
   }
 
   function buildTopicSlotWinnerHeatmap(records) {
     const slots = buildTopicSlotWinnerGroups(records);
     if (!slots.length) return '<div class="performance-chart-empty">Topic winners by slot needs trustworthy dated rows with topic metadata and real air times.</div>';
-    const hours = [...new Set(slots.map((slot) => slot.hourOfDay))].sort((a, b) => a - b);
-    const matrix = new Map(slots.map((slot) => [`${slot.dayIndex}|${slot.hourOfDay}`, slot]));
-    const maxMetric = Math.max(1, ...slots.map((slot) => metricValue(slot.winner || emptyMetricCell())));
-    const header = hours.map((hour) => `<div class="topic-time-header-cell">${utils.escapeHtml(utils.minutesToLabel(hour * 60))}</div>`).join('');
+    const slotMinutes = [...new Set(slots.map((slot) => slot.slotMinutes))].sort((a, b) => a - b);
+    const matrix = new Map(slots.map((slot) => [`${slot.dayIndex}|${slot.slotMinutes}`, slot]));
+    const positiveSlots = slots.filter((slot) => slot.winner);
+    const maxMetric = Math.max(1, ...positiveSlots.map((slot) => metricValue(slot.winner || emptyMetricCell())));
+    const header = slotMinutes.map((minutes) => `<div class="topic-time-header-cell">${utils.escapeHtml(utils.minutesToLabel(minutes))}</div>`).join('');
     const body = DAY_ORDER.map((day, dayIndex) => {
-      const cells = hours.map((hour) => {
-        const slot = matrix.get(`${dayIndex}|${hour}`) || null;
-        if (!slot || !slot.winner) return '<div class="topic-time-cell empty">—</div>';
+      const cells = slotMinutes.map((minutes) => {
+        const slot = matrix.get(`${dayIndex}|${minutes}`) || null;
+        if (!slot) return '<div class="topic-time-cell empty">—</div>';
+        if (!slot.winner && slot.hasOnlyZeroIncome) {
+          const title = `${slot.label}: ${slot.zeroIncomeSummary}`;
+          return `<div class="topic-time-cell topic-winner-cell zero-income" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(utils.formatCount(slot.zeroIncomeAirings))} airings</span><small>No income</small></div>`;
+        }
+        if (!slot.winner) return '<div class="topic-time-cell empty">—</div>';
         const value = metricValue(slot.winner);
         const alpha = Math.max(0.12, Math.min(0.92, value / maxMetric)).toFixed(3);
         const runnerText = slot.runnerUp ? ` | Runner-up: ${slot.runnerUp.topic} (${metricDisplay(slot.runnerUp, { includeCount: true })})` : '';
@@ -1704,19 +1767,31 @@
         <div class="topic-time-header"><div class="topic-time-corner">Day / time</div>${header}</div>
         <div class="topic-time-grid">${body}</div>
       </div>
-      <div class="performance-chart-note">Each cell shows the top-performing topic for that day-and-hour slot in the current filter window. Open the comparison table below to see the runner-up and sample counts.</div>
+      <div class="performance-chart-note">Each cell shows the top-performing topic for that day-and-30-minute slot in the current filter window. Long programs are split across the half-hour blocks they actually occupy. Open the comparison table below to see runner-up and sample details.</div>
     `;
   }
 
   function renderTopicSlotWinnerTable(records) {
     if (!els.performanceTableBody) return false;
-    const slots = buildTopicSlotWinnerGroups(records).filter((slot) => slot.winner);
+    const slots = buildTopicSlotWinnerGroups(records).filter((slot) => slot.winner || slot.hasOnlyZeroIncome);
     setPerformanceTableHeaders(['Day + time', 'Winner airings', 'Winner total $', metricLabel(), 'Runner-up', 'Notes']);
     if (!slots.length) {
       els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No trustworthy topic-by-time winners match this filter yet.</td></tr>';
       return true;
     }
     els.performanceTableBody.innerHTML = slots.map((slot) => {
+      if (!slot.winner && slot.hasOnlyZeroIncome) {
+        return `
+          <tr>
+            <td>${utils.escapeHtml(slot.label)}</td>
+            <td>${utils.escapeHtml(utils.formatCount(slot.zeroIncomeAirings))}</td>
+            <td>${utils.escapeHtml(utils.formatMoney(0))}</td>
+            <td>No positive winner</td>
+            <td>—</td>
+            <td>${utils.escapeHtml(slot.zeroIncomeSummary || 'Airings ran here with no income.')}</td>
+          </tr>
+        `;
+      }
       const winner = slot.winner;
       const runner = slot.runnerUp;
       const runnerText = runner ? `${runner.topic} · ${metricDisplay(runner, { includeCount: true })}` : '—';
@@ -2202,7 +2277,7 @@
       case 'topic_winners':
         return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs.';
       case 'topic_slot_winners':
-        return 'Shows which main topic currently wins each day-and-time slot, so you can stop guessing whether Thursday at 7:00 AM wants Health, Science, or something else.';
+        return 'Shows which main topic currently wins each day-and-30-minute slot, with long programs split across the half-hour blocks they actually occupy, so you can stop guessing whether Thursday at 7:00 AM wants Health, Science, or something else.';
       case 'topic_week_split':
         return 'Splits topics into Mon-Fri, Saturday, and Sunday buckets so you can stop pretending the whole week behaves the same way.';
       case 'weekend_weekday':
@@ -2257,7 +2332,7 @@
       case 'topic_time_performance':
         return 'Use this when you want to know when a selected topic tends to work best during the week.';
       case 'topic_slot_winners':
-        return 'Use this to answer “what topic should own this slot?” instead of “what single title happened to do well there?”';
+        return 'Use this to answer “what topic should own this 30-minute slot?” instead of “what single title happened to do well there?”';
       case 'topic_week_split':
         return 'Use this to see whether a topic behaves differently on weekdays, Saturdays, and Sundays.';
       case 'recent_momentum':
