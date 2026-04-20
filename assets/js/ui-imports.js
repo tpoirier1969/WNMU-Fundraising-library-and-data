@@ -1478,11 +1478,71 @@
   }
 
 
+  function buildMergedMetricConflictRows() {
+    const rows = Array.isArray(state.rawRows) ? state.rawRows.filter(Boolean) : [];
+    const groups = new Map();
+    rows.forEach((row, index) => {
+      const key = App.programFilters?.identityKey?.(row) || `row:${index}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+
+    const conflicts = [];
+    [...groups.entries()].forEach(([key, group]) => {
+      if (!Array.isArray(group) || group.length < 2) return;
+      const merged = (App.programFilters?.collapseRows?.(group, { statusPreference: 'all' }) || [])[0] || {};
+      const avg = Number(derive.avgPerFundraiser(merged) || 0) || 0;
+      const total = Number(derive.totalRaised(merged) || 0) || 0;
+      if (!(avg > 0) || total !== 0) return;
+
+      const positiveTotalSource = group
+        .map((row) => Number(derive.totalRaised(row) || 0) || 0)
+        .filter((value) => value > 0)
+        .sort((a, b) => b - a)[0] || 0;
+      const positiveAvgSource = group
+        .map((row) => Number(derive.avgPerFundraiser(row) || 0) || 0)
+        .filter((value) => value > 0)
+        .sort((a, b) => b - a)[0] || 0;
+      const fundraiserCount = Math.max(0, ...group
+        .map((row) => Number(utils.firstNonEmpty(row?.fundraiser_count, row?.drive_count, row?.fundraiser_total, row?.drive_total, row?.airing_count, row?.aired_count, row?.times_aired, row?.total_airings, 0)) || 0)
+        .filter((value) => Number.isFinite(value)));
+
+      conflicts.push({
+        id: `merged-metric-conflict:${key}`,
+        row_hashes: [],
+        imported_program_title: derive.title(merged) || 'Untitled library row',
+        matched_library_title: derive.title(merged) || '',
+        nola_code: derive.nola(merged) || '',
+        air_date: '—',
+        air_time: '—',
+        dollars: 0,
+        reason_text: `Merged library title conflict: Avg $ / event is ${utils.formatMoney(avg)} while Total $ is ${utils.formatMoney(total)}. Review the merged source rows before trusting this title in the library list.`,
+        source_file_name: `${utils.formatCount(group.length)} merged library rows`,
+        sample_source_rows: group.slice(0, 8).map((row) => ({ ...row })),
+        raw: {
+          ...merged,
+          __conflict_type: 'merged_metric_zero_total',
+          __positive_source_total: positiveTotalSource,
+          __positive_source_avg: positiveAvgSource,
+          __group_size: group.length,
+          __max_fundraiser_count: fundraiserCount
+        },
+        program_id: derive.programId(merged) || null,
+        pending_link_program_id: String(derive.programId(merged) || ''),
+        review_kind: 'merged_metric_conflict'
+      });
+    });
+
+    return conflicts.sort((a, b) => utils.compareText(a.imported_program_title, b.imported_program_title));
+  }
+
   async function refreshSuspectRows(options = {}) {
     imp().suspectRowsError = '';
     try {
       if (App.performanceUi?.refreshData) await App.performanceUi.refreshData({ silent: true });
-      imp().suspectRows = (App.performanceUi?.getExcludedReviewRows?.() || []).map((row) => ({ ...row }));
+      const analyticsRows = (App.performanceUi?.getExcludedReviewRows?.() || []).map((row) => ({ ...row }));
+      const mergedMetricConflicts = buildMergedMetricConflictRows();
+      imp().suspectRows = analyticsRows.concat(mergedMetricConflicts);
       const validIds = new Set((imp().suspectRows || []).map((row) => row.id));
       imp().suspectLinkSelections = Object.fromEntries(Object.entries(imp().suspectLinkSelections || {}).filter(([id]) => validIds.has(id)));
     } catch (error) {
