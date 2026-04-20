@@ -656,6 +656,7 @@
           moneyTrusted: false,
           moneySources: [],
           integrityFlags: [],
+          runtimeMinutes: 0,
           titleAnnotated: false,
           isNonSpecific: false,
           approvedOverride: false,
@@ -712,6 +713,10 @@
       record.distributor = normalizeDistributor((!record.distributor || record.distributor === 'Unspecified distributor') ? distributor : record.distributor);
       record.premiums = record.premiums === 'No premium metadata' ? premiumLabel(row, programRow) : record.premiums;
       record.localBreaks = record.localBreaks === 'No local breaks' ? localBreakLabel(row, programRow) : record.localBreaks;
+      const runtimeCandidate = Number(utils.firstNonEmpty(row?.program_minutes, row?.minutes, row?.runtime_minutes, row?.actual_runtime_minutes, (programRow ? derive.runtimeMinutes(programRow) : null)));
+      if (Number.isFinite(runtimeCandidate) && runtimeCandidate > 0) {
+        record.runtimeMinutes = Math.max(Number(record.runtimeMinutes) || 0, Math.round(runtimeCandidate));
+      }
       if (!record.when && temporal?.when) record.when = temporal.when;
       if (!record.broadcastWhen && temporal?.broadcastWhen) record.broadcastWhen = temporal.broadcastWhen;
       if (temporal?.hasDate) record.hasDate = true;
@@ -1642,7 +1647,11 @@
   function buildOccupiedHalfHourSlots(record) {
     if (!record?.hasDate || !record?.hasExplicitTime || !(record.when instanceof Date) || Number.isNaN(record.when.getTime())) return [];
     const rawMinutes = Number(record?.minutes);
-    const durationMinutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? rawMinutes : 30;
+    const runtimeFallback = Number(utils.firstNonEmpty(record?.runtimeMinutes, record?.libraryRuntimeMinutes, 0));
+    const durationMinutes = Math.max(30,
+      Number.isFinite(rawMinutes) && rawMinutes > 0 ? rawMinutes : 0,
+      Number.isFinite(runtimeFallback) && runtimeFallback > 0 ? runtimeFallback : 0
+    );
     const start = new Date(record.when.getTime());
     const end = new Date(start.getTime() + (durationMinutes * 60000));
     const slots = [];
@@ -1678,8 +1687,7 @@
     (records || []).forEach((record) => {
       if (!record?.moneyTrusted) return;
       if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
-      const topic = record.topicDisplay || record.topic || 'Unassigned';
-      if (!utils.normalizeText(topic) || topic === 'Unassigned') return;
+      const topic = utils.normalizeText(record.topicDisplay || record.topic || '') || 'Unassigned topic';
       const occupiedSlots = buildOccupiedHalfHourSlots(record);
       if (!occupiedSlots.length) return;
       const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
@@ -1739,7 +1747,10 @@
   function buildTopicSlotWinnerHeatmap(records) {
     const slots = buildTopicSlotWinnerGroups(records);
     if (!slots.length) return '<div class="performance-chart-empty">Topic winners by slot needs trustworthy dated rows with topic metadata and real air times.</div>';
-    const slotMinutes = [...new Set(slots.map((slot) => slot.slotMinutes))].sort((a, b) => a - b);
+    const occupiedSlotMinutes = [...new Set(slots.map((slot) => slot.slotMinutes))].sort((a, b) => a - b);
+    const slotMinutes = occupiedSlotMinutes.length
+      ? Array.from({ length: Math.round((occupiedSlotMinutes[occupiedSlotMinutes.length - 1] - occupiedSlotMinutes[0]) / 30) + 1 }, (_, index) => occupiedSlotMinutes[0] + (index * 30))
+      : [];
     const matrix = new Map(slots.map((slot) => [`${slot.dayIndex}|${slot.slotMinutes}`, slot]));
     const positiveSlots = slots.filter((slot) => slot.winner);
     const maxMetric = Math.max(1, ...positiveSlots.map((slot) => metricValue(slot.winner || emptyMetricCell())));
