@@ -2179,6 +2179,12 @@
   function quickFilterExplanation(name = perf().quickFilter) {
     const endText = perf().endDate ? utils.formatDate(perf().endDate) : 'the latest available date';
     switch (name) {
+      case 'top_earners':
+        return 'Ranks titles by total dollars in the selected window, so the programs that brought in the most money overall rise to the top.';
+      case 'best_average':
+        return 'Ranks titles by average dollars per airing, which helps separate efficient earners from titles that only look big because they aired a lot.';
+      case 'prime_time':
+        return 'Limits the comparison to Prime time airings and then ranks the titles by average dollars per airing inside that slice.';
       case 'weak_returns':
         return 'Sorted from the lowest average dollars per airing upward, so weak performers appear first instead of the strongest titles.';
       case 'live_break_impact':
@@ -2197,15 +2203,167 @@
         return 'Shows which main topic currently wins each day-and-time slot, so you can stop guessing whether Thursday at 7:00 AM wants Health, Science, or something else.';
       case 'topic_week_split':
         return 'Splits topics into Mon-Fri, Saturday, and Sunday buckets so you can stop pretending the whole week behaves the same way.';
+      case 'weekend_weekday':
+        return 'Compares weekday versus weekend earnings so you can see whether the broad weekly pattern shifts before drilling down to exact days or times.';
+      case 'day_of_week':
+        return 'Compares Monday through Sunday directly so you can see whether certain days consistently pull better numbers than others.';
+      case 'daypart':
+        return 'Compares major day-parts with separate Mon-Fri, Saturday, and Sunday lines so broad averages do not hide the weekend pattern.';
       case 'weekday_dayparts':
       case 'saturday_dayparts':
       case 'sunday_dayparts':
         return 'These quick filters narrow day-part analysis to one slice of the week so Saturday and Sunday do not get blended into the weekday pattern.';
       case 'daypart_heatmap':
         return 'This heatmap splits day-parts into separate Mon-Fri, Saturday, and Sunday rows so broad weekly day-part averages stop hiding the weekend story.';
+      case 'best_daytime':
+        return 'Limits the view to Daytime airings, then ranks titles by average dollars per airing inside that daytime slice.';
       default:
         return '';
     }
+  }
+
+  function quickFilterPresetSummary(name) {
+    const cfg = QUICK_FILTERS[name];
+    if (!cfg) return '';
+    const parts = [];
+    if (cfg.criterion) parts.push(`Compare by ${criterionLabel(cfg.criterion).toLowerCase()}`);
+    if (cfg.metric) parts.push(`metric ${metricLabel(cfg.metric).toLowerCase()}`);
+    if (cfg.chartType && cfg.chartType !== 'auto') parts.push(`${chartTypeLabel(cfg.chartType).toLowerCase()} chart`);
+    if (cfg.topN && cfg.topN < 999) parts.push(`show top ${cfg.topN}`);
+    if (cfg.daySetFilter) parts.push(`starts with ${daySetLabel(cfg.daySetFilter)}`);
+    if (cfg.daypartScope) parts.push(`${cfg.daypartScope.toLowerCase()} only`);
+    if (cfg.weekpartScope) parts.push(`${cfg.weekpartScope.toLowerCase()} only`);
+    return parts.length ? `${parts.join(', ')}.` : '';
+  }
+
+  function quickFilterLearningSummary(name) {
+    switch (name) {
+      case 'top_earners':
+        return 'Use this when you want the biggest total money-makers, even if they got there by airing more often.';
+      case 'best_average':
+        return 'Use this when you want the most efficient titles per airing instead of the biggest grossers.';
+      case 'prime_time':
+        return 'Use this to see which titles really deserve a strong evening slot.';
+      case 'weak_returns':
+        return 'Use this to spot titles that consistently underperform in the current window.';
+      case 'live_break_impact':
+        return 'Use this to see whether live-break placements are helping or hurting the money.';
+      case 'repeat_fatigue':
+        return 'Use this to look for repeated titles that may be wearing out their welcome.';
+      case 'topic_winners':
+        return 'Use this for broad strategy: which topics tend to win, regardless of individual title.';
+      case 'topic_time_performance':
+        return 'Use this when you want to know when a selected topic tends to work best during the week.';
+      case 'topic_slot_winners':
+        return 'Use this to answer “what topic should own this slot?” instead of “what single title happened to do well there?”';
+      case 'topic_week_split':
+        return 'Use this to see whether a topic behaves differently on weekdays, Saturdays, and Sundays.';
+      case 'recent_momentum':
+        return 'Use this when you care more about what is working lately than long-run library history.';
+      case 'weekend_weekday':
+        return 'Use this for a first pass on whether the whole weekend behaves differently from weekdays.';
+      case 'day_of_week':
+        return 'Use this when day choice matters more than exact time choice.';
+      case 'daypart':
+        return 'Use this for broad “morning/daytime/prime” strategy before getting down to exact hours.';
+      case 'weekday_dayparts':
+      case 'saturday_dayparts':
+      case 'sunday_dayparts':
+        return 'Use these when you want the day-part story for one slice of the week without the others polluting it.';
+      case 'daypart_heatmap':
+        return 'Use this when you want a compact visual of where the strongest day-parts live across the week slices.';
+      case 'best_daytime':
+        return 'Use this to see which titles are worth protecting in daytime hours.';
+      default:
+        return quickFilterExplanation(name) || 'Use this quick filter to jump straight to a preset comparison without manually setting every control.';
+    }
+  }
+
+  function quickFilterControlImpact(name) {
+    const notes = [
+      'Changing the date range or turning on Use all available dates changes which fundraiser airings are included.',
+      'Changing Fundraiser month, Day set, Main topic, Program, or the label search narrows the same quick filter instead of turning it off.',
+      'Changing Compare by, Metric, or Chart type turns this back into a custom view because those settings replace the quick-filter preset.'
+    ];
+    if (name === 'topic_time_performance' && !perf().topicFilter) {
+      notes.splice(1, 0, 'This one becomes much more useful after you pick a Main topic, because otherwise every topic is blended together.');
+    }
+    if (name === 'topic_slot_winners') {
+      notes.splice(1, 0, 'Main topic usually stays blank here on purpose, because the whole point is to compare topics against each other for each slot.');
+    }
+    if (['weekday_dayparts', 'saturday_dayparts', 'sunday_dayparts'].includes(name)) {
+      notes.splice(1, 0, 'The Day set starts prefilled for this quick filter, but you can still change it if you want to pivot to a different week slice.');
+    }
+    return notes;
+  }
+
+  function quickFilterTooltipData(name) {
+    const label = quickFilterLabel(name) || 'Quick filter';
+    return {
+      title: label,
+      learn: quickFilterLearningSummary(name),
+      preset: quickFilterPresetSummary(name),
+      explain: quickFilterExplanation(name),
+      effects: quickFilterControlImpact(name)
+    };
+  }
+
+  let quickFilterTooltipEl = null;
+
+  function ensureQuickFilterTooltipEl() {
+    if (quickFilterTooltipEl && document.body.contains(quickFilterTooltipEl)) return quickFilterTooltipEl;
+    quickFilterTooltipEl = document.createElement('div');
+    quickFilterTooltipEl.className = 'quick-filter-tooltip hidden';
+    quickFilterTooltipEl.setAttribute('role', 'tooltip');
+    document.body.appendChild(quickFilterTooltipEl);
+    return quickFilterTooltipEl;
+  }
+
+  function updateQuickFilterTooltips() {
+    document.querySelectorAll('[data-performance-quick-filter]').forEach((button) => {
+      const name = button.dataset.performanceQuickFilter || '';
+      const tip = quickFilterTooltipData(name);
+      const titleText = [tip.title, '', `What you can learn: ${tip.learn}`, tip.preset ? `Preset: ${tip.preset}` : '', tip.explain ? `What it shows: ${tip.explain}` : '', 'Changing other filters:', ...tip.effects.map((line) => `- ${line}`)].filter(Boolean).join('\n');
+      button.setAttribute('title', titleText);
+      button.setAttribute('aria-label', `${tip.title}. ${tip.learn}`);
+    });
+  }
+
+  function renderQuickFilterTooltipHtml(name) {
+    const tip = quickFilterTooltipData(name);
+    const effectItems = tip.effects.map((line) => `<li>${utils.escapeHtml(line)}</li>`).join('');
+    return `
+      <div class="quick-filter-tooltip-title">${utils.escapeHtml(tip.title)}</div>
+      <div class="quick-filter-tooltip-block"><strong>What you can learn</strong><p>${utils.escapeHtml(tip.learn)}</p></div>
+      ${tip.preset ? `<div class="quick-filter-tooltip-block"><strong>Preset</strong><p>${utils.escapeHtml(tip.preset)}</p></div>` : ''}
+      ${tip.explain ? `<div class="quick-filter-tooltip-block"><strong>What it shows</strong><p>${utils.escapeHtml(tip.explain)}</p></div>` : ''}
+      <div class="quick-filter-tooltip-block"><strong>Changing other filters</strong><ul>${effectItems}</ul></div>
+    `;
+  }
+
+  function positionQuickFilterTooltip(button) {
+    const tooltip = ensureQuickFilterTooltipEl();
+    const rect = button.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const top = Math.max(8, rect.bottom + 10 + window.scrollY);
+    let left = rect.left + window.scrollX;
+    const maxLeft = window.scrollX + window.innerWidth - tooltipRect.width - 10;
+    left = Math.min(Math.max(window.scrollX + 10, left), Math.max(window.scrollX + 10, maxLeft));
+    tooltip.style.top = `${top}px`;
+    tooltip.style.left = `${left}px`;
+  }
+
+  function showQuickFilterTooltip(button) {
+    if (!button || button.disabled) return;
+    const tooltip = ensureQuickFilterTooltipEl();
+    const name = button.dataset.performanceQuickFilter || '';
+    tooltip.innerHTML = renderQuickFilterTooltipHtml(name);
+    tooltip.classList.remove('hidden');
+    positionQuickFilterTooltip(button);
+  }
+
+  function hideQuickFilterTooltip() {
+    if (quickFilterTooltipEl) quickFilterTooltipEl.classList.add('hidden');
   }
 
   function populateControls() {
@@ -2223,6 +2381,7 @@
     if (els.performanceFilterInput) els.performanceFilterInput.value = perf().labelFilter || '';
     if (els.performanceUseAllDates) els.performanceUseAllDates.checked = Boolean(perf().useAllDates);
     if (els.performanceIncludeExpired) els.performanceIncludeExpired.checked = Boolean(perf().includeExpiredPrograms);
+    updateQuickFilterTooltips();
     const oldestDate = perf().dataShape?.oldestDate || '';
     const newestDate = perf().dataShape?.newestDate || '';
     if (els.performanceStartDate) {
@@ -2354,6 +2513,7 @@
       button.classList.toggle('active', button.dataset.performanceQuickFilter === active);
     });
     if (els.performanceQuickFilterPill) els.performanceQuickFilterPill.textContent = enabled ? (active ? quickFilterLabel(active) : 'Ready') : 'Set a date range first';
+    updateQuickFilterTooltips();
   }
 
   function applyQuickFilter(name) {
@@ -2411,7 +2571,13 @@
     els.performanceExportButton?.addEventListener('click', exportChartSvg);
     document.querySelectorAll('[data-performance-quick-filter]').forEach((button) => {
       button.addEventListener('click', () => applyQuickFilter(button.dataset.performanceQuickFilter || ''));
+      button.addEventListener('mouseenter', () => showQuickFilterTooltip(button));
+      button.addEventListener('focus', () => showQuickFilterTooltip(button));
+      button.addEventListener('mouseleave', hideQuickFilterTooltip);
+      button.addEventListener('blur', hideQuickFilterTooltip);
     });
+    window.addEventListener('scroll', hideQuickFilterTooltip, { passive: true });
+    window.addEventListener('resize', hideQuickFilterTooltip);
   }
 
   function getExcludedReviewRows() {
