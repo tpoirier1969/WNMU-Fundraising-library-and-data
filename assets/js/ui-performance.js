@@ -1879,10 +1879,27 @@
     const selected = slots.find((slot) => slot.key === perf().slotDrillKey) || null;
     if (!selected) {
       els.performanceSlotDrillPill.textContent = 'Click a slot';
-      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Click any filled slot in the heatmap or its row in the comparison table to see which titles and fundraisers are behind it.</div>';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Click any filled slot in the heatmap or its row in the comparison table to see which titles, fundraisers, and allocated dollars are behind it.</div>';
       return;
     }
     const topicGroups = (selected.topicGroups || []).filter((group) => group.airingCount > 0);
+    const availableModes = [];
+    if (selected.winner && Array.isArray(selected.winner.entries) && selected.winner.entries.length) availableModes.push('winner');
+    availableModes.push('all');
+    if (!availableModes.includes(perf().slotDrillMode)) perf().slotDrillMode = availableModes[0] || 'all';
+    const drillMode = perf().slotDrillMode || 'all';
+    const visibleEntries = ((drillMode === 'winner' && selected.winner)
+      ? (selected.winner.entries || [])
+      : (selected.contributions || [])).slice();
+    const sortedEntries = visibleEntries.sort((a, b) => {
+      const at = a?.record?.when instanceof Date && !Number.isNaN(a.record.when.getTime()) ? a.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+      const bt = b?.record?.when instanceof Date && !Number.isNaN(b.record.when.getTime()) ? b.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+      if (at !== bt) return at - bt;
+      return utils.compareText(a?.record?.title || '', b?.record?.title || '');
+    });
+    const modeSummary = drillMode === 'winner' && selected.winner
+      ? `Showing only the current winning topic: ${selected.winner.topic}.`
+      : 'Showing all topics that competed in this slot.';
     const topicRows = topicGroups.map((group) => `
       <tr>
         <td>${utils.escapeHtml(group.topic)}</td>
@@ -1891,7 +1908,64 @@
         <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
       </tr>
     `).join('');
-    const airingRows = (selected.contributions || []).map((entry) => {
+    const titleMap = new Map();
+    sortedEntries.forEach((entry) => {
+      const record = entry.record || {};
+      const key = `${record.programId || 'na'}|${utils.normalizeText(record.title || 'Unknown title') || 'unknown'}`;
+      if (!titleMap.has(key)) {
+        titleMap.set(key, {
+          programId: record.programId,
+          title: record.title || 'Unknown title',
+          topic: entry.topic || slotTopicLabel(record),
+          airings: 0,
+          allocatedDollars: 0,
+          totalDollars: 0,
+          firstWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
+          lastWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
+          fundraisers: new Set()
+        });
+      }
+      const bucket = titleMap.get(key);
+      bucket.airings += 1;
+      bucket.allocatedDollars += Number(entry.allocatedDollars) || 0;
+      bucket.totalDollars += Number(record.amount) || 0;
+      const rowWhen = record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null;
+      if (rowWhen && (!bucket.firstWhen || rowWhen.getTime() < bucket.firstWhen.getTime())) bucket.firstWhen = rowWhen;
+      if (rowWhen && (!bucket.lastWhen || rowWhen.getTime() > bucket.lastWhen.getTime())) bucket.lastWhen = rowWhen;
+      const firstSource = Array.isArray(record.sampleSourceRows) ? (record.sampleSourceRows[0] || {}) : {};
+      const fundraiser = utils.firstNonEmpty(firstSource.fundraiser_label, firstSource.drive_label, firstSource.fundraiser_name, firstSource.source_file_name, 'Unknown fundraiser');
+      if (fundraiser) bucket.fundraisers.add(fundraiser);
+    });
+    const titleRows = [...titleMap.values()].sort((a, b) => {
+      const diff = (Number(b.allocatedDollars) || 0) - (Number(a.allocatedDollars) || 0);
+      if (diff !== 0) return diff;
+      if (b.airings !== a.airings) return b.airings - a.airings;
+      return utils.compareText(a.title, b.title);
+    }).map((bucket) => {
+      const titleHtml = App.programLinks?.render
+        ? App.programLinks.render({ programId: bucket.programId, title: bucket.title || 'Unknown title', className: 'performance-program-link' })
+        : utils.escapeHtml(bucket.title || 'Unknown title');
+      const fundraisers = [...bucket.fundraisers].slice(0, 2);
+      const extraCount = Math.max(0, bucket.fundraisers.size - fundraisers.length);
+      const fundraiserText = fundraisers.length
+        ? `${fundraisers.join(' · ')}${extraCount ? ` +${extraCount} more` : ''}`
+        : 'Unknown fundraiser';
+      const spanText = bucket.firstWhen && bucket.lastWhen
+        ? (bucket.firstWhen.getTime() === bucket.lastWhen.getTime()
+          ? bucket.firstWhen.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          : `${bucket.firstWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} → ${bucket.lastWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`)
+        : 'Date unknown';
+      return `
+        <tr>
+          <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(bucket.topic || 'Unassigned topic')}</span></td>
+          <td>${utils.escapeHtml(utils.formatCount(bucket.airings))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(bucket.allocatedDollars))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(bucket.totalDollars))}</td>
+          <td>${utils.escapeHtml(fundraiserText)}<span class="performance-slot-airing-meta">${utils.escapeHtml(spanText)}</span></td>
+        </tr>
+      `;
+    }).join('');
+    const airingRows = sortedEntries.map((entry) => {
       const record = entry.record || {};
       const when = record.when instanceof Date && !Number.isNaN(record.when.getTime())
         ? record.when.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -1921,17 +1995,28 @@
         <div class="performance-slot-drill-stat"><span class="label">Topics represented</span><span class="value">${utils.escapeHtml(utils.formatCount(topicGroups.length))}</span></div>
       </div>
       <div class="performance-slot-drill-note">These dollars are the amounts allocated to this specific 30-minute slot, not always the full-airing totals. Long programs are split across each half-hour block they occupy.</div>
+      <div class="performance-slot-drill-controls" role="group" aria-label="Slot drill-down view">
+        ${selected.winner ? `<button type="button" class="performance-slot-mode-btn${drillMode === 'winner' ? ' active' : ''}" data-slot-drill-mode="winner">Winner only</button>` : ''}
+        <button type="button" class="performance-slot-mode-btn${drillMode === 'all' ? ' active' : ''}" data-slot-drill-mode="all">All topics in this slot</button>
+      </div>
+      <div class="performance-slot-drill-subnote">${utils.escapeHtml(modeSummary)}</div>
       <div class="performance-slot-drill-grid">
-        <div class="table-wrap">
+        <div class="table-wrap performance-slot-drill-primary">
           <table class="programs-table">
-            <thead><tr><th>Topic</th><th>Airings</th><th>Allocated dollars</th><th>${utils.escapeHtml(metricLabel())}</th></tr></thead>
-            <tbody>${topicRows || '<tr><td colspan="4" class="placeholder-row">No topic totals found for this slot.</td></tr>'}</tbody>
+            <thead><tr><th>Program title</th><th>Airings</th><th>Allocated to slot</th><th>Full-airing $</th><th>Fundraisers / dates</th></tr></thead>
+            <tbody>${titleRows || '<tr><td colspan="5" class="placeholder-row">No program titles are attached to this slot yet.</td></tr>'}</tbody>
           </table>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap performance-slot-drill-secondary">
           <table class="programs-table">
             <thead><tr><th>Date / time</th><th>Fundraiser</th><th>Title</th><th>Allocated to slot</th><th>Total airing $</th></tr></thead>
             <tbody>${airingRows || '<tr><td colspan="5" class="placeholder-row">No actual airings are attached to this slot yet.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="table-wrap performance-slot-drill-topics">
+          <table class="programs-table">
+            <thead><tr><th>Topic</th><th>Airings</th><th>Allocated dollars</th><th>${utils.escapeHtml(metricLabel())}</th></tr></thead>
+            <tbody>${topicRows || '<tr><td colspan="4" class="placeholder-row">No topic totals found for this slot.</td></tr>'}</tbody>
           </table>
         </div>
       </div>
@@ -2688,6 +2773,7 @@
     perf().excludedReviewRows = [];
     perf().topicSlotWinnerGroups = null;
     perf().slotDrillKey = '';
+    perf().slotDrillMode = 'winner';
   }
 
 
@@ -2792,10 +2878,17 @@
       const trigger = event.target?.closest?.('[data-slot-drill-key]');
       if (!trigger) return;
       perf().slotDrillKey = trigger.dataset.slotDrillKey || '';
+      perf().slotDrillMode = 'winner';
       renderAll();
     };
     els.performanceChart?.addEventListener('click', handleSlotDrillClick);
     els.performanceTableBody?.addEventListener('click', handleSlotDrillClick);
+    els.performanceSlotDrilldown?.addEventListener('click', (event) => {
+      const modeButton = event.target?.closest?.('[data-slot-drill-mode]');
+      if (!modeButton) return;
+      perf().slotDrillMode = modeButton.dataset.slotDrillMode || 'all';
+      renderSlotDrilldown();
+    });
     window.addEventListener('scroll', hideQuickFilterTooltip, { passive: true });
     window.addEventListener('resize', hideQuickFilterTooltip);
   }
