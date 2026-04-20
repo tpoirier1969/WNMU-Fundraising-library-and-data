@@ -2323,8 +2323,7 @@
     document.querySelectorAll('[data-performance-quick-filter]').forEach((button) => {
       const name = button.dataset.performanceQuickFilter || '';
       const tip = quickFilterTooltipData(name);
-      const titleText = [tip.title, '', `What you can learn: ${tip.learn}`, tip.preset ? `Preset: ${tip.preset}` : '', tip.explain ? `What it shows: ${tip.explain}` : '', 'Changing other filters:', ...tip.effects.map((line) => `- ${line}`)].filter(Boolean).join('\n');
-      button.setAttribute('title', titleText);
+      button.removeAttribute('title');
       button.setAttribute('aria-label', `${tip.title}. ${tip.learn}`);
     });
   }
