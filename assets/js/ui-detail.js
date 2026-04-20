@@ -588,7 +588,7 @@
         pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
         `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}`,
         pt.insight?.topicNote || ''
-      ].filter(Boolean).join(' | ');
+      ].filter(Boolean).join('\n');
       return `<g><circle cx="${pt.x}" cy="${pt.expectedY}" r="3.5" class="detail-graph-expected-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
     }).join('');
     const dots = points.map((pt) => {
@@ -597,14 +597,14 @@
         `${utils.formatMoney(pt.amount)}${Number.isFinite(pt.pledges) && pt.pledges > 0 ? ` · ${utils.formatCount(pt.pledges)} pledges` : ''}`,
         pt.expectedTopicAmount != null ? `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}` : 'Topic expectation thin',
         pt.insight?.combinedNote || ''
-      ].filter(Boolean).join(' | ');
+      ].filter(Boolean).join('\n');
       return `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
     }).join('');
     const pointLabels = points.map((pt, index) => {
-      const shortDay = utils.escapeHtml((pt.dayLabel || 'Day').slice(0, 3));
+      const fullDay = utils.escapeHtml(pt.dayLabel || 'Unknown day');
       const timeText = utils.escapeHtml(pt.timeLabel || 'Unknown time');
-      const slotLine = `${shortDay} ${timeText}`;
-      const noteLine = utils.escapeHtml(pt.insight?.vsTopicNote || pt.insight?.topicNote || 'Topic expectation thin');
+      const slotLine = `${timeText}`;
+      const noteLine = fullDay;
       const anchor = index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle';
       const labelX = index === 0 ? pt.x + 8 : index === points.length - 1 ? pt.x - 8 : pt.x;
       const labelAbove = (index % 2 === 0 && pt.y > (margin.top + 30)) || pt.y > (margin.top + innerH * 0.72);
@@ -621,11 +621,11 @@
     const latest = points[points.length - 1];
     const latestWhen = latest.when instanceof Date && !Number.isNaN(latest.when.getTime()) ? `${detailDateLabel(latest.when)} · ${latest.row && detailRecordHasExplicitTime(latest.row) ? detailTimeLabel(latest.when) : 'Unknown time'}` : utils.formatDate(latest.dateKey, latest.dateKey);
     const latestExpectedText = latest.expectedTopicAmount != null ? ` vs topic-expected ${utils.formatMoney(latest.expectedTopicAmount)}` : '';
-    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · blue = actual dollars, orange = topic expectation for that day/time slot. Latest: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} on ${utils.escapeHtml(latestWhen)}`;
+    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · blue = actual dollars, orange = expected results by topic for that day/time slot. Latest: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} on ${utils.escapeHtml(latestWhen)}`;
     const legend = `
       <div class="detail-graph-legend" aria-hidden="true">
         <span><span class="detail-graph-swatch detail-graph-swatch-actual"></span>Actual</span>
-        <span><span class="detail-graph-swatch detail-graph-swatch-expected"></span>Topic expected</span>
+        <span><span class="detail-graph-swatch detail-graph-swatch-expected"></span>Expected results by topic</span>
       </div>`;
     els.detailPerformanceGraph.innerHTML = `
       <div class="detail-graph-summary">${summary}</div>
