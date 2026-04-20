@@ -3788,6 +3788,11 @@ button.primary {
 }
 
 .topic-time-cell.slot-drill-trigger { appearance:none; border:none; width:100%; cursor:pointer; font:inherit; }
+
+.performance-drill-trigger { cursor:pointer; }
+.performance-drill-trigger:focus-visible { outline:2px solid rgba(15,95,140,0.4); outline-offset:2px; }
+.performance-drill-row { cursor:pointer; }
+.performance-drill-row:hover td { background:rgba(18,62,107,0.04); }
 .topic-time-cell.slot-drill-trigger:focus-visible, .topic-time-cell.active-drill { outline:3px solid rgba(255,255,255,0.9); outline-offset:-3px; }
 .performance-slot-drilldown { display:grid; gap:14px; }
 .performance-slot-drill-empty { color:#5b687b; line-height:1.45; }

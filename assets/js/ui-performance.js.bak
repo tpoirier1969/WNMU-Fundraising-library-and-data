@@ -200,20 +200,6 @@
     return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 
-  function formatRecordDateTime(record) {
-    if (record?.hasDate && record?.hasExplicitTime && record?.when instanceof Date && !Number.isNaN(record.when.getTime())) {
-      return record.when.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-    }
-    if (record?.hasDate) return dateLabel(record);
-    return 'Unknown date';
-  }
-
-  function recordFundraiserLabel(record) {
-    const firstSource = Array.isArray(record?.sampleSourceRows) ? (record.sampleSourceRows[0] || {}) : {};
-    return utils.firstNonEmpty(firstSource.fundraiser_label, firstSource.drive_label, firstSource.fundraiser_name, firstSource.source_file_name, 'Unknown fundraiser');
-  }
-
-
   function splitTopicTokens(...values) {
     const tokens = [];
     values.flat().forEach((value) => {
@@ -1386,7 +1372,9 @@
         ? `<g class="svg-program-link" data-program-open-id="${utils.escapeHtml(group.programOpenId)}" tabindex="0" role="button" aria-label="${utils.escapeHtml(`Open details for ${group.label}`)}"><text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text></g>`
         : `<text x="${x + barW / 2}" y="${top + chartH + 16}" font-size="11" text-anchor="end" transform="rotate(-35 ${x + barW / 2} ${top + chartH + 16})" fill="#14314f">${utils.escapeHtml(label)}</text>`;
       return `
-        <g class="performance-drill-trigger" data-performance-drill-key="${utils.escapeHtml(group.label || '')}" tabindex="0" role="button" aria-label="${utils.escapeHtml(`Inspect ${group.label}`)}">\n        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="${group.belowSampleThreshold ? '#6f879f' : '#123e6b'}"><title>${utils.escapeHtml(title)}</title></rect>\n        <text x="${x + barW / 2}" y="${y - 8}" font-size="11" text-anchor="middle" fill="#183a5f">${utils.escapeHtml(display)}</text>\n        </g>\n        ${labelNode}
+        <rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="6" fill="${group.belowSampleThreshold ? '#6f879f' : '#123e6b'}"><title>${utils.escapeHtml(title)}</title></rect>
+        <text x="${x + barW / 2}" y="${y - 8}" font-size="11" text-anchor="middle" fill="#183a5f">${utils.escapeHtml(display)}</text>
+        ${labelNode}
       `;
     }).join('');
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${utils.escapeHtml(metricLabel())} by ${utils.escapeHtml(criterionDisplayName())}">${grid}${bars}</svg>`;
@@ -1416,7 +1404,8 @@
       return `<text x="${point.x}" y="${height - 18}" font-size="11" text-anchor="middle" fill="#526174">${utils.escapeHtml(point.label)}</text>`;
     }).join('');
     const dots = points.map((point) => `
-      <g class="performance-drill-trigger" data-performance-drill-key="${utils.escapeHtml(point.group.label || '')}" tabindex="0" role="button" aria-label="${utils.escapeHtml(`Inspect ${point.label}`)}">\n      <circle cx="${point.x}" cy="${point.y}" r="4" fill="${point.group.belowSampleThreshold ? '#6f879f' : '#123e6b'}"><title>${utils.escapeHtml(`${point.label}: ${metricDisplay(point.group, { includeCount: true })} · ${utils.formatCount(point.group.titleCount)} titles${point.group.belowSampleThreshold ? ' · Low sample' : ''}`)}</title></circle>\n      <text x="${point.x}" y="${point.y - 10}" font-size="11" text-anchor="middle" fill="#173a5e">${utils.escapeHtml(metricDisplay(point.group, { includeCount: true }))}</text>\n      </g>
+      <circle cx="${point.x}" cy="${point.y}" r="4" fill="${point.group.belowSampleThreshold ? '#6f879f' : '#123e6b'}"><title>${utils.escapeHtml(`${point.label}: ${metricDisplay(point.group, { includeCount: true })} · ${utils.formatCount(point.group.titleCount)} titles${point.group.belowSampleThreshold ? ' · Low sample' : ''}`)}</title></circle>
+      <text x="${point.x}" y="${point.y - 10}" font-size="11" text-anchor="middle" fill="#173a5e">${utils.escapeHtml(metricDisplay(point.group, { includeCount: true }))}</text>
     `).join('');
     const grid = yTicks.map((tick) => `
       <line x1="${left}" y1="${tick.y}" x2="${left + chartW}" y2="${tick.y}" stroke="#dce8f6" stroke-width="1"></line>
@@ -1457,7 +1446,7 @@
         const alpha = intensity.toFixed(3);
         const title = `${group.label}: ${metricDisplay(group, { includeCount: true })}${group.belowSampleThreshold ? ' · Low sample' : ''}`;
         const cellClass = group.belowSampleThreshold ? 'topic-time-cell low-sample' : 'topic-time-cell';
-        return `<button type="button" class="${cellClass} slot-drill-trigger${perf().slotDrillKey === group.label ? ' active-drill' : ''}" data-performance-drill-key="${utils.escapeHtml(group.label)}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(metricDisplay(group))}</span><small>${utils.escapeHtml(utils.formatCount(group.airingCount))}${group.belowSampleThreshold ? ' · low sample' : ''}</small></button>`;
+        return `<div class="${cellClass}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(metricDisplay(group))}</span><small>${utils.escapeHtml(utils.formatCount(group.airingCount))}${group.belowSampleThreshold ? ' · low sample' : ''}</small></div>`;
       }).join('');
       return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(day)}</div>${cells}</div>`;
     }).join('');
@@ -1537,7 +1526,7 @@
         const alpha = Math.max(0.12, Math.min(0.92, value / maxMetric)).toFixed(3);
         const display = metricDisplay(cell);
         const title = `${row.label} · ${cell.label}: ${display} (${utils.formatCount(cell.airingCount)} airings)`;
-        return `<button type="button" class="topic-time-cell slot-drill-trigger${perf().slotDrillKey === `${row.label} · ${cell.label}` ? ' active-drill' : ''}" data-performance-drill-key="${utils.escapeHtml(`${row.label} · ${cell.label}`)}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(display)}</span><small>${utils.escapeHtml(utils.formatCount(cell.airingCount))}</small></button>`;
+        return `<div class="topic-time-cell" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(display)}</span><small>${utils.escapeHtml(utils.formatCount(cell.airingCount))}</small></div>`;
       }).join('');
       return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(row.label)}</div>${cells}</div>`;
     }).join('');
@@ -1578,7 +1567,7 @@
         const alpha = Math.max(0.12, Math.min(0.92, metricValue(group) / maxMetric)).toFixed(3);
         const title = `${row.topic} · ${col}: ${metricDisplay(group, { includeCount: true })}`;
         const badge = group.belowSampleThreshold ? ' · low sample' : '';
-        return `<button type="button" class="topic-time-cell${group.belowSampleThreshold ? ' low-sample' : ''} slot-drill-trigger${perf().slotDrillKey === group.label ? ' active-drill' : ''}" data-performance-drill-key="${utils.escapeHtml(group.label)}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(metricDisplay(group))}</span><small>${utils.escapeHtml(utils.formatCount(group.airingCount))}${badge}</small></button>`;
+        return `<div class="topic-time-cell${group.belowSampleThreshold ? ' low-sample' : ''}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(metricDisplay(group))}</span><small>${utils.escapeHtml(utils.formatCount(group.airingCount))}${badge}</small></div>`;
       }).join('');
       return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(row.topic)}</div>${cells}</div>`;
     }).join('');
@@ -1807,7 +1796,7 @@
         if (!slot) return '<div class="topic-time-cell empty">—</div>';
         if (!slot.winner && slot.hasOnlyZeroIncome) {
           const title = `${slot.label}: ${slot.zeroIncomeSummary}`;
-          return `<button type="button" class="topic-time-cell topic-winner-cell zero-income slot-drill-trigger${perf().slotDrillKey === slot.key ? ' active-drill' : ''}" data-performance-drill-key="${utils.escapeHtml(slot.key)}" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(utils.formatCount(slot.zeroIncomeAirings))} airings</span><small>No income</small></button>`;
+          return `<div class="topic-time-cell topic-winner-cell zero-income" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(utils.formatCount(slot.zeroIncomeAirings))} airings</span><small>No income</small></div>`;
         }
         if (!slot.winner) return '<div class="topic-time-cell empty">—</div>';
         const value = metricValue(slot.winner);
@@ -1815,7 +1804,7 @@
         const runnerText = slot.runnerUp ? ` | Runner-up: ${slot.runnerUp.topic} (${metricDisplay(slot.runnerUp, { includeCount: true })})` : '';
         const title = `${slot.label}: ${slot.winner.topic} wins with ${metricDisplay(slot.winner, { includeCount: true })}${runnerText}`;
         const lowClass = slot.winner.belowSampleThreshold ? ' low-sample' : '';
-        return `<button type="button" class="topic-time-cell topic-winner-cell${lowClass} slot-drill-trigger${perf().slotDrillKey === slot.key ? ' active-drill' : ''}" data-performance-drill-key="${utils.escapeHtml(slot.key)}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(truncateTopicLabel(slot.winner.topic, 16))}</span><small>${utils.escapeHtml(metricDisplay(slot.winner))}</small></button>`;
+        return `<div class="topic-time-cell topic-winner-cell${lowClass}" style="background: rgba(18, 62, 107, ${alpha});" title="${utils.escapeHtml(title)}"><span>${utils.escapeHtml(truncateTopicLabel(slot.winner.topic, 16))}</span><small>${utils.escapeHtml(metricDisplay(slot.winner))}</small></div>`;
       }).join('');
       return `<div class="topic-time-row"><div class="topic-time-day">${utils.escapeHtml(day)}</div>${cells}</div>`;
     }).join('');
@@ -1840,7 +1829,7 @@
       if (!slot.winner && slot.hasOnlyZeroIncome) {
         return `
           <tr>
-            <td><button type="button" class="performance-slot-link-btn" data-performance-drill-key="${utils.escapeHtml(slot.key)}">${utils.escapeHtml(slot.label)}</button></td>
+            <td><button type="button" class="performance-slot-link-btn" data-slot-drill-key="${utils.escapeHtml(slot.key)}">${utils.escapeHtml(slot.label)}</button></td>
             <td>${utils.escapeHtml(utils.formatCount(slot.zeroIncomeAirings))}</td>
             <td>${utils.escapeHtml(utils.formatMoney(0))}</td>
             <td>No positive winner</td>
@@ -1855,7 +1844,7 @@
       const note = winner.belowSampleThreshold ? 'Low sample winner' : `${winner.topic} is the current slot leader`;
       return `
         <tr>
-          <td><button type="button" class="performance-slot-link-btn" data-performance-drill-key="${utils.escapeHtml(slot.key)}">${utils.escapeHtml(slot.label)}</button></td>
+          <td><button type="button" class="performance-slot-link-btn" data-slot-drill-key="${utils.escapeHtml(slot.key)}">${utils.escapeHtml(slot.label)}</button></td>
           <td>${utils.escapeHtml(utils.formatCount(winner.airingCount))}</td>
           <td>${utils.escapeHtml(utils.formatMoney(winner.totalDollars))}</td>
           <td>${utils.escapeHtml(`${winner.topic} · ${metricDisplay(winner, { includeCount: true })}`)}</td>
@@ -1867,190 +1856,6 @@
     return true;
   }
 
-  function buildDaypartDrillGroups(records) {
-    const { rows } = buildDaypartDaySetGroups(records || []);
-    return rows.flatMap((row) => row.cells
-      .filter((cell) => cell.airingCount > 0)
-      .map((cell) => ({
-        key: `${row.label} · ${cell.label}`,
-        label: `${row.label} · ${cell.label}`,
-        airingCount: cell.airingCount,
-        totalDollars: cell.totalDollars,
-        totalPledges: cell.totalPledges,
-        totalSustainers: cell.totalSustainers,
-        totalMinutes: cell.totalMinutes,
-        avgDollars: cell.avgDollars,
-        avgPledges: cell.avgPledges,
-        avgSustainers: cell.avgSustainers,
-        dollarsPerPledge: cell.dollarsPerPledge,
-        dollarsPerMinute: cell.dollarsPerMinute,
-        pledgesPerMinute: cell.pledgesPerMinute,
-        titleCount: 0,
-        titles: [],
-        belowSampleThreshold: minSampleThreshold() > 1 && cell.airingCount < minSampleThreshold()
-      })));
-  }
-
-  function currentDrillGroups() {
-    if (perf().quickFilter === 'topic_slot_winners') return currentTopicSlotWinnerGroups(perf().filteredRecords || []).filter((slot) => slot.winner || slot.hasOnlyZeroIncome);
-    if (perf().criterion === 'daypart' && ['split_line', 'heatmap'].includes(effectiveChartType())) return buildDaypartDrillGroups(perf().filteredRecords || []);
-    return Array.isArray(perf().groups) ? perf().groups : [];
-  }
-
-  function recordsForDrillLabel(label) {
-    const criterion = perf().criterion;
-    return (perf().filteredRecords || []).filter((record) => {
-      if (perf().criterion === 'daypart' && ['split_line', 'heatmap'].includes(effectiveChartType())) {
-        return `${daySetLabel(daySetKeyForRecord(record))} · ${daypartLabel(record)}` === label;
-      }
-      return criterionLabel(record, criterion) === label;
-    });
-  }
-
-  function buildStandardDrillContext(selected) {
-    const records = recordsForDrillLabel(selected.label).slice().sort((a, b) => {
-      const at = a?.when instanceof Date && !Number.isNaN(a.when.getTime()) ? a.when.getTime() : Number.MAX_SAFE_INTEGER;
-      const bt = b?.when instanceof Date && !Number.isNaN(b.when.getTime()) ? b.when.getTime() : Number.MAX_SAFE_INTEGER;
-      if (at !== bt) return at - bt;
-      return utils.compareText(a?.title || '', b?.title || '');
-    });
-    const titleMap = new Map();
-    const topicMap = new Map();
-    records.forEach((record) => {
-      const key = `${record.programId || 'na'}|${utils.normalizeText(record.title || 'Unknown title') || 'unknown'}`;
-      if (!titleMap.has(key)) {
-        titleMap.set(key, {
-          programId: record.programId,
-          title: record.title || 'Unknown title',
-          topic: slotTopicLabel(record),
-          airings: 0,
-          totalDollars: 0,
-          firstWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
-          lastWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
-          fundraisers: new Set()
-        });
-      }
-      const bucket = titleMap.get(key);
-      bucket.airings += 1;
-      bucket.totalDollars += Number(record.amount) || 0;
-      const rowWhen = record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null;
-      if (rowWhen && (!bucket.firstWhen || rowWhen.getTime() < bucket.firstWhen.getTime())) bucket.firstWhen = rowWhen;
-      if (rowWhen && (!bucket.lastWhen || rowWhen.getTime() > bucket.lastWhen.getTime())) bucket.lastWhen = rowWhen;
-      bucket.fundraisers.add(recordFundraiserLabel(record));
-
-      const topic = slotTopicLabel(record);
-      if (!topicMap.has(topic)) topicMap.set(topic, emptyMetricCell(topic));
-      aggregateMetricCell(topicMap.get(topic), record);
-    });
-    const titleRows = [...titleMap.values()].sort((a, b) => {
-      const diff = (Number(b.totalDollars) || 0) - (Number(a.totalDollars) || 0);
-      if (diff !== 0) return diff;
-      return utils.compareText(a.title, b.title);
-    }).map((bucket) => {
-      const titleHtml = App.programLinks?.render
-        ? App.programLinks.render({ programId: bucket.programId, title: bucket.title || 'Unknown title', className: 'performance-program-link' })
-        : utils.escapeHtml(bucket.title || 'Unknown title');
-      const fundraisers = [...bucket.fundraisers].slice(0, 2);
-      const extraCount = Math.max(0, bucket.fundraisers.size - fundraisers.length);
-      const fundraiserText = fundraisers.length ? `${fundraisers.join(' · ')}${extraCount ? ` +${extraCount} more` : ''}` : 'Unknown fundraiser';
-      const spanText = bucket.firstWhen && bucket.lastWhen
-        ? (bucket.firstWhen.getTime() === bucket.lastWhen.getTime()
-          ? formatRecordDateTime({ hasDate:true, hasExplicitTime:true, when: bucket.firstWhen })
-          : `${bucket.firstWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} → ${bucket.lastWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`)
-        : 'Date unknown';
-      const avg = bucket.airings ? bucket.totalDollars / bucket.airings : 0;
-      return `
-        <tr>
-          <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(bucket.topic || 'Unassigned topic')}</span></td>
-          <td>${utils.escapeHtml(utils.formatCount(bucket.airings))}</td>
-          <td>${utils.escapeHtml(utils.formatMoney(bucket.totalDollars))}</td>
-          <td>${utils.escapeHtml(utils.formatMoney(avg))}</td>
-          <td>${utils.escapeHtml(fundraiserText)}<span class="performance-slot-airing-meta">${utils.escapeHtml(spanText)}</span></td>
-        </tr>
-      `;
-    }).join('');
-    const airingRows = records.map((record) => {
-      const titleHtml = App.programLinks?.render
-        ? App.programLinks.render({ programId: record.programId, title: record.title || 'Unknown title', className: 'performance-program-link' })
-        : utils.escapeHtml(record.title || 'Unknown title');
-      return `
-        <tr>
-          <td>${utils.escapeHtml(formatRecordDateTime(record))}</td>
-          <td>${utils.escapeHtml(recordFundraiserLabel(record))}</td>
-          <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(slotTopicLabel(record))}</span></td>
-          <td>${utils.escapeHtml(utils.formatMoney(record.amount || 0))}</td>
-          <td>${utils.escapeHtml(utils.formatCount(record.pledges || 0))}</td>
-        </tr>
-      `;
-    }).join('');
-    const topicRows = [...topicMap.entries()].map(([topic, cell]) => ({ topic, ...finalizeMetricCell(cell) })).sort((a, b) => {
-      const diff = metricValue(b) - metricValue(a);
-      if (diff !== 0) return diff;
-      return utils.compareText(a.topic, b.topic);
-    }).map((group) => `
-      <tr>
-        <td>${utils.escapeHtml(group.topic)}</td>
-        <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
-        <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
-        <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
-      </tr>
-    `).join('');
-    return {
-      pill: selected.label,
-      empty: false,
-      summary: [
-        ['Focus', selected.label],
-        [criterionDisplayName(), selected.label],
-        ['Airings', utils.formatCount(selected.airingCount || records.length)],
-        ['Current metric', metricDisplay(selected, { includeCount: true })]
-      ],
-      note: `This drill-down shows the actual titles, airings, and topic mix behind ${selected.label}.`,
-      subnote: `Built from ${utils.formatCount(records.length)} contributing airings in the current filter window.`,
-      titleHeaders: ['Program title', 'Airings', 'Total $', 'Avg $ / airing', 'Fundraisers / dates'],
-      titleRows: titleRows || '<tr><td colspan="5" class="placeholder-row">No program titles are attached to this result yet.</td></tr>',
-      airingHeaders: ['Date / time', 'Fundraiser', 'Title', 'Dollars', 'Pledges'],
-      airingRows: airingRows || '<tr><td colspan="5" class="placeholder-row">No actual airings are attached to this result yet.</td></tr>',
-      topicHeaders: ['Topic', 'Airings', 'Total dollars', metricLabel()],
-      topicRows: topicRows || '<tr><td colspan="4" class="placeholder-row">No topic totals found for this result.</td></tr>',
-      controls: '',
-      titleClass: 'performance-slot-drill-primary',
-      airingClass: 'performance-slot-drill-secondary',
-      topicClass: 'performance-slot-drill-topics'
-    };
-  }
-
-  function renderDrillContext(context) {
-    els.performanceSlotDrillPill.textContent = context.pill || 'Analytics drill-down';
-    els.performanceSlotDrilldown.innerHTML = `
-      <div class="performance-slot-drill-summary">
-        ${context.summary.map(([label, value]) => `<div class="performance-slot-drill-stat"><span class="label">${utils.escapeHtml(label)}</span><span class="value">${utils.escapeHtml(String(value))}</span></div>`).join('')}
-      </div>
-      <div class="performance-slot-drill-note">${utils.escapeHtml(context.note || '')}</div>
-      ${context.controls || ''}
-      ${context.subnote ? `<div class="performance-slot-drill-subnote">${utils.escapeHtml(context.subnote)}</div>` : ''}
-      <div class="performance-slot-drill-grid">
-        <div class="table-wrap ${context.titleClass || 'performance-slot-drill-primary'}">
-          <table class="programs-table">
-            <thead><tr>${(context.titleHeaders || []).map((header) => `<th>${utils.escapeHtml(header)}</th>`).join('')}</tr></thead>
-            <tbody>${context.titleRows || ''}</tbody>
-          </table>
-        </div>
-        <div class="table-wrap ${context.airingClass || 'performance-slot-drill-secondary'}">
-          <table class="programs-table">
-            <thead><tr>${(context.airingHeaders || []).map((header) => `<th>${utils.escapeHtml(header)}</th>`).join('')}</tr></thead>
-            <tbody>${context.airingRows || ''}</tbody>
-          </table>
-        </div>
-        <div class="table-wrap ${context.topicClass || 'performance-slot-drill-topics'}">
-          <table class="programs-table">
-            <thead><tr>${(context.topicHeaders || []).map((header) => `<th>${utils.escapeHtml(header)}</th>`).join('')}</tr></thead>
-            <tbody>${context.topicRows || ''}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
-
   function currentTopicSlotWinnerGroups(records = null) {
     if (Array.isArray(perf().topicSlotWinnerGroups)) return perf().topicSlotWinnerGroups;
     const built = buildTopicSlotWinnerGroups(records || perf().filteredRecords || []);
@@ -2060,133 +1865,163 @@
 
   function renderSlotDrilldown() {
     if (!els.performanceSlotDrilldown || !els.performanceSlotDrillPill) return;
-    if (perf().quickFilter === 'topic_slot_winners') {
-      const slots = currentTopicSlotWinnerGroups(perf().filteredRecords || []).filter((slot) => slot.winner || slot.hasOnlyZeroIncome);
-      if (!slots.length) {
-        els.performanceSlotDrillPill.textContent = 'No slot data';
-        els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">No slot-level rows match the current filter window yet.</div>';
-        return;
-      }
-      const selected = slots.find((slot) => slot.key === perf().slotDrillKey) || null;
-      if (!selected) {
-        els.performanceSlotDrillPill.textContent = 'Click a result';
-        els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Click a filled slot in the heatmap or its row in the comparison table to see the exact titles, fundraisers, and slot-level dollars behind it.</div>';
-        return;
-      }
-      const topicGroups = (selected.topicGroups || []).filter((group) => group.airingCount > 0);
-      const availableModes = [];
-      if (selected.winner && Array.isArray(selected.winner.entries) && selected.winner.entries.length) availableModes.push('winner');
-      availableModes.push('all');
-      if (!availableModes.includes(perf().slotDrillMode)) perf().slotDrillMode = availableModes[0] || 'all';
-      const drillMode = perf().slotDrillMode || 'all';
-      const visibleEntries = ((drillMode === 'winner' && selected.winner) ? (selected.winner.entries || []) : (selected.contributions || [])).slice().sort((a, b) => {
-        const at = a?.record?.when instanceof Date && !Number.isNaN(a.record.when.getTime()) ? a.record.when.getTime() : Number.MAX_SAFE_INTEGER;
-        const bt = b?.record?.when instanceof Date && !Number.isNaN(b.record.when.getTime()) ? b.record.when.getTime() : Number.MAX_SAFE_INTEGER;
-        if (at !== bt) return at - bt;
-        return utils.compareText(a?.record?.title || '', b?.record?.title || '');
-      });
-      const modeSummary = drillMode === 'winner' && selected.winner ? `Showing only the current winning topic: ${selected.winner.topic}.` : 'Showing all topics that competed in this slot.';
-      const topicRows = topicGroups.map((group) => `
-        <tr>
-          <td>${utils.escapeHtml(group.topic)}</td>
-          <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
-          <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
-          <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
-        </tr>
-      `).join('');
-      const titleMap = new Map();
-      visibleEntries.forEach((entry) => {
-        const record = entry.record || {};
-        const key = `${record.programId || 'na'}|${utils.normalizeText(record.title || 'Unknown title') || 'unknown'}`;
-        if (!titleMap.has(key)) {
-          titleMap.set(key, {
-            programId: record.programId,
-            title: record.title || 'Unknown title',
-            topic: entry.topic || slotTopicLabel(record),
-            airings: 0,
-            allocatedDollars: 0,
-            totalDollars: 0,
-            firstWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
-            lastWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
-            fundraisers: new Set()
-          });
-        }
-        const bucket = titleMap.get(key);
-        bucket.airings += 1;
-        bucket.allocatedDollars += Number(entry.allocatedDollars) || 0;
-        bucket.totalDollars += Number(record.amount) || 0;
-        const rowWhen = record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null;
-        if (rowWhen && (!bucket.firstWhen || rowWhen.getTime() < bucket.firstWhen.getTime())) bucket.firstWhen = rowWhen;
-        if (rowWhen && (!bucket.lastWhen || rowWhen.getTime() > bucket.lastWhen.getTime())) bucket.lastWhen = rowWhen;
-        bucket.fundraisers.add(recordFundraiserLabel(record));
-      });
-      const titleRows = [...titleMap.values()].sort((a, b) => {
-        const diff = (Number(b.allocatedDollars) || 0) - (Number(a.allocatedDollars) || 0);
-        if (diff !== 0) return diff;
-        if (b.airings !== a.airings) return b.airings - a.airings;
-        return utils.compareText(a.title, b.title);
-      }).map((bucket) => {
-        const titleHtml = App.programLinks?.render ? App.programLinks.render({ programId: bucket.programId, title: bucket.title || 'Unknown title', className: 'performance-program-link' }) : utils.escapeHtml(bucket.title || 'Unknown title');
-        const fundraisers = [...bucket.fundraisers].slice(0, 2);
-        const extraCount = Math.max(0, bucket.fundraisers.size - fundraisers.length);
-        const fundraiserText = fundraisers.length ? `${fundraisers.join(' · ')}${extraCount ? ` +${extraCount} more` : ''}` : 'Unknown fundraiser';
-        const spanText = bucket.firstWhen && bucket.lastWhen
-          ? (bucket.firstWhen.getTime() === bucket.lastWhen.getTime() ? formatRecordDateTime({ hasDate: true, hasExplicitTime: true, when: bucket.firstWhen }) : `${bucket.firstWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} → ${bucket.lastWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`)
-          : 'Date unknown';
-        return `
-          <tr>
-            <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(bucket.topic || 'Unassigned topic')}</span></td>
-            <td>${utils.escapeHtml(utils.formatCount(bucket.airings))}</td>
-            <td>${utils.escapeHtml(utils.formatMoney(bucket.allocatedDollars))}</td>
-            <td>${utils.escapeHtml(utils.formatMoney(bucket.totalDollars))}</td>
-            <td>${utils.escapeHtml(fundraiserText)}<span class="performance-slot-airing-meta">${utils.escapeHtml(spanText)}</span></td>
-          </tr>
-        `;
-      }).join('');
-      const airingRows = visibleEntries.map((entry) => {
-        const record = entry.record || {};
-        const titleHtml = App.programLinks?.render ? App.programLinks.render({ programId: record.programId, title: record.title || 'Unknown title', className: 'performance-program-link' }) : utils.escapeHtml(record.title || 'Unknown title');
-        return `
-          <tr>
-            <td>${utils.escapeHtml(formatRecordDateTime(record))}</td>
-            <td>${utils.escapeHtml(recordFundraiserLabel(record))}</td>
-            <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(entry.topic || 'Unassigned topic')}</span></td>
-            <td>${utils.escapeHtml(utils.formatMoney(entry.allocatedDollars))}</td>
-            <td>${utils.escapeHtml(utils.formatMoney(record.amount || 0))}</td>
-          </tr>
-        `;
-      }).join('');
-      const summaryWinner = selected.winner ? `${selected.winner.topic} · ${metricDisplay(selected.winner, { includeCount: true })}` : (selected.zeroIncomeSummary || 'No positive winner');
-      return renderDrillContext({
-        pill: selected.label,
-        summary: [['Slot', selected.label], ['Current winner', summaryWinner], ['Airings in slot', utils.formatCount(selected.totalSlotAirings)], ['Topics represented', utils.formatCount(topicGroups.length)]],
-        note: 'These dollars are the amounts allocated to this specific 30-minute slot, not always the full-airing totals. Long programs are split across each half-hour block they occupy.',
-        controls: `<div class="performance-slot-drill-controls" role="group" aria-label="Analytics drill-down view">${selected.winner ? `<button type="button" class="performance-slot-mode-btn${drillMode === 'winner' ? ' active' : ''}" data-slot-drill-mode="winner">Winner only</button>` : ''}<button type="button" class="performance-slot-mode-btn${drillMode === 'all' ? ' active' : ''}" data-slot-drill-mode="all">All topics in this slot</button></div>`,
-        subnote: modeSummary,
-        titleHeaders: ['Program title', 'Airings', 'Allocated to slot', 'Full-airing $', 'Fundraisers / dates'],
-        titleRows: titleRows || '<tr><td colspan="5" class="placeholder-row">No program titles are attached to this slot yet.</td></tr>',
-        airingHeaders: ['Date / time', 'Fundraiser', 'Title', 'Allocated to slot', 'Total airing $'],
-        airingRows: airingRows || '<tr><td colspan="5" class="placeholder-row">No actual airings are attached to this slot yet.</td></tr>',
-        topicHeaders: ['Topic', 'Airings', 'Allocated dollars', metricLabel()],
-        topicRows: topicRows || '<tr><td colspan="4" class="placeholder-row">No topic totals found for this slot.</td></tr>'
-      });
-    }
-
-    const groups = currentDrillGroups();
-    if (!groups.length) {
-      els.performanceSlotDrillPill.textContent = 'Analytics drill-down';
-      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Open an analytics view and click a chart element or a comparison-table row to inspect the exact titles, fundraisers, and airings behind that result.</div>';
+    if (perf().quickFilter !== 'topic_slot_winners') {
+      els.performanceSlotDrillPill.textContent = 'Slot drill-down';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Open <strong>Topic winners by slot</strong> and click a filled cell to inspect the exact titles, fundraisers, and slot-level dollars behind that result.</div>';
       return;
     }
-    const selected = groups.find((group) => (group.key || group.label) === perf().slotDrillKey) || null;
+    const slots = currentTopicSlotWinnerGroups(perf().filteredRecords || []).filter((slot) => slot.winner || slot.hasOnlyZeroIncome);
+    if (!slots.length) {
+      els.performanceSlotDrillPill.textContent = 'No slot data';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">No slot-level rows match the current filter window yet.</div>';
+      return;
+    }
+    const selected = slots.find((slot) => slot.key === perf().slotDrillKey) || null;
     if (!selected) {
-      els.performanceSlotDrillPill.textContent = 'Click a result';
-      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Click a bar, point, heatmap cell, or table row to see the exact titles, fundraisers, and airings behind that result.</div>';
+      els.performanceSlotDrillPill.textContent = 'Click a slot';
+      els.performanceSlotDrilldown.innerHTML = '<div class="performance-slot-drill-empty">Click any filled slot in the heatmap or its row in the comparison table to see which titles, fundraisers, and allocated dollars are behind it.</div>';
       return;
     }
-    renderDrillContext(buildStandardDrillContext(selected));
+    const topicGroups = (selected.topicGroups || []).filter((group) => group.airingCount > 0);
+    const availableModes = [];
+    if (selected.winner && Array.isArray(selected.winner.entries) && selected.winner.entries.length) availableModes.push('winner');
+    availableModes.push('all');
+    if (!availableModes.includes(perf().slotDrillMode)) perf().slotDrillMode = availableModes[0] || 'all';
+    const drillMode = perf().slotDrillMode || 'all';
+    const visibleEntries = ((drillMode === 'winner' && selected.winner)
+      ? (selected.winner.entries || [])
+      : (selected.contributions || [])).slice();
+    const sortedEntries = visibleEntries.sort((a, b) => {
+      const at = a?.record?.when instanceof Date && !Number.isNaN(a.record.when.getTime()) ? a.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+      const bt = b?.record?.when instanceof Date && !Number.isNaN(b.record.when.getTime()) ? b.record.when.getTime() : Number.MAX_SAFE_INTEGER;
+      if (at !== bt) return at - bt;
+      return utils.compareText(a?.record?.title || '', b?.record?.title || '');
+    });
+    const modeSummary = drillMode === 'winner' && selected.winner
+      ? `Showing only the current winning topic: ${selected.winner.topic}.`
+      : 'Showing all topics that competed in this slot.';
+    const topicRows = topicGroups.map((group) => `
+      <tr>
+        <td>${utils.escapeHtml(group.topic)}</td>
+        <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
+        <td>${utils.escapeHtml(metricDisplay(group, { includeCount: true }))}</td>
+      </tr>
+    `).join('');
+    const titleMap = new Map();
+    sortedEntries.forEach((entry) => {
+      const record = entry.record || {};
+      const key = `${record.programId || 'na'}|${utils.normalizeText(record.title || 'Unknown title') || 'unknown'}`;
+      if (!titleMap.has(key)) {
+        titleMap.set(key, {
+          programId: record.programId,
+          title: record.title || 'Unknown title',
+          topic: entry.topic || slotTopicLabel(record),
+          airings: 0,
+          allocatedDollars: 0,
+          totalDollars: 0,
+          firstWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
+          lastWhen: record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null,
+          fundraisers: new Set()
+        });
+      }
+      const bucket = titleMap.get(key);
+      bucket.airings += 1;
+      bucket.allocatedDollars += Number(entry.allocatedDollars) || 0;
+      bucket.totalDollars += Number(record.amount) || 0;
+      const rowWhen = record.when instanceof Date && !Number.isNaN(record.when.getTime()) ? record.when : null;
+      if (rowWhen && (!bucket.firstWhen || rowWhen.getTime() < bucket.firstWhen.getTime())) bucket.firstWhen = rowWhen;
+      if (rowWhen && (!bucket.lastWhen || rowWhen.getTime() > bucket.lastWhen.getTime())) bucket.lastWhen = rowWhen;
+      const firstSource = Array.isArray(record.sampleSourceRows) ? (record.sampleSourceRows[0] || {}) : {};
+      const fundraiser = utils.firstNonEmpty(firstSource.fundraiser_label, firstSource.drive_label, firstSource.fundraiser_name, firstSource.source_file_name, 'Unknown fundraiser');
+      if (fundraiser) bucket.fundraisers.add(fundraiser);
+    });
+    const titleRows = [...titleMap.values()].sort((a, b) => {
+      const diff = (Number(b.allocatedDollars) || 0) - (Number(a.allocatedDollars) || 0);
+      if (diff !== 0) return diff;
+      if (b.airings !== a.airings) return b.airings - a.airings;
+      return utils.compareText(a.title, b.title);
+    }).map((bucket) => {
+      const titleHtml = App.programLinks?.render
+        ? App.programLinks.render({ programId: bucket.programId, title: bucket.title || 'Unknown title', className: 'performance-program-link' })
+        : utils.escapeHtml(bucket.title || 'Unknown title');
+      const fundraisers = [...bucket.fundraisers].slice(0, 2);
+      const extraCount = Math.max(0, bucket.fundraisers.size - fundraisers.length);
+      const fundraiserText = fundraisers.length
+        ? `${fundraisers.join(' · ')}${extraCount ? ` +${extraCount} more` : ''}`
+        : 'Unknown fundraiser';
+      const spanText = bucket.firstWhen && bucket.lastWhen
+        ? (bucket.firstWhen.getTime() === bucket.lastWhen.getTime()
+          ? bucket.firstWhen.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+          : `${bucket.firstWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} → ${bucket.lastWhen.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`)
+        : 'Date unknown';
+      return `
+        <tr>
+          <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(bucket.topic || 'Unassigned topic')}</span></td>
+          <td>${utils.escapeHtml(utils.formatCount(bucket.airings))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(bucket.allocatedDollars))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(bucket.totalDollars))}</td>
+          <td>${utils.escapeHtml(fundraiserText)}<span class="performance-slot-airing-meta">${utils.escapeHtml(spanText)}</span></td>
+        </tr>
+      `;
+    }).join('');
+    const airingRows = sortedEntries.map((entry) => {
+      const record = entry.record || {};
+      const when = record.when instanceof Date && !Number.isNaN(record.when.getTime())
+        ? record.when.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        : utils.firstNonEmpty(record.date, 'Unknown date');
+      const titleHtml = App.programLinks?.render
+        ? App.programLinks.render({ programId: record.programId, title: record.title || 'Unknown title', className: 'performance-program-link' })
+        : utils.escapeHtml(record.title || 'Unknown title');
+      const firstSource = Array.isArray(record.sampleSourceRows) ? (record.sampleSourceRows[0] || {}) : {};
+      const fundraiser = utils.firstNonEmpty(firstSource.fundraiser_label, firstSource.drive_label, firstSource.fundraiser_name, firstSource.source_file_name, 'Unknown fundraiser');
+      return `
+        <tr>
+          <td>${utils.escapeHtml(when)}</td>
+          <td>${utils.escapeHtml(fundraiser)}</td>
+          <td>${titleHtml}<span class="performance-slot-airing-meta">${utils.escapeHtml(entry.topic || 'Unassigned topic')}</span></td>
+          <td>${utils.escapeHtml(utils.formatMoney(entry.allocatedDollars))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(record.amount || 0))}</td>
+        </tr>
+      `;
+    }).join('');
+    const summaryWinner = selected.winner ? `${selected.winner.topic} · ${metricDisplay(selected.winner, { includeCount: true })}` : (selected.zeroIncomeSummary || 'No positive winner');
+    els.performanceSlotDrillPill.textContent = selected.label;
+    els.performanceSlotDrilldown.innerHTML = `
+      <div class="performance-slot-drill-summary">
+        <div class="performance-slot-drill-stat"><span class="label">Slot</span><span class="value">${utils.escapeHtml(selected.label)}</span></div>
+        <div class="performance-slot-drill-stat"><span class="label">Current winner</span><span class="value">${utils.escapeHtml(summaryWinner)}</span></div>
+        <div class="performance-slot-drill-stat"><span class="label">Airings in slot</span><span class="value">${utils.escapeHtml(utils.formatCount(selected.totalSlotAirings))}</span></div>
+        <div class="performance-slot-drill-stat"><span class="label">Topics represented</span><span class="value">${utils.escapeHtml(utils.formatCount(topicGroups.length))}</span></div>
+      </div>
+      <div class="performance-slot-drill-note">These dollars are the amounts allocated to this specific 30-minute slot, not always the full-airing totals. Long programs are split across each half-hour block they occupy.</div>
+      <div class="performance-slot-drill-controls" role="group" aria-label="Slot drill-down view">
+        ${selected.winner ? `<button type="button" class="performance-slot-mode-btn${drillMode === 'winner' ? ' active' : ''}" data-slot-drill-mode="winner">Winner only</button>` : ''}
+        <button type="button" class="performance-slot-mode-btn${drillMode === 'all' ? ' active' : ''}" data-slot-drill-mode="all">All topics in this slot</button>
+      </div>
+      <div class="performance-slot-drill-subnote">${utils.escapeHtml(modeSummary)}</div>
+      <div class="performance-slot-drill-grid">
+        <div class="table-wrap performance-slot-drill-primary">
+          <table class="programs-table">
+            <thead><tr><th>Program title</th><th>Airings</th><th>Allocated to slot</th><th>Full-airing $</th><th>Fundraisers / dates</th></tr></thead>
+            <tbody>${titleRows || '<tr><td colspan="5" class="placeholder-row">No program titles are attached to this slot yet.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="table-wrap performance-slot-drill-secondary">
+          <table class="programs-table">
+            <thead><tr><th>Date / time</th><th>Fundraiser</th><th>Title</th><th>Allocated to slot</th><th>Total airing $</th></tr></thead>
+            <tbody>${airingRows || '<tr><td colspan="5" class="placeholder-row">No actual airings are attached to this slot yet.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="table-wrap performance-slot-drill-topics">
+          <table class="programs-table">
+            <thead><tr><th>Topic</th><th>Airings</th><th>Allocated dollars</th><th>${utils.escapeHtml(metricLabel())}</th></tr></thead>
+            <tbody>${topicRows || '<tr><td colspan="4" class="placeholder-row">No topic totals found for this slot.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
   }
-
 
   function renderChart(groups) {
     if (!els.performanceChart) return;
@@ -2267,7 +2102,7 @@
         : '';
       const confidence = confidenceForGroup(group);
       return `
-      <tr class="performance-drill-row" data-performance-drill-key="${utils.escapeHtml(group.label)}">
+      <tr>
         <td>${utils.escapeHtml(group.label)}${sampleNote}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
@@ -2302,7 +2137,7 @@
         : '';
       const confidence = confidenceForGroup(group);
       return `
-      <tr class="performance-drill-row" data-performance-drill-key="${utils.escapeHtml(group.label)}">
+      <tr>
         <td>${labelHtml}${sampleNote}</td>
         <td>${utils.escapeHtml(utils.formatCount(group.airingCount))}</td>
         <td>${utils.escapeHtml(utils.formatMoney(group.totalDollars))}</td>
@@ -2983,8 +2818,6 @@
     const cfg = QUICK_FILTERS[name];
     if (!cfg || !quickFiltersEnabled()) return;
     Object.assign(perf(), cfg, { quickFilter: name });
-    perf().slotDrillKey = '';
-    perf().slotDrillMode = 'winner';
     if (name === 'recent_momentum' && perf().endDate) {
       const end = new Date(`${perf().endDate}T12:00:00`);
       const start = new Date(end.getTime());
@@ -3042,10 +2875,9 @@
       button.addEventListener('blur', hideQuickFilterTooltip);
     });
     const handleSlotDrillClick = (event) => {
-      if (event.target?.closest?.('[data-program-open-id], a')) return;
-      const trigger = event.target?.closest?.('[data-performance-drill-key], [data-slot-drill-key]');
+      const trigger = event.target?.closest?.('[data-slot-drill-key]');
       if (!trigger) return;
-      perf().slotDrillKey = trigger.dataset.performanceDrillKey || trigger.dataset.slotDrillKey || '';
+      perf().slotDrillKey = trigger.dataset.slotDrillKey || '';
       perf().slotDrillMode = 'winner';
       renderAll();
     };
