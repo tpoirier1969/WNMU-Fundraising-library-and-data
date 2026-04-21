@@ -3822,3 +3822,117 @@ button.primary {
   }
   .performance-slot-drill-topics { grid-column:1 / -1; }
 }
+
+
+/* v0.21.07 date-row compact layout + version hard sync */
+.performance-date-row {
+  grid-template-columns: minmax(140px, 170px) auto minmax(140px, 170px) auto;
+  gap: 8px;
+  margin: 8px 0 6px;
+  align-items: end;
+}
+.performance-all-dates-inline {
+  align-self: end;
+  min-height: 42px;
+  padding-bottom: 0.12rem;
+  white-space: nowrap;
+}
+.performance-date-actions {
+  justify-self: start;
+  align-self: end;
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.performance-date-actions .ghost {
+  padding: 7px 9px;
+  white-space: nowrap;
+}
+.performance-date-row-secondary { display: none; }
+.performance-snapshot-card {
+  padding: 0.35rem 0 0;
+  margin-top: -0.1rem;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.performance-snapshot-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.performance-snapshot-row .performance-criteria-bar,
+.performance-snapshot-row .performance-stat-grid-inline {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  margin: 0;
+  overflow: visible;
+}
+.performance-snapshot-row .performance-criteria-pill,
+.performance-snapshot-row .performance-stat-card {
+  flex: 0 0 auto;
+  min-width: 128px;
+  border-radius: 11px;
+  padding: 0.42rem 0.62rem;
+  background: #123e6b;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: none;
+}
+.performance-snapshot-row .performance-criteria-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.12rem;
+}
+.performance-snapshot-row .performance-criteria-pill .label,
+.performance-snapshot-row .performance-stat-label {
+  opacity: 0.78;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.performance-snapshot-row .performance-criteria-pill span:last-child,
+.performance-snapshot-row .performance-stat-value {
+  margin-top: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.performance-snapshot-row .performance-criteria-pill.warn {
+  background: #123e6b;
+  color: #fff;
+  border-color: rgba(255,255,255,0.1);
+}
+.performance-snapshot-divider { display: none; }
+@media (max-width: 900px) {
+  .performance-date-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .performance-all-dates-inline {
+    grid-column: 1 / -1;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  .performance-date-actions {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+}
+@media (max-width: 640px) {
+  .performance-date-row {
+    grid-template-columns: 1fr;
+  }
+  .performance-all-dates-inline,
+  .performance-date-actions {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+}

@@ -17,6 +17,7 @@
   function setRoleUi() {
     els.versionFlag.textContent = constants.APP_VERSION;
     els.footerVersion.textContent = constants.APP_VERSION;
+    document.title = `WNMU Pledge Program Library ${constants.APP_VERSION}`;
     els.detailEditButton.classList.toggle('hidden', !canEdit());
     els.addProgramButton?.classList.toggle('hidden', !canEdit());
     if (canEdit()) {

@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.05',
+    APP_VERSION: 'v0.21.07',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -634,7 +634,7 @@ window.PledgeLib = window.PledgeLib || {};
       if (!strict) return '';
       if (!cfg.APP_VERSION) return '';
       if (cfg.APP_VERSION === App.constants.APP_VERSION) return '';
-      return `Config version ${cfg.APP_VERSION} does not match build ${App.constants.APP_VERSION}.`;
+      return 'config.js build tag does not match this build.';
     },
 
     minutesToLabel(minutes) {
