@@ -853,11 +853,44 @@
     ].join('');
   }
 
+  function isTimingSecondsKey(key = '') {
+    return /(seconds|offset|duration|runtime|cutin|break|act)_?seconds$/i.test(key || '');
+  }
+
+  function formatTimingSecondsMmSs(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) return '—';
+    const rounded = Math.round(numeric);
+    const minutes = Math.floor(rounded / 60);
+    const seconds = rounded % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function formatTimingInputValue(key, value) {
+    if (value == null || value === '') return '';
+    if (isTimingSecondsKey(key)) return formatTimingSecondsMmSs(value);
+    return String(value);
+  }
+
+  function parseTimingInputValue(key, raw) {
+    const text = utils.normalizeText(raw);
+    if (!text) return null;
+    if (isTimingSecondsKey(key)) {
+      if (/^\d+$/.test(text)) return Number(text);
+      return utils.parseRuntimeInput(text);
+    }
+    if (/(number|slot|segment)/i.test(key)) {
+      const numeric = Number(text);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+    return text;
+  }
+
   function formatMaybeSeconds(key, value) {
     if (value == null || value === '') return '—';
     const numeric = Number(value);
-    if (Number.isFinite(numeric) && /(seconds|offset|duration|runtime|cutin|break|act)_?seconds$/i.test(key)) {
-      return utils.formatSeconds(numeric);
+    if (Number.isFinite(numeric) && isTimingSecondsKey(key)) {
+      return utils.escapeHtml(formatTimingSecondsMmSs(numeric));
     }
     if (typeof value === 'object') return utils.escapeHtml(JSON.stringify(value));
     return utils.escapeHtml(utils.normalizeText(value) || String(value));
@@ -910,7 +943,8 @@
   }
 
   function inputTypeForTimingKey(key = '') {
-    return /(number|seconds|offset|slot|segment)/i.test(key) ? 'number' : 'text';
+    if (isTimingSecondsKey(key)) return 'text';
+    return /(number|slot|segment)/i.test(key) ? 'number' : 'text';
   }
 
   function renderTimingEditor(rows = []) {
@@ -930,7 +964,7 @@
           <tbody>
             ${draftRows.length ? draftRows.map((row, rowIndex) => `
               <tr data-timing-row-index="${rowIndex}">
-                ${columns.map((key) => `<td><input type="${inputTypeForTimingKey(key)}" class="detail-timing-input" data-timing-row-index="${rowIndex}" data-timing-key="${utils.escapeHtml(key)}" value="${utils.escapeHtml(row[key] == null ? '' : String(row[key]))}"></td>`).join('')}
+                ${columns.map((key) => `<td><input type="${inputTypeForTimingKey(key)}" class="detail-timing-input" ${isTimingSecondsKey(key) ? 'inputmode="numeric" placeholder="m:ss"' : ''} data-timing-row-index="${rowIndex}" data-timing-key="${utils.escapeHtml(key)}" value="${utils.escapeHtml(formatTimingInputValue(key, row[key]))}"></td>`).join('')}
                 <td><button type="button" class="ghost detail-remove-timing-row-button" data-timing-row-index="${rowIndex}">Remove</button></td>
               </tr>
             `).join('') : `<tr><td colspan="${columns.length + 1}" class="placeholder-row">No timing rows yet. Add one below.</td></tr>`}
@@ -947,9 +981,7 @@
       const key = input.getAttribute('data-timing-key') || '';
       if (rowIndex < 0 || !rows[rowIndex] || !key) return;
       const raw = input.value;
-      rows[rowIndex][key] = input.type === 'number'
-        ? (raw === '' ? null : Number(raw))
-        : (utils.normalizeText(raw) || null);
+      rows[rowIndex][key] = parseTimingInputValue(key, raw);
     });
     state.detailTimingDraftRows = rows;
   }
@@ -1041,9 +1073,9 @@
                 ${normalizedRows.map((entry) => `
                   <tr>
                     <td>${utils.escapeHtml(entry.label)}</td>
-                    <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—')}</td>
-                    <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : '—')}</td>
-                    <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? formatTimingSecondsMmSs(entry.programSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? formatTimingSecondsMmSs(entry.breakSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? formatTimingSecondsMmSs(entry.localCutInSeconds) : '—')}</td>
                     <td>${utils.escapeHtml(entry.note || '—')}</td>
                   </tr>
                 `).join('')}
@@ -1392,12 +1424,6 @@
     state.detailCreateMode = false;
 
     const loadToken = Symbol(`detail:${programId}`);
-    const defaultAutoEdit = canEdit()
-      && !Object.prototype.hasOwnProperty.call(options, 'preserveMode')
-      && !Object.prototype.hasOwnProperty.call(options, 'autoEdit')
-      && state.isAdmin;
-    const requestedEditMode = canEdit()
-      && (options.preserveMode === true || options.autoEdit === true || defaultAutoEdit);
     state.detailLoadToken = loadToken;
 
     openDetailModal();
@@ -1415,9 +1441,6 @@
     if (snapshotProgram) {
       state.currentDetailProgram = snapshotProgram;
       renderDetailShell(snapshotProgram);
-      if (requestedEditMode) {
-        setDetailMode('edit');
-      }
     }
 
     try {
@@ -1432,13 +1455,10 @@
       state.currentDetailTimings = detail.timings;
       state.currentDetailDriveResults = detail.driveResults;
       state.currentDetailAirings = detail.airings;
-      const keepLiveEditMode = canEdit() && state.detailEditMode;
-      const finalEditMode = requestedEditMode || keepLiveEditMode;
       setDetailNotice(detail.warnings.join(' '), detail.warnings.length ? 'warn' : '');
       renderDetail(detail.program, detail.timings, detail.driveResults, detail.airings);
-      if (finalEditMode) setDetailMode('edit');
-      else setDetailMode('view');
-      if (!finalEditMode) els.detailCloseButton.focus();
+      if (options.preserveMode && canEdit()) setDetailMode('edit');
+      els.detailCloseButton.focus();
     } catch (error) {
       if (state.detailLoadToken !== loadToken) return;
       console.error('Detail render failed.', error);

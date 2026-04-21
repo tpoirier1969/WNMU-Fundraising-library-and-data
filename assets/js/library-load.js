@@ -17,13 +17,6 @@
 
   async function refreshAll(options = {}) {
     if (!state.client) return;
-    const detailSnapshot = options.preserveDetail
-      ? {
-          programId: state.selectedProgramId,
-          preserveMode: state.detailEditMode,
-          modalWasOpen: !els.detailModal.classList.contains('hidden')
-        }
-      : null;
     beginLoading('Loading pledge program data…', `Probing ${constants.LIBRARY_VIEW} and ${constants.BASE_TABLE}.`);
     els.libraryBody.innerHTML = '<tr><td colspan="10" class="placeholder-row">Loading library…</td></tr>';
     try {
@@ -50,11 +43,8 @@
       } else {
         setBuildMeta(probeStatus);
       }
-      if (detailSnapshot?.programId
-        && detailSnapshot.modalWasOpen
-        && state.selectedProgramId === detailSnapshot.programId
-        && !els.detailModal.classList.contains('hidden')) {
-        await App.detailUi.loadProgramDetail(detailSnapshot.programId, { preserveMode: detailSnapshot.preserveMode, autoEdit: false });
+      if (options.preserveDetail && state.selectedProgramId && !els.detailModal.classList.contains('hidden')) {
+        await App.detailUi.loadProgramDetail(state.selectedProgramId, { preserveMode: state.detailEditMode });
       }
       setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} source rows. Scheduling title match is ready.`);
     } catch (error) {

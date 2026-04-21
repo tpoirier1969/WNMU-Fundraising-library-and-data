@@ -1335,18 +1335,11 @@
     const dollars = records.reduce((sum, record) => sum + (Number.isFinite(record.amount) ? record.amount : 0), 0);
     const pledges = records.reduce((sum, record) => sum + (Number(record.pledges || 0) || 0), 0);
     const sustainers = records.reduce((sum, record) => sum + (Number(record.sustainers || 0) || 0), 0);
-    const minutes = records.reduce((sum, record) => sum + (Number(record.minutes || 0) || 0), 0);
-    const moneyCount = records.filter((record) => record.moneyTrusted).length;
-    const datedCount = records.filter((record) => record.hasDate && recordFilterDate(record)).length;
     const stats = [
       ['Airings used', utils.formatCount(records.length)],
       ['Programs represented', utils.formatCount(programs.size)],
       ['Dollars represented', utils.formatMoney(dollars)],
-      ['Pledges / sustainers', `${utils.formatCount(pledges)} / ${utils.formatCount(sustainers)}`],
-      ['Program minutes', utils.formatCount(minutes)],
-      ['Program scope', perf().includeExpiredPrograms ? 'All library titles' : 'Hide expired'],
-      ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
-      ['Airings with dollars / dates', `${utils.formatCount(moneyCount)} / ${utils.formatCount(datedCount)}`]
+      ['Pledges / sustainers', `${utils.formatCount(pledges)} / ${utils.formatCount(sustainers)}`]
     ];
     els.performanceStatGrid.innerHTML = stats.map(([label, value]) => `
       <article class="performance-stat-card">
@@ -2328,17 +2321,11 @@
     const quick = quickFilterLabel() || 'None';
     const analysisMeta = perf().analysisMeta || {};
     perf().criteriaSummary = [
-      ['Date window', perf().useAllDates ? 'All available dates' : `${start} to ${end}`],
       ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
-      ['Fundraiser month', month],
-      ['Day set', daySetLabel(perf().daySetFilter)],
       ['Program scope', perf().includeExpiredPrograms ? 'All library titles' : 'Hide expired'],
-      ['Topic filter', topic],
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
-      ['Metric', metricLabel()],
-      ['Chart', (['topic_time', 'topic_dayset'].includes(perf().criterion) || perf().quickFilter === 'topic_slot_winners') ? 'Heatmap' : chartTypeLabel(effectiveChartType())],
-      ['Integrity-eligible', utils.formatCount(analysisMeta.integrityEligibleCount || records.length)]
+      ['Metric', metricLabel()]
     ];
     if (!els.performanceCriteriaBar) return;
     els.performanceCriteriaBar.innerHTML = perf().criteriaSummary.map(([label, value]) => `
@@ -2347,16 +2334,6 @@
     if (analysisMeta.excludedIntegrityCount) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Excluded suspect rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedIntegrityCount))}</span></div>
-      `;
-    }
-    if (analysisMeta.excludedScheduleMismatchCount) {
-      els.performanceCriteriaBar.innerHTML += `
-        <div class="performance-criteria-pill warn"><span class="label">Unreconciled to saved schedule</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedScheduleMismatchCount))}</span></div>
-      `;
-    }
-    if ((analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount)) {
-      els.performanceCriteriaBar.innerHTML += `
-        <div class="performance-criteria-pill warn"><span class="label">Low-sample groups</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.lowSampleGroupCount || analysisMeta.hiddenSmallSampleGroupCount))}</span></div>
       `;
     }
     if (analysisMeta.excludedWeakTemporalCount && TEMPORAL_CRITERIA.has(perf().criterion)) {
