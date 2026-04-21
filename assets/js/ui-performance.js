@@ -1281,16 +1281,6 @@
       return utils.compareText(a.label, b.label);
     });
 
-
-    if (perf().quickFilter === 'weak_returns') {
-      sorted = sorted
-        .filter((group) => group.airingCount >= 2)
-        .sort((a, b) => {
-          const diff = metricValue(a) - metricValue(b);
-          if (diff !== 0) return diff;
-          return utils.compareText(a.label, b.label);
-        });
-    }
     if (perf().quickFilter === 'live_break_impact') {
       const order = { 'Live break': 0, 'No live break': 1 };
       sorted = sorted
@@ -2590,7 +2580,6 @@
       top_earners: 'Top earners',
       best_average: 'Best average earners',
       prime_time: 'Prime time winners',
-      weak_returns: 'Weak returns',
       live_break_impact: 'Live break impact',
       repeat_fatigue: 'Repeat fatigue',
       topic_winners: 'Top Topics',
@@ -2619,8 +2608,6 @@
         return 'Ranks titles by average dollars per airing, which helps separate efficient earners from titles that only look big because they aired a lot.';
       case 'prime_time':
         return 'Limits the comparison to Prime time airings and then ranks the titles by average dollars per airing inside that slice.';
-      case 'weak_returns':
-        return 'Sorted from the lowest average dollars per airing upward, so weak performers appear first instead of the strongest titles.';
       case 'live_break_impact':
         return 'Compares only rows that cleanly matched a schedule placement with a live-break flag. Unmatched rows are excluded so “Unknown” does not swamp the result.';
       case 'repeat_fatigue':
@@ -2678,8 +2665,6 @@
         return 'Use this when you want the most efficient titles per airing instead of the biggest grossers.';
       case 'prime_time':
         return 'Use this to see which titles really deserve a strong evening slot.';
-      case 'weak_returns':
-        return 'Use this to spot titles that consistently underperform in the current window.';
       case 'live_break_impact':
         return 'Use this to see whether live-break placements are helping or hurting the money.';
       case 'repeat_fatigue':
@@ -2836,6 +2821,7 @@
 
   function renderAll() {
     if (!els.performanceChart || !els.performanceTableBody) return;
+    normalizeQuickFilterSelection();
     populateControls();
     const { records, grouped, postFilter, integrityFiltered } = filterAndGroupRecords();
     renderStats(records);
@@ -2920,7 +2906,6 @@
     top_earners: { criterion: 'program', metric: 'total_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     best_average: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     prime_time: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: 'Prime time', weekpartScope: '' },
-    weak_returns: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', programFilter: '', labelFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     live_break_impact: { criterion: 'live_breaks', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     repeat_fatigue: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
@@ -2938,11 +2923,18 @@
     best_daytime: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: 'Daytime', weekpartScope: '' }
   };
 
+  function normalizeQuickFilterSelection() {
+    const active = perf().quickFilter || '';
+    if (active && !QUICK_FILTERS[active]) perf().quickFilter = '';
+  }
+
+
   function quickFiltersEnabled() {
     return Boolean(perf().useAllDates || (perf().startDate && perf().endDate));
   }
 
   function updateQuickFilterUi() {
+    normalizeQuickFilterSelection();
     const enabled = quickFiltersEnabled();
     const active = perf().quickFilter || '';
     document.querySelectorAll('[data-performance-quick-filter]').forEach((button) => {
@@ -2954,6 +2946,7 @@
   }
 
   function applyQuickFilter(name) {
+    normalizeQuickFilterSelection();
     const cfg = QUICK_FILTERS[name];
     if (!cfg || !quickFiltersEnabled()) return;
     Object.assign(perf(), cfg, { quickFilter: name });

@@ -2168,9 +2168,18 @@ button.primary {
 .schedule-grid-body { position: relative; z-index: 1; }
 .schedule-time-label { z-index: 14; box-shadow: 1px 0 0 #d9e4eb; }
 .schedule-slot { overflow: visible; }
-.schedule-placement { left: 2px; right: 2px; top: 1px; z-index: 2; }
-.schedule-placement strong { font-size: clamp(.48rem, .54vw, .62rem); line-height: 1.04; }
-.schedule-placement span { font-size: clamp(.40rem, .44vw, .52rem); line-height: 1.02; }
+.schedule-placement {
+  left: 2px;
+  right: 2px;
+  top: 1px;
+  z-index: 2;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+  text-shadow: none;
+}
+.schedule-placement strong { font-size: clamp(.48rem, .54vw, .62rem); line-height: 1.06; font-weight: 600; letter-spacing: .01em; }
+.schedule-placement span { font-size: clamp(.40rem, .44vw, .52rem); line-height: 1.05; font-weight: 500; letter-spacing: .005em; opacity: .94; }
 .schedule-day-head { font-size: .95rem; }
 .schedule-day-head.weekend { background: linear-gradient(180deg, #ddebf6, #d2e4f2); }
 .schedule-slot.weekend { background: #f4f8fc; }
@@ -3824,7 +3833,7 @@ button.primary {
 }
 
 
-/* v0.21.08 date-row compact layout + version hard sync */
+/* v0.21.10 weak-returns cleanup + schedule type crisping */
 .performance-date-row {
   grid-template-columns: minmax(140px, 170px) auto minmax(140px, 170px) auto;
   gap: 8px;
