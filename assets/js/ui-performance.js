@@ -1687,6 +1687,17 @@
     return utils.normalizeText(record?.topicDisplay || record?.topic || '') || 'Unassigned topic';
   }
 
+  function expectationTopicDisplayLabel(value = '') {
+    const clean = utils.normalizeText(value);
+    if (!clean) return 'Unassigned topic';
+    if (clean !== clean.toLowerCase()) return clean;
+    return clean
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
   function normalizeExpectationLiveState(value) {
     const text = utils.normalizeText(value).toLowerCase();
     if (!text) return 'unknown';
@@ -1819,11 +1830,11 @@
         }
 
         topicKeys.forEach((topicKey) => {
-          const topicSlotAny = ensureExpectationStats(index.topicSlot, `${topicKey}|any|${slotKey}`, { topicKey, label: topicKey, key: slotKey, liveState: 'any' });
+          const topicSlotAny = ensureExpectationStats(index.topicSlot, `${topicKey}|any|${slotKey}`, { topicKey, label: expectationTopicDisplayLabel(topicKey), key: slotKey, liveState: 'any' });
           topicSlotAny.totalDollars += allocatedAmount;
           topicSlotAny.airingCount += 1;
           if (liveState !== 'unknown') {
-            const topicSlotLive = ensureExpectationStats(index.topicSlot, `${topicKey}|${liveState}|${slotKey}`, { topicKey, label: topicKey, key: slotKey, liveState });
+            const topicSlotLive = ensureExpectationStats(index.topicSlot, `${topicKey}|${liveState}|${slotKey}`, { topicKey, label: expectationTopicDisplayLabel(topicKey), key: slotKey, liveState });
             topicSlotLive.totalDollars += allocatedAmount;
             topicSlotLive.airingCount += 1;
           }
@@ -1868,7 +1879,7 @@
     return Number.isFinite(total) ? total / divisor : null;
   }
 
-  function slotExpectationTone(projectedAvg, slotAvg) {
+  function slotExpectationTone(projectedAvg, slotAvg, context = {}) {
     if (!Number.isFinite(projectedAvg) || !Number.isFinite(slotAvg)) return 'neutral';
     if (slotAvg <= 0) {
       if (projectedAvg > 0) return 'positive';
@@ -1876,8 +1887,23 @@
       return 'neutral';
     }
     const ratio = (projectedAvg - slotAvg) / slotAvg;
+    const exactTitleAvg = Number(context.exactTitleAvg);
+    const exactTitleAirings = Number(context.exactTitleAirings || 0);
+    const topicAvg = Number(context.topicAvg);
+    const topicAirings = Number(context.topicAirings || 0);
+    const currentTopicStrong = Number.isFinite(topicAvg) && topicAirings >= 2 && topicAvg >= (slotAvg * 0.95);
+    const currentTopicWeak = Number.isFinite(topicAvg) && topicAirings >= 2 && topicAvg <= (slotAvg * 0.85);
+    const exactTitleStrongNegative = Number.isFinite(exactTitleAvg)
+      && exactTitleAirings >= 2
+      && exactTitleAvg <= (slotAvg * 0.85);
+
     if (ratio >= 0.15) return 'positive';
-    if (ratio <= -0.15) return 'negative';
+    if (ratio <= -0.15) {
+      if (exactTitleStrongNegative) return 'negative';
+      if (currentTopicStrong) return 'neutral';
+      if (currentTopicWeak) return 'negative';
+      return 'neutral';
+    }
     return 'neutral';
   }
 
@@ -1926,6 +1952,43 @@
     return weightSum > 0 ? (weightedTotal / weightSum) : null;
   }
 
+  function bestTopicForSlot(slotMap, slotKey, liveState, excludeTopicKeys = []) {
+    if (!(slotMap instanceof Map) || !slotKey) return null;
+    const excluded = new Set((Array.isArray(excludeTopicKeys) ? excludeTopicKeys : []).filter(Boolean));
+    const candidates = [];
+    const states = liveState && liveState !== 'unknown' ? [liveState, 'any'] : ['any'];
+    states.forEach((stateKey) => {
+      slotMap.forEach((stats, key) => {
+        if (!key || !stats) return;
+        const parts = String(key).split('|');
+        if (parts.length < 4) return;
+        const topicKey = parts[0];
+        const statePart = parts[1];
+        const slotPart = `${parts[2]}|${parts[3]}`;
+        if (statePart !== stateKey || slotPart !== slotKey) return;
+        if (excluded.has(topicKey)) return;
+        const avg = expectationAverage(stats, false);
+        const airingCount = Number(stats.airingCount || 0);
+        if (!Number.isFinite(avg) || airingCount < 2) return;
+        candidates.push({
+          topicKey,
+          label: expectationTopicDisplayLabel(stats.label || topicKey),
+          avg,
+          airingCount,
+          liveState: stats.liveState || stateKey || 'any'
+        });
+      });
+      if (candidates.length) return candidates;
+      return null;
+    });
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => {
+      if (b.avg !== a.avg) return b.avg - a.avg;
+      return b.airingCount - a.airingCount;
+    });
+    return candidates[0] || null;
+  }
+
   function getScheduleExpectationForPlacement(placement, dateKey, startMinutes) {
     if (!perf().ready || !Array.isArray(perf().records) || !perf().records.length) return null;
     const signature = signatureForProgram(null, placement || {});
@@ -1962,7 +2025,7 @@
         return {
           kind: 'topic_slot',
           topicKey,
-          label: stats.label || topicKey,
+          label: expectationTopicDisplayLabel(stats.label || topicKey),
           avg,
           airingCount: Number(stats.airingCount || 0),
           liveState: stats.liveState || 'any'
@@ -1976,7 +2039,8 @@
           label: topicComponents.map((item) => item.label).join(' / '),
           avg: topicComponents.reduce((sum, item) => sum + item.avg, 0) / topicComponents.length,
           airingCount: topicComponents.reduce((sum, item) => sum + item.airingCount, 0),
-          liveState: topicComponents[0]?.liveState || 'any'
+          liveState: topicComponents[0]?.liveState || 'any',
+          topicCount: topicComponents.length
         }
       : null;
 
@@ -2006,22 +2070,43 @@
 
     const projectedAvg = buildProjectionFromComponents(components);
     if (!Number.isFinite(projectedAvg)) return null;
-    const tone = slotExpectationTone(projectedAvg, slotAvg);
+    const titleLabel = components.find((item) => item.kind === 'title_slot' || item.kind === 'title_overall')?.label || placement?.programTitle || 'This title';
+    const liveLabel = describeLiveState(liveState);
+    const tone = slotExpectationTone(projectedAvg, slotAvg, {
+      exactTitleAvg,
+      exactTitleAirings: Number(titleSlotStats?.airingCount || 0),
+      topicAvg: Number(combinedTopicComponent?.avg),
+      topicAirings: Number(combinedTopicComponent?.airingCount || 0)
+    });
     const symbol = scheduleExpectationSymbol(tone);
     const relationText = tone === 'positive'
       ? 'expected to outperform this slot'
       : tone === 'negative'
         ? 'expected to underperform this slot'
         : 'expected to perform about average for this slot';
-    const titleLabel = components.find((item) => item.kind === 'title_slot' || item.kind === 'title_overall')?.label || placement?.programTitle || 'This title';
-    const liveLabel = describeLiveState(liveState);
     const componentLines = components.map((item) => {
       const bucket = describeLiveState(item.liveState || 'any');
       if (item.kind === 'title_slot') return `${titleLabel} in this exact day/time (${bucket}): avg ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} airing${item.airingCount === 1 ? '' : 's'}`;
       if (item.kind === 'title_overall') return `${titleLabel} overall (${bucket}): avg ${utils.formatMoney(item.avg)} per half-hour slot across ${utils.formatCount(item.airingCount)} airing${item.airingCount === 1 ? '' : 's'}`;
       return `What similar topics do in this day/time (${bucket}): avg ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} topic-slot airing${item.airingCount === 1 ? '' : 's'}`;
     });
-    const tooltip = `${titleLabel} is ${relationText}. For ${liveLabel}, slot baseline is ${utils.formatMoney(slotAvg)} across ${utils.formatCount(slotStats.airingCount || 0)} airings. Projection: ${utils.formatMoney(projectedAvg)}. Why: ${componentLines.join('; ')}.`;
+    const currentTopicHealthy = Number.isFinite(Number(combinedTopicComponent?.avg))
+      && Number(combinedTopicComponent?.airingCount || 0) >= 2
+      && Number(combinedTopicComponent.avg) >= (slotAvg * 0.95);
+    const bestAlternativeTopic = tone === 'negative'
+      ? bestTopicForSlot(perf().scheduleExpectationIndex.topicSlot, slotKey, liveState, topicKeys)
+      : null;
+    const suggestion = tone === 'negative'
+      ? (bestAlternativeTopic
+          ? `Suggestion: consider ${bestAlternativeTopic.label} in this spot. It averages ${utils.formatMoney(bestAlternativeTopic.avg)} across ${utils.formatCount(bestAlternativeTopic.airingCount)} comparable airing${bestAlternativeTopic.airingCount === 1 ? '' : 's'}.`
+          : currentTopicHealthy
+            ? `Suggestion: this slot usually likes ${combinedTopicComponent.label}, so consider a stronger ${combinedTopicComponent.label} title here.`
+            : '')
+      : '';
+    const guardrail = tone === 'negative' && currentTopicHealthy
+      ? `Guardrail: this title's topic family is not weak in this slot, so the minus is only shown when the title-level evidence is poor enough to drag it below that healthy slot fit.`
+      : '';
+    const tooltip = `${titleLabel} is ${relationText}. For ${liveLabel}, slot baseline is ${utils.formatMoney(slotAvg)} across ${utils.formatCount(slotStats.airingCount || 0)} airings. Projection: ${utils.formatMoney(projectedAvg)}. Why: ${componentLines.join('; ')}.${guardrail ? ` ${guardrail}` : ''}${suggestion ? ` ${suggestion}` : ''}`;
     const evidenceMode = components.some((item) => item.kind === 'title_slot') ? 'exact_slot' : (components.some((item) => item.kind === 'topic_slot') ? 'composite' : 'overall_title');
 
     return {
