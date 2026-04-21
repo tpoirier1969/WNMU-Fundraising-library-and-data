@@ -21,7 +21,8 @@
       event.stopPropagation();
     }
     if (!App.detailUi?.loadProgramDetail) return false;
-    void App.detailUi.loadProgramDetail(programId);
+    const preserveMode = Boolean(App.auth?.canEdit?.());
+    void App.detailUi.loadProgramDetail(programId, { preserveMode });
     return true;
   }
 

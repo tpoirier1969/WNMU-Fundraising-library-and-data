@@ -1423,6 +1423,10 @@
     state.currentDetailAirings = [];
     state.detailCreateMode = false;
 
+    const preserveMode = Object.prototype.hasOwnProperty.call(options, 'preserveMode')
+      ? Boolean(options.preserveMode)
+      : canEdit();
+
     const loadToken = Symbol(`detail:${programId}`);
     state.detailLoadToken = loadToken;
 
@@ -1441,6 +1445,7 @@
     if (snapshotProgram) {
       state.currentDetailProgram = snapshotProgram;
       renderDetailShell(snapshotProgram);
+      if (preserveMode && canEdit()) setDetailMode('edit');
     }
 
     try {
@@ -1457,8 +1462,8 @@
       state.currentDetailAirings = detail.airings;
       setDetailNotice(detail.warnings.join(' '), detail.warnings.length ? 'warn' : '');
       renderDetail(detail.program, detail.timings, detail.driveResults, detail.airings);
-      if (options.preserveMode && canEdit()) setDetailMode('edit');
-      els.detailCloseButton.focus();
+      if (preserveMode && canEdit()) setDetailMode('edit');
+      else els.detailCloseButton.focus();
     } catch (error) {
       if (state.detailLoadToken !== loadToken) return;
       console.error('Detail render failed.', error);
