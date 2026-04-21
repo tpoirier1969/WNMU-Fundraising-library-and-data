@@ -1035,18 +1035,14 @@
     const seen = new Set();
     const values = [];
     rows.forEach((row) => {
-      const raw = airings.length
-        ? utils.firstNonEmpty(row?.aired_at, row?.air_date)
-        : utils.firstNonEmpty(row?.aired_at, row?.air_date, row?.drive_date, row?.drive_start_date);
-      const label = row?.aired_at
-        ? utils.formatDateTime(raw, '')
-        : (row?.air_date ? utils.formatDateTime(raw, '') : utils.formatDate(raw, ''));
+      const when = utils.rowLocalDateTime(row, { preferDriveFallback: !airings.length });
+      const label = utils.rowDisplayDateTime(row, '', { preferDriveFallback: !airings.length });
       const normalized = utils.normalizeText(label);
       if (!normalized || seen.has(normalized)) return;
       seen.add(normalized);
-      values.push(normalized);
+      values.push({ label: normalized, sortTs: when instanceof Date && !Number.isNaN(when.getTime()) ? when.getTime() : Number.MAX_SAFE_INTEGER });
     });
-    return values.sort((a, b) => a.localeCompare(b));
+    return values.sort((a, b) => a.sortTs - b.sortTs || a.label.localeCompare(b.label)).map((entry) => entry.label);
   }
 
   async function ensureScheduleExportDetails(rows = []) {

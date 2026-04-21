@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.02',
+    APP_VERSION: 'v0.21.03',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -476,6 +476,79 @@ window.PledgeLib = window.PledgeLib || {};
       });
     },
 
+    parseClockTime(value) {
+      const text = utils.normalizeText(value);
+      if (!text) return null;
+      let match = text.match(/^(\d{1,2})(?::?(\d{2}))?(?::?(\d{2}))?$/);
+      if (match) {
+        const hour = Number(match[1] || 0);
+        const minute = Number(match[2] || 0);
+        const second = Number(match[3] || 0);
+        if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 59) {
+          return { hour, minute, second };
+        }
+      }
+      match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])$/);
+      if (match) {
+        let hour = Number(match[1] || 0);
+        const minute = Number(match[2] || 0);
+        const suffix = String(match[3] || '').toLowerCase();
+        if (hour >= 1 && hour <= 12 && minute >= 0 && minute <= 59) {
+          if (suffix === 'pm' && hour < 12) hour += 12;
+          if (suffix === 'am' && hour === 12) hour = 0;
+          return { hour, minute, second: 0 };
+        }
+      }
+      return null;
+    },
+
+    buildLocalDateTime(dateValue, timeValue = '', fallbackHour = 12) {
+      const date = utils.parseFlexibleDateInput(dateValue);
+      if (!date.valid || !date.iso) return null;
+      const [year, month, day] = date.iso.split('-').map((part) => Number(part));
+      const parsedTime = utils.parseClockTime(timeValue);
+      const hour = parsedTime ? parsedTime.hour : fallbackHour;
+      const minute = parsedTime ? parsedTime.minute : 0;
+      const second = parsedTime ? parsedTime.second : 0;
+      const local = new Date(year, month - 1, day, hour, minute, second, 0);
+      return Number.isNaN(local.getTime()) ? null : local;
+    },
+
+    formatTime(value, fallback = '—') {
+      if (!value && value !== 0) return fallback;
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      }
+      const parsed = utils.parseClockTime(value);
+      if (parsed) {
+        const sample = new Date(2000, 0, 1, parsed.hour, parsed.minute, parsed.second || 0, 0);
+        return sample.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      }
+      return utils.normalizeText(value) || fallback;
+    },
+
+    rowLocalDateTime(row = {}, options = {}) {
+      const preferDriveFallback = options.preferDriveFallback !== false;
+      const explicitTime = utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time);
+      const localAiring = utils.buildLocalDateTime(utils.firstNonEmpty(row?.air_date, row?.broadcast_date, row?.airing_date), explicitTime, 12);
+      if (localAiring) return localAiring;
+      if (preferDriveFallback) {
+        const localDrive = utils.buildLocalDateTime(utils.firstNonEmpty(row?.drive_date, row?.drive_start_date, row?.date_key), explicitTime, 12);
+        if (localDrive) return localDrive;
+      }
+      const rawDateTime = utils.firstNonEmpty(row?.aired_at, row?.air_datetime, row?.broadcast_at, row?.scheduled_at, row?.date_time, row?.datetime, row?.airing_at, row?.airing_date);
+      return rawDateTime ? utils.parseDateLike(rawDateTime, { preferDateOnlyLocal: true }) : null;
+    },
+
+    rowDisplayDateTime(row = {}, fallback = '—', options = {}) {
+      const date = utils.rowLocalDateTime(row, options);
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return fallback;
+      const hasExplicitTime = Boolean(utils.firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, row?.slot_time, row?.airtime, row?.broadcast_time))
+        || /\d{1,2}:\d{2}/.test(utils.normalizeText(utils.firstNonEmpty(row?.aired_at, row?.air_datetime, row?.broadcast_at, row?.scheduled_at, row?.date_time, row?.datetime, row?.airing_at)));
+      if (!hasExplicitTime) return utils.formatDate(date, fallback);
+      return date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    },
+
     formatMoney(value) {
       const num = Number(value);
       if (!Number.isFinite(num)) return utils.normalizeText(value) || '—';
@@ -773,7 +846,14 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     lastAiredDisplay(row) {
-      return utils.formatDate(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at), '—');
+      const explicitLocal = utils.rowLocalDateTime({
+        air_date: utils.firstNonEmpty(row?.last_air_date, row?.air_date, row?.last_aired_date),
+        air_time: utils.firstNonEmpty(row?.last_air_time, row?.air_time),
+        aired_at: utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at)
+      }, { preferDriveFallback: false });
+      return explicitLocal instanceof Date && !Number.isNaN(explicitLocal.getTime())
+        ? utils.formatDate(explicitLocal, '—')
+        : utils.formatDate(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at, row?.last_aired_date, row?.air_date), '—');
     },
 
     isActive(row) {
@@ -781,6 +861,16 @@ window.PledgeLib = window.PledgeLib || {};
       if (typeof archived === 'boolean') return !archived;
       const raw = utils.normalizeText(utils.firstNonEmpty(row?.status, row?.library_state)).toLowerCase();
       if (raw === 'archived' || raw === 'inactive') return false;
+      const rightsEnd = utils.normalizeText(derive.rightsEnd(row));
+      if (rightsEnd) {
+        const parsed = utils.parseDateLike(rightsEnd, { preferDateOnlyLocal: true });
+        if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+          const today = new Date();
+          const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const endLocal = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+          if (endLocal < todayLocal) return false;
+        }
+      }
       return true;
     },
 

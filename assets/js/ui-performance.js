@@ -861,7 +861,7 @@
 
     if (!driveRows.length && !airingRows.length) warnings.push('No drive-results or airings rows were available yet, so Pledge Performance has no records to compare.');
     if (!records.some((record) => record.topicTokens.length)) warnings.push('Topic matching is still sparse. Some performance rows do not inherit library topics cleanly yet.');
-    if (records.length && !records.some((record) => record.scheduleMatched)) warnings.push('Live-break comparisons currently have no imported airings matched back to scheduled placements yet. Those rows will show as Unknown / not matched to schedule.');
+    if (records.length && !records.some((record) => record.scheduleMatched)) warnings.push('Live-break schedule matching is still sparse. Those labels may show as Unknown / not matched to schedule, but the rows still count in broad analytics.');
     if (scheduleMismatchRows) warnings.push(`${utils.formatCount(scheduleMismatchRows)} normalized events were quarantined because they fall inside a saved schedule window but do not reconcile to any scheduled placement.`);
     if (weakIdentityRows) warnings.push(`${utils.formatCount(weakIdentityRows)} imported airings rows had weak program identity and will not drive program/topic analytics unless they reconcile cleanly.`);
 
@@ -1175,7 +1175,6 @@
       const filterDate = recordFilterDate(record);
       if (startDate && (!filterDate || filterDate < startDate)) return false;
       if (endDate && (!filterDate || filterDate > endDate)) return false;
-      if (perf().quickFilter === 'live_break_impact' && !record.scheduleMatched) return false;
       if (!recordIncludedByProgramScope(record)) return false;
       return true;
     });
@@ -2649,9 +2648,9 @@
       case 'live_break_impact':
         return 'Compares only rows that cleanly matched a schedule placement with a live-break flag. Unmatched rows are excluded so “Unknown” does not swamp the result.';
       case 'repeat_fatigue':
-        return 'Shows only programs with at least 2 airings in the current filter window. Use it as a “repeated titles only” view, not a first-vs-repeat earnings delta yet.';
+        return 'Shows only programs with at least 2 airings in the current filter window. Use it as a repeated-titles view for now; it still is not a true first-vs-repeat decay curve.';
       case 'recent_momentum':
-        return `“Recent” means the trailing 90 days ending on ${endText}. This is a recency-focused view, not yet a true prior-period momentum delta.`;
+        return `“Recent” means the trailing 90 days ending on ${endText}. This is a recent-results slice, not yet a full prior-period momentum comparison.`;
       case 'topic_time_performance':
         return perf().topicFilter
           ? 'This view ranks day/hour slots for the selected main topic and also draws a weekly heatmap so you can see when that topic performs best.'

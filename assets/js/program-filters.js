@@ -33,19 +33,15 @@
 
   function latestAiredValue(rows = []) {
     const candidates = (rows || [])
-      .map((row) => utils.firstNonEmpty(
-        row?.last_aired_at,
-        row?.last_aired,
-        row?.aired_at,
-        row?.last_aired_date,
-        row?.air_date,
-        row?.most_recent_airing_at,
-        row?.most_recent_airing,
-        row?.recent_airing_date
-      ))
-      .filter(Boolean)
-      .map((value) => ({ raw: value, ts: new Date(value).getTime() }))
-      .filter((entry) => Number.isFinite(entry.ts))
+      .map((row) => {
+        const date = utils.rowLocalDateTime({
+          air_date: utils.firstNonEmpty(row?.last_air_date, row?.air_date, row?.last_aired_date, row?.recent_airing_date),
+          air_time: utils.firstNonEmpty(row?.last_air_time, row?.air_time),
+          aired_at: utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at, row?.most_recent_airing_at, row?.most_recent_airing)
+        }, { preferDriveFallback: false });
+        return date instanceof Date && !Number.isNaN(date.getTime()) ? { raw: date, ts: date.getTime() } : null;
+      })
+      .filter((entry) => entry && Number.isFinite(entry.ts))
       .sort((a, b) => b.ts - a.ts);
     return candidates[0]?.raw || '';
   }
@@ -151,7 +147,8 @@
       if (latestAired && utils.isBlank(merged.last_aired_at) && utils.isBlank(merged.last_aired) && utils.isBlank(merged.aired_at)) {
         merged.last_aired_at = latestAired;
       }
-      const maxCount = Math.max(0, ...(group.map((row) => Number(utils.firstNonEmpty(
+
+      const counts = group.map((row) => Number(utils.firstNonEmpty(
         row?.fundraiser_count,
         row?.drive_count,
         row?.fundraiser_total,
@@ -160,19 +157,27 @@
         row?.aired_count,
         row?.times_aired,
         row?.total_airings,
+        row?.total_airings_count,
+        row?.event_count,
+        row?.events_count,
         0
-      ))).filter((value) => Number.isFinite(value))));
-      if (maxCount > 0) {
-        if (!Number(merged.fundraiser_count)) merged.fundraiser_count = maxCount;
-        if (!Number(merged.airing_count)) merged.airing_count = maxCount;
+      ))).filter((value) => Number.isFinite(value) && value >= 0);
+      const positiveCounts = counts.filter((value) => value > 0);
+      const bestCount = positiveCounts.length ? Math.max(...positiveCounts) : 0;
+      if (bestCount > 0) {
+        if (!(Number(merged.fundraiser_count) > 0)) merged.fundraiser_count = bestCount;
+        if (!(Number(merged.airing_count) > 0)) merged.airing_count = bestCount;
       }
-      const maxTotal = Math.max(0, ...(group.map((row) => Number(derive.totalRaised(row) || 0)).filter((value) => Number.isFinite(value))));
-      const maxAvg = Math.max(0, ...(group.map((row) => Number(derive.avgPerFundraiser(row) || 0)).filter((value) => Number.isFinite(value))));
-      const mergedTotal = Number(derive.totalRaised(merged) || 0) || 0;
-      const mergedAvg = Number(derive.avgPerFundraiser(merged) || 0) || 0;
-      if (maxTotal > 0 && !(mergedTotal > 0)) merged.total_contributions = maxTotal;
-      if (maxAvg > 0 && !(mergedAvg > 0)) merged.avg_contribution_per_drive = maxAvg;
-      const repairedCount = Number(utils.firstNonEmpty(
+
+      const totals = group.map((row) => Number(derive.totalRaised(row) || 0)).filter((value) => Number.isFinite(value));
+      const positiveTotals = totals.filter((value) => value > 0);
+      const bestTotal = positiveTotals.length ? Math.max(...positiveTotals) : 0;
+      const sumPositiveTotals = positiveTotals.reduce((sum, value) => sum + value, 0);
+      const avgs = group.map((row) => Number(derive.avgPerFundraiser(row) || 0)).filter((value) => Number.isFinite(value));
+      const positiveAvgs = avgs.filter((value) => value > 0);
+      const bestAvg = positiveAvgs.length ? Math.max(...positiveAvgs) : 0;
+
+      const mergedCount = Number(utils.firstNonEmpty(
         merged?.fundraiser_count,
         merged?.drive_count,
         merged?.fundraiser_total,
@@ -181,15 +186,37 @@
         merged?.aired_count,
         merged?.times_aired,
         merged?.total_airings,
+        merged?.total_airings_count,
+        merged?.event_count,
+        merged?.events_count,
         0
       ) || 0);
+      const mergedAvg = Number(derive.avgPerFundraiser(merged) || 0) || 0;
+      let mergedTotal = Number(derive.totalRaised(merged) || 0) || 0;
+
+      if (bestAvg > 0 && !(mergedAvg > 0)) {
+        merged.avg_contribution_per_drive = Math.round(bestAvg * 100) / 100;
+      }
+
+      if (!(mergedTotal > 0)) {
+        if (bestTotal > 0) {
+          merged.total_contributions = Math.round(bestTotal * 100) / 100;
+          mergedTotal = Number(derive.totalRaised(merged) || 0) || bestTotal;
+        } else if (sumPositiveTotals > 0) {
+          merged.total_contributions = Math.round(sumPositiveTotals * 100) / 100;
+          mergedTotal = Number(derive.totalRaised(merged) || 0) || sumPositiveTotals;
+        }
+      }
+
+      const repairedCount = mergedCount > 0 ? mergedCount : bestCount;
       const repairedAvg = Number(derive.avgPerFundraiser(merged) || 0) || 0;
       const repairedTotal = Number(derive.totalRaised(merged) || 0) || 0;
       if (repairedAvg > 0 && repairedTotal <= 0) {
-        merged.total_contributions = repairedCount > 0 ? Math.round(repairedAvg * repairedCount * 100) / 100 : Math.round(repairedAvg * 100) / 100;
+        const inferred = repairedCount > 0 ? repairedAvg * repairedCount : repairedAvg;
+        merged.total_contributions = Math.round(inferred * 100) / 100;
       }
-      if (repairedTotal > 0 && !(repairedAvg > 0) && repairedCount > 0) {
-        merged.avg_contribution_per_drive = Math.round((repairedTotal / repairedCount) * 100) / 100;
+      if ((Number(derive.totalRaised(merged) || 0) || 0) > 0 && !(Number(derive.avgPerFundraiser(merged) || 0) > 0) && repairedCount > 0) {
+        merged.avg_contribution_per_drive = Math.round(((Number(derive.totalRaised(merged) || 0) || 0) / repairedCount) * 100) / 100;
       }
       return merged;
     });
