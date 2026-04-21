@@ -396,7 +396,7 @@
   function importedTitleLooksAnnotated(value) {
     const text = utils.normalizeText(value).toLowerCase();
     if (!text) return false;
-    return /(break time|was off by|seconds?|timing note|runtime note|note)/i.test(text);
+    return /(break time|was off by|seconds?\b|timing note|runtime note|\bnote\b)/i.test(text);
   }
 
   function resolveProgramIdentity(row, indexes) {
@@ -1687,9 +1687,102 @@
     return utils.normalizeText(record?.topicDisplay || record?.topic || '') || 'Unassigned topic';
   }
 
-  function buildTitleSlotExpectationIndex(records) {
-    const slotMap = new Map();
+  function normalizeExpectationLiveState(value) {
+    const text = utils.normalizeText(value).toLowerCase();
+    if (!text) return 'unknown';
+    if (text === 'live' || text === 'live break' || text === 'has live breaks' || text === 'live night') return 'live';
+    if (text === 'nonlive' || text === 'non-live' || text === 'non live') return 'nonlive';
+    if (text.includes('no live break')) return 'nonlive';
+    if (text.includes('live break') || text.includes('has live')) return 'live';
+    return 'unknown';
+  }
+
+  function expectationLiveStateForRecord(record) {
+    return normalizeExpectationLiveState(record?.liveBreaks);
+  }
+
+  function expectationLiveStateForPlacement(placement = {}) {
+    const parsed = parseBooleanish(placement?.liveBreakFlag);
+    if (parsed === true) return 'live';
+    if (parsed === false) return 'nonlive';
+    if (utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveBreakNote || '')) return 'live';
+    return 'unknown';
+  }
+
+  function programRowByIdIndex() {
+    if (perf().programRowById instanceof Map) return perf().programRowById;
+    const map = new Map();
+    [...(state.rawRows || []), ...(state.nonPledgeRows || [])].forEach((row) => {
+      const id = utils.normalizeLookupKey(derive.programId(row));
+      if (id && !map.has(id)) map.set(id, row);
+    });
+    perf().programRowById = map;
+    return map;
+  }
+
+  function recordExpectationTopicKeys(record, programLookup = null) {
+    const keys = [];
+    const programRow = record?.programId && programLookup ? programLookup.get(utils.normalizeLookupKey(record.programId)) : null;
+    const candidates = [
+      programRow ? derive.topicPrimary(programRow) : '',
+      programRow ? derive.topicSecondary(programRow) : '',
+      ...(Array.isArray(record?.topicTokens) ? record.topicTokens : []),
+      record?.topicDisplay,
+      record?.topic,
+      ...(Array.isArray(record?.sampleSourceRows) ? record.sampleSourceRows.slice(0, 2).flatMap((row) => [row?.topic_primary, row?.topic_secondary, row?.topic]) : [])
+    ];
+    candidates.forEach((value) => {
+      const normalized = utils.normalizeLookupKey(value);
+      if (normalized && !keys.includes(normalized) && normalized !== 'unassigned') keys.push(normalized);
+    });
+    return keys;
+  }
+
+  function placementExpectationTopicKeys(placement = {}) {
+    const programLookup = programRowByIdIndex();
+    const placementId = utils.normalizeLookupKey(placement?.programId || placement?.program_id || placement?.pledge_program_id);
+    const programRow = placementId ? programLookup.get(placementId) : null;
+    const candidates = [
+      programRow ? derive.topicPrimary(programRow) : '',
+      programRow ? derive.topicSecondary(programRow) : '',
+      placement?.topic_primary,
+      placement?.topic_secondary,
+      placement?.topic,
+      placement?.topicDisplay
+    ];
+    const keys = [];
+    candidates.forEach((value) => {
+      const normalized = utils.normalizeLookupKey(value);
+      if (normalized && !keys.includes(normalized) && normalized !== 'unassigned') keys.push(normalized);
+    });
+    return keys;
+  }
+
+  function emptyExpectationStats(extra = {}) {
+    return {
+      totalDollars: 0,
+      airingCount: 0,
+      title: '',
+      label: '',
+      liveState: 'unknown',
+      ...extra
+    };
+  }
+
+  function ensureExpectationStats(map, key, extra = {}) {
+    if (!map.has(key)) map.set(key, emptyExpectationStats(extra));
+    return map.get(key);
+  }
+
+  function buildScheduleExpectationIndex(records) {
+    const index = {
+      slot: new Map(),
+      titleSlot: new Map(),
+      titleOverall: new Map(),
+      topicSlot: new Map()
+    };
     const source = Array.isArray(records) ? records : [];
+    const programLookup = programRowByIdIndex();
     source.forEach((record) => {
       if (!record?.moneyTrusted) return;
       if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
@@ -1697,74 +1790,58 @@
       if (!signature || signature === 'non_specific') return;
       const occupiedSlots = buildOccupiedHalfHourSlots(record);
       if (!occupiedSlots.length) return;
+      const liveState = expectationLiveStateForRecord(record);
+      const topicKeys = recordExpectationTopicKeys(record, programLookup);
       const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
       occupiedSlots.forEach((slotPart) => {
         const slotKey = `${slotPart.dayIndex}|${slotPart.slotMinutes}`;
-        if (!slotMap.has(slotKey)) {
-          slotMap.set(slotKey, {
-            key: slotKey,
-            label: slotPart.label,
-            dayIndex: slotPart.dayIndex,
-            slotMinutes: slotPart.slotMinutes,
-            totalDollars: 0,
-            airingCount: 0,
-            bySignature: new Map()
-          });
-        }
-        const slot = slotMap.get(slotKey);
         const share = Math.max(0, (Number(slotPart.overlapMinutes) || 0) / totalOverlapMinutes);
         const allocatedAmount = (Number(record.amount) || 0) * share;
-        slot.totalDollars += allocatedAmount;
-        slot.airingCount += 1;
-        if (!slot.bySignature.has(signature)) {
-          slot.bySignature.set(signature, {
-            signature,
-            title: record.title || 'Unknown title',
-            totalDollars: 0,
-            airingCount: 0
-          });
-        }
-        const entry = slot.bySignature.get(signature);
-        entry.totalDollars += allocatedAmount;
-        entry.airingCount += 1;
-      });
-    });
-    return slotMap;
-  }
 
-  function buildTitleOverallExpectationIndex(records) {
-    const titleMap = new Map();
-    const source = Array.isArray(records) ? records : [];
-    source.forEach((record) => {
-      if (!record?.moneyTrusted) return;
-      const signature = signatureForProgram(null, record);
-      if (!signature || signature === 'non_specific') return;
-      if (!titleMap.has(signature)) {
-        titleMap.set(signature, {
-          signature,
-          title: record.title || 'Unknown title',
-          totalDollars: 0,
-          airingCount: 0,
-          slotPartCount: 0
+        const slotAny = ensureExpectationStats(index.slot, `any|${slotKey}`, { key: slotKey, label: slotPart.label, liveState: 'any' });
+        slotAny.totalDollars += allocatedAmount;
+        slotAny.airingCount += 1;
+
+        if (liveState !== 'unknown') {
+          const slotLive = ensureExpectationStats(index.slot, `${liveState}|${slotKey}`, { key: slotKey, label: `${slotPart.label} · ${liveState}`, liveState });
+          slotLive.totalDollars += allocatedAmount;
+          slotLive.airingCount += 1;
+        }
+
+        const titleSlotAny = ensureExpectationStats(index.titleSlot, `${signature}|any|${slotKey}`, { signature, title: record.title || 'Unknown title', key: slotKey, liveState: 'any' });
+        titleSlotAny.totalDollars += allocatedAmount;
+        titleSlotAny.airingCount += 1;
+
+        if (liveState !== 'unknown') {
+          const titleSlotLive = ensureExpectationStats(index.titleSlot, `${signature}|${liveState}|${slotKey}`, { signature, title: record.title || 'Unknown title', key: slotKey, liveState });
+          titleSlotLive.totalDollars += allocatedAmount;
+          titleSlotLive.airingCount += 1;
+        }
+
+        topicKeys.forEach((topicKey) => {
+          const topicSlotAny = ensureExpectationStats(index.topicSlot, `${topicKey}|any|${slotKey}`, { topicKey, label: topicKey, key: slotKey, liveState: 'any' });
+          topicSlotAny.totalDollars += allocatedAmount;
+          topicSlotAny.airingCount += 1;
+          if (liveState !== 'unknown') {
+            const topicSlotLive = ensureExpectationStats(index.topicSlot, `${topicKey}|${liveState}|${slotKey}`, { topicKey, label: topicKey, key: slotKey, liveState });
+            topicSlotLive.totalDollars += allocatedAmount;
+            topicSlotLive.airingCount += 1;
+          }
         });
+      });
+
+      const overallAny = ensureExpectationStats(index.titleOverall, `${signature}|any`, { signature, title: record.title || 'Unknown title', liveState: 'any', slotPartCount: 0 });
+      overallAny.airingCount += 1;
+      overallAny.slotPartCount = Number(overallAny.slotPartCount || 0) + occupiedSlots.length;
+      overallAny.totalDollars += Number(record.amount) || 0;
+      if (liveState !== 'unknown') {
+        const overallLive = ensureExpectationStats(index.titleOverall, `${signature}|${liveState}`, { signature, title: record.title || 'Unknown title', liveState, slotPartCount: 0 });
+        overallLive.airingCount += 1;
+        overallLive.slotPartCount = Number(overallLive.slotPartCount || 0) + occupiedSlots.length;
+        overallLive.totalDollars += Number(record.amount) || 0;
       }
-      const entry = titleMap.get(signature);
-      const occupiedSlots = buildOccupiedHalfHourSlots(record);
-      if (occupiedSlots.length) {
-        const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
-        occupiedSlots.forEach((slotPart) => {
-          const share = Math.max(0, (Number(slotPart.overlapMinutes) || 0) / totalOverlapMinutes);
-          const allocatedAmount = (Number(record.amount) || 0) * share;
-          entry.totalDollars += allocatedAmount;
-          entry.slotPartCount += 1;
-        });
-      } else {
-        entry.totalDollars += Number(record.amount) || 0;
-        entry.slotPartCount += 1;
-      }
-      entry.airingCount += 1;
     });
-    return titleMap;
+    return index;
   }
 
   function scheduleSlotKey(dateKey, startMinutes) {
@@ -1783,14 +1860,22 @@
     return `${dayIndex}|${slotMinutes}`;
   }
 
-  function slotExpectationTone(titleAvg, slotAvg) {
-    if (!Number.isFinite(titleAvg) || !Number.isFinite(slotAvg)) return 'neutral';
+  function expectationAverage(stats, useSlotParts = false) {
+    if (!stats) return null;
+    const divisor = useSlotParts ? Number(stats.slotPartCount || 0) : Number(stats.airingCount || 0);
+    if (!Number.isFinite(divisor) || divisor <= 0) return null;
+    const total = Number(stats.totalDollars || 0);
+    return Number.isFinite(total) ? total / divisor : null;
+  }
+
+  function slotExpectationTone(projectedAvg, slotAvg) {
+    if (!Number.isFinite(projectedAvg) || !Number.isFinite(slotAvg)) return 'neutral';
     if (slotAvg <= 0) {
-      if (titleAvg > 0) return 'positive';
-      if (titleAvg < 0) return 'negative';
+      if (projectedAvg > 0) return 'positive';
+      if (projectedAvg < 0) return 'negative';
       return 'neutral';
     }
-    const ratio = (titleAvg - slotAvg) / slotAvg;
+    const ratio = (projectedAvg - slotAvg) / slotAvg;
     if (ratio >= 0.15) return 'positive';
     if (ratio <= -0.15) return 'negative';
     return 'neutral';
@@ -1802,50 +1887,157 @@
     return '=';
   }
 
+  function selectExpectationStats(map, keys = []) {
+    for (const key of keys) {
+      if (!key) continue;
+      const value = map.get(key);
+      if (value && Number(value.airingCount || 0) > 0) return value;
+    }
+    return null;
+  }
+
+  function describeLiveState(liveState) {
+    if (liveState === 'live') return 'live nights';
+    if (liveState === 'nonlive') return 'non-live nights';
+    return 'all nights';
+  }
+
+  function scoreExpectationComponent(component) {
+    if (!component || !Number.isFinite(component.avg)) return 0;
+    const airings = Number(component.airingCount || 0);
+    switch (component.kind) {
+      case 'title_slot': return airings >= 2 ? 1.2 : 0.8;
+      case 'title_overall': return airings >= 3 ? 0.8 : 0.45;
+      case 'topic_slot': return airings >= 2 ? 0.55 : 0.25;
+      default: return 0.2;
+    }
+  }
+
+  function buildProjectionFromComponents(components = []) {
+    const usable = components.filter((item) => item && Number.isFinite(item.avg) && scoreExpectationComponent(item) > 0);
+    if (!usable.length) return null;
+    let weightedTotal = 0;
+    let weightSum = 0;
+    usable.forEach((item) => {
+      const weight = scoreExpectationComponent(item);
+      weightedTotal += item.avg * weight;
+      weightSum += weight;
+    });
+    return weightSum > 0 ? (weightedTotal / weightSum) : null;
+  }
+
   function getScheduleExpectationForPlacement(placement, dateKey, startMinutes) {
     if (!perf().ready || !Array.isArray(perf().records) || !perf().records.length) return null;
     const signature = signatureForProgram(null, placement || {});
     if (!signature || signature === 'non_specific') return null;
-    if (!perf().titleSlotExpectationIndex) perf().titleSlotExpectationIndex = buildTitleSlotExpectationIndex(perf().records || []);
-    if (!perf().titleOverallExpectationIndex) perf().titleOverallExpectationIndex = buildTitleOverallExpectationIndex(perf().records || []);
+    if (!perf().scheduleExpectationIndex) perf().scheduleExpectationIndex = buildScheduleExpectationIndex(perf().records || []);
     const slotKey = scheduleSlotKey(dateKey, startMinutes);
     if (!slotKey) return null;
-    const slot = perf().titleSlotExpectationIndex.get(slotKey);
-    if (!slot || !slot.airingCount || !slot.bySignature?.size) return null;
-    const exactTitleStats = slot.bySignature.get(signature) || null;
-    const overallTitleStats = perf().titleOverallExpectationIndex.get(signature) || null;
-    if ((!exactTitleStats && !overallTitleStats) || (slot.airingCount || 0) < 2) return null;
-    const exactAirings = Number(exactTitleStats?.airingCount || 0);
-    const overallAirings = Number(overallTitleStats?.airingCount || 0);
-    const overallSlotParts = Number(overallTitleStats?.slotPartCount || 0);
-    const useExact = exactAirings >= 2;
-    if (!useExact && overallAirings < 2) return null;
-    const slotAvg = slot.airingCount ? slot.totalDollars / slot.airingCount : 0;
-    const titleAvg = useExact
-      ? (exactTitleStats.airingCount ? exactTitleStats.totalDollars / exactTitleStats.airingCount : 0)
-      : (overallSlotParts ? overallTitleStats.totalDollars / overallSlotParts : 0);
-    const tone = slotExpectationTone(titleAvg, slotAvg);
+    const liveState = expectationLiveStateForPlacement(placement);
+    const slotStats = selectExpectationStats(perf().scheduleExpectationIndex.slot, [
+      liveState !== 'unknown' ? `${liveState}|${slotKey}` : '',
+      `any|${slotKey}`
+    ]);
+    const slotAvg = expectationAverage(slotStats, false);
+    if (!slotStats || !Number.isFinite(slotAvg) || Number(slotStats.airingCount || 0) < 2) return null;
+
+    const titleSlotStats = selectExpectationStats(perf().scheduleExpectationIndex.titleSlot, [
+      liveState !== 'unknown' ? `${signature}|${liveState}|${slotKey}` : '',
+      `${signature}|any|${slotKey}`
+    ]);
+    const titleOverallStats = selectExpectationStats(perf().scheduleExpectationIndex.titleOverall, [
+      liveState !== 'unknown' ? `${signature}|${liveState}` : '',
+      `${signature}|any`
+    ]);
+
+    const topicKeys = placementExpectationTopicKeys(placement);
+    const topicComponents = topicKeys
+      .map((topicKey) => {
+        const stats = selectExpectationStats(perf().scheduleExpectationIndex.topicSlot, [
+          liveState !== 'unknown' ? `${topicKey}|${liveState}|${slotKey}` : '',
+          `${topicKey}|any|${slotKey}`
+        ]);
+        const avg = expectationAverage(stats, false);
+        if (!stats || !Number.isFinite(avg) || Number(stats.airingCount || 0) < 2) return null;
+        return {
+          kind: 'topic_slot',
+          topicKey,
+          label: stats.label || topicKey,
+          avg,
+          airingCount: Number(stats.airingCount || 0),
+          liveState: stats.liveState || 'any'
+        };
+      })
+      .filter(Boolean);
+
+    const combinedTopicComponent = topicComponents.length
+      ? {
+          kind: 'topic_slot',
+          label: topicComponents.map((item) => item.label).join(' / '),
+          avg: topicComponents.reduce((sum, item) => sum + item.avg, 0) / topicComponents.length,
+          airingCount: topicComponents.reduce((sum, item) => sum + item.airingCount, 0),
+          liveState: topicComponents[0]?.liveState || 'any'
+        }
+      : null;
+
+    const components = [];
+    const exactTitleAvg = expectationAverage(titleSlotStats, false);
+    if (titleSlotStats && Number(titleSlotStats.airingCount || 0) >= 1 && Number.isFinite(exactTitleAvg)) {
+      components.push({
+        kind: 'title_slot',
+        label: titleSlotStats.title || placement?.programTitle || 'This title',
+        avg: exactTitleAvg,
+        airingCount: Number(titleSlotStats.airingCount || 0),
+        liveState: titleSlotStats.liveState || 'any'
+      });
+    }
+    const overallTitleAvg = expectationAverage(titleOverallStats, true);
+    if (titleOverallStats && Number(titleOverallStats.airingCount || 0) >= 2 && Number.isFinite(overallTitleAvg)) {
+      components.push({
+        kind: 'title_overall',
+        label: titleOverallStats.title || placement?.programTitle || 'This title',
+        avg: overallTitleAvg,
+        airingCount: Number(titleOverallStats.airingCount || 0),
+        liveState: titleOverallStats.liveState || 'any'
+      });
+    }
+    if (combinedTopicComponent) components.push(combinedTopicComponent);
+    if (!components.length) return null;
+
+    const projectedAvg = buildProjectionFromComponents(components);
+    if (!Number.isFinite(projectedAvg)) return null;
+    const tone = slotExpectationTone(projectedAvg, slotAvg);
     const symbol = scheduleExpectationSymbol(tone);
     const relationText = tone === 'positive'
       ? 'expected to outperform this slot'
       : tone === 'negative'
         ? 'expected to underperform this slot'
         : 'expected to perform about average for this slot';
-    const evidenceText = useExact
-      ? `based on ${utils.formatCount(exactAirings)} prior airing${exactAirings === 1 ? '' : 's'} in this exact slot`
-      : `based on ${utils.formatCount(overallAirings)} prior airing${overallAirings === 1 ? '' : 's'} overall for this title`;
-    const titleLabel = (useExact ? exactTitleStats?.title : overallTitleStats?.title) || placement?.programTitle || 'This title';
+    const titleLabel = components.find((item) => item.kind === 'title_slot' || item.kind === 'title_overall')?.label || placement?.programTitle || 'This title';
+    const liveLabel = describeLiveState(liveState);
+    const componentLines = components.map((item) => {
+      const bucket = describeLiveState(item.liveState || 'any');
+      if (item.kind === 'title_slot') return `${titleLabel} in this exact day/time (${bucket}): avg ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} airing${item.airingCount === 1 ? '' : 's'}`;
+      if (item.kind === 'title_overall') return `${titleLabel} overall (${bucket}): avg ${utils.formatMoney(item.avg)} per half-hour slot across ${utils.formatCount(item.airingCount)} airing${item.airingCount === 1 ? '' : 's'}`;
+      return `What similar topics do in this day/time (${bucket}): avg ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} topic-slot airing${item.airingCount === 1 ? '' : 's'}`;
+    });
+    const tooltip = `${titleLabel} is ${relationText}. For ${liveLabel}, slot baseline is ${utils.formatMoney(slotAvg)} across ${utils.formatCount(slotStats.airingCount || 0)} airings. Projection: ${utils.formatMoney(projectedAvg)}. Why: ${componentLines.join('; ')}.`;
+    const evidenceMode = components.some((item) => item.kind === 'title_slot') ? 'exact_slot' : (components.some((item) => item.kind === 'topic_slot') ? 'composite' : 'overall_title');
+
     return {
       slotKey,
       tone,
       symbol,
       title: titleLabel,
-      titleAvg,
+      titleAvg: exactTitleAvg,
+      projectedAvg,
       slotAvg,
-      airingCount: useExact ? exactAirings : overallAirings,
-      slotCount: slot.airingCount || 0,
-      evidenceMode: useExact ? 'exact_slot' : 'overall_title',
-      tooltip: `${titleLabel} is ${relationText}, ${evidenceText}. Avg $${titleAvg.toFixed(0)} vs slot avg $${slotAvg.toFixed(0)} across ${utils.formatCount(slot.airingCount || 0)} airings.`
+      airingCount: Number(titleSlotStats?.airingCount || titleOverallStats?.airingCount || 0),
+      slotCount: Number(slotStats.airingCount || 0),
+      evidenceMode,
+      liveState,
+      tooltip,
+      components: components.map((item) => ({ ...item }))
     };
   }
 
@@ -3039,6 +3231,8 @@
       perf().ready = true;
       perf().titleSlotExpectationIndex = null;
       perf().titleOverallExpectationIndex = null;
+      perf().scheduleExpectationIndex = null;
+      perf().programRowById = null;
       populateControls();
     } catch (error) {
       console.error(error);
@@ -3071,6 +3265,8 @@
     perf().topicSlotWinnerGroups = null;
     perf().titleSlotExpectationIndex = null;
     perf().titleOverallExpectationIndex = null;
+    perf().scheduleExpectationIndex = null;
+    perf().programRowById = null;
     perf().slotDrillKey = '';
     perf().slotDrillMode = 'winner';
   }
