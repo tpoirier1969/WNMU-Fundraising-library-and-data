@@ -615,13 +615,47 @@
 
   function findProgramRowForImportedAiring(row = {}) {
     const lookup = getProgramLookupCache();
-    const programId = String(row.pledge_program_id || row.program_id || '').trim();
-    if (programId && lookup.byProgramId.has(programId)) return lookup.byProgramId.get(programId);
-    const wantedNola = utils.normalizeLookupKey(row.nola_code);
+    const candidateIds = [
+      row.pledge_program_id,
+      row.program_id,
+      row.manual_match_program_id,
+      row.pending_manual_match_program_id,
+      row.pending_link_program_id
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+    for (const programId of candidateIds) {
+      if (programId && lookup.byProgramId.has(programId)) return lookup.byProgramId.get(programId);
+    }
+    const wantedNola = utils.normalizeLookupKey(utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''));
     if (wantedNola && lookup.byNola.has(wantedNola)) return lookup.byNola.get(wantedNola);
-    const wantedTitle = utils.normalizeLookupKey(row.program_title || row.title);
-    if (wantedTitle && lookup.byTitle.has(wantedTitle)) return lookup.byTitle.get(wantedTitle);
+    const titleCandidates = [row.matched_library_title, row.program_title, row.imported_program_title, row.title, row.name]
+      .map((value) => utils.normalizeLookupKey(value))
+      .filter(Boolean);
+    for (const wantedTitle of titleCandidates) {
+      if (wantedTitle && lookup.byTitle.has(wantedTitle)) return lookup.byTitle.get(wantedTitle);
+    }
     return null;
+  }
+
+  function importedPlacementTitle(row = {}, sourceRow = null) {
+    return utils.normalizeText(
+      derive.title(sourceRow)
+      || utils.firstNonEmpty(row.matched_library_title, row.program_title, row.imported_program_title, row.title, row.name, '')
+    );
+  }
+
+  function importedPlacementLookupId(row = {}, sourceRow = null) {
+    const direct = String(derive.programId(sourceRow) || utils.firstNonEmpty(row.pledge_program_id, row.program_id, '') || '').trim();
+    if (direct) return direct;
+    const titleKey = utils.normalizeLookupKey(importedPlacementTitle(row, sourceRow));
+    const nolaKey = utils.normalizeLookupKey(utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''));
+    if (!(titleKey || nolaKey)) return '';
+    return `lookup:${titleKey}|${nolaKey}`;
+  }
+
+  function canBuildImportedPlacement(prepared = {}) {
+    const row = prepared?.row || prepared || {};
+    const sourceRow = prepared?.sourceRow || findProgramRowForImportedAiring(row);
+    return Boolean(importedPlacementTitle(row, sourceRow));
   }
 
   function resolveImportedPlacementLength(row = {}, sourceRow = null) {
@@ -646,13 +680,15 @@
     const sourceRow = prepared?.sourceRow || findProgramRowForImportedAiring(row);
     const dateKey = prepared?.dateKey || importedRowDateKey(row);
     const startMinutes = Number.isFinite(prepared?.startMinutes) ? prepared.startMinutes : importedRowStartMinutes(row);
-    if (!sourceRow || !dateKey || !Number.isFinite(startMinutes)) return null;
+    const programTitle = importedPlacementTitle(row, sourceRow);
+    if (!programTitle || !dateKey || !Number.isFinite(startMinutes)) return null;
     const { lengthMinutes, correctedFromLibrary } = resolveImportedPlacementLength(row, sourceRow);
     const endMinutes = startMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES);
+    const resolvedProgramId = importedPlacementLookupId(row, sourceRow);
     return {
       id: utils.makeId('place'),
-      programId: derive.programId(sourceRow),
-      programTitle: derive.title(sourceRow),
+      programId: resolvedProgramId,
+      programTitle,
       lengthMinutes,
       durationCorrectedFromLibrary: correctedFromLibrary,
       dateKey,
@@ -663,7 +699,7 @@
       liveBreakNotes: '',
       isNonPledge: false,
       sourceName: row.source_file_name || '',
-      sourceLabel: 'Imported report',
+      sourceLabel: sourceRow ? 'Imported report' : 'Imported report (title-only)',
       transferredToStation: false,
       importedFromReport: true,
       importedBroadcastDollars: Number(row.dollars || 0) || 0,
@@ -696,7 +732,7 @@
     groupedRows.forEach((entry) => {
       if (entry.isNonSpecific) return;
       const reasons = [];
-      if (!entry.sourceRow) reasons.push('no_library_match');
+      if (!canBuildImportedPlacement(entry)) reasons.push('no_library_match');
       if (!entry.dateKey) reasons.push('bad_date');
       if (!Number.isFinite(importedRowStartMinutes(entry.row))) reasons.push('bad_time');
       if (reasons.length) {
@@ -714,7 +750,7 @@
       }
       diagnostics.eligibleRows += 1;
     });
-    const preparedRows = groupedRows.filter((entry) => !entry.isNonSpecific && entry.sourceRow && entry.dateKey && Number.isFinite(importedRowStartMinutes(entry.row))).map((entry) => ({
+    const preparedRows = groupedRows.filter((entry) => !entry.isNonSpecific && canBuildImportedPlacement(entry) && entry.dateKey && Number.isFinite(importedRowStartMinutes(entry.row))).map((entry) => ({
       ...entry,
       startMinutes: importedRowStartMinutes(entry.row)
     }));
@@ -775,7 +811,7 @@
           });
         }
       }
-      const scheduleableRows = group.rows.filter((entry) => !entry?.isNonSpecific && entry?.sourceRow && entry?.dateKey && Number.isFinite(importedRowStartMinutes(entry.row)));
+      const scheduleableRows = group.rows.filter((entry) => !entry?.isNonSpecific && canBuildImportedPlacement(entry) && entry?.dateKey && Number.isFinite(importedRowStartMinutes(entry.row)));
       const totals = summarizeImportedRows(group.rows);
       schedule.meta = {
         ...(schedule.meta || {}),
@@ -1756,16 +1792,27 @@
       grouped.get(key).push(placement);
     });
     const groupedEntries = [...grouped.entries()];
-    void ensureScheduledDetailsBatch(groupedEntries.map(([programId]) => programId));
-    const loadingCount = groupedEntries.filter(([programId]) => state.scheduleDetailCache[programId]?.loading && !state.scheduleDetailCache[programId]?.loaded).length;
-    const loadedCount = groupedEntries.filter(([programId]) => state.scheduleDetailCache[programId]?.loaded).length;
+    const detailKeyByGroup = new Map(groupedEntries.map(([groupKey, occurrences]) => {
+      const row = getProgramRowById(groupKey) || getProgramRowById(occurrences?.[0]?.programId || '') || null;
+      const detailProgramId = String(derive.programId(row) || '').trim();
+      return [groupKey, detailProgramId];
+    }));
+    void ensureScheduledDetailsBatch([...new Set(groupedEntries.map(([groupKey]) => detailKeyByGroup.get(groupKey)).filter(Boolean))]);
+    const loadingCount = groupedEntries.filter(([groupKey]) => {
+      const detailKey = detailKeyByGroup.get(groupKey);
+      return detailKey && state.scheduleDetailCache[detailKey]?.loading && !state.scheduleDetailCache[detailKey]?.loaded;
+    }).length;
+    const loadedCount = groupedEntries.filter(([groupKey]) => {
+      const detailKey = detailKeyByGroup.get(groupKey);
+      return detailKey && state.scheduleDetailCache[detailKey]?.loaded;
+    }).length;
     const progressHtml = loadingCount
       ? `<div class="schedule-detail-progress">Loading detailed break/history data for ${utils.escapeHtml(utils.formatCount(loadingCount))} of ${utils.escapeHtml(utils.formatCount(groupedEntries.length))} titles… ${utils.escapeHtml(utils.formatCount(loadedCount))} ready.</div>`
       : '';
 
     els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + progressHtml + groupedEntries.map(([programId, occurrences]) => {
-      const row = getProgramRowById(programId) || {};
-      const cache = state.scheduleDetailCache[programId];
+      const row = getProgramRowById(programId) || getProgramRowById(occurrences?.[0]?.programId || '') || {};
+      const cache = state.scheduleDetailCache[detailKeyByGroup.get(programId) || ''];
       const detail = cache?.detail || null;
       const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
       const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
