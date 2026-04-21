@@ -1744,11 +1744,24 @@
           signature,
           title: record.title || 'Unknown title',
           totalDollars: 0,
-          airingCount: 0
+          airingCount: 0,
+          slotPartCount: 0
         });
       }
       const entry = titleMap.get(signature);
-      entry.totalDollars += Number(record.amount) || 0;
+      const occupiedSlots = buildOccupiedHalfHourSlots(record);
+      if (occupiedSlots.length) {
+        const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
+        occupiedSlots.forEach((slotPart) => {
+          const share = Math.max(0, (Number(slotPart.overlapMinutes) || 0) / totalOverlapMinutes);
+          const allocatedAmount = (Number(record.amount) || 0) * share;
+          entry.totalDollars += allocatedAmount;
+          entry.slotPartCount += 1;
+        });
+      } else {
+        entry.totalDollars += Number(record.amount) || 0;
+        entry.slotPartCount += 1;
+      }
       entry.airingCount += 1;
     });
     return titleMap;
@@ -1801,15 +1814,16 @@
     if (!slot || !slot.airingCount || !slot.bySignature?.size) return null;
     const exactTitleStats = slot.bySignature.get(signature) || null;
     const overallTitleStats = perf().titleOverallExpectationIndex.get(signature) || null;
-    const titleStats = exactTitleStats || overallTitleStats;
-    if (!titleStats || (slot.airingCount || 0) < 2) return null;
+    if ((!exactTitleStats && !overallTitleStats) || (slot.airingCount || 0) < 2) return null;
     const exactAirings = Number(exactTitleStats?.airingCount || 0);
     const overallAirings = Number(overallTitleStats?.airingCount || 0);
-    if (exactAirings < 1 && overallAirings < 2) return null;
+    const overallSlotParts = Number(overallTitleStats?.slotPartCount || 0);
+    const useExact = exactAirings >= 2;
+    if (!useExact && overallAirings < 2) return null;
     const slotAvg = slot.airingCount ? slot.totalDollars / slot.airingCount : 0;
-    const titleAvg = exactAirings >= 1
-      ? (titleStats.airingCount ? titleStats.totalDollars / titleStats.airingCount : 0)
-      : (overallTitleStats?.airingCount ? overallTitleStats.totalDollars / overallTitleStats.airingCount : 0);
+    const titleAvg = useExact
+      ? (exactTitleStats.airingCount ? exactTitleStats.totalDollars / exactTitleStats.airingCount : 0)
+      : (overallSlotParts ? overallTitleStats.totalDollars / overallSlotParts : 0);
     const tone = slotExpectationTone(titleAvg, slotAvg);
     const symbol = scheduleExpectationSymbol(tone);
     const relationText = tone === 'positive'
@@ -1817,20 +1831,21 @@
       : tone === 'negative'
         ? 'expected to underperform this slot'
         : 'expected to perform about average for this slot';
-    const evidenceText = exactAirings >= 1
+    const evidenceText = useExact
       ? `based on ${utils.formatCount(exactAirings)} prior airing${exactAirings === 1 ? '' : 's'} in this exact slot`
       : `based on ${utils.formatCount(overallAirings)} prior airing${overallAirings === 1 ? '' : 's'} overall for this title`;
+    const titleLabel = (useExact ? exactTitleStats?.title : overallTitleStats?.title) || placement?.programTitle || 'This title';
     return {
       slotKey,
       tone,
       symbol,
-      title: titleStats.title || placement?.programTitle || 'This title',
+      title: titleLabel,
       titleAvg,
       slotAvg,
-      airingCount: exactAirings || overallAirings || 0,
+      airingCount: useExact ? exactAirings : overallAirings,
       slotCount: slot.airingCount || 0,
-      evidenceMode: exactAirings >= 1 ? 'exact_slot' : 'overall_title',
-      tooltip: `${titleStats.title || placement?.programTitle || 'This title'} is ${relationText}, ${evidenceText}. Avg $${titleAvg.toFixed(0)} vs slot avg $${slotAvg.toFixed(0)} across ${utils.formatCount(slot.airingCount || 0)} airings.`
+      evidenceMode: useExact ? 'exact_slot' : 'overall_title',
+      tooltip: `${titleLabel} is ${relationText}, ${evidenceText}. Avg $${titleAvg.toFixed(0)} vs slot avg $${slotAvg.toFixed(0)} across ${utils.formatCount(slot.airingCount || 0)} airings.`
     };
   }
 
