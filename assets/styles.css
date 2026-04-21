@@ -2182,33 +2182,40 @@ button.primary {
 .schedule-placement span { font-size: clamp(.40rem, .44vw, .52rem); line-height: 1.05; font-weight: 500; letter-spacing: .005em; opacity: .94; }
 .schedule-placement-expectation {
   position: absolute;
-  right: 5px;
+  right: 4px;
   bottom: 3px;
-  min-width: 11px;
-  height: 11px;
+  min-width: 13px;
+  height: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.22);
+  border: 1px solid rgba(255,255,255,.34);
   color: #fff;
-  font-size: .56rem;
+  font-size: .62rem;
   font-weight: 800;
   line-height: 1;
   text-shadow: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
   pointer-events: auto;
+  z-index: 3;
 }
 .schedule-placement-expectation.positive {
-  background: rgba(34,197,94,.92);
-  border-color: rgba(255,255,255,.28);
+  background: rgba(34,197,94,.94);
+  border-color: rgba(255,255,255,.30);
 }
 .schedule-placement-expectation.neutral {
-  background: rgba(255,255,255,.26);
+  background: rgba(59,130,246,.92);
+  border-color: rgba(255,255,255,.30);
 }
 .schedule-placement-expectation.negative {
-  background: rgba(239,68,68,.92);
-  border-color: rgba(255,255,255,.28);
+  background: rgba(239,68,68,.94);
+  border-color: rgba(255,255,255,.30);
+}
+.schedule-placement-expectation.overall-fallback {
+  outline: 1px dashed rgba(255,255,255,.45);
+  outline-offset: 1px;
 }
 .schedule-day-head { font-size: .95rem; }
 .schedule-day-head.weekend { background: linear-gradient(180deg, #ddebf6, #d2e4f2); }

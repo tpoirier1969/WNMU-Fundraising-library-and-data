@@ -1693,7 +1693,7 @@
     source.forEach((record) => {
       if (!record?.moneyTrusted) return;
       if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
-      const signature = record.signature || signatureForProgram(null, record);
+      const signature = signatureForProgram(null, record);
       if (!signature || signature === 'non_specific') return;
       const occupiedSlots = buildOccupiedHalfHourSlots(record);
       if (!occupiedSlots.length) return;
@@ -1730,6 +1730,28 @@
       });
     });
     return slotMap;
+  }
+
+  function buildTitleOverallExpectationIndex(records) {
+    const titleMap = new Map();
+    const source = Array.isArray(records) ? records : [];
+    source.forEach((record) => {
+      if (!record?.moneyTrusted) return;
+      const signature = signatureForProgram(null, record);
+      if (!signature || signature === 'non_specific') return;
+      if (!titleMap.has(signature)) {
+        titleMap.set(signature, {
+          signature,
+          title: record.title || 'Unknown title',
+          totalDollars: 0,
+          airingCount: 0
+        });
+      }
+      const entry = titleMap.get(signature);
+      entry.totalDollars += Number(record.amount) || 0;
+      entry.airingCount += 1;
+    });
+    return titleMap;
   }
 
   function scheduleSlotKey(dateKey, startMinutes) {
@@ -1772,14 +1794,22 @@
     const signature = signatureForProgram(null, placement || {});
     if (!signature || signature === 'non_specific') return null;
     if (!perf().titleSlotExpectationIndex) perf().titleSlotExpectationIndex = buildTitleSlotExpectationIndex(perf().records || []);
+    if (!perf().titleOverallExpectationIndex) perf().titleOverallExpectationIndex = buildTitleOverallExpectationIndex(perf().records || []);
     const slotKey = scheduleSlotKey(dateKey, startMinutes);
     if (!slotKey) return null;
     const slot = perf().titleSlotExpectationIndex.get(slotKey);
     if (!slot || !slot.airingCount || !slot.bySignature?.size) return null;
-    const titleStats = slot.bySignature.get(signature);
-    if (!titleStats || (titleStats.airingCount || 0) < 2 || (slot.airingCount || 0) < 3) return null;
+    const exactTitleStats = slot.bySignature.get(signature) || null;
+    const overallTitleStats = perf().titleOverallExpectationIndex.get(signature) || null;
+    const titleStats = exactTitleStats || overallTitleStats;
+    if (!titleStats || (slot.airingCount || 0) < 2) return null;
+    const exactAirings = Number(exactTitleStats?.airingCount || 0);
+    const overallAirings = Number(overallTitleStats?.airingCount || 0);
+    if (exactAirings < 1 && overallAirings < 2) return null;
     const slotAvg = slot.airingCount ? slot.totalDollars / slot.airingCount : 0;
-    const titleAvg = titleStats.airingCount ? titleStats.totalDollars / titleStats.airingCount : 0;
+    const titleAvg = exactAirings >= 1
+      ? (titleStats.airingCount ? titleStats.totalDollars / titleStats.airingCount : 0)
+      : (overallTitleStats?.airingCount ? overallTitleStats.totalDollars / overallTitleStats.airingCount : 0);
     const tone = slotExpectationTone(titleAvg, slotAvg);
     const symbol = scheduleExpectationSymbol(tone);
     const relationText = tone === 'positive'
@@ -1787,6 +1817,9 @@
       : tone === 'negative'
         ? 'expected to underperform this slot'
         : 'expected to perform about average for this slot';
+    const evidenceText = exactAirings >= 1
+      ? `based on ${utils.formatCount(exactAirings)} prior airing${exactAirings === 1 ? '' : 's'} in this exact slot`
+      : `based on ${utils.formatCount(overallAirings)} prior airing${overallAirings === 1 ? '' : 's'} overall for this title`;
     return {
       slotKey,
       tone,
@@ -1794,9 +1827,10 @@
       title: titleStats.title || placement?.programTitle || 'This title',
       titleAvg,
       slotAvg,
-      airingCount: titleStats.airingCount || 0,
+      airingCount: exactAirings || overallAirings || 0,
       slotCount: slot.airingCount || 0,
-      tooltip: `${titleStats.title || placement?.programTitle || 'This title'} is ${relationText}. Avg $${titleAvg.toFixed(0)} across ${utils.formatCount(titleStats.airingCount || 0)} slot airing${(titleStats.airingCount || 0) === 1 ? '' : 's'} vs slot avg $${slotAvg.toFixed(0)} across ${utils.formatCount(slot.airingCount || 0)} airings.`
+      evidenceMode: exactAirings >= 1 ? 'exact_slot' : 'overall_title',
+      tooltip: `${titleStats.title || placement?.programTitle || 'This title'} is ${relationText}, ${evidenceText}. Avg $${titleAvg.toFixed(0)} vs slot avg $${slotAvg.toFixed(0)} across ${utils.formatCount(slot.airingCount || 0)} airings.`
     };
   }
 
@@ -2989,6 +3023,7 @@
       buildPerformanceRecords(inputs);
       perf().ready = true;
       perf().titleSlotExpectationIndex = null;
+      perf().titleOverallExpectationIndex = null;
       populateControls();
     } catch (error) {
       console.error(error);
@@ -3020,6 +3055,7 @@
     perf().excludedReviewRows = [];
     perf().topicSlotWinnerGroups = null;
     perf().titleSlotExpectationIndex = null;
+    perf().titleOverallExpectationIndex = null;
     perf().slotDrillKey = '';
     perf().slotDrillMode = 'winner';
   }

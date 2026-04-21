@@ -56,7 +56,8 @@
     if (!placement || placement.isNonPledge || !App.performanceUi?.getScheduleExpectationForPlacement) return '';
     const expectation = App.performanceUi.getScheduleExpectationForPlacement(placement, dateKey, startMinutes);
     if (!expectation) return '';
-    return `<span class="schedule-placement-expectation ${utils.escapeHtml(expectation.tone)}" aria-label="${utils.escapeHtml(expectation.tooltip)}" title="${utils.escapeHtml(expectation.tooltip)}">${utils.escapeHtml(expectation.symbol)}</span>`;
+    const evidenceClass = expectation.evidenceMode === 'overall_title' ? 'overall-fallback' : 'exact-slot';
+    return `<span class="schedule-placement-expectation ${utils.escapeHtml(expectation.tone)} ${utils.escapeHtml(evidenceClass)}" aria-label="${utils.escapeHtml(expectation.tooltip)}" title="${utils.escapeHtml(expectation.tooltip)}">${utils.escapeHtml(expectation.symbol)}</span>`;
   }
 
   function getScheduleDateSpanInfo(schedule = {}) {
