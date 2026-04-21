@@ -39,6 +39,26 @@
     });
   }
 
+  function requestScheduleExpectationData() {
+    if (state.performance?.ready || state.scheduleExpectationLoading || !state.client || !App.performanceUi?.refreshData) return;
+    state.scheduleExpectationLoading = true;
+    App.performanceUi.refreshData({ silent: true })
+      .then(() => {
+        if (getActiveSchedule()) renderScheduleEditor();
+      })
+      .catch(() => {})
+      .finally(() => {
+        state.scheduleExpectationLoading = false;
+      });
+  }
+
+  function scheduleExpectationBadgeHtml(placement, dateKey, startMinutes) {
+    if (!placement || placement.isNonPledge || !App.performanceUi?.getScheduleExpectationForPlacement) return '';
+    const expectation = App.performanceUi.getScheduleExpectationForPlacement(placement, dateKey, startMinutes);
+    if (!expectation) return '';
+    return `<span class="schedule-placement-expectation ${utils.escapeHtml(expectation.tone)}" aria-label="${utils.escapeHtml(expectation.tooltip)}" title="${utils.escapeHtml(expectation.tooltip)}">${utils.escapeHtml(expectation.symbol)}</span>`;
+  }
+
   function getScheduleDateSpanInfo(schedule = {}) {
     const startKey = utils.normalizeText(schedule?.startDate);
     const endKey = utils.normalizeText(schedule?.endDate);
@@ -1679,6 +1699,7 @@
     els.scheduleEmpty.classList.add('hidden');
     els.scheduleEditor.classList.remove('hidden');
 
+    requestScheduleExpectationData();
     const dayKeys = visibleDateKeys(schedule);
     const windowConfig = getScheduleWindow(state.scheduleView);
     const visibleStartMin = windowConfig.startMinutes;
@@ -1734,6 +1755,7 @@
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : ''].filter(Boolean).join(' ');
+        const expectationBadge = isStart ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const subtitleBits = [];
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
@@ -1742,7 +1764,7 @@
         }
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span></span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${expectationBadge}</span>` : ''}
           </button>
         `);
       });

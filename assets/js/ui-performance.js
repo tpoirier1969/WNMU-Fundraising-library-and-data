@@ -1687,6 +1687,119 @@
     return utils.normalizeText(record?.topicDisplay || record?.topic || '') || 'Unassigned topic';
   }
 
+  function buildTitleSlotExpectationIndex(records) {
+    const slotMap = new Map();
+    const source = Array.isArray(records) ? records : [];
+    source.forEach((record) => {
+      if (!record?.moneyTrusted) return;
+      if (!record?.hasDate || !record?.hasExplicitTime || record?.estimatedOnly) return;
+      const signature = record.signature || signatureForProgram(null, record);
+      if (!signature || signature === 'non_specific') return;
+      const occupiedSlots = buildOccupiedHalfHourSlots(record);
+      if (!occupiedSlots.length) return;
+      const totalOverlapMinutes = occupiedSlots.reduce((sum, slot) => sum + (Number(slot.overlapMinutes) || 0), 0) || 30;
+      occupiedSlots.forEach((slotPart) => {
+        const slotKey = `${slotPart.dayIndex}|${slotPart.slotMinutes}`;
+        if (!slotMap.has(slotKey)) {
+          slotMap.set(slotKey, {
+            key: slotKey,
+            label: slotPart.label,
+            dayIndex: slotPart.dayIndex,
+            slotMinutes: slotPart.slotMinutes,
+            totalDollars: 0,
+            airingCount: 0,
+            bySignature: new Map()
+          });
+        }
+        const slot = slotMap.get(slotKey);
+        const share = Math.max(0, (Number(slotPart.overlapMinutes) || 0) / totalOverlapMinutes);
+        const allocatedAmount = (Number(record.amount) || 0) * share;
+        slot.totalDollars += allocatedAmount;
+        slot.airingCount += 1;
+        if (!slot.bySignature.has(signature)) {
+          slot.bySignature.set(signature, {
+            signature,
+            title: record.title || 'Unknown title',
+            totalDollars: 0,
+            airingCount: 0
+          });
+        }
+        const entry = slot.bySignature.get(signature);
+        entry.totalDollars += allocatedAmount;
+        entry.airingCount += 1;
+      });
+    });
+    return slotMap;
+  }
+
+  function scheduleSlotKey(dateKey, startMinutes) {
+    const safeDateKey = utils.normalizeText(dateKey);
+    const safeMinutes = Number(startMinutes);
+    if (!safeDateKey || !Number.isFinite(safeMinutes)) return '';
+    const [year, month, day] = safeDateKey.split('-').map((part) => Number(part));
+    if (![year, month, day].every(Number.isFinite)) return '';
+    const slotDate = new Date(year, month - 1, day, Math.floor(safeMinutes / 60), safeMinutes % 60, 0, 0);
+    if (Number.isNaN(slotDate.getTime())) return '';
+    const anchor = broadcastAnchorDate(slotDate) || slotDate;
+    const dayName = anchor.toLocaleDateString(undefined, { weekday: 'long' });
+    const dayIndex = DAY_ORDER.indexOf(dayName);
+    if (dayIndex < 0) return '';
+    const slotMinutes = Math.floor(safeMinutes / 30) * 30;
+    return `${dayIndex}|${slotMinutes}`;
+  }
+
+  function slotExpectationTone(titleAvg, slotAvg) {
+    if (!Number.isFinite(titleAvg) || !Number.isFinite(slotAvg)) return 'neutral';
+    if (slotAvg <= 0) {
+      if (titleAvg > 0) return 'positive';
+      if (titleAvg < 0) return 'negative';
+      return 'neutral';
+    }
+    const ratio = (titleAvg - slotAvg) / slotAvg;
+    if (ratio >= 0.15) return 'positive';
+    if (ratio <= -0.15) return 'negative';
+    return 'neutral';
+  }
+
+  function scheduleExpectationSymbol(tone) {
+    if (tone === 'positive') return '+';
+    if (tone === 'negative') return '-';
+    return '=';
+  }
+
+  function getScheduleExpectationForPlacement(placement, dateKey, startMinutes) {
+    if (!perf().ready || !Array.isArray(perf().records) || !perf().records.length) return null;
+    const signature = signatureForProgram(null, placement || {});
+    if (!signature || signature === 'non_specific') return null;
+    if (!perf().titleSlotExpectationIndex) perf().titleSlotExpectationIndex = buildTitleSlotExpectationIndex(perf().records || []);
+    const slotKey = scheduleSlotKey(dateKey, startMinutes);
+    if (!slotKey) return null;
+    const slot = perf().titleSlotExpectationIndex.get(slotKey);
+    if (!slot || !slot.airingCount || !slot.bySignature?.size) return null;
+    const titleStats = slot.bySignature.get(signature);
+    if (!titleStats || (titleStats.airingCount || 0) < 2 || (slot.airingCount || 0) < 3) return null;
+    const slotAvg = slot.airingCount ? slot.totalDollars / slot.airingCount : 0;
+    const titleAvg = titleStats.airingCount ? titleStats.totalDollars / titleStats.airingCount : 0;
+    const tone = slotExpectationTone(titleAvg, slotAvg);
+    const symbol = scheduleExpectationSymbol(tone);
+    const relationText = tone === 'positive'
+      ? 'expected to outperform this slot'
+      : tone === 'negative'
+        ? 'expected to underperform this slot'
+        : 'expected to perform about average for this slot';
+    return {
+      slotKey,
+      tone,
+      symbol,
+      title: titleStats.title || placement?.programTitle || 'This title',
+      titleAvg,
+      slotAvg,
+      airingCount: titleStats.airingCount || 0,
+      slotCount: slot.airingCount || 0,
+      tooltip: `${titleStats.title || placement?.programTitle || 'This title'} is ${relationText}. Avg $${titleAvg.toFixed(0)} across ${utils.formatCount(titleStats.airingCount || 0)} slot airing${(titleStats.airingCount || 0) === 1 ? '' : 's'} vs slot avg $${slotAvg.toFixed(0)} across ${utils.formatCount(slot.airingCount || 0)} airings.`
+    };
+  }
+
   function buildTopicSlotWinnerGroups(records) {
     const slotMap = new Map();
     (records || []).forEach((record) => {
@@ -2875,6 +2988,7 @@
       const inputs = await App.data.fetchPerformanceInputs();
       buildPerformanceRecords(inputs);
       perf().ready = true;
+      perf().titleSlotExpectationIndex = null;
       populateControls();
     } catch (error) {
       console.error(error);
@@ -2905,6 +3019,7 @@
     perf().analysisMeta = {};
     perf().excludedReviewRows = [];
     perf().topicSlotWinnerGroups = null;
+    perf().titleSlotExpectationIndex = null;
     perf().slotDrillKey = '';
     perf().slotDrillMode = 'winner';
   }
@@ -3041,5 +3156,5 @@
     return [...(perf().excludedReviewRows || [])];
   }
 
-  App.performanceUi = { ensureReady, refreshData, renderAll, bindEvents, reset, populateControls, getExcludedReviewRows };
+  App.performanceUi = { ensureReady, refreshData, renderAll, bindEvents, reset, populateControls, getExcludedReviewRows, getScheduleExpectationForPlacement };
 })();
