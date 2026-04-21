@@ -1392,6 +1392,12 @@
     state.detailCreateMode = false;
 
     const loadToken = Symbol(`detail:${programId}`);
+    const defaultAutoEdit = canEdit()
+      && !Object.prototype.hasOwnProperty.call(options, 'preserveMode')
+      && !Object.prototype.hasOwnProperty.call(options, 'autoEdit')
+      && state.isAdmin;
+    const requestedEditMode = canEdit()
+      && (options.preserveMode === true || options.autoEdit === true || defaultAutoEdit);
     state.detailLoadToken = loadToken;
 
     openDetailModal();
@@ -1409,6 +1415,9 @@
     if (snapshotProgram) {
       state.currentDetailProgram = snapshotProgram;
       renderDetailShell(snapshotProgram);
+      if (requestedEditMode) {
+        setDetailMode('edit');
+      }
     }
 
     try {
@@ -1423,10 +1432,13 @@
       state.currentDetailTimings = detail.timings;
       state.currentDetailDriveResults = detail.driveResults;
       state.currentDetailAirings = detail.airings;
+      const keepLiveEditMode = canEdit() && state.detailEditMode;
+      const finalEditMode = requestedEditMode || keepLiveEditMode;
       setDetailNotice(detail.warnings.join(' '), detail.warnings.length ? 'warn' : '');
       renderDetail(detail.program, detail.timings, detail.driveResults, detail.airings);
-      if (options.preserveMode && canEdit()) setDetailMode('edit');
-      els.detailCloseButton.focus();
+      if (finalEditMode) setDetailMode('edit');
+      else setDetailMode('view');
+      if (!finalEditMode) els.detailCloseButton.focus();
     } catch (error) {
       if (state.detailLoadToken !== loadToken) return;
       console.error('Detail render failed.', error);
