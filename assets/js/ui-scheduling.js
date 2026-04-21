@@ -49,6 +49,29 @@
     return { ok: true, reason: '', days };
   }
 
+  function normalizePlacementBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') return value;
+    const text = utils.normalizeText(value).toLowerCase();
+    if (!text) return fallback;
+    if (['true', 'yes', 'y', '1', 'live', 'has live breaks', 'flagged'].includes(text)) return true;
+    if (['false', 'no', 'n', '0', 'none', 'no live breaks', 'no live-breaks', 'no live break', 'not live'].includes(text)) return false;
+    return fallback;
+  }
+
+  function placementLooksNonSpecific(placement = {}) {
+    return utils.isNonSpecificRow({
+      isNonSpecific: placement?.isNonSpecific,
+      is_non_specific: placement?.isNonSpecific,
+      imported_program_title: placement?.programTitle,
+      program_title: placement?.programTitle,
+      title: placement?.programTitle,
+      name: placement?.programTitle,
+      nola_code: placement?.nolaCode || placement?.nola || '',
+      nola: placement?.nolaCode || placement?.nola || '',
+      program_nola: placement?.nolaCode || placement?.nola || ''
+    });
+  }
+
   function normalizeScheduleWindow(schedule = {}) {
     const next = { ...schedule };
     const startMinutes = Number.isFinite(Number(next.dayStartMinutes)) ? Number(next.dayStartMinutes) : (Number(next.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
@@ -59,6 +82,15 @@
     next.dayEndMinutes = needsLegacyUpgrade ? constants.DEFAULT_DAY_END_MINUTES : endMinutes;
     next.dayStartHour = Math.floor(next.dayStartMinutes / 60);
     next.dayEndHour = Math.floor(next.dayEndMinutes / 60);
+    next.placements = (Array.isArray(next.placements) ? next.placements : []).filter((placement) => {
+      return !(placement?.importedFromReport && placementLooksNonSpecific(placement));
+    }).map((placement) => ({
+      ...placement,
+      liveBreakFlag: normalizePlacementBoolean(placement?.liveBreakFlag, Boolean(utils.normalizeText(placement?.liveBreakNotes))),
+      isNonPledge: normalizePlacementBoolean(placement?.isNonPledge, Boolean(placement?.isNonPledge)),
+      importedFromReport: normalizePlacementBoolean(placement?.importedFromReport, Boolean(placement?.importedFromReport)),
+      transferredToStation: normalizePlacementBoolean(placement?.transferredToStation, Boolean(placement?.transferredToStation))
+    }));
     return next;
   }
 
@@ -169,9 +201,7 @@
   }
 
   function importedRowIsNonSpecific(row = {}) {
-    const titleKey = utils.normalizeLookupKey(row?.imported_program_title || row?.program_title || row?.title || '').replace(/[^a-z0-9]+/g, ' ').trim();
-    const nolaKey = utils.normalizeLookupKey(row?.nola_code || '').replace(/\s+/g, '');
-    return Boolean(row?.is_non_specific) || nolaKey === 'nspl' || titleKey === 'non specific pledges' || titleKey.endsWith('non specific pledges');
+    return utils.isNonSpecificRow(row);
   }
 
   function summarizeImportedRows(rows = []) {
@@ -777,6 +807,9 @@
               ...existingPlacement,
               ...placement,
               id: existingPlacement.id || placement.id,
+              liveBreakFlag: hasLiveBreakFlag(existingPlacement),
+              liveBreakNotes: existingPlacement.liveBreakNotes || '',
+              isNonPledge: Boolean(existingPlacement.isNonPledge),
               transferredToStation: Boolean(existingPlacement.transferredToStation),
               importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
               sourceAiringHash: placement.sourceAiringHash || existingPlacement.sourceAiringHash || ''
@@ -945,8 +978,9 @@
   }
 
   function hasLiveBreakFlag(placement = {}) {
-    if (placement?.liveBreakFlag === true) return true;
-    if (placement?.liveBreakFlag === false) return false;
+    const parsed = normalizePlacementBoolean(placement?.liveBreakFlag, null);
+    if (parsed === true) return true;
+    if (parsed === false) return false;
     return Boolean(utils.normalizeText(placement?.liveBreakNotes));
   }
 

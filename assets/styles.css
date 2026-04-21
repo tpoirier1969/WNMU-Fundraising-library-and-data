@@ -3824,7 +3824,7 @@ button.primary {
 }
 
 
-/* v0.21.07 date-row compact layout + version hard sync */
+/* v0.21.08 date-row compact layout + version hard sync */
 .performance-date-row {
   grid-template-columns: minmax(140px, 170px) auto minmax(140px, 170px) auto;
   gap: 8px;

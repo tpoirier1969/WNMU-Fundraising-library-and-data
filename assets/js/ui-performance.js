@@ -95,6 +95,14 @@
     return null;
   }
 
+  function placementLiveBreakFlag(placement = {}) {
+    const parsed = parseBooleanish(placement?.liveBreakFlag);
+    if (parsed === true) return true;
+    if (parsed === false) return false;
+    const notesText = utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveBreakNote || '');
+    return Boolean(notesText);
+  }
+
   function parseTemporal(row) {
     const rawDateTime = candidateValue(row, DATETIME_KEYS, /(aired_?at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at|airing_?date)/i);
     const rawTimeOnly = candidateValue(row, TIME_ONLY_KEYS, /(air_?time|slot_?time|scheduled_?time|time_?of_?day|airtime|broadcast_?time)/i);
@@ -519,7 +527,7 @@
         const dateKey = String(placement.dateKey || '');
         const startMinutes = Number(placement.startMinutes || 0);
         const endMinutes = Number(placement.endMinutes || startMinutes);
-        const liveBreak = placement?.liveBreakFlag === true;
+        const liveBreak = placementLiveBreakFlag(placement);
         const entry = { scheduleId: schedule?.id || '', placementId: placement?.id || '', signature, dateKey, startMinutes, endMinutes, liveBreak, placement, programRow };
         if (dateKey) datesWithPlacements.add(dateKey);
         push(exact, `${signature}|${dateKey}|${startMinutes}`, entry);
