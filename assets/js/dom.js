@@ -187,6 +187,7 @@
     performanceIntelligence: document.getElementById('performance-intelligence'),
     performanceSlotCompareA: document.getElementById('performance-slot-compare-a'),
     performanceSlotCompareB: document.getElementById('performance-slot-compare-b'),
+    performanceSlotCompareControls: document.getElementById('performance-slot-compare-controls'),
     performanceNotesPill: document.getElementById('performance-notes-pill'),
     performanceSourceNotes: document.getElementById('performance-source-notes')
   };

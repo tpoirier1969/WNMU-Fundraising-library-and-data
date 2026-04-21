@@ -2466,20 +2466,28 @@
 
   function renderSchedulingIntelligence() {
     if (!els.performanceIntelligence) return;
+    const toggleCompareControls = (show) => {
+      if (els.performanceSlotCompareControls) els.performanceSlotCompareControls.classList.toggle('hidden', !show);
+      if (els.performanceSlotCompareA) els.performanceSlotCompareA.disabled = !show;
+      if (els.performanceSlotCompareB) els.performanceSlotCompareB.disabled = !show;
+    };
     if (els.performanceIntelligencePill) els.performanceIntelligencePill.textContent = perf().topicFilter ? `For ${perf().topicFilter}` : 'Choose a main topic';
     if (!perf().topicFilter) {
-      renderSelectOptions(els.performanceSlotCompareA, [], '', 'Choose a topic first');
-      renderSelectOptions(els.performanceSlotCompareB, [], '', 'Choose a topic first');
-      els.performanceIntelligence.innerHTML = '<div class="performance-intelligence-empty">Choose a main topic to see the best slot overall, the best Mon-Fri/Saturday/Sunday slices, and a head-to-head slot comparison.</div>';
+      toggleCompareControls(false);
+      renderSelectOptions(els.performanceSlotCompareA, [], '', 'Choose a main topic above');
+      renderSelectOptions(els.performanceSlotCompareB, [], '', 'Choose a main topic above');
+      els.performanceIntelligence.innerHTML = '<div class="performance-intelligence-empty">Choose a main topic above to see the best slot overall, the best Mon-Fri/Saturday/Sunday slices, and a head-to-head slot comparison.</div>';
       return;
     }
     const { slotGroups, daySetGroups } = buildTopicIntelligenceGroups();
     if (!slotGroups.length) {
+      toggleCompareControls(false);
       renderSelectOptions(els.performanceSlotCompareA, [], '', 'No slot data');
       renderSelectOptions(els.performanceSlotCompareB, [], '', 'No slot data');
       els.performanceIntelligence.innerHTML = '<div class="performance-intelligence-empty">Not enough trustworthy dated rows are available for this topic in the current filter window.</div>';
       return;
     }
+    toggleCompareControls(true);
     const options = slotGroups.map((group) => ({ value: group.label, label: `${group.label} · ${metricDisplay(group)}` }));
     if (!perf().slotCompareA || !slotGroups.some((group) => group.label === perf().slotCompareA)) perf().slotCompareA = slotGroups[0]?.label || '';
     if (!perf().slotCompareB || !slotGroups.some((group) => group.label === perf().slotCompareB) || perf().slotCompareB === perf().slotCompareA) perf().slotCompareB = slotGroups[1]?.label || slotGroups[0]?.label || '';

@@ -6,6 +6,12 @@
   let scheduledDetailRerenderTimer = 0;
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
+  const scheduleInlineScrollbar = {
+    dragActive: false,
+    dragStartY: 0,
+    dragStartScrollTop: 0,
+    raf: 0
+  };
 
   function getActiveSchedule() {
     return derive.scheduleById(state.activeScheduleId);
@@ -1580,6 +1586,74 @@
     return `<div class="scheduled-premium-lines">${premiumLines(value).map((line) => `<div class="scheduled-premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
   }
 
+  function queueScheduleInlineScrollbarSync() {
+    if (!els.scheduleGrid) return;
+    if (scheduleInlineScrollbar.raf) return;
+    scheduleInlineScrollbar.raf = window.requestAnimationFrame(() => {
+      scheduleInlineScrollbar.raf = 0;
+      syncScheduleInlineScrollbar();
+    });
+  }
+
+  function syncScheduleInlineScrollbar() {
+    const container = els.scheduleGrid;
+    if (!container) return;
+    const rail = container.querySelector('.schedule-inline-scrollbar');
+    const head = container.querySelector('.schedule-grid-head');
+    const body = container.querySelector('.schedule-grid-body');
+    const thumb = rail?.querySelector('.schedule-inline-scrollbar-thumb');
+    if (!rail || !head || !body || !thumb) return;
+    const visible = container.clientHeight > 0 && container.scrollHeight > container.clientHeight + 2;
+    rail.classList.toggle('hidden', !visible);
+    if (!visible) return;
+    const headHeight = Math.max(0, head.offsetHeight || 0);
+    const bodyViewportHeight = Math.max(32, container.clientHeight - headHeight - 10);
+    const trackHeight = Math.max(32, bodyViewportHeight);
+    const scrollRange = Math.max(1, container.scrollHeight - container.clientHeight);
+    const thumbHeight = Math.max(44, Math.round((container.clientHeight / container.scrollHeight) * trackHeight));
+    const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
+    const thumbTop = scrollRange <= 0 ? 0 : Math.round((container.scrollTop / scrollRange) * maxThumbTravel);
+    rail.style.top = `${headHeight + 6}px`;
+    rail.style.height = `${trackHeight}px`;
+    thumb.style.height = `${thumbHeight}px`;
+    thumb.style.transform = `translateY(${thumbTop}px)`;
+    const bodyLeft = body.offsetLeft || 0;
+    const bodyWidth = body.scrollWidth || body.offsetWidth || 0;
+    const railLeft = Math.max(0, Math.round(bodyLeft + bodyWidth - container.scrollLeft - 14));
+    rail.style.left = `${railLeft}px`;
+  }
+
+  function handleInlineScrollbarDrag(event) {
+    if (!scheduleInlineScrollbar.dragActive || !els.scheduleGrid) return;
+    event.preventDefault();
+    const container = els.scheduleGrid;
+    const rail = container.querySelector('.schedule-inline-scrollbar');
+    const thumb = rail?.querySelector('.schedule-inline-scrollbar-thumb');
+    if (!rail || !thumb) return;
+    const trackHeight = rail.clientHeight || 1;
+    const thumbHeight = thumb.offsetHeight || 1;
+    const maxThumbTravel = Math.max(1, trackHeight - thumbHeight);
+    const scrollRange = Math.max(1, container.scrollHeight - container.clientHeight);
+    const deltaY = event.clientY - scheduleInlineScrollbar.dragStartY;
+    const nextScrollTop = scheduleInlineScrollbar.dragStartScrollTop + (deltaY / maxThumbTravel) * scrollRange;
+    container.scrollTop = Math.max(0, Math.min(scrollRange, nextScrollTop));
+    queueScheduleInlineScrollbarSync();
+  }
+
+  function stopInlineScrollbarDrag() {
+    scheduleInlineScrollbar.dragActive = false;
+    document.body.classList.remove('schedule-inline-scrollbar-dragging');
+  }
+
+  function renderInlineScrollbar() {
+    const container = els.scheduleGrid;
+    if (!container) return;
+    const existing = container.querySelector('.schedule-inline-scrollbar');
+    if (existing) existing.remove();
+    container.insertAdjacentHTML('beforeend', '<div class="schedule-inline-scrollbar hidden" aria-hidden="true"><button type="button" class="schedule-inline-scrollbar-thumb" tabindex="-1" aria-hidden="true"></button></div>');
+    queueScheduleInlineScrollbarSync();
+  }
+
   function renderScheduleGrid() {
     const schedule = getActiveSchedule();
     if (!schedule) {
@@ -1683,6 +1757,7 @@
       <div class="schedule-grid-head" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${header.join('')}</div>
       <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}${guideOverlays}</div>
     `;
+    renderInlineScrollbar();
     renderScheduledProgramDetails();
   }
 
@@ -2532,6 +2607,31 @@
       slot.classList.remove('drag-target');
       void movePlacement(placementId, slot.dataset.dateKey, Number(slot.dataset.minutes || 0));
     });
+    els.scheduleGrid?.addEventListener('scroll', queueScheduleInlineScrollbarSync, { passive: true });
+    els.scheduleGrid?.addEventListener('mousedown', (event) => {
+      const thumb = event.target.closest('.schedule-inline-scrollbar-thumb');
+      const rail = event.target.closest('.schedule-inline-scrollbar');
+      if (!thumb || !rail || !els.scheduleGrid) return;
+      event.preventDefault();
+      scheduleInlineScrollbar.dragActive = true;
+      scheduleInlineScrollbar.dragStartY = event.clientY;
+      scheduleInlineScrollbar.dragStartScrollTop = els.scheduleGrid.scrollTop || 0;
+      document.body.classList.add('schedule-inline-scrollbar-dragging');
+    });
+    els.scheduleGrid?.addEventListener('click', (event) => {
+      const rail = event.target.closest('.schedule-inline-scrollbar');
+      const thumb = event.target.closest('.schedule-inline-scrollbar-thumb');
+      if (!rail || thumb || !els.scheduleGrid) return;
+      const rect = rail.getBoundingClientRect();
+      const thumbEl = rail.querySelector('.schedule-inline-scrollbar-thumb');
+      const thumbHeight = thumbEl?.offsetHeight || 44;
+      const trackHeight = rail.clientHeight || 1;
+      const maxThumbTravel = Math.max(1, trackHeight - thumbHeight);
+      const clickY = Math.max(0, Math.min(trackHeight, event.clientY - rect.top - (thumbHeight / 2)));
+      const scrollRange = Math.max(1, els.scheduleGrid.scrollHeight - els.scheduleGrid.clientHeight);
+      els.scheduleGrid.scrollTop = (clickY / maxThumbTravel) * scrollRange;
+      queueScheduleInlineScrollbarSync();
+    });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
     els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
@@ -2574,6 +2674,9 @@
     });
     window.addEventListener('scroll', hideScheduleContextMenu, true);
     window.addEventListener('resize', hideScheduleContextMenu);
+    window.addEventListener('resize', queueScheduleInlineScrollbarSync);
+    window.addEventListener('mousemove', handleInlineScrollbarDrag);
+    window.addEventListener('mouseup', stopInlineScrollbarDrag);
     els.scheduleProgramCloseButton?.addEventListener('click', closeScheduleModal);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
