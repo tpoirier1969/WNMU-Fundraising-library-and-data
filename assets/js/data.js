@@ -248,6 +248,74 @@
     return [...mergedSummaryRows, ...baseOnlyRows];
   }
 
+  function buildImportedProgramSupplements(importedRows = [], existingRows = []) {
+    const existing = buildBaseIndexes(existingRows);
+    const grouped = new Map();
+    (Array.isArray(importedRows) ? importedRows : []).forEach((row) => {
+      const title = utils.normalizeText(utils.firstNonEmpty(row?.matched_library_title, row?.program_title, row?.imported_program_title, row?.title, row?.name));
+      const programId = String(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, '') || '').trim();
+      const nola = utils.normalizeText(utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola));
+      const key = utils.normalizeLookupKey(programId || nola || title);
+      if (!key || !title) return;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(row);
+    });
+
+    const supplements = [];
+    grouped.forEach((rows, key) => {
+      const sample = rows[0] || {};
+      const title = utils.normalizeText(utils.firstNonEmpty(sample?.matched_library_title, sample?.program_title, sample?.imported_program_title, sample?.title, sample?.name));
+      const programId = String(utils.firstNonEmpty(sample?.program_id, sample?.pledge_program_id, '') || '').trim();
+      const nola = utils.normalizeText(utils.firstNonEmpty(sample?.nola_code, sample?.nola, sample?.program_nola));
+      const idKey = utils.normalizeLookupKey(programId);
+      const nolaKey = utils.normalizeLookupKey(nola);
+      const titleKey = utils.normalizeLookupKey(title);
+      const existingRow = (idKey && existing.byId.get(idKey)) || (nolaKey && existing.byNola.get(nolaKey)) || (titleKey && existing.byTitle.get(titleKey)) || null;
+      const total = rows.reduce((sum, row) => sum + (Number(row?.dollars || 0) || 0), 0);
+      const dates = rows.map((row) => utils.normalizeText(row?.air_date) || utils.dateKeyFromDate(row?.aired_at) || '').filter(Boolean).sort();
+      const latestAired = rows
+        .map((row) => row?.aired_at || '')
+        .filter(Boolean)
+        .sort()
+        .slice(-1)[0] || '';
+      if (existingRow) {
+        existingRow.__historical_imported = true;
+        existingRow.__preserve_visible = true;
+        existingRow.__imported_airing_count = rows.length;
+        if (!(Number(existingRow?.airing_count) > 0)) existingRow.airing_count = rows.length;
+        if (!(Number(existingRow?.fundraiser_count) > 0)) existingRow.fundraiser_count = rows.length;
+        if (!(Number(derive.totalRaised(existingRow)) > 0) && total > 0) existingRow.total_contributions = Math.round(total * 100) / 100;
+        if (!utils.normalizeText(existingRow?.last_aired_at) && latestAired) existingRow.last_aired_at = latestAired;
+        return;
+      }
+      supplements.push(enrichResolvedFields({
+        id: programId || `imported:${key}`,
+        program_id: programId || null,
+        pledge_program_id: programId || null,
+        title,
+        program_title: title,
+        imported_program_title: utils.normalizeText(sample?.imported_program_title || sample?.program_title || title),
+        matched_library_title: utils.normalizeText(sample?.matched_library_title || title),
+        nola_code: nola || null,
+        topic_primary: null,
+        topic_secondary: null,
+        distributor: null,
+        total_contributions: Math.round(total * 100) / 100,
+        fundraiser_count: rows.length,
+        airing_count: rows.length,
+        last_aired_at: latestAired || null,
+        first_air_date: dates[0] || null,
+        last_air_date: dates.length ? dates[dates.length - 1] : null,
+        __historical_imported: true,
+        __preserve_visible: true,
+        __imported_only: true,
+        __supplement_match_method: 'imported_airings'
+      }, null));
+    });
+
+    return { rows: existingRows, supplements };
+  }
+
   async function refreshRawRows() {
     const source = await chooseLibrarySource();
     const sourceRows = await fetchAllRows(source.name);
@@ -267,6 +335,14 @@
 
     state.baseRows = baseRows;
     state.rawRows = mergeLibraryRows(sourceRows, baseRows);
+    try {
+      const importedRows = await fetchImportedAirings();
+      const existingRows = Array.isArray(state.rawRows) ? [...state.rawRows] : [];
+      const supplemented = buildImportedProgramSupplements(importedRows, existingRows);
+      state.rawRows = [...supplemented.rows, ...supplemented.supplements];
+    } catch (error) {
+      console.warn('Imported-airing library supplement failed.', error);
+    }
     state.fieldAudit = buildFieldAudit(state.rawRows);
     resetDetailCaches();
     return state.rawRows;

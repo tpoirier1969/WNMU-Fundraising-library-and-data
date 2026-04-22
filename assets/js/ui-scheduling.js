@@ -165,8 +165,29 @@
     renderScheduleList();
   }
 
+  async function healImportedSchedulesIfNeeded() {
+    if (state.scheduleImportedHealCompleted) return;
+    state.scheduleImportedHealCompleted = true;
+    const importedSchedules = (state.schedules || []).filter((schedule) => (schedule?.meta?.importedFromReports) || (schedule?.placements || []).some((placement) => placement?.importedFromReport));
+    if (!importedSchedules.length) return;
+    try {
+      const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
+      if (!Array.isArray(rows) || !rows.length) return;
+      const dirtySchedules = [];
+      const summary = mergeImportedRowsIntoSchedules(rows, { rebuild: false, activateFirst: false, dirtySchedules });
+      if ((summary.placementsCreated || summary.restoredPlacements || summary.reboundPlacements) && dirtySchedules.length) {
+        for (const schedule of dirtySchedules) {
+          await persistSchedules(schedule);
+        }
+      }
+    } catch (error) {
+      console.warn('Imported schedule auto-heal failed.', error);
+    }
+  }
+
   async function ensureReady() {
     if (!state.schedulingReady) await loadSchedules();
+    await healImportedSchedulesIfNeeded();
     if (!state.performance?.ready && !state.scheduleExpectationLoading && App.performanceUi?.refreshData) {
       requestScheduleExpectationData();
     }

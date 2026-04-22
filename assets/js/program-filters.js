@@ -91,8 +91,11 @@
   }
 
   function rowMatchesStatus(row = {}, statusFilter = 'active') {
-    if (statusFilter === 'active') return derive.isActive(row);
-    if (statusFilter === 'archived') return !derive.isActive(row);
+    if (statusFilter === 'active') {
+      if (row?.__preserve_visible) return true;
+      return derive.isActive(row);
+    }
+    if (statusFilter === 'archived') return !derive.isActive(row) && !row?.__preserve_visible;
     return true;
   }
 
