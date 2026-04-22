@@ -139,27 +139,32 @@
 
   function buildBaseIndexes(baseRows = []) {
     const byId = new Map();
-    const byNola = new Map();
+    const byLookup = new Map();
     const byTitle = new Map();
 
     baseRows.forEach((row) => {
       const id = utils.normalizeLookupKey(derive.programId(row));
-      const nola = utils.normalizeLookupKey(derive.nola(row));
+      const lookup = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
       const title = utils.normalizeLookupKey(derive.title(row));
       if (id && !byId.has(id)) byId.set(id, row);
-      if (nola && !byNola.has(nola)) byNola.set(nola, row);
+      if (lookup && !byLookup.has(lookup)) byLookup.set(lookup, row);
       if (title && !byTitle.has(title)) byTitle.set(title, row);
     });
 
-    return { byId, byNola, byTitle };
+    return { byId, byLookup, byTitle };
   }
 
   function matchBaseRow(sourceRow, indexes) {
     const idKey = utils.normalizeLookupKey(derive.programId(sourceRow));
     if (idKey && indexes.byId.has(idKey)) return { row: indexes.byId.get(idKey), method: 'id' };
 
-    const nolaKey = utils.normalizeLookupKey(derive.nola(sourceRow));
-    if (nolaKey && indexes.byNola.has(nolaKey)) return { row: indexes.byNola.get(nolaKey), method: 'nola' };
+    const lookupKey = utils.nolaIdentityKey(derive.nola(sourceRow), derive.title(sourceRow));
+    if (lookupKey && indexes.byLookup.has(lookupKey)) {
+      return {
+        row: indexes.byLookup.get(lookupKey),
+        method: lookupKey.startsWith('nola_title:') ? 'nola_title' : 'nola'
+      };
+    }
 
     const titleKey = utils.normalizeLookupKey(derive.title(sourceRow));
     if (titleKey && indexes.byTitle.has(titleKey)) return { row: indexes.byTitle.get(titleKey), method: 'title' };

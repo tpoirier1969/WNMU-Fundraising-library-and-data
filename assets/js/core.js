@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.29',
+    APP_VERSION: 'v0.21.30',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -322,7 +322,22 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     canonicalNonSpecificNola() {
-      return 'NONOLA';
+      return 'NSPL';
+    },
+
+    isPlaceholderNoNola(value) {
+      const key = utils.normalizeLookupKey(value || '').replace(/\s+/g, '');
+      return key === 'nonola';
+    },
+
+    nolaIdentityKey(nolaValue, titleValue = '') {
+      const nolaKey = utils.normalizeLookupKey(nolaValue || '');
+      if (!nolaKey) return '';
+      if (utils.isPlaceholderNoNola(nolaValue)) {
+        const titleKey = utils.normalizeLookupKey(titleValue || '');
+        return titleKey ? `nola_title:${nolaKey}|${titleKey}` : `nola:${nolaKey}`;
+      }
+      return `nola:${nolaKey}`;
     },
 
     isNonSpecificTitle(value) {
@@ -336,7 +351,7 @@ window.PledgeLib = window.PledgeLib || {};
 
     isNonSpecificNola(value) {
       const key = utils.normalizeLookupKey(value || '').replace(/\s+/g, '');
-      return key === 'nspl' || key === 'nonola';
+      return key === 'nspl';
     },
 
     isNonSpecificRow(row = {}) {

@@ -466,8 +466,12 @@
   }
 
   function importedNaturalKey(row = {}) {
+    const identity = utils.nolaIdentityKey(
+      row.nola_code || row.nola || row.program_nola || '',
+      row.program_title || row.imported_program_title || row.title || row.name || ''
+    ) || utils.normalizeLookupKey(row.program_title || row.imported_program_title || row.title || row.name || '');
     return [
-      utils.normalizeLookupKey(row.nola_code || row.program_title || row.title || ''),
+      identity,
       utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
       utils.normalizeText(row.air_time) || '',
       utils.normalizeText(row.drive_start_date) || '',
@@ -1718,7 +1722,8 @@
         const nolaKey = utils.normalizeLookupKey(nola);
         const topicKey = utils.normalizeLookupKey(topic);
         const programId = scheduleRowLookupId(row);
-        const dedupeKey = programId || `${titleKey}|${nolaKey}|${topicKey}|${index}`;
+        const identityKey = utils.nolaIdentityKey(nola, title) || '';
+        const dedupeKey = programId || identityKey || `${titleKey}|${nolaKey}|${topicKey}|${index}`;
         return {
           row,
           title,

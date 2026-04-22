@@ -103,8 +103,8 @@
     if (utils.isNonSpecificRow(row)) return 'non_specific';
     const direct = String(derive.programId(row) || '').trim();
     if (direct) return `id:${direct}`;
-    const nolaKey = utils.normalizeLookupKey(derive.nola(row));
-    if (nolaKey) return `nola:${nolaKey}`;
+    const lookupKey = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
+    if (lookupKey) return lookupKey;
     const titleKey = utils.normalizeLookupKey(derive.title(row));
     if (titleKey) return `title:${titleKey}`;
     return '';
