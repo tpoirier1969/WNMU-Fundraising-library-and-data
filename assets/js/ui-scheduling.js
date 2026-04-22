@@ -161,6 +161,9 @@
 
   async function ensureReady() {
     if (!state.schedulingReady) await loadSchedules();
+    if (!state.performance?.ready && !state.scheduleExpectationLoading && App.performanceUi?.refreshData) {
+      requestScheduleExpectationData();
+    }
     renderAll();
   }
 
@@ -2540,6 +2543,10 @@
   }
 
   function bindEvents() {
+    document.addEventListener('wnmu:performance-ready', () => {
+      if (!getActiveSchedule()) return;
+      window.requestAnimationFrame(() => renderScheduleEditor());
+    });
     els.newScheduleButton?.addEventListener('click', resetToNewScheduleDraft);
     els.scheduleMobileNewButton?.addEventListener('click', resetToNewScheduleDraft);
     const handleScheduleSelectChange = (event) => {

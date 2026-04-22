@@ -4104,3 +4104,26 @@ body.schedule-inline-scrollbar-dragging * {
   user-select: none !important;
   cursor: ns-resize !important;
 }
+
+.programs-table thead th.analytics-sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 1.4rem;
+}
+.programs-table thead th.analytics-sortable::after {
+  content: '↕';
+  position: absolute;
+  right: 0.45rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.78rem;
+  color: #7a8ca2;
+}
+.programs-table thead th.analytics-sortable.is-sorted::after {
+  content: '↑';
+  color: #123e6b;
+}
+.programs-table thead th.analytics-sortable.sort-desc::after {
+  content: '↓';
+}

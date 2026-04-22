@@ -504,6 +504,10 @@
   function buildSchedulePlacementIndex(indexes) {
     const exact = new Map();
     const byDate = new Map();
+    const exactNola = new Map();
+    const byDateNola = new Map();
+    const exactTitle = new Map();
+    const byDateTitle = new Map();
     const coveredDates = new Set();
     const datesWithPlacements = new Set();
     const schedules = Array.isArray(state.schedules) ? state.schedules : [];
@@ -524,36 +528,53 @@
       (schedule?.placements || []).forEach((placement) => {
         const programRow = getProgramRowById(placement.programId) || null;
         const signature = signatureForProgram(programRow, placement);
+        const nolaKey = utils.normalizeLookupKey(utils.firstNonEmpty(programRow ? derive.nola(programRow) : '', placement?.nolaCode, placement?.nola_code, placement?.nola, placement?.program_nola));
+        const titleKey = utils.normalizeLookupKey(utils.firstNonEmpty(programRow ? derive.title(programRow) : '', placement?.programTitle, placement?.program_title, placement?.title, placement?.name));
         const dateKey = String(placement.dateKey || '');
         const startMinutes = Number(placement.startMinutes || 0);
         const endMinutes = Number(placement.endMinutes || startMinutes);
         const liveBreak = placementLiveBreakFlag(placement);
-        const entry = { scheduleId: schedule?.id || '', placementId: placement?.id || '', signature, dateKey, startMinutes, endMinutes, liveBreak, placement, programRow };
+        const entry = { scheduleId: schedule?.id || '', placementId: placement?.id || '', signature, nolaKey, titleKey, dateKey, startMinutes, endMinutes, liveBreak, placement, programRow };
         if (dateKey) datesWithPlacements.add(dateKey);
         push(exact, `${signature}|${dateKey}|${startMinutes}`, entry);
         push(byDate, `${signature}|${dateKey}`, entry);
+        push(exactNola, `${nolaKey}|${dateKey}|${startMinutes}`, entry);
+        push(byDateNola, `${nolaKey}|${dateKey}`, entry);
+        push(exactTitle, `${titleKey}|${dateKey}|${startMinutes}`, entry);
+        push(byDateTitle, `${titleKey}|${dateKey}`, entry);
       });
     });
-    return { exact, byDate, coveredDates, datesWithPlacements };
+    return { exact, byDate, exactNola, byDateNola, exactTitle, byDateTitle, coveredDates, datesWithPlacements };
+  }
+
+  function overlappingScheduleMatches(candidates = [], minutes = -1) {
+    return (Array.isArray(candidates) ? candidates : []).filter((item) => minutes >= Number(item.startMinutes || 0) && minutes < Number(item.endMinutes || 0));
+  }
+
+  function scheduleMatchesForRecord(record, placementIndex) {
+    if (!(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record?.hasDate || !record?.hasExplicitTime) return [];
+    const signature = record.signature || signatureForProgram(null, record);
+    const nolaKey = utils.normalizeLookupKey(record?.nolaCode || record?.nola_code || record?.nola || '');
+    const titleKey = utils.normalizeLookupKey(record?.title || record?.program_title || record?.name || '');
+    const dateKey = scheduleDateKeyForRecord(record);
+    const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
+    const chains = [
+      [placementIndex?.exact?.get(`${signature}|${dateKey}|${minutes}`) || [], placementIndex?.byDate?.get(`${signature}|${dateKey}`) || []],
+      [placementIndex?.exactNola?.get(`${nolaKey}|${dateKey}|${minutes}`) || [], placementIndex?.byDateNola?.get(`${nolaKey}|${dateKey}`) || []],
+      [placementIndex?.exactTitle?.get(`${titleKey}|${dateKey}|${minutes}`) || [], placementIndex?.byDateTitle?.get(`${titleKey}|${dateKey}`) || []]
+    ];
+    for (const [exactMatches, dateMatches] of chains) {
+      if (exactMatches.length) return exactMatches;
+      const overlapping = overlappingScheduleMatches(dateMatches, minutes);
+      if (overlapping.length) return overlapping;
+    }
+    return [];
   }
 
   function scheduleLiveBreakLabelForRecord(record, placementIndex) {
-    if (!(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record?.hasDate || !record?.hasExplicitTime) {
-      return { label: 'Unknown / not matched to schedule', matched: false };
-    }
-    const signature = record.signature || signatureForProgram(null, record);
-    if (!signature) return { label: 'Unknown / not matched to schedule', matched: false };
-    const dateKey = scheduleDateKeyForRecord(record);
-    const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
-    const exactMatches = placementIndex?.exact?.get(`${signature}|${dateKey}|${minutes}`) || [];
-    if (exactMatches.length) {
-      const live = exactMatches.some((item) => item.liveBreak);
-      return { label: live ? 'Live break' : 'No live break', matched: true };
-    }
-    const dateMatches = placementIndex?.byDate?.get(`${signature}|${dateKey}`) || [];
-    const overlapping = dateMatches.filter((item) => minutes >= item.startMinutes && minutes < item.endMinutes);
-    if (overlapping.length) {
-      const live = overlapping.some((item) => item.liveBreak);
+    const matches = scheduleMatchesForRecord(record, placementIndex);
+    if (matches.length) {
+      const live = matches.some((item) => item.liveBreak);
       return { label: live ? 'Live break' : 'No live break', matched: true };
     }
     return { label: 'Unknown / not matched to schedule', matched: false };
@@ -580,7 +601,7 @@
       };
     }
     const signature = record.signature || signatureForProgram(null, record);
-    if (!signature) {
+    if (!signature && !utils.normalizeLookupKey(record?.nolaCode || record?.nola || '') && !utils.normalizeLookupKey(record?.title || '')) {
       return {
         coveredBySchedule,
         shouldExclude: coveredBySchedule,
@@ -588,15 +609,10 @@
         label: coveredBySchedule ? 'Inside a saved schedule window, but missing a trustworthy program signature' : 'Missing signature'
       };
     }
-    const minutes = (record.when.getHours() * 60) + record.when.getMinutes();
-    const exactMatches = placementIndex?.exact?.get(`${signature}|${dateKey}|${minutes}`) || [];
-    if (exactMatches.length) {
-      return { coveredBySchedule, shouldExclude: false, reason: 'schedule_exact', label: 'Matched to saved schedule exactly' };
-    }
-    const dateMatches = placementIndex?.byDate?.get(`${signature}|${dateKey}`) || [];
-    const overlapping = dateMatches.filter((item) => minutes >= item.startMinutes && minutes < item.endMinutes);
-    if (overlapping.length) {
-      return { coveredBySchedule, shouldExclude: false, reason: 'schedule_overlap', label: 'Matched to saved schedule block' };
+    const matches = scheduleMatchesForRecord(record, placementIndex);
+    if (matches.length) {
+      const exact = matches.some((item) => Number(item.startMinutes || 0) === ((record.when.getHours() * 60) + record.when.getMinutes()));
+      return { coveredBySchedule, shouldExclude: false, reason: exact ? 'schedule_exact' : 'schedule_overlap', label: exact ? 'Matched to saved schedule exactly' : 'Matched to saved schedule block' };
     }
     if (coveredBySchedule) {
       return {
@@ -1639,6 +1655,73 @@
     });
   }
 
+  function analyticsTables() {
+    return [...document.querySelectorAll('.performance-card table, .performance-slot-drilldown table')];
+  }
+
+  function parseAnalyticsSortValue(text = '') {
+    const raw = utils.normalizeText(text);
+    if (!raw || raw === '—') return { type: 'empty', value: '' };
+    const moneyText = raw.replace(/,/g, '');
+    if (/^[-+]?\$?\d+(?:\.\d+)?$/.test(moneyText)) {
+      return { type: 'number', value: Number(moneyText.replace(/\$/g, '')) };
+    }
+    if (/^[-+]?\d+(?:\.\d+)?%$/.test(raw)) {
+      return { type: 'number', value: Number(raw.replace('%', '')) };
+    }
+    if (/^[-+]?\d+(?:\.\d+)?$/.test(raw.replace(/,/g, ''))) {
+      return { type: 'number', value: Number(raw.replace(/,/g, '')) };
+    }
+    const dateValue = Date.parse(raw);
+    if (!Number.isNaN(dateValue) && /\d/.test(raw)) return { type: 'date', value: dateValue };
+    return { type: 'text', value: raw.toLowerCase() };
+  }
+
+  function compareAnalyticsSortValues(a, b) {
+    const order = { empty: 0, number: 1, date: 2, text: 3 };
+    if (a.type !== b.type) return (order[a.type] || 99) - (order[b.type] || 99);
+    if (a.value < b.value) return -1;
+    if (a.value > b.value) return 1;
+    return 0;
+  }
+
+  function sortAnalyticsTable(table, columnIndex, explicitDirection = '') {
+    const tbody = table?.tBodies?.[0];
+    if (!tbody) return;
+    const rows = [...tbody.rows].filter((row) => !row.querySelector('.placeholder-row'));
+    if (!rows.length) return;
+    const currentColumn = Number(table.dataset.sortColumn || -1);
+    const currentDirection = table.dataset.sortDirection || 'asc';
+    const nextDirection = explicitDirection || ((currentColumn === columnIndex && currentDirection === 'asc') ? 'desc' : 'asc');
+    rows.sort((rowA, rowB) => {
+      const cellA = rowA.cells[columnIndex];
+      const cellB = rowB.cells[columnIndex];
+      const valueA = parseAnalyticsSortValue(cellA?.dataset?.sortValue || cellA?.textContent || '');
+      const valueB = parseAnalyticsSortValue(cellB?.dataset?.sortValue || cellB?.textContent || '');
+      const result = compareAnalyticsSortValues(valueA, valueB);
+      return nextDirection === 'asc' ? result : -result;
+    });
+    rows.forEach((row) => tbody.appendChild(row));
+    table.dataset.sortColumn = String(columnIndex);
+    table.dataset.sortDirection = nextDirection;
+    table.querySelectorAll('thead th').forEach((th, index) => {
+      th.setAttribute('aria-sort', index === columnIndex ? (nextDirection === 'asc' ? 'ascending' : 'descending') : 'none');
+      th.classList.toggle('is-sorted', index === columnIndex);
+      th.classList.toggle('sort-desc', index === columnIndex && nextDirection === 'desc');
+    });
+  }
+
+  function enhanceAnalyticsTables() {
+    analyticsTables().forEach((table) => {
+      table.querySelectorAll('thead th').forEach((th, index) => {
+        th.classList.add('analytics-sortable');
+        th.dataset.sortColumn = String(index);
+        th.tabIndex = 0;
+        if (!th.hasAttribute('aria-sort')) th.setAttribute('aria-sort', 'none');
+      });
+    });
+  }
+
   function truncateTopicLabel(label = '', max = 18) {
     const text = utils.normalizeText(label);
     if (!text) return '—';
@@ -2293,6 +2376,7 @@
         </tr>
       `;
     }).join('');
+    enhanceAnalyticsTables();
     return true;
   }
 
@@ -2614,6 +2698,7 @@
       return;
     }
     renderDrillContext(buildStandardDrillContext(selected));
+    enhanceAnalyticsTables();
   }
 
 
@@ -2706,6 +2791,7 @@
       </tr>
     `;
     }).join('');
+    enhanceAnalyticsTables();
     return true;
   }
 
@@ -2720,6 +2806,7 @@
     setPerformanceTableHeaders([criterionDisplayName(), 'Airings', 'Total dollars', metricLabel(), 'Confidence', 'Titles']);
     if (!groups.length) {
       els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No comparison groups match this filter yet.</td></tr>';
+      enhanceAnalyticsTables();
       return;
     }
     els.performanceTableBody.innerHTML = groups.map((group) => {
@@ -2741,6 +2828,7 @@
       </tr>
     `;
     }).join('');
+    enhanceAnalyticsTables();
   }
 
   function confidenceLabel() {
@@ -3280,6 +3368,7 @@
     renderSlotDrilldown();
     renderSchedulingIntelligence();
     renderNotes(records, perf().groups);
+    enhanceAnalyticsTables();
     if (els.performanceChartTitle) {
       const focus = (['topic_time', 'topic_dayset'].includes(perf().criterion) && perf().topicFilter)
         ? ` · ${perf().topicFilter}`
@@ -3319,6 +3408,7 @@
       perf().scheduleExpectationIndex = null;
       perf().programRowById = null;
       populateControls();
+      document.dispatchEvent(new CustomEvent('wnmu:performance-ready', { detail: { ready: true, recordCount: perf().records.length } }));
     } catch (error) {
       console.error(error);
       perf().ready = false;
@@ -3327,6 +3417,7 @@
       perf().error = error?.message || 'Performance load failed.';
       setStatus(perf().error, 'warn');
       if (!options.silent) setNotice(perf().error, 'warn');
+      document.dispatchEvent(new CustomEvent('wnmu:performance-ready', { detail: { ready: false, error: perf().error } }));
     } finally {
       perf().loading = false;
     }
@@ -3477,6 +3568,24 @@
       if (!modeButton) return;
       perf().slotDrillMode = modeButton.dataset.slotDrillMode || 'all';
       renderSlotDrilldown();
+    });
+    document.addEventListener('click', (event) => {
+      const header = event.target?.closest?.('.performance-card table thead th, .performance-slot-drilldown table thead th');
+      if (!header) return;
+      const table = header.closest('table');
+      const columnIndex = Number(header.dataset.sortColumn || -1);
+      if (!table || columnIndex < 0) return;
+      sortAnalyticsTable(table, columnIndex);
+    });
+    document.addEventListener('keydown', (event) => {
+      const header = event.target?.closest?.('.performance-card table thead th, .performance-slot-drilldown table thead th');
+      if (!header) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      const table = header.closest('table');
+      const columnIndex = Number(header.dataset.sortColumn || -1);
+      if (!table || columnIndex < 0) return;
+      sortAnalyticsTable(table, columnIndex);
     });
     window.addEventListener('scroll', hideQuickFilterTooltip, { passive: true });
     window.addEventListener('resize', hideQuickFilterTooltip);
