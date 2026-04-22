@@ -55,10 +55,15 @@
   function scheduleExpectationBadgeHtml(placement, dateKey, startMinutes) {
     if (!placement || placement.isNonPledge || !App.performanceUi?.getScheduleExpectationForPlacement) return '';
     if (!App.auth?.canEdit?.()) return '';
-    const expectation = App.performanceUi.getScheduleExpectationForPlacement(placement, dateKey, startMinutes);
-    if (!expectation) return '';
-    const evidenceClass = expectation.evidenceMode === 'overall_title' ? 'overall-fallback' : 'exact-slot';
-    return `<span class="schedule-placement-expectation ${utils.escapeHtml(expectation.tone)} ${utils.escapeHtml(evidenceClass)}" aria-label="${utils.escapeHtml(expectation.tooltip)}" title="${utils.escapeHtml(expectation.tooltip)}">${utils.escapeHtml(expectation.symbol)}</span>`;
+    try {
+      const expectation = App.performanceUi.getScheduleExpectationForPlacement(placement, dateKey, startMinutes);
+      if (!expectation) return '';
+      const evidenceClass = expectation.evidenceMode === 'overall_title' ? 'overall-fallback' : 'exact-slot';
+      return `<span class="schedule-placement-expectation ${utils.escapeHtml(expectation.tone)} ${utils.escapeHtml(evidenceClass)}" aria-label="${utils.escapeHtml(expectation.tooltip)}" title="${utils.escapeHtml(expectation.tooltip)}">${utils.escapeHtml(expectation.symbol)}</span>`;
+    } catch (error) {
+      console.warn('Schedule slot-fit badge failed for placement.', error);
+      return '';
+    }
   }
 
   function getScheduleDateSpanInfo(schedule = {}) {

@@ -1990,7 +1990,7 @@
     return 'neutral';
   }
 
-  const SLOT_FIT_CACHE_VERSION = '0.21.22';
+  const SLOT_FIT_CACHE_VERSION = '0.21.23';
 
   function scheduleExpectationDataVersion() {
     return [SLOT_FIT_CACHE_VERSION, utils.normalizeText(perf().lastLoadedAt), String(Number(perf().records?.length || 0) || 0)].join('|');
@@ -2079,13 +2079,27 @@
   }
 
   function getScheduleExpectationForPlacement(placement, dateKey, startMinutes) {
-    if (!perf().ready || !Array.isArray(perf().records) || !perf().records.length) return null;
-    const signature = signatureForProgram(null, placement || {});
-    if (!signature || signature === 'non_specific') return null;
-    if (!perf().scheduleExpectationIndex) perf().scheduleExpectationIndex = buildScheduleExpectationIndex(perf().records || []);
+    const sourcePlacement = placement?.__sourcePlacement || placement || null;
     const slotKey = scheduleSlotKey(dateKey, startMinutes);
-    if (!slotKey) return null;
-    const liveState = expectationLiveStateForPlacement(placement);
+    if (!slotKey || !sourcePlacement) return null;
+    const signature = signatureForProgram(null, placement || sourcePlacement || {});
+    if (!signature || signature === 'non_specific') return null;
+    const liveState = expectationLiveStateForPlacement(placement || sourcePlacement);
+    const topicKeysForCache = placementExpectationTopicKeys(placement || sourcePlacement);
+    const cacheKey = [signature, slotKey, liveState, topicKeysForCache.join(',')].join('|');
+    const cached = sourcePlacement?.slotFitCache || null;
+    if ((!perf().ready || !Array.isArray(perf().records) || !perf().records.length)) {
+      if (cached && cached.cacheKey === cacheKey && cached.algorithmVersion === SLOT_FIT_CACHE_VERSION) return cached.result || null;
+      return null;
+    }
+    if (!perf().scheduleExpectationIndex) perf().scheduleExpectationIndex = buildScheduleExpectationIndex(perf().records || []);
+    const expectedDataVersion = scheduleExpectationDataVersion();
+    if (cached
+      && cached.cacheKey === cacheKey
+      && cached.algorithmVersion === SLOT_FIT_CACHE_VERSION
+      && cached.dataVersion === expectedDataVersion) {
+      return cached.result || null;
+    }
     const slotStats = selectExpectationStats(perf().scheduleExpectationIndex.slot, [
       liveState !== 'unknown' ? `${liveState}|${slotKey}` : '',
       `any|${slotKey}`
@@ -2102,7 +2116,7 @@
       `${signature}|any`
     ]);
 
-    const topicKeys = placementExpectationTopicKeys(placement);
+    const topicKeys = topicKeysForCache;
     const topicComponents = topicKeys
       .map((topicKey) => {
         const stats = selectExpectationStats(perf().scheduleExpectationIndex.topicSlot, [
@@ -2167,14 +2181,14 @@
     }
     if (combinedTopicComponent) components.push(combinedTopicComponent);
     if (!components.length) {
-      sourcePlacement.slotFitCache = { cacheKey, computedAt: new Date().toISOString(), algorithmVersion: SLOT_FIT_CACHE_VERSION, dataVersion: scheduleExpectationDataVersion(), result: null };
+      sourcePlacement.slotFitCache = { cacheKey, computedAt: new Date().toISOString(), algorithmVersion: SLOT_FIT_CACHE_VERSION, dataVersion: expectedDataVersion, result: null };
       sourcePlacement.__slotFitCacheDirty = true;
       return null;
     }
 
     const projectedAvg = buildProjectionFromComponents(components);
     if (!Number.isFinite(projectedAvg)) {
-      sourcePlacement.slotFitCache = { cacheKey, computedAt: new Date().toISOString(), algorithmVersion: SLOT_FIT_CACHE_VERSION, dataVersion: scheduleExpectationDataVersion(), result: null };
+      sourcePlacement.slotFitCache = { cacheKey, computedAt: new Date().toISOString(), algorithmVersion: SLOT_FIT_CACHE_VERSION, dataVersion: expectedDataVersion, result: null };
       sourcePlacement.__slotFitCacheDirty = true;
       return null;
     }
@@ -2241,7 +2255,7 @@
       cacheKey,
       computedAt: new Date().toISOString(),
       algorithmVersion: SLOT_FIT_CACHE_VERSION,
-      dataVersion: scheduleExpectationDataVersion(),
+      dataVersion: expectedDataVersion,
       result
     };
     sourcePlacement.__slotFitCacheDirty = true;
