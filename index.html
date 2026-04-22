@@ -3,29 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.21.20</title>
+  <title>WNMU Pledge Program Library v0.21.21</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.21.20">
+  <link rel="stylesheet" href="assets/styles.css?v=0.21.21">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.21.20"></script>
-  <script defer src="assets/js/program-filters.js?v=0.21.20"></script>
-  <script defer src="assets/js/dom.js?v=0.21.20"></script>
-  <script defer src="assets/js/data.js?v=0.21.20"></script>
-  <script defer src="assets/js/ui-list.js?v=0.21.20"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.21.20"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.21.20"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.21.20"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.21.20"></script>
-  <script defer src="assets/js/auth.js?v=0.21.20"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.21.20"></script>
-  <script defer src="assets/js/program-open.js?v=0.21.20"></script>
-  <script defer src="assets/js/library-load.js?v=0.21.20"></script>
-  <script defer src="assets/js/app.js?v=0.21.20"></script>
-  <script defer src="assets/js/app-init.js?v=0.21.20"></script>
+  <script defer src="assets/js/core.js?v=0.21.21"></script>
+  <script defer src="assets/js/program-filters.js?v=0.21.21"></script>
+  <script defer src="assets/js/dom.js?v=0.21.21"></script>
+  <script defer src="assets/js/data.js?v=0.21.21"></script>
+  <script defer src="assets/js/ui-list.js?v=0.21.21"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.21.21"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.21.21"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.21.21"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.21.21"></script>
+  <script defer src="assets/js/auth.js?v=0.21.21"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.21.21"></script>
+  <script defer src="assets/js/program-open.js?v=0.21.21"></script>
+  <script defer src="assets/js/library-load.js?v=0.21.21"></script>
+  <script defer src="assets/js/app.js?v=0.21.21"></script>
+  <script defer src="assets/js/app-init.js?v=0.21.21"></script>
 </head>
 <body>
 
@@ -55,7 +55,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.21.20</span>
+            <span class="version-pill" id="version-flag">v0.21.21</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -72,6 +72,14 @@
     <div id="loading-banner" class="loading-banner hidden">
       <div class="loading-title" id="loading-title">Loading…</div>
       <div class="loading-detail" id="loading-detail"></div>
+    </div>
+
+    <div id="update-banner" class="notice-strip update-banner hidden">
+      <div id="update-banner-text" class="update-banner-text"></div>
+      <div class="toolbar-actions wrap">
+        <button type="button" class="primary" id="update-refresh-button">Refresh now</button>
+        <button type="button" class="ghost" id="update-dismiss-button">Later</button>
+      </div>
     </div>
 
     <section class="workspace-switcher">
@@ -332,6 +340,7 @@
         </div>
         <div class="schedule-program-picker" id="schedule-program-picker">
           <div id="schedule-modal-warning" class="notice-strip hidden"></div>
+          <div id="schedule-slot-rescue" class="schedule-slot-rescue hidden"></div>
           <div class="schedule-picker-search-row">
             <label class="filter-field search-grow">
               <span class="filter-label">Primary topic browse</span>
@@ -1078,7 +1087,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.21.20</div>
+      <div id="footer-version">v0.21.21</div>
     </footer>
   </div>
 </body>

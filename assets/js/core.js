@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.20',
+    APP_VERSION: 'v0.21.21',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -82,7 +82,9 @@ window.PledgeLib = window.PledgeLib || {};
     DEFAULT_DAY_END_MINUTES: 1830,
     MIN_VISIBLE_HOUR: 0,
     MAX_VISIBLE_HOUR: 36,
-    DEFAULT_SLOT_MINUTES: 30
+    DEFAULT_SLOT_MINUTES: 30,
+    VERSION_MANIFEST: 'version.json',
+    VERSION_CHECK_INTERVAL_MS: 10 * 60 * 1000
   };
 
   const adminEmails = Array.isArray(cfg.ADMIN_EMAILS)
@@ -128,6 +130,15 @@ window.PledgeLib = window.PledgeLib || {};
     lastProbeSummary: [],
     configVersionMismatch: '',
     configReady: false,
+    remoteVersionInfo: {
+      remoteVersion: '',
+      localVersion: '',
+      checkedAt: '',
+      dismissedVersion: ''
+    },
+    scheduleImportedAiringsCache: null,
+    scheduleImportedAiringsPromise: null,
+    scheduleSlotRescueCache: {},
     activeWorkspace: 'library',
     schedulingReady: false,
     fieldAudit: {

@@ -4127,3 +4127,113 @@ body.schedule-inline-scrollbar-dragging * {
 .programs-table thead th.analytics-sortable.sort-desc::after {
   content: '↓';
 }
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  margin: 0.35rem 0 0.75rem;
+  background: rgba(11, 76, 140, 0.08);
+  border-color: rgba(11, 76, 140, 0.22);
+}
+
+.update-banner-text {
+  font-weight: 600;
+}
+
+.schedule-slot-rescue {
+  margin-bottom: 0.8rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(12, 54, 93, 0.14);
+  border-radius: 12px;
+  background: rgba(12, 54, 93, 0.035);
+}
+
+.schedule-slot-rescue-header {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 0.55rem;
+  color: #103b66;
+}
+
+.schedule-slot-rescue-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.schedule-slot-rescue-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid rgba(12, 54, 93, 0.12);
+}
+
+.schedule-slot-rescue-card.blocked {
+  background: rgba(180, 30, 30, 0.04);
+  border-color: rgba(180, 30, 30, 0.18);
+}
+
+.schedule-slot-rescue-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.schedule-slot-rescue-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+}
+
+.schedule-slot-rescue-chip {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #123a62;
+  background: rgba(12, 54, 93, 0.08);
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
+}
+
+.schedule-slot-rescue-meta {
+  font-size: 0.82rem;
+  color: #35506a;
+  line-height: 1.35;
+}
+
+.schedule-slot-rescue-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  align-items: flex-end;
+}
+
+.schedule-slot-rescue-detail {
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  color: #28425c;
+}
+
+.schedule-slot-rescue-detail ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+@media (max-width: 860px) {
+  .update-banner,
+  .schedule-slot-rescue-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .schedule-slot-rescue-actions {
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+}

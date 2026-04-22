@@ -169,6 +169,7 @@
   }
 
   async function persistSchedules(schedule) {
+    state.scheduleSlotRescueCache = {};
     if (state.scheduleStoreMode === 'remote' && state.client) {
       try {
         await App.data.upsertScheduleRemote(schedule);
@@ -185,6 +186,7 @@
   }
 
   async function deleteScheduleRecord(scheduleId) {
+    state.scheduleSlotRescueCache = {};
     state.schedules = state.schedules.filter((item) => item.id !== scheduleId);
     if (state.activeScheduleId === scheduleId) state.activeScheduleId = state.schedules[0]?.id || '';
     if (state.scheduleStoreMode === 'remote' && state.client) {
@@ -1281,6 +1283,283 @@
     return `Air dates: ${visible.join(', ')}${remainder}`;
   }
 
+  async function ensureScheduleImportedAiringsLoaded() {
+    if (Array.isArray(state.scheduleImportedAiringsCache)) return state.scheduleImportedAiringsCache;
+    if (state.scheduleImportedAiringsPromise) return state.scheduleImportedAiringsPromise;
+    state.scheduleImportedAiringsPromise = (async () => {
+      try {
+        const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
+        state.scheduleImportedAiringsCache = Array.isArray(rows) ? rows : [];
+      } catch (error) {
+        console.warn('Could not load imported airings for slot rescue.', error);
+        state.scheduleImportedAiringsCache = [];
+      } finally {
+        state.scheduleImportedAiringsPromise = null;
+      }
+      return state.scheduleImportedAiringsCache;
+    })();
+    return state.scheduleImportedAiringsPromise;
+  }
+
+  function scheduleImportedPlacementByHash(schedule = {}, rowHash = '') {
+    const wanted = String(rowHash || '').trim();
+    if (!wanted) return null;
+    return (schedule?.placements || []).find((placement) => String(placement?.sourceAiringHash || '') === wanted) || null;
+  }
+
+  function scheduleImportedFundraiserKeys(schedule = {}) {
+    const values = new Set();
+    const metaKey = utils.normalizeText(schedule?.meta?.importedFundraiserKey);
+    if (metaKey) values.add(metaKey.toLowerCase());
+    (schedule?.placements || []).forEach((placement) => {
+      const next = utils.normalizeText(placement?.importedFundraiserKey);
+      if (next) values.add(next.toLowerCase());
+    });
+    return values;
+  }
+
+  function scheduleImportedPlacementFiles(schedule = {}) {
+    return new Set((schedule?.placements || []).map((placement) => utils.normalizeLookupKey(placement?.sourceName || '')).filter(Boolean));
+  }
+
+  function rowDateWithinSchedule(dateKey = '', schedule = {}) {
+    const normalized = utils.normalizeText(dateKey);
+    if (!normalized || !schedule?.startDate || !schedule?.endDate) return false;
+    return normalized >= utils.normalizeText(schedule.startDate) && normalized <= utils.normalizeText(schedule.endDate);
+  }
+
+  function importedRowBelongsToSchedule(row = {}, schedule = {}) {
+    const rowDateKey = importedRowDateKey(row);
+    if (!rowDateWithinSchedule(rowDateKey, schedule)) return false;
+    const importedKeys = scheduleImportedFundraiserKeys(schedule);
+    const rowKey = importedScheduleKey(row);
+    if (rowKey && importedKeys.has(String(rowKey).toLowerCase())) return true;
+    const placementFiles = scheduleImportedPlacementFiles(schedule);
+    const rowFileKey = utils.normalizeLookupKey(row?.source_file_name || '');
+    if (rowFileKey && placementFiles.has(rowFileKey)) return true;
+    if (!importedKeys.size && !placementFiles.size) return true;
+    const driveStart = utils.normalizeText(row?.drive_start_date || rowDateKey);
+    const driveEnd = utils.normalizeText(row?.drive_end_date || rowDateKey || driveStart);
+    if (driveStart && driveEnd && schedule?.startDate && schedule?.endDate) {
+      const overlaps = driveStart <= utils.normalizeText(schedule.endDate) && driveEnd >= utils.normalizeText(schedule.startDate);
+      if (overlaps) return true;
+    }
+    return false;
+  }
+
+  function scheduleRescueCacheKey(schedule = {}, slot = {}) {
+    return `${utils.normalizeText(schedule?.id || 'draft')}|${utils.normalizeText(slot?.dateKey)}|${String(Number(slot?.minutes || 0) || 0)}`;
+  }
+
+  function placementLookupIdLabel(placement = {}) {
+    return String(placement?.programId || '').trim();
+  }
+
+  function describeSlotRescueCandidate(row = {}, schedule = {}, slot = {}, sourceRow = null) {
+    const lines = [];
+    const rowDateKey = importedRowDateKey(row);
+    const rowMinutes = importedRowStartMinutes(row);
+    const nonSpecific = importedRowIsNonSpecific(row);
+    const alreadyLinked = scheduleImportedPlacementByHash(schedule, row?.row_hash || '');
+    const preparedPlacement = buildPlacementFromImportedAiring({ row, sourceRow, dateKey: slot.dateKey, startMinutes: slot.minutes });
+    const exactPlacement = buildPlacementFromImportedAiring({ row, sourceRow, dateKey: rowDateKey, startMinutes: rowMinutes });
+    const importedKey = importedScheduleKey(row);
+    const conflicting = exactPlacement
+      ? (schedule?.placements || []).find((placement) => placement?.importedFromReport && placementSignature(placement, importedKey) === placementSignature(exactPlacement, importedKey) && String(placement?.sourceAiringHash || '') !== String(row?.row_hash || ''))
+      : null;
+    const fallbackOnly = !String(row?.pledge_program_id || row?.program_id || '').trim() && !derive.programId(sourceRow);
+    const reasonSummary = nonSpecific
+      ? 'Excluded as non-specific.'
+      : (alreadyLinked
+        ? `Currently linked to ${slotLabel(alreadyLinked.dateKey, alreadyLinked.startMinutes)}.`
+        : 'Imported row exists, but no current calendar placement is linked to it.');
+    if (nonSpecific) lines.push('This imported airing is classified as non-specific, so the normal importer excludes it from the schedule.');
+    if (!rowDateKey) lines.push('The imported row does not have a usable date key.');
+    if (!Number.isFinite(rowMinutes)) lines.push('The imported row does not have a usable start time.');
+    if (!importedPlacementTitle(row, sourceRow)) lines.push('The imported row does not have a usable title for scheduling.');
+    if (Number.isFinite(rowMinutes) && rowDateKey === slot?.dateKey && rowMinutes !== Number(slot?.minutes || 0)) {
+      const delta = Math.abs(rowMinutes - Number(slot?.minutes || 0));
+      lines.push(`The imported report time is ${utils.minutesToLabel(rowMinutes)}, which is ${delta} minute${delta === 1 ? '' : 's'} away from this slot.`);
+    }
+    if (alreadyLinked) lines.push(`This exact imported row hash is already attached to ${slotLabel(alreadyLinked.dateKey, alreadyLinked.startMinutes)}.`);
+    if (conflicting) lines.push(`Another imported placement already occupies the same importer signature at ${slotLabel(conflicting.dateKey, conflicting.startMinutes)}.`);
+    if (fallbackOnly) lines.push('It does not have a clean pledge-library link, so recovery uses the imported title fallback.');
+    if (!lines.length && preparedPlacement) lines.push('This imported airing should be scheduleable, but the current schedule is not using it.');
+    return {
+      reasonSummary,
+      lines,
+      canPlace: Boolean(preparedPlacement) && !nonSpecific,
+      alreadyLinked,
+      fallbackOnly
+    };
+  }
+
+  function buildSlotRescueCandidates(rows = [], schedule = {}, slot = {}) {
+    const targetMinutes = Number(slot?.minutes || 0);
+    const candidates = (Array.isArray(rows) ? rows : [])
+      .filter((row) => importedRowBelongsToSchedule(row, schedule))
+      .filter((row) => importedRowDateKey(row) === utils.normalizeText(slot?.dateKey || ''))
+      .map((row) => {
+        const rowMinutes = importedRowStartMinutes(row);
+        if (!Number.isFinite(rowMinutes)) return null;
+        const timeDelta = Math.abs(rowMinutes - targetMinutes);
+        if (timeDelta > 60) return null;
+        const sourceRow = importedRowIsNonSpecific(row) ? null : findProgramRowForImportedAiring(row);
+        const title = importedPlacementTitle(row, sourceRow) || utils.normalizeText(row?.imported_program_title || row?.program_title || row?.title || row?.name || 'Untitled import');
+        const matchLabel = timeDelta === 0 ? 'Exact imported day/time match' : `Same day, ${timeDelta} minute${timeDelta === 1 ? '' : 's'} off`;
+        const diagnosis = describeSlotRescueCandidate(row, schedule, slot, sourceRow);
+        return {
+          row,
+          sourceRow,
+          title,
+          timeDelta,
+          matchLabel,
+          diagnostics: diagnosis,
+          dollars: Number(row?.dollars || 0) || 0,
+          nola: utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola, ''),
+          sourceFile: utils.normalizeText(row?.source_file_name || row?.sourceName || ''),
+          currentTimeLabel: Number.isFinite(rowMinutes) ? utils.minutesToLabel(rowMinutes) : 'Unknown time'
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.timeDelta !== b.timeDelta) return a.timeDelta - b.timeDelta;
+        if (a.diagnostics.canPlace !== b.diagnostics.canPlace) return a.diagnostics.canPlace ? -1 : 1;
+        if (b.dollars !== a.dollars) return b.dollars - a.dollars;
+        return utils.compareText(a.title, b.title);
+      });
+    const seen = new Set();
+    return candidates.filter((entry) => {
+      const key = `${utils.normalizeLookupKey(entry.title)}|${entry.currentTimeLabel}|${utils.normalizeText(entry.row?.row_hash || '')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 8);
+  }
+
+  async function ensureScheduleSlotRescueLoaded(schedule = {}, slot = {}) {
+    const cacheKey = scheduleRescueCacheKey(schedule, slot);
+    state.scheduleSlotRescueCache = state.scheduleSlotRescueCache || {};
+    const existing = state.scheduleSlotRescueCache[cacheKey];
+    if (existing?.loading || existing?.loaded) return existing;
+    state.scheduleSlotRescueCache[cacheKey] = { loading: true, loaded: false, error: '', candidates: [] };
+    if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
+    try {
+      const rows = await ensureScheduleImportedAiringsLoaded();
+      state.scheduleSlotRescueCache[cacheKey] = {
+        loading: false,
+        loaded: true,
+        error: '',
+        candidates: buildSlotRescueCandidates(rows, schedule, slot)
+      };
+    } catch (error) {
+      state.scheduleSlotRescueCache[cacheKey] = {
+        loading: false,
+        loaded: true,
+        error: error?.message || 'Could not inspect imported airings for this slot.',
+        candidates: []
+      };
+    }
+    if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
+    return state.scheduleSlotRescueCache[cacheKey];
+  }
+
+  function renderScheduleSlotRescue(schedule = {}, slot = {}, currentPlacement = null, editable = false) {
+    if (!els.scheduleSlotRescue) return;
+    if (currentPlacement || !editable) {
+      els.scheduleSlotRescue.className = 'schedule-slot-rescue hidden';
+      els.scheduleSlotRescue.innerHTML = '';
+      return;
+    }
+    const cacheKey = scheduleRescueCacheKey(schedule, slot);
+    state.scheduleSlotRescueCache = state.scheduleSlotRescueCache || {};
+    const entry = state.scheduleSlotRescueCache[cacheKey];
+    if (!entry) {
+      els.scheduleSlotRescue.className = 'schedule-slot-rescue';
+      els.scheduleSlotRescue.innerHTML = '<div class="schedule-hint">Checking imported report rows for this empty slot…</div>';
+      void ensureScheduleSlotRescueLoaded(schedule, slot);
+      return;
+    }
+    if (entry.loading) {
+      els.scheduleSlotRescue.className = 'schedule-slot-rescue';
+      els.scheduleSlotRescue.innerHTML = '<div class="schedule-hint">Checking imported report rows for this empty slot…</div>';
+      return;
+    }
+    if (entry.error) {
+      els.scheduleSlotRescue.className = 'schedule-slot-rescue';
+      els.scheduleSlotRescue.innerHTML = `<div class="schedule-hint">${utils.escapeHtml(entry.error)}</div>`;
+      return;
+    }
+    if (!entry.candidates?.length) {
+      els.scheduleSlotRescue.className = 'schedule-slot-rescue';
+      els.scheduleSlotRescue.innerHTML = '<div class="schedule-hint">No imported report rows matched this day/time closely enough to rescue.</div>';
+      return;
+    }
+    els.scheduleSlotRescue.className = 'schedule-slot-rescue';
+    els.scheduleSlotRescue.innerHTML = `
+      <div class="schedule-slot-rescue-header">Possible imported matches for this empty slot</div>
+      <div class="schedule-slot-rescue-list">${entry.candidates.map((candidate) => `
+        <article class="schedule-slot-rescue-card ${candidate.diagnostics.canPlace ? '' : 'blocked'}">
+          <div class="schedule-slot-rescue-main">
+            <div class="schedule-slot-rescue-title-row">
+              <strong>${utils.escapeHtml(candidate.title || 'Untitled import')}</strong>
+              <span class="schedule-slot-rescue-chip">${utils.escapeHtml(candidate.matchLabel)}</span>
+            </div>
+            <div class="schedule-slot-rescue-meta">Imported ${utils.escapeHtml(candidate.currentTimeLabel)} · ${utils.escapeHtml(candidate.nola || 'No NOLA')} · ${utils.escapeHtml(utils.formatMoney(candidate.dollars || 0))}</div>
+            <div class="schedule-slot-rescue-meta">${utils.escapeHtml(candidate.diagnostics.reasonSummary)}${candidate.sourceFile ? ` Source: ${utils.escapeHtml(candidate.sourceFile)}` : ''}</div>
+            <div class="schedule-slot-rescue-detail hidden" data-rescue-detail="${utils.escapeHtml(String(candidate.row?.row_hash || ''))}">
+              <ul>${candidate.diagnostics.lines.map((line) => `<li>${utils.escapeHtml(line)}</li>`).join('')}</ul>
+            </div>
+          </div>
+          <div class="schedule-slot-rescue-actions">
+            <button type="button" class="ghost tiny-button" data-rescue-toggle="${utils.escapeHtml(String(candidate.row?.row_hash || ''))}">View why missing</button>
+            <button type="button" class="primary tiny-button" data-rescue-place="${utils.escapeHtml(String(candidate.row?.row_hash || ''))}" ${candidate.diagnostics.canPlace ? '' : 'disabled'}>${candidate.diagnostics.alreadyLinked ? 'Move here' : 'Place here'}</button>
+          </div>
+        </article>
+      `).join('')}</div>
+    `;
+  }
+
+  async function rescueImportedRowToSelectedSlot(rowHash = '') {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to rescue imported programs.', 'bad'); return false; }
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    if (!schedule || !slot || !rowHash) return false;
+    const cacheKey = scheduleRescueCacheKey(schedule, slot);
+    const entry = state.scheduleSlotRescueCache?.[cacheKey];
+    const candidate = entry?.candidates?.find((item) => String(item?.row?.row_hash || '') === String(rowHash || '')) || null;
+    const row = candidate?.row;
+    if (!row) {
+      showScheduleModalWarning('That imported row is not available anymore for slot rescue.', 'warn');
+      return false;
+    }
+    const sourceRow = candidate?.sourceRow || (importedRowIsNonSpecific(row) ? null : findProgramRowForImportedAiring(row));
+    const placement = buildPlacementFromImportedAiring({ row, sourceRow, dateKey: slot.dateKey, startMinutes: Number(slot.minutes || 0) });
+    if (!placement || importedRowIsNonSpecific(row)) {
+      showScheduleModalWarning('That imported row cannot be placed in the schedule as-is.', 'bad');
+      return false;
+    }
+    const existingSlotPlacement = findPlacementForSlot(schedule, slot.key);
+    const existingHashPlacement = scheduleImportedPlacementByHash(schedule, rowHash);
+    schedule.placements = (schedule.placements || []).filter((item) => item.id !== existingSlotPlacement?.id && item.id !== existingHashPlacement?.id);
+    if (existingHashPlacement?.transferredToStation) placement.transferredToStation = true;
+    if (existingHashPlacement?.liveBreakFlag) {
+      placement.liveBreakFlag = true;
+      placement.liveBreakNotes = existingHashPlacement.liveBreakNotes || '';
+    }
+    schedule.placements.push({
+      ...placement,
+      id: existingHashPlacement?.id || existingSlotPlacement?.id || placement.id
+    });
+    state.scheduleSlotRescueCache = {};
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    closeScheduleModal();
+    setNotice(`${existingHashPlacement ? 'Moved' : 'Placed'} imported airing ${placement.programTitle} at ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`.trim());
+    return true;
+  }
+
   function scheduleEntryHasAired(row) {
     return filters.rowHasAired(row);
   }
@@ -1999,6 +2278,8 @@
     const hasSearch = utils.normalizeLookupKey(state.scheduleProgramQuery || '').length >= scheduleSearchMinChars();
     const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
+    const currentPlacement = findPlacementForSlot(schedule, slot.key);
+    renderScheduleSlotRescue(schedule, slot, currentPlacement, editable);
 
     if (!editable) {
       showScheduleModalWarning('Viewer mode. Sign in as admin to create, move, remove, or edit scheduled programs.', 'warn');
@@ -2054,7 +2335,6 @@
       }).join('');
     }
 
-    const currentPlacement = findPlacementForSlot(schedule, slot.key);
     if (currentPlacement) {
       els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card">${renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min</div></div>`;
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
@@ -2681,6 +2961,21 @@
       event.preventDefault();
       event.stopPropagation();
       void assignProgramToSelectedSlot(btn.dataset.programId, { isNonPledge: false });
+    });
+    els.scheduleSlotRescue?.addEventListener('click', (event) => {
+      const toggle = event.target.closest('[data-rescue-toggle]');
+      if (toggle) {
+        event.preventDefault();
+        const target = [...(els.scheduleSlotRescue?.querySelectorAll('[data-rescue-detail]') || [])]
+          .find((node) => node.getAttribute('data-rescue-detail') === String(toggle.dataset.rescueToggle || ''));
+        if (target) target.classList.toggle('hidden');
+        return;
+      }
+      const place = event.target.closest('[data-rescue-place]');
+      if (!place) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void rescueImportedRowToSelectedSlot(place.dataset.rescuePlace);
     });
     els.scheduleClearPlacementButton?.addEventListener('click', () => { void clearSelectedPlacement(); });
     els.scheduleZoomInButton?.addEventListener('click', () => adjustZoom(0.15));

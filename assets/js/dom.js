@@ -13,6 +13,10 @@
     loadingBanner: document.getElementById('loading-banner'),
     loadingTitle: document.getElementById('loading-title'),
     loadingDetail: document.getElementById('loading-detail'),
+    updateBanner: document.getElementById('update-banner'),
+    updateBannerText: document.getElementById('update-banner-text'),
+    updateRefreshButton: document.getElementById('update-refresh-button'),
+    updateDismissButton: document.getElementById('update-dismiss-button'),
     workspaceButtons: [...document.querySelectorAll('[data-workspace-button]')],
     workspacePanes: [...document.querySelectorAll('[data-workspace-pane]')],
     scaffoldLibraryCount: document.getElementById('scaffold-library-count'),
@@ -102,6 +106,7 @@
     scheduleProgramSearch: document.getElementById('schedule-program-search'),
     scheduleProgramTopicSelect: document.getElementById('schedule-program-topic-select'),
     scheduleModalWarning: document.getElementById('schedule-modal-warning'),
+    scheduleSlotRescue: document.getElementById('schedule-slot-rescue'),
     scheduleProgramResults: document.getElementById('schedule-program-results'),
     scheduleSelectedPreview: document.getElementById('schedule-selected-preview'),
     scheduleLiveBreakFlag: document.getElementById('schedule-live-break-flag'),
@@ -223,6 +228,12 @@
     if (els.loadingDetail) els.loadingDetail.textContent = detail || '';
   }
 
+  function setUpdateBanner(text = '', { visible = false } = {}) {
+    if (!els.updateBanner) return;
+    if (els.updateBannerText) els.updateBannerText.textContent = text || '';
+    els.updateBanner.classList.toggle('hidden', !(visible && text));
+  }
+
   function renderSelectOptions(select, values, currentValue, placeholder) {
     if (!select) return;
     const escapeHtml = App.utils.escapeHtml;
@@ -242,6 +253,7 @@
     setBuildMeta,
     setDetailNotice,
     setLoading,
+    setUpdateBanner,
     renderSelectOptions
   };
 })();
