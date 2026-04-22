@@ -744,8 +744,99 @@
       sourceAiringHash: row.row_hash || '',
       sourceImportBatchId: row.import_batch_id || '',
       importedFundraiserKey: importedScheduleKey(row),
-      fundraiserLabel: importedFundraiserLabel(row)
+      fundraiserLabel: importedFundraiserLabel(row),
+      importMatchMethod: utils.normalizeText(row.match_method || ''),
+      importMatchReason: utils.normalizeText(row.match_reason || ''),
+      titleMismatchFlag: Boolean(row.title_mismatch_flag),
+      nolaCode: utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, '') || ''
     };
+  }
+
+  function importedPlacementLooksLikeRow(placement = {}, prepared = {}) {
+    const row = prepared?.row || prepared || {};
+    const sourceRow = prepared?.sourceRow || findProgramRowForImportedAiring(row);
+    if (!placement || !row) return false;
+    const wantedHash = String(row?.row_hash || '').trim();
+    if (wantedHash && String(placement?.sourceAiringHash || '').trim() === wantedHash) return true;
+    const wantedDate = prepared?.dateKey || importedRowDateKey(row);
+    const wantedStart = Number.isFinite(prepared?.startMinutes) ? prepared.startMinutes : importedRowStartMinutes(row);
+    if (!wantedDate || !Number.isFinite(wantedStart)) return false;
+    if (utils.normalizeText(placement?.dateKey) !== utils.normalizeText(wantedDate)) return false;
+    if (Number(placement?.startMinutes || NaN) !== Number(wantedStart)) return false;
+    const placementId = String(placement?.programId || '').trim();
+    const wantedProgramId = importedPlacementLookupId(row, sourceRow);
+    if (placementId && wantedProgramId && placementId === wantedProgramId) return true;
+    const wantedTitleKey = utils.normalizeLookupKey(importedPlacementTitle(row, sourceRow));
+    const placementTitleKey = utils.normalizeLookupKey(placement?.programTitle || '');
+    if (wantedTitleKey && placementTitleKey && wantedTitleKey === placementTitleKey) return true;
+    const wantedNola = utils.normalizeLookupKey(utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola, ''));
+    const placementNola = utils.normalizeLookupKey(utils.firstNonEmpty(placement?.nolaCode, placement?.nola, ''));
+    return Boolean(wantedNola && placementNola && wantedNola === placementNola);
+  }
+
+  function reconcileImportedScheduleCoverage(schedule = {}, preparedRows = [], groupKey = '') {
+    const placements = Array.isArray(schedule?.placements) ? schedule.placements : [];
+    let restoredPlacements = 0;
+    let reboundPlacements = 0;
+    let unresolvedCollisions = 0;
+    (Array.isArray(preparedRows) ? preparedRows : []).forEach((prepared) => {
+      const placement = buildPlacementFromImportedAiring(prepared);
+      if (!placement) return;
+      const wantedHash = String(placement?.sourceAiringHash || '').trim();
+      if (wantedHash && placements.some((item) => String(item?.sourceAiringHash || '').trim() === wantedHash)) return;
+      const legacyIndex = placements.findIndex((item) => importedPlacementLooksLikeRow(item, prepared));
+      if (legacyIndex >= 0) {
+        const existing = placements[legacyIndex] || {};
+        placements[legacyIndex] = {
+          ...existing,
+          ...placement,
+          id: existing.id || placement.id,
+          liveBreakFlag: hasLiveBreakFlag(existing),
+          liveBreakNotes: existing.liveBreakNotes || '',
+          isNonPledge: Boolean(existing.isNonPledge),
+          transferredToStation: Boolean(existing.transferredToStation),
+          importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
+          importedFundraiserKey: utils.normalizeText(groupKey || placement.importedFundraiserKey || ''),
+          sourceAiringHash: placement.sourceAiringHash || existing.sourceAiringHash || ''
+        };
+        reboundPlacements += 1;
+        return;
+      }
+      const slotCollisionIndex = placements.findIndex((item) => {
+        if (!item?.importedFromReport) return false;
+        return utils.normalizeText(item?.dateKey) === utils.normalizeText(placement?.dateKey)
+          && Number(item?.startMinutes || NaN) === Number(placement?.startMinutes || NaN);
+      });
+      if (slotCollisionIndex >= 0) {
+        const existing = placements[slotCollisionIndex] || {};
+        const existingHash = String(existing?.sourceAiringHash || '').trim();
+        const sameTitle = utils.normalizeLookupKey(existing?.programTitle || '') === utils.normalizeLookupKey(placement?.programTitle || '');
+        const existingImportedKey = utils.normalizeText(existing?.importedFundraiserKey || '');
+        const wantedImportedKey = utils.normalizeText(groupKey || placement?.importedFundraiserKey || '');
+        if (!existingHash || sameTitle || (existingImportedKey && wantedImportedKey && existingImportedKey !== wantedImportedKey)) {
+          placements[slotCollisionIndex] = {
+            ...existing,
+            ...placement,
+            id: existing.id || placement.id,
+            liveBreakFlag: hasLiveBreakFlag(existing),
+            liveBreakNotes: existing.liveBreakNotes || '',
+            isNonPledge: Boolean(existing.isNonPledge),
+            transferredToStation: Boolean(existing.transferredToStation),
+            importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
+            importedFundraiserKey: wantedImportedKey || existingImportedKey,
+            sourceAiringHash: placement.sourceAiringHash || existing.sourceAiringHash || ''
+          };
+          reboundPlacements += 1;
+          return;
+        }
+        unresolvedCollisions += 1;
+        return;
+      }
+      placements.push(placement);
+      restoredPlacements += 1;
+    });
+    schedule.placements = placements;
+    return { restoredPlacements, reboundPlacements, unresolvedCollisions };
   }
 
   function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
@@ -800,6 +891,9 @@
     let createdPlacements = 0;
     let skippedPlacements = 0;
     let correctedDurations = 0;
+    let restoredPlacements = 0;
+    let reboundPlacements = 0;
+    let unresolvedCollisions = 0;
     let firstScheduleId = '';
 
     groups.forEach((group) => {
@@ -899,6 +993,10 @@
         createdPlacements += 1;
         if (placement.durationCorrectedFromLibrary) correctedDurations += 1;
       });
+      const coverage = reconcileImportedScheduleCoverage(schedule, scheduleableRows, group.key);
+      restoredPlacements += Number(coverage?.restoredPlacements || 0) || 0;
+      reboundPlacements += Number(coverage?.reboundPlacements || 0) || 0;
+      unresolvedCollisions += Number(coverage?.unresolvedCollisions || 0) || 0;
     });
 
     if (activateFirst && firstScheduleId) {
@@ -915,6 +1013,9 @@
       placementsSkipped: skippedPlacements,
       skippedRows,
       correctedDurations,
+      restoredPlacements,
+      reboundPlacements,
+      unresolvedCollisions,
       fundraiserCount: groups.length,
       diagnostics
     };
@@ -1896,57 +1997,15 @@
   }
 
   function queueScheduleInlineScrollbarSync() {
-    if (!els.scheduleGrid) return;
-    if (scheduleInlineScrollbar.raf) return;
-    scheduleInlineScrollbar.raf = window.requestAnimationFrame(() => {
-      scheduleInlineScrollbar.raf = 0;
-      syncScheduleInlineScrollbar();
-    });
+    return;
   }
 
   function syncScheduleInlineScrollbar() {
-    const container = els.scheduleGrid;
-    if (!container) return;
-    const rail = container.querySelector('.schedule-inline-scrollbar');
-    const head = container.querySelector('.schedule-grid-head');
-    const body = container.querySelector('.schedule-grid-body');
-    const thumb = rail?.querySelector('.schedule-inline-scrollbar-thumb');
-    if (!rail || !head || !body || !thumb) return;
-    const visible = container.clientHeight > 0 && container.scrollHeight > container.clientHeight + 2;
-    rail.classList.toggle('hidden', !visible);
-    if (!visible) return;
-    const headHeight = Math.max(0, head.offsetHeight || 0);
-    const bodyViewportHeight = Math.max(32, container.clientHeight - headHeight - 10);
-    const trackHeight = Math.max(32, bodyViewportHeight);
-    const scrollRange = Math.max(1, container.scrollHeight - container.clientHeight);
-    const thumbHeight = Math.max(44, Math.round((container.clientHeight / container.scrollHeight) * trackHeight));
-    const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
-    const thumbTop = scrollRange <= 0 ? 0 : Math.round((container.scrollTop / scrollRange) * maxThumbTravel);
-    rail.style.top = `${headHeight + 6}px`;
-    rail.style.height = `${trackHeight}px`;
-    thumb.style.height = `${thumbHeight}px`;
-    thumb.style.transform = `translateY(${thumbTop}px)`;
-    const bodyLeft = body.offsetLeft || 0;
-    const bodyWidth = body.scrollWidth || body.offsetWidth || 0;
-    const railLeft = Math.max(0, Math.round(bodyLeft + bodyWidth - container.scrollLeft - 14));
-    rail.style.left = `${railLeft}px`;
+    return;
   }
 
   function handleInlineScrollbarDrag(event) {
-    if (!scheduleInlineScrollbar.dragActive || !els.scheduleGrid) return;
-    event.preventDefault();
-    const container = els.scheduleGrid;
-    const rail = container.querySelector('.schedule-inline-scrollbar');
-    const thumb = rail?.querySelector('.schedule-inline-scrollbar-thumb');
-    if (!rail || !thumb) return;
-    const trackHeight = rail.clientHeight || 1;
-    const thumbHeight = thumb.offsetHeight || 1;
-    const maxThumbTravel = Math.max(1, trackHeight - thumbHeight);
-    const scrollRange = Math.max(1, container.scrollHeight - container.clientHeight);
-    const deltaY = event.clientY - scheduleInlineScrollbar.dragStartY;
-    const nextScrollTop = scheduleInlineScrollbar.dragStartScrollTop + (deltaY / maxThumbTravel) * scrollRange;
-    container.scrollTop = Math.max(0, Math.min(scrollRange, nextScrollTop));
-    queueScheduleInlineScrollbarSync();
+    return;
   }
 
   function stopInlineScrollbarDrag() {
@@ -1959,8 +2018,6 @@
     if (!container) return;
     const existing = container.querySelector('.schedule-inline-scrollbar');
     if (existing) existing.remove();
-    container.insertAdjacentHTML('beforeend', '<div class="schedule-inline-scrollbar hidden" aria-hidden="true"><button type="button" class="schedule-inline-scrollbar-thumb" tabindex="-1" aria-hidden="true"></button></div>');
-    queueScheduleInlineScrollbarSync();
   }
 
   function renderScheduleGrid() {

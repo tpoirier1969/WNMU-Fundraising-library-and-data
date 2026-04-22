@@ -4291,3 +4291,25 @@ body.schedule-inline-scrollbar-dragging * {
     flex-wrap: wrap;
   }
 }
+
+
+/* v0.21.25 schedule width + native-scrollbar restore */
+#schedule-grid {
+  position: relative;
+}
+.schedule-inline-scrollbar,
+.schedule-inline-scrollbar-thumb {
+  display: none !important;
+}
+body.schedule-inline-scrollbar-dragging,
+body.schedule-inline-scrollbar-dragging * {
+  user-select: auto !important;
+  cursor: auto !important;
+}
+@media (min-width: 981px) {
+  .schedule-editor {
+    width: calc(100% - clamp(112px, 8vw, 148px));
+    max-width: calc(100% - clamp(112px, 8vw, 148px));
+    justify-self: start;
+  }
+}

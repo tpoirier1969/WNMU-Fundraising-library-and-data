@@ -1990,7 +1990,7 @@
     return 'neutral';
   }
 
-  const SLOT_FIT_CACHE_VERSION = '0.21.24';
+  const SLOT_FIT_CACHE_VERSION = '0.21.26';
 
   function scheduleExpectationDataVersion() {
     return [SLOT_FIT_CACHE_VERSION, utils.normalizeText(perf().lastLoadedAt), String(Number(perf().records?.length || 0) || 0)].join('|');
