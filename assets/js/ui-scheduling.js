@@ -633,12 +633,14 @@
 
 
   function getProgramLookupCache() {
-    const rows = Array.isArray(state.rawRows) ? state.rawRows : [];
-    if (cachedProgramLookup && cachedProgramLookupRows === rows) return cachedProgramLookup;
+    const rawRows = Array.isArray(state.rawRows) ? state.rawRows : [];
+    const baseRows = Array.isArray(state.baseRows) ? state.baseRows : [];
+    const cacheKeySource = `${rawRows.length}|${baseRows.length}|${rawRows === cachedProgramLookupRows?.raw ? 'same' : 'raw'}|${baseRows === cachedProgramLookupRows?.base ? 'same' : 'base'}`;
+    if (cachedProgramLookup && cachedProgramLookupRows && cachedProgramLookupRows.key === cacheKeySource && cachedProgramLookupRows.raw === rawRows && cachedProgramLookupRows.base === baseRows) return cachedProgramLookup;
     const byProgramId = new Map();
     const byNola = new Map();
     const byTitle = new Map();
-    rows.forEach((item) => {
+    [...rawRows, ...baseRows].forEach((item) => {
       const programId = String(derive.programId(item) || '').trim();
       if (programId && !byProgramId.has(programId)) byProgramId.set(programId, item);
       const nolaKey = utils.normalizeLookupKey(derive.nola(item));
@@ -646,7 +648,7 @@
       const titleKey = utils.normalizeLookupKey(derive.title(item));
       if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, item);
     });
-    cachedProgramLookupRows = rows;
+    cachedProgramLookupRows = { raw: rawRows, base: baseRows, key: cacheKeySource };
     cachedProgramLookup = { byProgramId, byNola, byTitle };
     return cachedProgramLookup;
   }
@@ -1489,7 +1491,7 @@
     }
     if (alreadyLinked) lines.push(`This exact imported row hash is already attached to ${slotLabel(alreadyLinked.dateKey, alreadyLinked.startMinutes)}.`);
     if (conflicting) lines.push(`Another imported placement already occupies the same importer signature at ${slotLabel(conflicting.dateKey, conflicting.startMinutes)}.`);
-    if (fallbackOnly) lines.push('It does not have a clean pledge-library link, so recovery uses the imported title fallback.');
+    if (fallbackOnly) lines.push('It does not have a clean current library hit, so recovery uses the imported title fallback.');
     if (!lines.length && preparedPlacement) lines.push('This imported airing should be scheduleable, but the current schedule is not using it.');
     return {
       reasonSummary,

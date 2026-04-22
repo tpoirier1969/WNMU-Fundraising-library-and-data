@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.26',
+    APP_VERSION: 'v0.21.27',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -903,14 +903,15 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     resolveRow(programLike) {
+      const candidateRows = [...(state.rawRows || []), ...(state.baseRows || [])];
       const key = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
       if (key) {
-        const directMatch = (state.rawRows || []).find((row) => String(derive.programId(row)).trim() === key);
+        const directMatch = candidateRows.find((row) => String(derive.programId(row)).trim() === key);
         if (directMatch) return directMatch;
       }
       const fallback = programLinks.fallbackLookupId(programLike);
       if (!fallback) return null;
-      return (state.rawRows || []).find((row) => programLinks.fallbackLookupId(row) === fallback) || null;
+      return candidateRows.find((row) => programLinks.fallbackLookupId(row) === fallback) || null;
     },
 
     resolveId(programLike) {

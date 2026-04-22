@@ -220,7 +220,8 @@
     }
 
     const indexes = buildBaseIndexes(baseRows);
-    return summaryRows.map((row) => {
+    const summaryIndexes = buildBaseIndexes(summaryRows);
+    const mergedSummaryRows = summaryRows.map((row) => {
       const matched = matchBaseRow(row, indexes);
       const merged = utils.mergeRows(row, matched.row || {});
       return {
@@ -228,6 +229,23 @@
         __supplement_match_method: matched.method
       };
     });
+
+    const baseOnlyRows = baseRows
+      .filter((row) => {
+        const idKey = utils.normalizeLookupKey(derive.programId(row));
+        const nolaKey = utils.normalizeLookupKey(derive.nola(row));
+        const titleKey = utils.normalizeLookupKey(derive.title(row));
+        if (idKey && summaryIndexes.byId.has(idKey)) return false;
+        if (nolaKey && summaryIndexes.byNola.has(nolaKey)) return false;
+        if (titleKey && summaryIndexes.byTitle.has(titleKey)) return false;
+        return true;
+      })
+      .map((row) => ({
+        ...enrichResolvedFields(row, row),
+        __supplement_match_method: 'base_only'
+      }));
+
+    return [...mergedSummaryRows, ...baseOnlyRows];
   }
 
   async function refreshRawRows() {
