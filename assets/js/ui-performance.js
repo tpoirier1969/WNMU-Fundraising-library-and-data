@@ -1990,6 +1990,12 @@
     return 'neutral';
   }
 
+  const SLOT_FIT_CACHE_VERSION = '0.21.22';
+
+  function scheduleExpectationDataVersion() {
+    return [SLOT_FIT_CACHE_VERSION, utils.normalizeText(perf().lastLoadedAt), String(Number(perf().records?.length || 0) || 0)].join('|');
+  }
+
   function scheduleExpectationSymbol(tone) {
     if (tone === 'positive') return '+';
     if (tone === 'negative') return '-';
@@ -2160,10 +2166,18 @@
       });
     }
     if (combinedTopicComponent) components.push(combinedTopicComponent);
-    if (!components.length) return null;
+    if (!components.length) {
+      sourcePlacement.slotFitCache = { cacheKey, computedAt: new Date().toISOString(), algorithmVersion: SLOT_FIT_CACHE_VERSION, dataVersion: scheduleExpectationDataVersion(), result: null };
+      sourcePlacement.__slotFitCacheDirty = true;
+      return null;
+    }
 
     const projectedAvg = buildProjectionFromComponents(components);
-    if (!Number.isFinite(projectedAvg)) return null;
+    if (!Number.isFinite(projectedAvg)) {
+      sourcePlacement.slotFitCache = { cacheKey, computedAt: new Date().toISOString(), algorithmVersion: SLOT_FIT_CACHE_VERSION, dataVersion: scheduleExpectationDataVersion(), result: null };
+      sourcePlacement.__slotFitCacheDirty = true;
+      return null;
+    }
     const titleLabel = components.find((item) => item.kind === 'title_slot' || item.kind === 'title_overall')?.label || placement?.programTitle || 'This title';
     const liveLabel = describeLiveState(liveState);
     const tone = slotExpectationTone(projectedAvg, slotAvg, {
@@ -2208,7 +2222,7 @@
     const tooltip = `Slot fit: ${titleLabel} looks ${relationText}. For ${liveLabel}, slot baseline is ${utils.formatMoney(slotAvg)} across ${utils.formatCount(slotStats.airingCount || 0)} airings. Projection: ${utils.formatMoney(projectedAvg)}. Why: ${componentLines.join('; ')}.${guardrail ? ` ${guardrail}` : ''}${suggestion ? ` ${suggestion}` : ''}`;
     const evidenceMode = components.some((item) => item.kind === 'title_slot') ? 'exact_slot' : (components.some((item) => item.kind === 'topic_slot') ? 'composite' : 'overall_title');
 
-    return {
+    const result = {
       slotKey,
       tone,
       symbol,
@@ -2223,6 +2237,15 @@
       tooltip,
       components: components.map((item) => ({ ...item }))
     };
+    sourcePlacement.slotFitCache = {
+      cacheKey,
+      computedAt: new Date().toISOString(),
+      algorithmVersion: SLOT_FIT_CACHE_VERSION,
+      dataVersion: scheduleExpectationDataVersion(),
+      result
+    };
+    sourcePlacement.__slotFitCacheDirty = true;
+    return result;
   }
 
   function buildTopicSlotWinnerGroups(records) {

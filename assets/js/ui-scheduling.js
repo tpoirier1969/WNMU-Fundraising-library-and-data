@@ -1004,7 +1004,7 @@
       const key = String(placement.programId || placement.programTitle || '');
       const prior = counts.get(key) || 0;
       counts.set(key, prior + 1);
-      return { ...placement, isFirstRun: prior === 0, repeatIndex: prior + 1 };
+      return { ...placement, isFirstRun: prior === 0, repeatIndex: prior + 1, __sourcePlacement: placement };
     });
   }
 
@@ -2038,7 +2038,7 @@
         const placement = placementByDisplaySlot.get(displaySlotKey) || null;
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : ''].filter(Boolean).join(' ');
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : ''].filter(Boolean).join(' ');
         const expectationBadge = isStart ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const subtitleBits = [];
         if (placement) {
@@ -2046,9 +2046,15 @@
           if (placement.isNonPledge) subtitleBits.push('non-pledge');
           if (hasLiveBreakFlag(placement)) subtitleBits.push('live break');
         }
+        const transferToggle = isStart && editable
+          ? `<label class="schedule-placement-transfer-toggle" data-placement-transfer-toggle title="Mark this title as entered in traffic/scheduling software">
+              <input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}>
+              <span class="schedule-placement-transfer-check" aria-hidden="true"></span>
+            </label>`
+          : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${transferToggle}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -2063,6 +2069,11 @@
       <div class="schedule-grid-head" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${header.join('')}</div>
       <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}${guideOverlays}</div>
     `;
+    const slotFitCacheDirty = (schedule.placements || []).some((item) => item?.__slotFitCacheDirty);
+    if (slotFitCacheDirty) {
+      (schedule.placements || []).forEach((item) => { delete item.__slotFitCacheDirty; });
+      void persistSchedules(schedule);
+    }
     renderInlineScrollbar();
     renderScheduledProgramDetails();
   }
@@ -2501,7 +2512,9 @@
     const placement = findPlacementById(schedule, placementId);
     if (!placement) return;
     placement.transferredToStation = checked;
-    persistSchedules(schedule);
+    void persistSchedules(schedule);
+    renderScheduleGrid();
+    renderScheduledProgramDetails();
   }
 
   async function assignProgramToSelectedSlot(programId, options = {}) {
@@ -2868,6 +2881,7 @@
       }
     });
     els.scheduleGrid?.addEventListener('click', (event) => {
+      if (event.target.closest('[data-placement-transfer-toggle], [data-grid-transfer-placement-id]')) return;
       hideScheduleContextMenu();
       const block = event.target.closest('[data-placement-id]');
       if (block) {
@@ -2917,6 +2931,12 @@
       event.preventDefault();
       slot.classList.remove('drag-target');
       void movePlacement(placementId, slot.dataset.dateKey, Number(slot.dataset.minutes || 0));
+    });
+    els.scheduleGrid?.addEventListener('change', (event) => {
+      const checkbox = event.target.closest('[data-grid-transfer-placement-id]');
+      if (!checkbox) return;
+      event.stopPropagation();
+      toggleTransferred(checkbox.dataset.gridTransferPlacementId, checkbox.checked);
     });
     els.scheduleGrid?.addEventListener('scroll', queueScheduleInlineScrollbarSync, { passive: true });
     els.scheduleGrid?.addEventListener('mousedown', (event) => {
