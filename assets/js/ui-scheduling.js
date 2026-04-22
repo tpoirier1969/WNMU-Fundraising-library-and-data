@@ -54,6 +54,7 @@
 
   function scheduleExpectationBadgeHtml(placement, dateKey, startMinutes) {
     if (!placement || placement.isNonPledge || !App.performanceUi?.getScheduleExpectationForPlacement) return '';
+    if (!App.auth?.canEdit?.()) return '';
     const expectation = App.performanceUi.getScheduleExpectationForPlacement(placement, dateKey, startMinutes);
     if (!expectation) return '';
     const evidenceClass = expectation.evidenceMode === 'overall_title' ? 'overall-fallback' : 'exact-slot';

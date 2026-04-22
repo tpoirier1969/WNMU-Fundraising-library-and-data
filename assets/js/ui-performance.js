@@ -2116,14 +2116,25 @@
       })
       .filter(Boolean);
 
-    const combinedTopicComponent = topicComponents.length
+    const rankedTopicComponents = [...topicComponents].sort((a, b) => {
+      if ((b.avg || 0) !== (a.avg || 0)) return (b.avg || 0) - (a.avg || 0);
+      return (b.airingCount || 0) - (a.airingCount || 0);
+    });
+    const selectedTopicComponent = rankedTopicComponents[0]
+      ? {
+          ...rankedTopicComponents[0],
+          kind: 'topic_slot_best'
+        }
+      : null;
+    const combinedTopicComponent = selectedTopicComponent
       ? {
           kind: 'topic_slot',
-          label: topicComponents.map((item) => item.label).join(' / '),
-          avg: topicComponents.reduce((sum, item) => sum + item.avg, 0) / topicComponents.length,
-          airingCount: topicComponents.reduce((sum, item) => sum + item.airingCount, 0),
-          liveState: topicComponents[0]?.liveState || 'any',
-          topicCount: topicComponents.length
+          label: selectedTopicComponent.label,
+          avg: selectedTopicComponent.avg,
+          airingCount: selectedTopicComponent.airingCount,
+          liveState: selectedTopicComponent.liveState || 'any',
+          topicCount: rankedTopicComponents.length,
+          alternateTopics: rankedTopicComponents.slice(1)
         }
       : null;
 
@@ -2163,15 +2174,20 @@
     });
     const symbol = scheduleExpectationSymbol(tone);
     const relationText = tone === 'positive'
-      ? 'expected to outperform this slot'
+      ? 'strong for this slot'
       : tone === 'negative'
-        ? 'expected to underperform this slot'
-        : 'expected to perform about average for this slot';
+        ? 'weak for this slot'
+        : 'about average for this slot';
     const componentLines = components.map((item) => {
       const bucket = describeLiveState(item.liveState || 'any');
       if (item.kind === 'title_slot') return `${titleLabel} in this exact day/time (${bucket}): avg ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} airing${item.airingCount === 1 ? '' : 's'}`;
       if (item.kind === 'title_overall') return `${titleLabel} overall (${bucket}): avg ${utils.formatMoney(item.avg)} per half-hour slot across ${utils.formatCount(item.airingCount)} airing${item.airingCount === 1 ? '' : 's'}`;
-      return `What similar topics do in this day/time (${bucket}): avg ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} topic-slot airing${item.airingCount === 1 ? '' : 's'}`;
+      const altTail = Number(item.topicCount || 0) > 1 ? `; strongest fit among ${utils.formatCount(item.topicCount || 0)} matched topics` : '';
+      return `Best matched topic in this day/time (${bucket}): ${item.label} averages ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} topic-slot airing${item.airingCount === 1 ? '' : 's'}${altTail}`;
+    });
+    rankedTopicComponents.slice(1).forEach((item) => {
+      const bucket = describeLiveState(item.liveState || 'any');
+      componentLines.push(`Other matched topic evidence (${bucket}): ${item.label} averages ${utils.formatMoney(item.avg)} across ${utils.formatCount(item.airingCount)} topic-slot airing${item.airingCount === 1 ? '' : 's'}`);
     });
     const currentTopicHealthy = Number.isFinite(Number(combinedTopicComponent?.avg))
       && Number(combinedTopicComponent?.airingCount || 0) >= 2
@@ -2189,7 +2205,7 @@
     const guardrail = tone === 'negative' && currentTopicHealthy
       ? `Guardrail: this title's topic family is not weak in this slot, so the minus is only shown when the title-level evidence is poor enough to drag it below that healthy slot fit.`
       : '';
-    const tooltip = `${titleLabel} is ${relationText}. For ${liveLabel}, slot baseline is ${utils.formatMoney(slotAvg)} across ${utils.formatCount(slotStats.airingCount || 0)} airings. Projection: ${utils.formatMoney(projectedAvg)}. Why: ${componentLines.join('; ')}.${guardrail ? ` ${guardrail}` : ''}${suggestion ? ` ${suggestion}` : ''}`;
+    const tooltip = `Slot fit: ${titleLabel} looks ${relationText}. For ${liveLabel}, slot baseline is ${utils.formatMoney(slotAvg)} across ${utils.formatCount(slotStats.airingCount || 0)} airings. Projection: ${utils.formatMoney(projectedAvg)}. Why: ${componentLines.join('; ')}.${guardrail ? ` ${guardrail}` : ''}${suggestion ? ` ${suggestion}` : ''}`;
     const evidenceMode = components.some((item) => item.kind === 'title_slot') ? 'exact_slot' : (components.some((item) => item.kind === 'topic_slot') ? 'composite' : 'overall_title');
 
     return {
