@@ -62,30 +62,34 @@
     for (const candidate of constants.SOURCE_CANDIDATES) probes.push(await probeSource(candidate));
     state.lastProbeSummary = probes;
 
-    const summaryProbe = probes.find((probe) => probe.name === constants.LIBRARY_VIEW);
-    const baseProbe = probes.find((probe) => probe.name === constants.BASE_TABLE);
+    const summaryProbe = probes.find((probe) => probe.name === constants.LIBRARY_VIEW) || null;
+    const baseProbe = probes.find((probe) => probe.name === constants.BASE_TABLE) || null;
+    state.summarySource = summaryProbe?.okay ? summaryProbe : null;
+    state.baseSource = baseProbe?.okay ? baseProbe : null;
 
-    if (summaryProbe?.okay && summaryProbe.count > 0) {
-      state.librarySource = summaryProbe;
-      return summaryProbe;
-    }
-    if (baseProbe?.okay && baseProbe.count > 0) {
-      state.librarySource = baseProbe;
-      return baseProbe;
+    if (baseProbe?.okay) {
+      state.librarySource = {
+        ...baseProbe,
+        label: summaryProbe?.okay ? 'base table + summary enrichment' : (baseProbe.label || 'base table'),
+        canonical: constants.BASE_TABLE,
+        supplement: summaryProbe?.okay ? constants.LIBRARY_VIEW : null
+      };
+      return state.librarySource;
     }
     if (summaryProbe?.okay) {
-      state.librarySource = summaryProbe;
-      return summaryProbe;
-    }
-    if (baseProbe?.okay) {
-      state.librarySource = baseProbe;
-      return baseProbe;
+      state.librarySource = {
+        ...summaryProbe,
+        label: summaryProbe.label || 'summary view',
+        canonical: constants.LIBRARY_VIEW,
+        supplement: null
+      };
+      return state.librarySource;
     }
 
     const message = probes
       .map((probe) => `${probe.name}: ${probe.error?.message || 'unavailable'}`)
       .join(' | ');
-    throw new Error(message || 'Neither the summary view nor the base table could be read.');
+    throw new Error(message || 'Neither the base table nor the summary view could be read.');
   }
 
   async function chooseOptionalSource(candidates = []) {
@@ -205,143 +209,51 @@
     return audit;
   }
 
-  function mergeLibraryRows(summaryRows = [], baseRows = []) {
-    if (!summaryRows.length) {
-      return baseRows.map((row) => ({
-        ...enrichResolvedFields(row, row),
-        __supplement_match_method: 'id'
-      }));
-    }
+  function mergeLibraryRows(baseRows = [], summaryRows = []) {
     if (!baseRows.length) {
-      return summaryRows.map((row) => ({
+      return (summaryRows || []).map((row) => ({
         ...enrichResolvedFields(row, null),
-        __supplement_match_method: 'none'
+        __supplement_match_method: 'summary_only'
       }));
     }
 
-    const indexes = buildBaseIndexes(baseRows);
     const summaryIndexes = buildBaseIndexes(summaryRows);
-    const mergedSummaryRows = summaryRows.map((row) => {
-      const matched = matchBaseRow(row, indexes);
+    return baseRows.map((row) => {
+      const matched = matchBaseRow(row, summaryIndexes);
       const merged = utils.mergeRows(row, matched.row || {});
       return {
-        ...enrichResolvedFields(merged, matched.row),
-        __supplement_match_method: matched.method
+        ...enrichResolvedFields(merged, row),
+        __supplement_match_method: matched.row ? `summary_${matched.method}` : 'base'
       };
     });
-
-    const baseOnlyRows = baseRows
-      .filter((row) => {
-        const idKey = utils.normalizeLookupKey(derive.programId(row));
-        const nolaKey = utils.normalizeLookupKey(derive.nola(row));
-        const titleKey = utils.normalizeLookupKey(derive.title(row));
-        if (idKey && summaryIndexes.byId.has(idKey)) return false;
-        if (nolaKey && summaryIndexes.byNola.has(nolaKey)) return false;
-        if (titleKey && summaryIndexes.byTitle.has(titleKey)) return false;
-        return true;
-      })
-      .map((row) => ({
-        ...enrichResolvedFields(row, row),
-        __supplement_match_method: 'base_only'
-      }));
-
-    return [...mergedSummaryRows, ...baseOnlyRows];
-  }
-
-  function buildImportedProgramSupplements(importedRows = [], existingRows = []) {
-    const existing = buildBaseIndexes(existingRows);
-    const grouped = new Map();
-    (Array.isArray(importedRows) ? importedRows : []).forEach((row) => {
-      const title = utils.normalizeText(utils.firstNonEmpty(row?.matched_library_title, row?.program_title, row?.imported_program_title, row?.title, row?.name));
-      const programId = String(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, '') || '').trim();
-      const nola = utils.normalizeText(utils.firstNonEmpty(row?.nola_code, row?.nola, row?.program_nola));
-      const key = utils.normalizeLookupKey(programId || nola || title);
-      if (!key || !title) return;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(row);
-    });
-
-    const supplements = [];
-    grouped.forEach((rows, key) => {
-      const sample = rows[0] || {};
-      const title = utils.normalizeText(utils.firstNonEmpty(sample?.matched_library_title, sample?.program_title, sample?.imported_program_title, sample?.title, sample?.name));
-      const programId = String(utils.firstNonEmpty(sample?.program_id, sample?.pledge_program_id, '') || '').trim();
-      const nola = utils.normalizeText(utils.firstNonEmpty(sample?.nola_code, sample?.nola, sample?.program_nola));
-      const idKey = utils.normalizeLookupKey(programId);
-      const nolaKey = utils.normalizeLookupKey(nola);
-      const titleKey = utils.normalizeLookupKey(title);
-      const existingRow = (idKey && existing.byId.get(idKey)) || (nolaKey && existing.byNola.get(nolaKey)) || (titleKey && existing.byTitle.get(titleKey)) || null;
-      const total = rows.reduce((sum, row) => sum + (Number(row?.dollars || 0) || 0), 0);
-      const dates = rows.map((row) => utils.normalizeText(row?.air_date) || utils.dateKeyFromDate(row?.aired_at) || '').filter(Boolean).sort();
-      const latestAired = rows
-        .map((row) => row?.aired_at || '')
-        .filter(Boolean)
-        .sort()
-        .slice(-1)[0] || '';
-      if (existingRow) {
-        existingRow.__historical_imported = true;
-        existingRow.__preserve_visible = true;
-        existingRow.__imported_airing_count = rows.length;
-        if (!(Number(existingRow?.airing_count) > 0)) existingRow.airing_count = rows.length;
-        if (!(Number(existingRow?.fundraiser_count) > 0)) existingRow.fundraiser_count = rows.length;
-        if (!(Number(derive.totalRaised(existingRow)) > 0) && total > 0) existingRow.total_contributions = Math.round(total * 100) / 100;
-        if (!utils.normalizeText(existingRow?.last_aired_at) && latestAired) existingRow.last_aired_at = latestAired;
-        return;
-      }
-      supplements.push(enrichResolvedFields({
-        id: programId || `imported:${key}`,
-        program_id: programId || null,
-        pledge_program_id: programId || null,
-        title,
-        program_title: title,
-        imported_program_title: utils.normalizeText(sample?.imported_program_title || sample?.program_title || title),
-        matched_library_title: utils.normalizeText(sample?.matched_library_title || title),
-        nola_code: nola || null,
-        topic_primary: null,
-        topic_secondary: null,
-        distributor: null,
-        total_contributions: Math.round(total * 100) / 100,
-        fundraiser_count: rows.length,
-        airing_count: rows.length,
-        last_aired_at: latestAired || null,
-        first_air_date: dates[0] || null,
-        last_air_date: dates.length ? dates[dates.length - 1] : null,
-        __historical_imported: true,
-        __preserve_visible: true,
-        __imported_only: true,
-        __supplement_match_method: 'imported_airings'
-      }, null));
-    });
-
-    return { rows: existingRows, supplements };
   }
 
   async function refreshRawRows() {
     const source = await chooseLibrarySource();
-    const sourceRows = await fetchAllRows(source.name);
     let baseRows = [];
+    let summaryRows = [];
 
-    const baseProbe = state.lastProbeSummary.find((probe) => probe.name === constants.BASE_TABLE);
-    const shouldSupplementWithBase = source.name === constants.LIBRARY_VIEW && baseProbe?.okay;
-    if (shouldSupplementWithBase) {
+    if (state.baseSource?.okay) {
       try {
         baseRows = await fetchAllRows(constants.BASE_TABLE);
       } catch (error) {
-        console.warn('Base-table supplement fetch failed.', error);
+        console.warn('Canonical base-table fetch failed.', error);
       }
-    } else if (source.name === constants.BASE_TABLE) {
-      baseRows = sourceRows;
+    }
+    if (state.summarySource?.okay) {
+      try {
+        summaryRows = await fetchAllRows(constants.LIBRARY_VIEW);
+      } catch (error) {
+        console.warn('Summary enrichment fetch failed.', error);
+      }
     }
 
-    state.baseRows = baseRows;
-    state.rawRows = mergeLibraryRows(sourceRows, baseRows);
-    try {
-      const importedRows = await fetchImportedAirings();
-      const existingRows = Array.isArray(state.rawRows) ? [...state.rawRows] : [];
-      const supplemented = buildImportedProgramSupplements(importedRows, existingRows);
-      state.rawRows = [...supplemented.rows, ...supplemented.supplements];
-    } catch (error) {
-      console.warn('Imported-airing library supplement failed.', error);
+    if (!baseRows.length && source.name === constants.LIBRARY_VIEW && summaryRows.length) {
+      state.baseRows = [];
+      state.rawRows = mergeLibraryRows([], summaryRows);
+    } else {
+      state.baseRows = baseRows;
+      state.rawRows = mergeLibraryRows(baseRows, summaryRows);
     }
     state.fieldAudit = buildFieldAudit(state.rawRows);
     resetDetailCaches();
@@ -355,15 +267,15 @@
       return `${probe.name}: ${utils.formatCount(probe.count)} row${probe.count === 1 ? '' : 's'}`;
     });
     const prefix = source
-      ? `Using ${source.label} (${source.name}).`
+      ? `Using ${source.label || source.name} as the canonical library source.`
       : 'No readable data source selected.';
 
     const auditBits = [];
     if (state.fieldAudit.rowCount) {
       auditBits.push(`topic gaps: ${utils.formatCount(state.fieldAudit.missingTopicCount)}`);
       auditBits.push(`distributor gaps: ${utils.formatCount(state.fieldAudit.missingDistributorCount)}`);
-      if (state.librarySource?.name === constants.LIBRARY_VIEW && state.baseRows.length) {
-        auditBits.push(`matches by id/nola/title: ${utils.formatCount(state.fieldAudit.matchedByIdCount)}/${utils.formatCount(state.fieldAudit.matchedByNolaCount)}/${utils.formatCount(state.fieldAudit.matchedByTitleCount)}`);
+      if (state.baseRows.length && state.summarySource?.okay) {
+        auditBits.push(`base rows kept: ${utils.formatCount(state.baseRows.length)}`);
       }
     }
 
