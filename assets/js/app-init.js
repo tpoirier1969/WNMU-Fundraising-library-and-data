@@ -132,7 +132,6 @@
   }
 
   function boot() {
-    if (els.versionFlag) els.versionFlag.textContent = constants.APP_VERSION;
     App.programOpen?.bindDelegation?.();
     App.app?.bindEvents?.();
     App.app?.ensureMobileModeControls?.();

@@ -32,22 +32,35 @@
       button.addEventListener('click', () => App.listUi.setSort(button.dataset.sortField));
     });
     els.resetFiltersButton.addEventListener('click', () => { App.listUi.resetFilters(); App.listUi.applyLibraryView(); });
+    els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace }); });
     els.libraryBody?.addEventListener('click', async (event) => {
-      const button = event.target.closest('.list-unarchive-button');
+      const button = event.target.closest('[data-unarchive-id]');
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
-      try {
-        button.disabled = true;
-        await App.listUi.unarchiveProgram?.(button.dataset.unarchiveId || '');
-      } catch (error) {
-        console.error(error);
-        setNotice(error.message || 'Could not take this title out of archive.', 'warn');
-      } finally {
-        button.disabled = false;
+      if (!App.auth.canEdit()) return;
+      const programId = button.getAttribute('data-unarchive-id') || '';
+      const row = App.programLinks?.resolveRow?.(programId) || App.data.resolveProgramSnapshot?.(programId) || null;
+      const payload = {};
+      if (row && Object.prototype.hasOwnProperty.call(row, 'is_archived')) payload.is_archived = false;
+      if (row && Object.prototype.hasOwnProperty.call(row, 'archived')) payload.archived = false;
+      if (row && Object.prototype.hasOwnProperty.call(row, 'inactive_flag')) payload.inactive_flag = false;
+      if (!row || Object.prototype.hasOwnProperty.call(row, 'status')) payload.status = 'active';
+      if (!row || Object.prototype.hasOwnProperty.call(row, 'library_state')) payload.library_state = 'active';
+      if (!Object.keys(payload).length) {
+        setNotice('This row did not expose archive fields to clear.', 'warn');
+        return;
       }
+      setNotice('Removing archive flag…');
+      const { error } = await App.data.updateProgram(programId, payload);
+      if (error) {
+        console.error(error);
+        setNotice(error.message || 'Could not remove archive flag.', 'warn');
+        return;
+      }
+      await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace });
+      setNotice('Archive flag cleared. If rights end is still in the past, extend the rights date and save the title.');
     });
-    els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace }); });
     els.detailCloseButton.addEventListener('click', App.detailUi.closeDetailModal);
     els.detailBackdrop.addEventListener('click', App.detailUi.closeDetailModal);
     document.addEventListener('keydown', (event) => {

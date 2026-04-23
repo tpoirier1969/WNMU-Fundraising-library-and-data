@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.35',
+    APP_VERSION: 'v0.21.37',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -917,35 +917,23 @@ window.PledgeLib = window.PledgeLib || {};
       return `lookup:${titleKey}|${nolaKey}`;
     },
 
-    hasRealRowId(row) {
-      return Boolean(String(utils.firstNonEmpty(row?.id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '').trim());
-    },
-
     resolveRow(programLike) {
-      const candidateRows = [...(state.baseRows || []), ...(state.rawRows || [])];
+      const candidateRows = [...(state.rawRows || []), ...(state.baseRows || [])];
       const key = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
       if (key) {
-        const directMatches = candidateRows.filter((row) => String(derive.programId(row)).trim() === key);
-        const preferredDirect = directMatches.find((row) => programLinks.hasRealRowId(row));
-        if (preferredDirect) return preferredDirect;
-        if (directMatches.length) return directMatches[0];
+        const directMatch = candidateRows.find((row) => String(derive.programId(row)).trim() === key);
+        if (directMatch) return directMatch;
       }
       const fallback = programLinks.fallbackLookupId(programLike);
       if (!fallback) return null;
-      const fallbackMatches = candidateRows.filter((row) => programLinks.fallbackLookupId(row) === fallback);
-      const preferredFallback = fallbackMatches.find((row) => programLinks.hasRealRowId(row));
-      return preferredFallback || fallbackMatches[0] || null;
+      return candidateRows.find((row) => programLinks.fallbackLookupId(row) === fallback) || null;
     },
 
     resolveId(programLike) {
       const direct = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
       if (direct) {
         const row = programLinks.resolveRow(direct);
-        if (row) {
-          const canonical = String(utils.firstNonEmpty(row?.id, row?.pledge_program_id, row?.program_uuid, row?.uuid, derive.programId(row)) || '').trim();
-          return canonical || direct;
-        }
-        return direct;
+        return row ? String(derive.programId(row)).trim() || direct : direct;
       }
       return programLinks.fallbackLookupId(programLike);
     },

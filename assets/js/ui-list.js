@@ -230,7 +230,11 @@
       const rightsEndToneInfo = rightsEndTone(rightsEnd);
       const rightsEndStyle = rightsEndToneInfo?.style || '';
       const rightsEndTitle = rightsEndToneInfo?.label || 'No rights-end heat color';
-      const showUnarchive = App.auth?.canEdit?.() && !derive.isActive(row);
+      const isArchivedRow = !derive.isActive(row);
+      const showUnarchiveButton = isArchivedRow && App.auth?.canEdit?.();
+      const unarchiveButtonHtml = showUnarchiveButton
+        ? `<div class="title-row-actions"><button type="button" class="ghost archive-row-button" data-unarchive-id="${utils.escapeHtml(programId)}">Take out of archive</button></div>`
+        : '';
       return `
         <tr data-id="${utils.escapeHtml(programId)}" class="library-earnings-${utils.escapeHtml(tone)} ${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
           <td class="title-cell" title="${utils.escapeHtml(`Title tint: ${toneLabel}`)}">
@@ -239,7 +243,7 @@
               <div class="sub">${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(derive.distributor(row) || 'No distributor')}</div>
               <div class="description-snippet">${utils.escapeHtml(derive.description(row) || '—')}</div>
             </button>
-            ${showUnarchive ? `<div class="title-row-actions"><button type="button" class="ghost list-unarchive-button" data-unarchive-id="${utils.escapeHtml(programId)}">Take out of archive</button></div>` : ''}
+            ${unarchiveButtonHtml}
           </td>
           <td>${utils.escapeHtml(derive.lengthLabel(row))}</td>
           <td class="topic-color-cell" style="${utils.escapeHtml(topicStyle)}" title="${utils.escapeHtml(`Topic color: ${topic}`)}">${utils.escapeHtml(topic)}</td>
@@ -332,34 +336,6 @@
     applyLibraryView();
   }
 
-  async function unarchiveProgram(programId) {
-    if (!App.auth?.canEdit?.()) return;
-    const row = App.programLinks?.resolveRow?.(programId)
-      || state.rows.find((item) => String(App.programLinks?.resolveId?.(item) || derive.programId(item)) === String(programId))
-      || null;
-    const rowId = App.data?.canonicalProgramRowId?.(row || programId);
-    if (!rowId) {
-      App.dom.setNotice('Could not resolve the real row ID for this title.', 'warn');
-      return;
-    }
-    const payload = {
-      status: 'active',
-      library_state: 'active',
-      is_archived: false,
-      archived: false,
-      inactive_flag: false
-    };
-    const { error } = await App.data.updateProgram(rowId, payload);
-    if (error) throw error;
-    await App.app.refreshAll({ preserveDetail: true, workspace: state.activeWorkspace });
-    const rightsExpired = !derive.isActive({ ...(row || {}), ...payload });
-    if (rightsExpired) {
-      App.dom.setNotice('Archive flags were cleared, but the rights-end date is still in the past, so the title still reads as archived until you extend the date.', 'warn');
-    } else {
-      App.dom.setNotice('Title removed from archive.');
-    }
-  }
-
   App.listUi = {
     buildFilterOptions,
     applyLibraryView,
@@ -367,7 +343,6 @@
     syncSelectedRows,
     premiumLines,
     setSort,
-    syncSortHeaders,
-    unarchiveProgram
+    syncSortHeaders
   };
 })();

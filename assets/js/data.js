@@ -319,24 +319,6 @@
     return enrichResolvedFields(merged, cachedProgram || summaryRow || {});
   }
 
-  function canonicalProgramRowId(programLike) {
-    const direct = typeof programLike === 'object' && programLike ? programLike : null;
-    const resolvedRow = App.programLinks?.resolveRow?.(programLike) || direct || null;
-    const resolvedId = utils.firstNonEmpty(
-      resolvedRow?.id,
-      direct?.id,
-      resolvedRow?.pledge_program_id,
-      direct?.pledge_program_id,
-      resolvedRow?.program_uuid,
-      direct?.program_uuid,
-      resolvedRow?.uuid,
-      direct?.uuid
-    );
-    if (resolvedId) return String(resolvedId).trim();
-    const raw = String(programLike || '').trim();
-    return raw.startsWith('lookup:') ? '' : raw;
-  }
-
   function buildDetailContext(programId, row = {}) {
     return {
       programId,
@@ -679,15 +661,15 @@
     }
   }
 
+  function resolveDatabaseProgramId(programId) {
+    const direct = String(programId || '').trim();
+    const resolvedRow = App.programLinks?.resolveRow?.(direct) || resolveProgramSummaryRow(direct) || null;
+    return String(utils.firstNonEmpty(resolvedRow?.id, resolvedRow?.program_id, direct)).trim();
+  }
+
   async function updateProgram(programId, payload) {
-    const rowId = canonicalProgramRowId(programId);
-    if (!rowId) {
-      return {
-        data: null,
-        error: { message: 'Could not resolve the real row ID for this title before saving.' }
-      };
-    }
-    return state.client.from(constants.BASE_TABLE).update(payload).eq('id', rowId);
+    const resolvedId = resolveDatabaseProgramId(programId);
+    return state.client.from(constants.BASE_TABLE).update(payload).eq('id', resolvedId);
   }
 
   function sanitizeTimingRow(row = {}) {
@@ -1103,7 +1085,6 @@
     fetchProgramDetail,
     fetchProgramDetailsBatch,
     resolveProgramSnapshot,
-    canonicalProgramRowId,
     resetDetailCaches,
     updateProgram,
     saveTimingRows,
