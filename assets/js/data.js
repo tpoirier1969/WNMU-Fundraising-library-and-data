@@ -667,9 +667,64 @@
     return String(utils.firstNonEmpty(resolvedRow?.id, resolvedRow?.program_id, direct)).trim();
   }
 
+  async function updateByReference(reference = {}, payload = {}) {
+    const cleanedPayload = { ...payload };
+    const attempts = [];
+    const seen = new Set();
+
+    const addAttempt = (label, kind, value) => {
+      const key = `${kind}:${label}:${Array.isArray(value) ? JSON.stringify(value) : String(value || '')}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      attempts.push({ label, kind, value });
+    };
+
+    const directId = String(utils.firstNonEmpty(reference?.id, '')).trim();
+    const programId = String(utils.firstNonEmpty(reference?.program_id, reference?.programId, '')).trim();
+    const nola = utils.normalizeText(utils.firstNonEmpty(reference?.nola_code, reference?.nola, ''));
+    const title = utils.normalizeText(utils.firstNonEmpty(reference?.title, reference?.program_title, ''));
+
+    if (directId) addAttempt('id', 'eq', directId);
+    if (programId && programId !== directId) addAttempt('program_id', 'eq', programId);
+    if (nola && title) addAttempt('nola_title', 'pair', [nola, title]);
+    if (nola) addAttempt('nola_code', 'eq', nola);
+
+    let lastResponse = { data: null, error: new Error('No usable program identifier was available.') };
+    for (const attempt of attempts) {
+      let query = state.client.from(constants.BASE_TABLE).update(cleanedPayload);
+      if (attempt.kind === 'pair') {
+        const [nolaValue, titleValue] = attempt.value;
+        query = query.eq('nola_code', nolaValue).eq('title', titleValue);
+      } else {
+        query = query.eq(attempt.label, attempt.value);
+      }
+      const response = await query.select('id').limit(2);
+      lastResponse = response;
+      if (response.error) {
+        const message = String(response.error.message || '').toLowerCase();
+        if ((attempt.label === 'program_id') && (message.includes('column') && message.includes('program_id'))) {
+          continue;
+        }
+        return response;
+      }
+      if (Array.isArray(response.data) && response.data.length) return response;
+    }
+    return lastResponse;
+  }
+
   async function updateProgram(programId, payload) {
+    const resolvedRow = App.programLinks?.resolveRow?.(programId) || resolveProgramSummaryRow(programId) || null;
     const resolvedId = resolveDatabaseProgramId(programId);
-    return state.client.from(constants.BASE_TABLE).update(payload).eq('id', resolvedId);
+    return updateByReference({
+      id: utils.firstNonEmpty(resolvedRow?.id, resolvedId),
+      program_id: resolvedRow?.program_id,
+      nola_code: utils.firstNonEmpty(resolvedRow?.nola_code, resolvedRow?.nola),
+      title: utils.firstNonEmpty(resolvedRow?.title, resolvedRow?.program_title)
+    }, payload);
+  }
+
+  async function unarchiveProgram(reference = {}, payload = {}) {
+    return updateByReference(reference, payload);
   }
 
   function sanitizeTimingRow(row = {}) {
@@ -1087,6 +1142,7 @@
     resolveProgramSnapshot,
     resetDetailCaches,
     updateProgram,
+    unarchiveProgram,
     saveTimingRows,
     mergeLibraryRows,
     buildFieldAudit,

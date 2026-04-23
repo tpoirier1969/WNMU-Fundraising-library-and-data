@@ -40,26 +40,85 @@
       event.stopPropagation();
       if (!App.auth.canEdit()) return;
       const programId = button.getAttribute('data-unarchive-id') || '';
+      const dbId = button.getAttribute('data-unarchive-db-id') || '';
+      const programDbId = button.getAttribute('data-unarchive-program-id') || '';
+      const nola = button.getAttribute('data-unarchive-nola') || '';
+      const title = button.getAttribute('data-unarchive-title') || '';
+      const rightsEnd = button.getAttribute('data-unarchive-rights-end') || '';
       const row = App.programLinks?.resolveRow?.(programId) || App.data.resolveProgramSnapshot?.(programId) || null;
       const payload = {};
-      if (row && Object.prototype.hasOwnProperty.call(row, 'is_archived')) payload.is_archived = false;
-      if (row && Object.prototype.hasOwnProperty.call(row, 'archived')) payload.archived = false;
-      if (row && Object.prototype.hasOwnProperty.call(row, 'inactive_flag')) payload.inactive_flag = false;
+      if (!row || Object.prototype.hasOwnProperty.call(row, 'is_archived')) payload.is_archived = false;
+      if (!row || Object.prototype.hasOwnProperty.call(row, 'archived')) payload.archived = false;
+      if (!row || Object.prototype.hasOwnProperty.call(row, 'inactive_flag')) payload.inactive_flag = false;
       if (!row || Object.prototype.hasOwnProperty.call(row, 'status')) payload.status = 'active';
       if (!row || Object.prototype.hasOwnProperty.call(row, 'library_state')) payload.library_state = 'active';
       if (!Object.keys(payload).length) {
         setNotice('This row did not expose archive fields to clear.', 'warn');
         return;
       }
+      const priorText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Working…';
       setNotice('Removing archive flag…');
-      const { error } = await App.data.updateProgram(programId, payload);
-      if (error) {
-        console.error(error);
-        setNotice(error.message || 'Could not remove archive flag.', 'warn');
+      const response = await App.data.unarchiveProgram({
+        id: dbId || row?.id,
+        program_id: programDbId || row?.program_id,
+        nola_code: nola || row?.nola_code || row?.nola,
+        title: title || row?.title || row?.program_title
+      }, payload);
+      if (response?.error) {
+        console.error(response.error);
+        button.disabled = false;
+        button.textContent = priorText;
+        setNotice(response.error.message || 'Could not remove archive flag.', 'warn');
         return;
       }
-      await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace });
-      setNotice('Archive flag cleared. If rights end is still in the past, extend the rights date and save the title.');
+
+      const parsedRightsEnd = App.utils.parseDateLike ? App.utils.parseDateLike(rightsEnd, { preferDateOnlyLocal: true }) : null;
+      const today = new Date();
+      const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const rightsStillExpired = parsedRightsEnd instanceof Date && !Number.isNaN(parsedRightsEnd.getTime())
+        ? new Date(parsedRightsEnd.getFullYear(), parsedRightsEnd.getMonth(), parsedRightsEnd.getDate()) < todayLocal
+        : false;
+
+      const matchesTarget = (candidate) => {
+        if (!candidate) return false;
+        const candidateId = String(App.derive.programId(candidate) || '').trim();
+        if (programId && candidateId === String(programId).trim()) return true;
+        if (dbId && String(candidate?.id || '').trim() === String(dbId).trim()) return true;
+        if (programDbId && String(candidate?.program_id || '').trim() === String(programDbId).trim()) return true;
+        if (nola && title) {
+          return App.utils.normalizeLookupKey(App.derive.nola(candidate) || '') === App.utils.normalizeLookupKey(nola)
+            && App.utils.normalizeLookupKey(App.derive.title(candidate) || '') === App.utils.normalizeLookupKey(title);
+        }
+        return false;
+      };
+
+      const applyLocalRestore = (candidate) => {
+        if (!matchesTarget(candidate)) return candidate;
+        candidate.is_archived = false;
+        candidate.archived = false;
+        candidate.inactive_flag = false;
+        candidate.status = 'active';
+        candidate.library_state = 'active';
+        if (rightsStillExpired) candidate.__preserve_visible = true;
+        else delete candidate.__preserve_visible;
+        return candidate;
+      };
+
+      (state.baseRows || []).forEach(applyLocalRestore);
+      (state.rawRows || []).forEach(applyLocalRestore);
+      if (state.currentDetailProgram) applyLocalRestore(state.currentDetailProgram);
+
+      if (rightsStillExpired) {
+        state.statusFilter = 'active';
+        if (els.statusFilter) els.statusFilter.value = 'active';
+        App.listUi.applyLibraryView();
+        setNotice('Archive flag cleared. This title still has a past rights-end date, so I moved it into Active only temporarily so you can edit and extend the date.');
+      } else {
+        App.listUi.applyLibraryView();
+        setNotice('Archive flag cleared.');
+      }
     });
     els.detailCloseButton.addEventListener('click', App.detailUi.closeDetailModal);
     els.detailBackdrop.addEventListener('click', App.detailUi.closeDetailModal);

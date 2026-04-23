@@ -233,7 +233,7 @@
       const isArchivedRow = !derive.isActive(row);
       const showUnarchiveButton = isArchivedRow && App.auth?.canEdit?.();
       const unarchiveButtonHtml = showUnarchiveButton
-        ? `<div class="title-row-actions"><button type="button" class="ghost archive-row-button" data-unarchive-id="${utils.escapeHtml(programId)}">Take out of archive</button></div>`
+        ? `<div class="title-row-actions"><button type="button" class="ghost archive-row-button" data-unarchive-id="${utils.escapeHtml(programId)}" data-unarchive-db-id="${utils.escapeHtml(utils.firstNonEmpty(row?.id, ''))}" data-unarchive-program-id="${utils.escapeHtml(utils.firstNonEmpty(row?.program_id, ''))}" data-unarchive-nola="${utils.escapeHtml(derive.nola(row) || '')}" data-unarchive-title="${utils.escapeHtml(derive.title(row) || '')}" data-unarchive-rights-end="${utils.escapeHtml(rightsEnd || '')}">Take out of archive</button></div>`
         : '';
       return `
         <tr data-id="${utils.escapeHtml(programId)}" class="library-earnings-${utils.escapeHtml(tone)} ${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
