@@ -1285,24 +1285,6 @@
     });
   }
 
-  function activeDetailProgramId() {
-    const current = state.currentDetailProgram || {};
-    const resolvedRow = App.programLinks?.resolveRow?.(current) || App.programLinks?.resolveRow?.(state.selectedProgramId) || null;
-    return String(utils.firstNonEmpty(
-      resolvedRow?.id,
-      resolvedRow?.program_id,
-      resolvedRow?.pledge_program_id,
-      resolvedRow?.program_uuid,
-      resolvedRow?.uuid,
-      current?.id,
-      current?.program_id,
-      current?.pledge_program_id,
-      current?.program_uuid,
-      current?.uuid,
-      state.selectedProgramId
-    ) || '').trim();
-  }
-
   function setFormFieldsFromSource(source = {}) {
     const form = els.detailEditForm;
     form.elements.title.value = derive.title(source) === 'Untitled program' ? '' : derive.title(source);
@@ -1322,27 +1304,60 @@
     renderExtraFieldsEditor(source);
   }
 
-  function findDuplicates({ title = '', nola = '', excludeId = '' } = {}) {
+  function currentDetailRowId(programLike = null) {
+    return String(
+      App.data?.canonicalProgramRowId?.(programLike || state.currentDetailProgram || null)
+      || App.data?.canonicalProgramRowId?.(state.selectedProgramId)
+      || ''
+    ).trim();
+  }
+
+  function currentDetailExcludeIds() {
+    const ids = new Set();
+    const current = state.currentDetailProgram || {};
+    const add = (value) => {
+      const key = String(value || '').trim();
+      if (key) ids.add(key);
+    };
+
+    add(state.selectedProgramId);
+    add(currentDetailRowId(current));
+    add(current.id);
+    add(current.program_id);
+    add(current.pledge_program_id);
+    add(current.program_uuid);
+    add(current.uuid);
+    add(derive.programId(current));
+    add(App.programLinks?.fallbackLookupId?.(current));
+
+    const resolvedRow = App.programLinks?.resolveRow?.(state.selectedProgramId) || null;
+    if (resolvedRow) {
+      add(resolvedRow.id);
+      add(resolvedRow.program_id);
+      add(resolvedRow.pledge_program_id);
+      add(resolvedRow.program_uuid);
+      add(resolvedRow.uuid);
+      add(derive.programId(resolvedRow));
+      add(App.programLinks?.fallbackLookupId?.(resolvedRow));
+    }
+
+    return ids;
+  }
+
+  function findDuplicates({ title = '', nola = '', excludeIds = [] } = {}) {
     const titleKey = utils.normalizeLookupKey(title);
     const nolaKey = utils.normalizeLookupKey(nola);
-    const excludeKey = String(excludeId || '').trim();
-    const excludeRow = App.programLinks?.resolveRow?.(excludeKey) || null;
-    const excludeResolvedId = String(utils.firstNonEmpty(
-      excludeRow?.id,
-      excludeRow?.program_id,
-      excludeRow?.pledge_program_id,
-      excludeRow?.program_uuid,
-      excludeRow?.uuid,
-      excludeKey
-    ) || '').trim();
-    const excludeFallback = App.programLinks?.fallbackLookupId?.(excludeRow || excludeKey) || '';
+    const excludeKeys = new Set((Array.isArray(excludeIds) ? excludeIds : [excludeIds]).map((value) => String(value || '').trim()).filter(Boolean));
     let exactNola = null;
     let exactTitle = null;
 
     (state.rawRows || []).forEach((row) => {
-      const rowId = String(utils.firstNonEmpty(row?.id, row?.program_id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '').trim();
-      const rowFallback = App.programLinks?.fallbackLookupId?.(row) || '';
-      if ((excludeResolvedId && rowId === excludeResolvedId) || (excludeFallback && rowFallback && rowFallback === excludeFallback)) return;
+      const rowKeys = [
+        String(derive.programId(row) || '').trim(),
+        String(App.data?.canonicalProgramRowId?.(row) || '').trim(),
+        String(App.programLinks?.fallbackLookupId?.(row) || '').trim()
+      ].filter(Boolean);
+      if (rowKeys.some((key) => excludeKeys.has(key))) return;
       if (!exactNola && nolaKey && utils.normalizeLookupKey(derive.nola(row)) === nolaKey) exactNola = row;
       if (!exactTitle && titleKey && utils.normalizeLookupKey(derive.title(row)) === titleKey) exactTitle = row;
     });
@@ -1351,7 +1366,7 @@
   }
 
   function editorDuplicateMessage({ title = '', nola = '' } = {}) {
-    const duplicates = findDuplicates({ title, nola, excludeId: state.detailCreateMode ? '' : activeDetailProgramId() });
+    const duplicates = findDuplicates({ title, nola, excludeIds: state.detailCreateMode ? [] : [...currentDetailExcludeIds()] });
     if (duplicates.exactNola) {
       return {
         text: `NOLA ${derive.nola(duplicates.exactNola)} already exists on “${derive.title(duplicates.exactNola)}”. NOLA is king, so this would create a duplicate title record.`,
@@ -1445,9 +1460,7 @@
   }
 
   async function loadProgramDetail(programId, options = {}) {
-    const resolvedProgramId = App.programLinks?.resolveId?.(programId) || String(programId || '').trim();
-    state.selectedProgramId = resolvedProgramId;
-    programId = resolvedProgramId;
+    state.selectedProgramId = programId;
     state.currentDetailProgram = blankProgram();
     state.currentDetailTimings = [];
     state.currentDetailDriveResults = [];
@@ -1475,6 +1488,8 @@
     const snapshotProgram = App.data.resolveProgramSnapshot?.(programId);
     if (snapshotProgram) {
       state.currentDetailProgram = snapshotProgram;
+      const snapshotId = currentDetailRowId(snapshotProgram);
+      if (snapshotId) state.selectedProgramId = snapshotId;
       renderDetailShell(snapshotProgram);
       if (preserveMode && canEdit()) setDetailMode('edit');
     }
@@ -1488,7 +1503,8 @@
       }
 
       state.currentDetailProgram = detail.program;
-      state.selectedProgramId = activeDetailProgramId() || programId;
+      const resolvedDetailId = currentDetailRowId(detail.program) || currentDetailRowId(programId);
+      if (resolvedDetailId) state.selectedProgramId = resolvedDetailId;
       state.currentDetailTimings = detail.timings;
       state.currentDetailDriveResults = detail.driveResults;
       state.currentDetailAirings = detail.airings;
@@ -1506,7 +1522,8 @@
         || null;
       if (fallbackProgram) {
         state.currentDetailProgram = fallbackProgram;
-        state.selectedProgramId = activeDetailProgramId() || programId;
+        const fallbackId = currentDetailRowId(fallbackProgram);
+        if (fallbackId) state.selectedProgramId = fallbackId;
         renderDetail(fallbackProgram, [], [], []);
       } else {
         showDetailFailure('Something went sideways while loading this title.');
@@ -1592,8 +1609,12 @@
       return;
     }
 
-    const programId = activeDetailProgramId();
-    if (!programId) return;
+    const programId = currentDetailRowId();
+    if (!programId) {
+      setDetailNotice('Could not resolve the real record ID for this title.', 'bad');
+      return;
+    }
+    state.selectedProgramId = programId;
     const { error } = await App.data.updateProgram(programId, payload);
     if (error) throw error;
     syncTimingDraftFromDom();
