@@ -3,11 +3,14 @@
   if (!App) return;
 
   const { state, constants, utils } = App;
-  const { els, setNotice, setBuildMeta, setUpdateBanner } = App.dom;
-  const HOTFIX_VERSION = 'v0.21.31';
-  const HOTFIX_NOTE = 'Hotfix v0.21.31: existing-program edits save as updates again.';
+  const { els, setNotice, setBuildMeta, setUpdateBanner, setDetailNotice } = App.dom;
+  const HOTFIX_VERSION = 'v0.21.32';
+  const HOTFIX_NOTE = 'Hotfix v0.21.32: existing-program detail edits are forced into update mode, not create mode.';
   let versionCheckTimer = 0;
   let detailSaveHotfixInstalled = false;
+  let detailCreateGuardInstalled = false;
+  let detailCreateModeValue = Boolean(state.detailCreateMode);
+  let duplicateNoticeRepairTimer = 0;
 
   function cleanVersion(value = '') {
     return String(value || '').trim().replace(/^v/i, '');
@@ -53,11 +56,63 @@
     ));
   }
 
+  function shouldForceExistingUpdateMode() {
+    return Boolean(state.detailEditMode && hasExistingDetailIdentity() && !detailHeadingSuggestsCreate());
+  }
+
+  function isDuplicateCreateWarning(text = '') {
+    const normalized = String(text || '').toLowerCase();
+    return normalized.includes('already exists') || normalized.includes('duplicate title record') || normalized.includes('nola is king');
+  }
+
+  function suppressExistingDuplicateWarnings() {
+    if (!shouldForceExistingUpdateMode()) return;
+    if (state.detailCreateMode) detailCreateModeValue = false;
+    if (els.detailNotice && isDuplicateCreateWarning(els.detailNotice.textContent || '')) {
+      setDetailNotice('');
+    }
+  }
+
+  function scheduleDuplicateWarningRepair() {
+    window.clearTimeout(duplicateNoticeRepairTimer);
+    duplicateNoticeRepairTimer = window.setTimeout(() => {
+      if (shouldForceExistingUpdateMode()) {
+        detailCreateModeValue = false;
+        suppressExistingDuplicateWarnings();
+      }
+    }, 0);
+  }
+
   function forceExistingDetailIntoUpdateMode() {
-    if (!state.detailEditMode) return;
-    if (!hasExistingDetailIdentity()) return;
-    if (detailHeadingSuggestsCreate()) return;
-    state.detailCreateMode = false;
+    if (!shouldForceExistingUpdateMode()) return;
+    detailCreateModeValue = false;
+    suppressExistingDuplicateWarnings();
+  }
+
+  function installDetailCreateGuard() {
+    if (detailCreateGuardInstalled) return;
+    detailCreateModeValue = Boolean(state.detailCreateMode);
+
+    Object.defineProperty(state, 'detailCreateMode', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return detailCreateModeValue;
+      },
+      set(nextValue) {
+        const requested = Boolean(nextValue);
+        if (requested && shouldForceExistingUpdateMode()) {
+          detailCreateModeValue = false;
+          scheduleDuplicateWarningRepair();
+          return;
+        }
+        detailCreateModeValue = requested;
+        scheduleDuplicateWarningRepair();
+      }
+    });
+
+    detailCreateGuardInstalled = true;
+    scheduleDuplicateWarningRepair();
   }
 
   function installDetailSaveHotfix() {
@@ -76,6 +131,14 @@
         const result = originalSetDetailMode(mode, ...args);
         if (mode === 'edit') window.setTimeout(forceExistingDetailIntoUpdateMode, 0);
         return result;
+      };
+    }
+
+    if (typeof App.detailUi.openCreateProgram === 'function') {
+      const originalOpenCreateProgram = App.detailUi.openCreateProgram.bind(App.detailUi);
+      App.detailUi.openCreateProgram = function patchedOpenCreateProgram(...args) {
+        detailCreateModeValue = true;
+        return originalOpenCreateProgram(...args);
       };
     }
 
@@ -153,6 +216,7 @@
 
   async function init() {
     applyHotfixUiNote();
+    installDetailCreateGuard();
     installDetailSaveHotfix();
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
@@ -190,15 +254,23 @@
 
     await App.libraryLoader.refreshAll({ workspace: 'library' });
     startVersionChecks();
+    scheduleDuplicateWarningRepair();
   }
 
   function boot() {
     applyHotfixUiNote();
+    installDetailCreateGuard();
     installDetailSaveHotfix();
     App.programOpen?.bindDelegation?.();
     App.app?.bindEvents?.();
     App.app?.ensureMobileModeControls?.();
     window.addEventListener('resize', App.app?.ensureMobileModeControls || (() => {}));
+    document.addEventListener('click', scheduleDuplicateWarningRepair, true);
+    document.addEventListener('input', scheduleDuplicateWarningRepair, true);
+    if (els.detailModal) {
+      const observer = new MutationObserver(() => scheduleDuplicateWarningRepair());
+      observer.observe(els.detailModal, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    }
     if (els.updateRefreshButton) els.updateRefreshButton.addEventListener('click', forceFreshReload);
     if (els.updateDismissButton) els.updateDismissButton.addEventListener('click', () => dismissRemoteVersion(state.remoteVersionInfo?.remoteVersion || ''));
     void init().catch((error) => {
@@ -219,6 +291,7 @@
     checkForRemoteUpdate,
     forceFreshReload,
     dismissRemoteVersion,
+    installDetailCreateGuard,
     installDetailSaveHotfix,
     forceExistingDetailIntoUpdateMode
   };
