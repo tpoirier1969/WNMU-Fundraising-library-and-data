@@ -12,7 +12,7 @@
   const CORE_EDIT_FIELD_SET = new Set([
     'title', 'nola_code', 'distributor', 'length_bucket_minutes', 'actual_runtime_seconds', 'actual_runtime_minutes', 'runtime_minutes',
     'topic_primary', 'topic_secondary', 'rights_start', 'rights_end', 'package_type', 'source_format', 'rights_notes',
-    'premium_summary', 'program_notes'
+    'premium_summary', 'program_notes', 'status', 'library_state', 'is_archived', 'archived', 'inactive_flag'
   ]);
   const NON_EDITABLE_FIELD_PATTERN = /^(?:id|program_id|source_row_number|created_at|updated_at|created_by|updated_by|row_hash)$/i;
   const READ_ONLY_DETAIL_FIELD_PATTERN = /^(?:__.*|total_contributions|avg_contribution_per_drive|avg_per_fundraiser|total_raised|last_aired(?:_at)?|fundraiser_count|drive_count|fundraiser_total|matched_library_title|match_method|match_reason|approved_unlinked|review_status)$/i;
@@ -65,6 +65,69 @@
       if (directTitle && utils.normalizeLookupKey(derive.title(row)) === directTitle) return true;
       return false;
     }) || source || {};
+  }
+
+  function archiveElements() {
+    return {
+      checkbox: els.detailEditForm?.elements?.archive_record || null,
+      hint: document.getElementById('detail-archive-hint') || null
+    };
+  }
+
+  function rightsEndIsCurrentOrFuture(value) {
+    const parsed = utils.parseFlexibleDateInput(value);
+    if (!parsed?.valid || !parsed.iso) return false;
+    const asDate = utils.parseDateLike(parsed.iso, { preferDateOnlyLocal: true });
+    if (!(asDate instanceof Date) || Number.isNaN(asDate.getTime())) return false;
+    const today = new Date();
+    const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endLocal = new Date(asDate.getFullYear(), asDate.getMonth(), asDate.getDate());
+    return endLocal >= todayLocal;
+  }
+
+  function refreshArchiveHint() {
+    const { checkbox, hint } = archiveElements();
+    if (!checkbox || !hint) return;
+    const rightsValue = els.detailEditForm?.elements?.rights_end?.value || '';
+    const currentOrFuture = rightsEndIsCurrentOrFuture(rightsValue);
+    if (currentOrFuture && checkbox.dataset.userTouched !== 'true' && checkbox.checked) {
+      checkbox.checked = false;
+    }
+    if (checkbox.checked) {
+      hint.textContent = 'This title will stay archived after save.';
+    } else if (currentOrFuture) {
+      hint.textContent = 'Current/future rights date will save this title as active.';
+    } else {
+      hint.textContent = 'Uncheck this to bring an archived title back without changing anything else.';
+    }
+  }
+
+  function setArchiveControlsFromSource(source = {}) {
+    const { checkbox } = archiveElements();
+    if (!checkbox) return;
+    checkbox.checked = !derive.isActive(source);
+    checkbox.dataset.userTouched = 'false';
+    refreshArchiveHint();
+  }
+
+  function applyArchiveFieldsToPayload(payload, source = {}) {
+    const { checkbox } = archiveElements();
+    const baseSource = resolveBaseProgramSource(source);
+    const availableKeys = new Set([
+      ...Object.keys(baseSource || {}),
+      ...Object.keys(state.detailExtraFieldDraft || {}),
+      ...Object.keys(payload || {})
+    ]);
+    const rightsWillBeActive = rightsEndIsCurrentOrFuture(payload?.rights_end || '');
+    const autoReactivate = Boolean(rightsWillBeActive && checkbox && checkbox.dataset.userTouched !== 'true');
+    const archiveWanted = checkbox ? (autoReactivate ? false : Boolean(checkbox.checked)) : !rightsWillBeActive;
+
+    payload.status = archiveWanted ? 'archived' : 'active';
+    if (availableKeys.has('library_state')) payload.library_state = archiveWanted ? 'archived' : 'active';
+    if (availableKeys.has('is_archived')) payload.is_archived = archiveWanted;
+    if (availableKeys.has('archived')) payload.archived = archiveWanted;
+    if (availableKeys.has('inactive_flag')) payload.inactive_flag = archiveWanted;
+    return payload;
   }
 
   function isEditableExtraField(key, value) {
@@ -1301,6 +1364,7 @@
     form.elements.rights_notes.value = utils.normalizeText(source.rights_notes);
     form.elements.premium_summary.value = derive.premiumSummary(source);
     form.elements.program_notes.value = derive.description(source);
+    setArchiveControlsFromSource(source);
     renderExtraFieldsEditor(source);
   }
 
@@ -1393,6 +1457,7 @@
     const form = els.detailEditForm;
     const title = utils.normalizeText(form.elements.title.value);
     const nola = utils.normalizeText(form.elements.nola_code.value);
+    refreshArchiveHint();
     const dup = editorDuplicateMessage({ title, nola });
     if (dup.text) {
       setDetailNotice(dup.text, dup.type || 'warn');
@@ -1417,6 +1482,14 @@
     const source = state.currentDetailProgram || blankProgram();
     setFormFieldsFromSource(source);
     bindCompactDateInputs();
+    const archiveCheckbox = els.detailEditForm?.elements?.archive_record;
+    if (archiveCheckbox && archiveCheckbox.dataset.boundArchiveChange !== 'true') {
+      archiveCheckbox.addEventListener('change', () => {
+        archiveCheckbox.dataset.userTouched = 'true';
+        refreshArchiveHint();
+      });
+      archiveCheckbox.dataset.boundArchiveChange = 'true';
+    }
     renderTimingEditor(state.currentDetailTimings || []);
     handleEditorInput();
   }
@@ -1564,7 +1637,7 @@
     event.preventDefault();
     if (!canEdit()) return;
 
-    const payload = buildPayloadFromForm();
+    const payload = applyArchiveFieldsToPayload(buildPayloadFromForm(), state.currentDetailProgram || {});
     if (!payload.title) {
       setDetailNotice('Title is required.', 'bad');
       els.detailEditForm.elements.title.focus();
