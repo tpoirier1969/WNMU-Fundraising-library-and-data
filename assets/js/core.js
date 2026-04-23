@@ -917,23 +917,35 @@ window.PledgeLib = window.PledgeLib || {};
       return `lookup:${titleKey}|${nolaKey}`;
     },
 
+    hasRealRowId(row) {
+      return Boolean(String(utils.firstNonEmpty(row?.id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '').trim());
+    },
+
     resolveRow(programLike) {
-      const candidateRows = [...(state.rawRows || []), ...(state.baseRows || [])];
+      const candidateRows = [...(state.baseRows || []), ...(state.rawRows || [])];
       const key = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
       if (key) {
-        const directMatch = candidateRows.find((row) => String(derive.programId(row)).trim() === key);
-        if (directMatch) return directMatch;
+        const directMatches = candidateRows.filter((row) => String(derive.programId(row)).trim() === key);
+        const preferredDirect = directMatches.find((row) => programLinks.hasRealRowId(row));
+        if (preferredDirect) return preferredDirect;
+        if (directMatches.length) return directMatches[0];
       }
       const fallback = programLinks.fallbackLookupId(programLike);
       if (!fallback) return null;
-      return candidateRows.find((row) => programLinks.fallbackLookupId(row) === fallback) || null;
+      const fallbackMatches = candidateRows.filter((row) => programLinks.fallbackLookupId(row) === fallback);
+      const preferredFallback = fallbackMatches.find((row) => programLinks.hasRealRowId(row));
+      return preferredFallback || fallbackMatches[0] || null;
     },
 
     resolveId(programLike) {
       const direct = String(typeof programLike === 'object' && programLike ? derive.programId(programLike) : (programLike || '')).trim();
       if (direct) {
         const row = programLinks.resolveRow(direct);
-        return row ? String(derive.programId(row)).trim() || direct : direct;
+        if (row) {
+          const canonical = String(utils.firstNonEmpty(row?.id, row?.pledge_program_id, row?.program_uuid, row?.uuid, derive.programId(row)) || '').trim();
+          return canonical || direct;
+        }
+        return direct;
       }
       return programLinks.fallbackLookupId(programLike);
     },

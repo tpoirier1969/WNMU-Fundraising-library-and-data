@@ -324,10 +324,13 @@
     const resolvedRow = App.programLinks?.resolveRow?.(programLike) || direct || null;
     const resolvedId = utils.firstNonEmpty(
       resolvedRow?.id,
-      resolvedRow?.program_id,
+      direct?.id,
       resolvedRow?.pledge_program_id,
+      direct?.pledge_program_id,
       resolvedRow?.program_uuid,
-      resolvedRow?.uuid
+      direct?.program_uuid,
+      resolvedRow?.uuid,
+      direct?.uuid
     );
     if (resolvedId) return String(resolvedId).trim();
     const raw = String(programLike || '').trim();
