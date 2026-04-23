@@ -4,7 +4,10 @@
 
   const { state, constants, utils } = App;
   const { els, setNotice, setBuildMeta, setUpdateBanner } = App.dom;
+  const HOTFIX_VERSION = 'v0.21.31';
+  const HOTFIX_NOTE = 'Hotfix v0.21.31: existing-program edits save as updates again.';
   let versionCheckTimer = 0;
+  let detailSaveHotfixInstalled = false;
 
   function cleanVersion(value = '') {
     return String(value || '').trim().replace(/^v/i, '');
@@ -21,6 +24,62 @@
       if (aValue < bValue) return -1;
     }
     return 0;
+  }
+
+  function applyHotfixUiNote() {
+    if (els.versionFlag) els.versionFlag.textContent = HOTFIX_VERSION;
+    if (typeof document !== 'undefined') {
+      document.title = String(document.title || constants.APP_NAME || 'WNMU Pledge Program Library')
+        .replace(/v\d+\.\d+\.\d+/i, HOTFIX_VERSION);
+    }
+    if (!state.configVersionMismatch) setBuildMeta(HOTFIX_NOTE);
+  }
+
+  function detailHeadingSuggestsCreate() {
+    const heading = String(els.detailFormHeading?.textContent || '').trim();
+    return /new\s+program/i.test(heading);
+  }
+
+  function hasExistingDetailIdentity() {
+    const current = state.currentDetailProgram || {};
+    return Boolean(utils.firstNonEmpty(
+      current?.id,
+      current?.program_id,
+      current?.pledge_program_id,
+      current?.program_uuid,
+      current?.uuid,
+      current?.__synthetic_program_id,
+      state.selectedProgramId
+    ));
+  }
+
+  function forceExistingDetailIntoUpdateMode() {
+    if (!state.detailEditMode) return;
+    if (!hasExistingDetailIdentity()) return;
+    if (detailHeadingSuggestsCreate()) return;
+    state.detailCreateMode = false;
+  }
+
+  function installDetailSaveHotfix() {
+    if (detailSaveHotfixInstalled) return;
+    if (!App.detailUi || typeof App.detailUi.saveDetailEdit !== 'function') return;
+
+    const originalSaveDetailEdit = App.detailUi.saveDetailEdit.bind(App.detailUi);
+    App.detailUi.saveDetailEdit = async function patchedSaveDetailEdit(event) {
+      forceExistingDetailIntoUpdateMode();
+      return originalSaveDetailEdit(event);
+    };
+
+    if (typeof App.detailUi.setDetailMode === 'function') {
+      const originalSetDetailMode = App.detailUi.setDetailMode.bind(App.detailUi);
+      App.detailUi.setDetailMode = function patchedSetDetailMode(mode, ...args) {
+        const result = originalSetDetailMode(mode, ...args);
+        if (mode === 'edit') window.setTimeout(forceExistingDetailIntoUpdateMode, 0);
+        return result;
+      };
+    }
+
+    detailSaveHotfixInstalled = true;
   }
 
   function dismissRemoteVersion(version = '') {
@@ -93,10 +152,12 @@
   }
 
   async function init() {
+    applyHotfixUiNote();
+    installDetailSaveHotfix();
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
     App.schedulingUi?.renderAll();
-    setBuildMeta(state.configVersionMismatch || '');
+    setBuildMeta(state.configVersionMismatch || HOTFIX_NOTE);
     if (!App.data.validateConfig()) {
       setNotice('Fill in config.js with your Supabase URL and anon key. Until then this page is decorative.', 'warn');
       if (state.configVersionMismatch) setBuildMeta(state.configVersionMismatch);
@@ -132,6 +193,8 @@
   }
 
   function boot() {
+    applyHotfixUiNote();
+    installDetailSaveHotfix();
     App.programOpen?.bindDelegation?.();
     App.app?.bindEvents?.();
     App.app?.ensureMobileModeControls?.();
@@ -155,7 +218,9 @@
     boot,
     checkForRemoteUpdate,
     forceFreshReload,
-    dismissRemoteVersion
+    dismissRemoteVersion,
+    installDetailSaveHotfix,
+    forceExistingDetailIntoUpdateMode
   };
 
   window.addEventListener('DOMContentLoaded', boot);
