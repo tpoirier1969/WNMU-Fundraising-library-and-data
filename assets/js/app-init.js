@@ -34,7 +34,7 @@
     } catch (_error) {
       // ignore sessionStorage failures
     }
-    setUpdateBanner('', { visible: false });
+    setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
   }
 
   function getDismissedRemoteVersion() {
@@ -48,8 +48,14 @@
 
   function forceFreshReload() {
     const next = new URL(window.location.href);
-    next.searchParams.set('reload', String(Date.now()));
-    window.location.href = next.toString();
+    const remote = cleanVersion(state.remoteVersionInfo?.remoteVersion || '');
+    next.searchParams.set('reload', remote ? `${remote}-${Date.now()}` : String(Date.now()));
+    try {
+      window.sessionStorage.removeItem('wnmuDismissedRemoteVersion');
+    } catch (_error) {
+      // ignore sessionStorage failures
+    }
+    window.location.replace(next.toString());
   }
 
   function applyRemoteVersionBanner(payload = {}) {
@@ -62,14 +68,17 @@
       checkedAt: new Date().toISOString()
     };
     if (!remoteVersion || compareVersions(remoteVersion, localVersion) <= 0) {
-      setUpdateBanner('', { visible: false });
+      if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Load latest version';
+      setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
       return;
     }
     if (getDismissedRemoteVersion() === remoteVersion) {
-      setUpdateBanner('', { visible: false });
+      if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Load latest version';
+      setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
       return;
     }
-    setUpdateBanner(`New version ${remoteVersion} available. You are on ${localVersion}. Refresh to load the latest build.`, { visible: true });
+    if (els.updateRefreshButton) els.updateRefreshButton.textContent = `Load v${remoteVersion} now`;
+    setUpdateBanner(`A newer build is ready. This page is still running v${localVersion}. Reload to switch to v${remoteVersion}.`, { visible: true, remoteVersion, localVersion });
   }
 
   async function checkForRemoteUpdate({ silent = true } = {}) {

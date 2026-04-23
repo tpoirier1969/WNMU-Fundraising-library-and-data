@@ -15,6 +15,7 @@
     loadingDetail: document.getElementById('loading-detail'),
     updateBanner: document.getElementById('update-banner'),
     updateBannerText: document.getElementById('update-banner-text'),
+    updateBannerVersionPill: document.getElementById('update-banner-version-pill'),
     updateRefreshButton: document.getElementById('update-refresh-button'),
     updateDismissButton: document.getElementById('update-dismiss-button'),
     workspaceButtons: [...document.querySelectorAll('[data-workspace-button]')],
@@ -228,10 +229,23 @@
     if (els.loadingDetail) els.loadingDetail.textContent = detail || '';
   }
 
-  function setUpdateBanner(text = '', { visible = false } = {}) {
+  function setUpdateBanner(text = '', { visible = false, remoteVersion = '', localVersion = '' } = {}) {
     if (!els.updateBanner) return;
+    const hasText = Boolean(visible && text);
     if (els.updateBannerText) els.updateBannerText.textContent = text || '';
-    els.updateBanner.classList.toggle('hidden', !(visible && text));
+    if (els.updateBannerVersionPill) {
+      const remote = String(remoteVersion || '').trim().replace(/^v/i, '');
+      const local = String(localVersion || '').trim().replace(/^v/i, '');
+      if (remote) {
+        const pillText = local ? `Live ${local} → New ${remote}` : `New ${remote}`;
+        els.updateBannerVersionPill.textContent = pillText;
+        els.updateBannerVersionPill.classList.toggle('hidden', !hasText);
+      } else {
+        els.updateBannerVersionPill.textContent = '';
+        els.updateBannerVersionPill.classList.add('hidden');
+      }
+    }
+    els.updateBanner.classList.toggle('hidden', !hasText);
   }
 
   function renderSelectOptions(select, values, currentValue, placeholder) {
