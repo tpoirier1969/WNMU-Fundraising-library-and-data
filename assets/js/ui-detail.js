@@ -1321,8 +1321,12 @@
     return { exactNola, exactTitle };
   }
 
+  function currentDetailProgramId() {
+    return derive.programId(state.currentDetailProgram) || state.selectedProgramId || '';
+  }
+
   function editorDuplicateMessage({ title = '', nola = '' } = {}) {
-    const duplicates = findDuplicates({ title, nola, excludeId: state.detailCreateMode ? '' : state.selectedProgramId });
+    const duplicates = findDuplicates({ title, nola, excludeId: state.detailCreateMode ? '' : currentDetailProgramId() });
     if (duplicates.exactNola) {
       return {
         text: `NOLA ${derive.nola(duplicates.exactNola)} already exists on “${derive.title(duplicates.exactNola)}”. NOLA is king, so this would create a duplicate title record.`,
@@ -1416,7 +1420,7 @@
   }
 
   async function loadProgramDetail(programId, options = {}) {
-    state.selectedProgramId = programId;
+    state.selectedProgramId = App.programLinks?.resolveId?.(programId) || programId;
     state.currentDetailProgram = blankProgram();
     state.currentDetailTimings = [];
     state.currentDetailDriveResults = [];
@@ -1444,6 +1448,7 @@
     const snapshotProgram = App.data.resolveProgramSnapshot?.(programId);
     if (snapshotProgram) {
       state.currentDetailProgram = snapshotProgram;
+      state.selectedProgramId = derive.programId(snapshotProgram) || state.selectedProgramId;
       renderDetailShell(snapshotProgram);
       if (preserveMode && canEdit()) setDetailMode('edit');
     }
@@ -1457,6 +1462,7 @@
       }
 
       state.currentDetailProgram = detail.program;
+      state.selectedProgramId = derive.programId(detail.program) || state.selectedProgramId;
       state.currentDetailTimings = detail.timings;
       state.currentDetailDriveResults = detail.driveResults;
       state.currentDetailAirings = detail.airings;
@@ -1474,6 +1480,7 @@
         || null;
       if (fallbackProgram) {
         state.currentDetailProgram = fallbackProgram;
+        state.selectedProgramId = derive.programId(fallbackProgram) || state.selectedProgramId;
         renderDetail(fallbackProgram, [], [], []);
       } else {
         showDetailFailure('Something went sideways while loading this title.');
@@ -1559,8 +1566,10 @@
       return;
     }
 
-    const programId = state.selectedProgramId;
-    if (!programId) return;
+    const programId = currentDetailProgramId();
+    if (!programId || String(programId).startsWith('lookup:')) {
+      throw new Error('Could not resolve the real program ID for this record.');
+    }
     const { error } = await App.data.updateProgram(programId, payload);
     if (error) throw error;
     syncTimingDraftFromDom();
