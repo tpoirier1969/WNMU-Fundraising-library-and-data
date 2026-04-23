@@ -662,7 +662,16 @@
   }
 
   async function updateProgram(programId, payload) {
-    return state.client.from(constants.BASE_TABLE).update(payload).eq('id', programId);
+    const resolvedRow = App.programLinks?.resolveRow?.(programId) || null;
+    const targetId = utils.firstNonEmpty(
+      resolvedRow?.id,
+      resolvedRow?.program_id,
+      resolvedRow?.pledge_program_id,
+      resolvedRow?.program_uuid,
+      resolvedRow?.uuid,
+      programId
+    );
+    return state.client.from(constants.BASE_TABLE).update(payload).eq('id', targetId);
   }
 
   function sanitizeTimingRow(row = {}) {

@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.32',
+    APP_VERSION: 'v0.21.33',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -730,7 +730,7 @@ window.PledgeLib = window.PledgeLib || {};
 
   const derive = {
     programId(row) {
-      return utils.firstNonEmpty(row?.__synthetic_program_id, row?.id, row?.program_id, row?.pledge_program_id, row?.program_uuid, row?.uuid) || '';
+      return utils.firstNonEmpty(row?.id, row?.program_id, row?.pledge_program_id, row?.program_uuid, row?.uuid, row?.__synthetic_program_id) || '';
     },
 
     title(row) {

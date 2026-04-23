@@ -92,7 +92,16 @@
     }, Number(constants.VERSION_CHECK_INTERVAL_MS) || (10 * 60 * 1000));
   }
 
+  function applyVersionUi() {
+    if (els.versionFlag) els.versionFlag.textContent = constants.APP_VERSION;
+    if (typeof document !== 'undefined') {
+      document.title = String(document.title || constants.APP_NAME || 'WNMU Pledge Program Library')
+        .replace(/v\d+\.\d+\.\d+/i, constants.APP_VERSION);
+    }
+  }
+
   async function init() {
+    applyVersionUi();
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
     App.schedulingUi?.renderAll();
@@ -132,6 +141,7 @@
   }
 
   function boot() {
+    applyVersionUi();
     App.programOpen?.bindDelegation?.();
     App.app?.bindEvents?.();
     App.app?.ensureMobileModeControls?.();
