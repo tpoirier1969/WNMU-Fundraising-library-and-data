@@ -30,6 +30,9 @@
     if (/pledge_program_timings_v2/i.test(message) && /permission denied/i.test(message)) {
       return 'Supabase permissions are blocking timing-row writes on pledge_program_timings_v2. Run 08_timing_write_policy_v0.21.43.sql in Supabase, then save again.';
     }
+    if (/null value in column ["']source_row_number["'].*not-null constraint/i.test(message)) {
+      return 'Supabase requires source_row_number on new timing rows. Upload v0.21.44 and run 09_timing_source_row_number_default_v0.21.44.sql in Supabase, then save again.';
+    }
     return message || 'Timing row save failed.';
   }
 

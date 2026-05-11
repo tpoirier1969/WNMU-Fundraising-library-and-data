@@ -1,6 +1,6 @@
 (() => {
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-  const APP_VERSION = 'v0.6.7';
+  const APP_VERSION = 'v0.21.44';
   const READ_VIEW = 'pledge_program_library_summary_v2';
   const BASE_TABLE = 'pledge_programs_v2';
   const TIMING_TABLE = 'pledge_program_timings_v2';

@@ -856,17 +856,61 @@
   async function persistTimingRow(row = {}) {
     let payload = { ...row };
     let safety = 0;
-    while (safety < 8) {
+    while (safety < 12) {
       safety += 1;
       let response;
       if (payload.id) {
         const updatePayload = { ...payload };
         delete updatePayload.id;
+        if (utils.isBlank(updatePayload.source_row_number)) delete updatePayload.source_row_number;
         response = await state.client.from(constants.TIMING_TABLE).update(updatePayload).eq('id', payload.id);
       } else {
-        const insertPayload = { ...payload };
-        delete insertPayload.id;
-        response = await state.client.from(constants.TIMING_TABLE).insert(insertPayload);
+        const baseInsertPayload = { ...payload };
+        delete baseInsertPayload.id;
+
+        const attempts = [];
+        const queue = (attempt) => {
+          const signature = JSON.stringify(Object.keys(attempt).sort().map((key) => [key, attempt[key]]));
+          if (!attempts.some((item) => item.signature === signature)) attempts.push({ signature, attempt });
+        };
+
+        if (utils.isBlank(baseInsertPayload.source_row_number)) delete baseInsertPayload.source_row_number;
+        queue(baseInsertPayload);
+        if (!Object.prototype.hasOwnProperty.call(baseInsertPayload, 'source_row_number')) {
+          queue({ ...baseInsertPayload, source_row_number: buildManualSourceRowNumber() });
+        }
+
+        let handled = false;
+        while (attempts.length) {
+          const { attempt } = attempts.shift();
+          response = await state.client.from(constants.TIMING_TABLE).insert(attempt);
+          if (!response.error) return response;
+
+          const message = String(response.error?.message || response.error || '');
+          const missingColumn = extractMissingColumnName(message);
+          if (missingColumn && Object.prototype.hasOwnProperty.call(attempt, missingColumn)) {
+            queue(omitKeys(attempt, [missingColumn]));
+            handled = true;
+            continue;
+          }
+          if (/null value in column ["']source_row_number["'].*not-null constraint/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
+            queue({ ...attempt, source_row_number: buildManualSourceRowNumber() });
+            handled = true;
+            continue;
+          }
+          if (/source_row_number/i.test(message) && /duplicate key value|unique constraint/i.test(message)) {
+            queue({ ...attempt, source_row_number: buildManualSourceRowNumber() });
+            handled = true;
+            continue;
+          }
+          if (/source_row_number/i.test(message) && Object.prototype.hasOwnProperty.call(attempt, 'source_row_number') && utils.isBlank(attempt.source_row_number)) {
+            queue({ ...omitKeys(attempt, ['source_row_number']), source_row_number: buildManualSourceRowNumber() });
+            handled = true;
+            continue;
+          }
+          return response;
+        }
+        if (handled) continue;
       }
       if (!response.error) return response;
       const missingColumn = extractMissingColumnName(response.error?.message || response.error);
@@ -874,9 +918,13 @@
         payload = omitKeys(payload, [missingColumn]);
         continue;
       }
+      if (/null value in column ["']source_row_number["'].*not-null constraint/i.test(String(response.error?.message || response.error || ''))) {
+        payload = { ...payload, source_row_number: buildManualSourceRowNumber() };
+        continue;
+      }
       return response;
     }
-    return { error: new Error('Timing row save failed after pruning incompatible columns.') };
+    return { error: new Error('Timing row save failed after retrying source_row_number handling.') };
   }
 
   async function saveTimingRows(programId, rows = []) {
