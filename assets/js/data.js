@@ -763,6 +763,21 @@
     return clone;
   }
 
+  function timingRowHasMeaningfulContent(row = {}) {
+    const note = utils.normalizeText(utils.firstNonEmpty(row?.notes, row?.description, row?.segment_title, row?.segment_name, row?.timing_note, row?.timing_notes, ''));
+    return [
+      row?.act_seconds,
+      row?.program_segment_length_seconds,
+      row?.segment_seconds,
+      row?.break_seconds,
+      row?.pledge_break_seconds,
+      row?.break_length_seconds,
+      row?.local_cutin_seconds,
+      row?.local_cutin,
+      row?.local_cutin_length_seconds
+    ].some((value) => Number.isFinite(Number(value)) && Number(value) >= 0) || Boolean(note);
+  }
+
   function timingDurationValue(row = {}, keys = []) {
     for (const key of keys) {
       const raw = row?.[key];
@@ -775,7 +790,7 @@
 
   function normalizeTimingSaveRows(programId, rows = []) {
     const normalized = [];
-    let elapsed = 0;
+    let elapsedRuntime = 0;
     (Array.isArray(rows) ? rows : []).forEach((row, index) => {
       const sanitized = sanitizeTimingRow({ ...row, program_id: programId });
       const actSeconds = timingDurationValue(sanitized, ['act_seconds', 'program_segment_length_seconds', 'segment_seconds']);
@@ -794,11 +809,48 @@
       delete sanitized.local_cutin_length_seconds;
       delete sanitized.slot_number;
       delete sanitized.act_offset_seconds;
-      sanitized.break_offset_seconds = elapsed + (Number.isFinite(actSeconds) ? actSeconds : 0);
-      elapsed = sanitized.break_offset_seconds + (Number.isFinite(breakSeconds) ? breakSeconds : 0) + (Number.isFinite(localCutInSeconds) ? localCutInSeconds : 0);
+      sanitized.break_offset_seconds = elapsedRuntime + (Number.isFinite(actSeconds) ? actSeconds : 0);
+      elapsedRuntime = sanitized.break_offset_seconds + (Number.isFinite(breakSeconds) ? breakSeconds : 0);
+      if (!timingRowHasMeaningfulContent(sanitized)) return;
       normalized.push(sanitized);
     });
-    return normalized;
+    return normalized.sort((a, b) => Number(a.segment_number || 0) - Number(b.segment_number || 0));
+  }
+
+  function alignWantedTimingRowsWithCurrentRows(wanted = [], currentRows = []) {
+    const bySegment = new Map();
+    (Array.isArray(currentRows) ? currentRows : []).forEach((row, index) => {
+      const segmentNumber = Number(utils.firstNonEmpty(row?.segment_number, row?.slot_number, index + 1));
+      if (!Number.isFinite(segmentNumber) || segmentNumber <= 0) return;
+      if (!bySegment.has(segmentNumber)) bySegment.set(segmentNumber, []);
+      bySegment.get(segmentNumber).push(row);
+    });
+    const usedIds = new Set();
+    const aligned = (Array.isArray(wanted) ? wanted : []).map((row, index) => {
+      const next = { ...row };
+      const currentId = utils.firstNonEmpty(next.id, next.timing_id, next.segment_id);
+      if (!utils.isBlank(currentId)) {
+        usedIds.add(String(currentId));
+        return next;
+      }
+      const segmentNumber = Number(utils.firstNonEmpty(next.segment_number, next.slot_number, index + 1));
+      const candidates = bySegment.get(segmentNumber) || [];
+      const match = candidates.find((candidate) => {
+        const candidateId = utils.firstNonEmpty(candidate?.id, candidate?.timing_id, candidate?.segment_id);
+        return !utils.isBlank(candidateId) && !usedIds.has(String(candidateId));
+      }) || null;
+      if (match) {
+        const matchId = utils.firstNonEmpty(match.id, match.timing_id, match.segment_id);
+        if (!utils.isBlank(matchId)) {
+          next.id = matchId;
+          usedIds.add(String(matchId));
+        }
+        if (utils.isBlank(next.program_id) && !utils.isBlank(match?.program_id)) next.program_id = match.program_id;
+        if (utils.isBlank(next.pledge_program_id) && !utils.isBlank(match?.pledge_program_id)) next.pledge_program_id = match.pledge_program_id;
+      }
+      return next;
+    });
+    return { aligned, usedIds };
   }
 
   async function persistTimingRow(row = {}) {
@@ -832,13 +884,14 @@
     const currentResp = await fetchManyByContext(constants.TIMING_TABLE, { programId }, ['segment_number', 'slot_number'], true, { allowIdField: false });
     const currentRows = Array.isArray(currentResp?.data) ? currentResp.data : [];
     const currentIds = new Set(currentRows.map((row) => String(row.id || '')).filter(Boolean));
-    const wantedIds = new Set(wanted.map((row) => String(row.id || '')).filter(Boolean));
-    const idsToDelete = [...currentIds].filter((id) => !wantedIds.has(id));
+    const { aligned: wantedRows, usedIds } = alignWantedTimingRowsWithCurrentRows(wanted, currentRows);
+    const wantedIds = new Set(wantedRows.map((row) => String(row.id || '')).filter(Boolean));
+    const idsToDelete = [...currentIds].filter((id) => !usedIds.has(id) && !wantedIds.has(id));
     for (const id of idsToDelete) {
       const delResp = await state.client.from(constants.TIMING_TABLE).delete().eq('id', id);
       if (delResp.error) return delResp;
     }
-    for (const row of wanted) {
+    for (const row of wantedRows) {
       const response = await persistTimingRow(row);
       if (response?.error) return response;
     }

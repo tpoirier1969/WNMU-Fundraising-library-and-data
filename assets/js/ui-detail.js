@@ -973,18 +973,26 @@
     return clone;
   }
 
+  function getDetailRuntimeTargetSeconds() {
+    const program = state.currentDetailProgram || {};
+    const direct = Number(utils.firstNonEmpty(program.actual_runtime_seconds, program.runtime_seconds, program.actual_runtime));
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const minutes = Number(utils.firstNonEmpty(program.actual_runtime_minutes, program.runtime_minutes, program.length_minutes, program.length_bucket_minutes));
+    return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : null;
+  }
+
   function buildTimingTimeline(rows = []) {
-    let elapsed = 0;
-    return (Array.isArray(rows) ? rows : []).map((rawRow, index) => {
+    let elapsedRuntime = 0;
+    const timelineRows = (Array.isArray(rows) ? rows : []).map((rawRow, index) => {
       const row = canonicalizeTimingDraftRow(rawRow, index);
       const actSeconds = Number.isFinite(Number(row.act_seconds)) ? Number(row.act_seconds) : 0;
       const breakSeconds = Number.isFinite(Number(row.break_seconds)) ? Number(row.break_seconds) : 0;
       const localCutInSeconds = Number.isFinite(Number(row.local_cutin_seconds)) ? Number(row.local_cutin_seconds) : 0;
-      const startSeconds = elapsed;
+      const startSeconds = elapsedRuntime;
       const endSeconds = startSeconds + actSeconds;
       const breakStartSeconds = endSeconds;
-      const cumulativeSeconds = breakStartSeconds + breakSeconds + localCutInSeconds;
-      elapsed = cumulativeSeconds;
+      const cumulativeSeconds = breakStartSeconds + breakSeconds;
+      elapsedRuntime = cumulativeSeconds;
       return {
         row,
         index,
@@ -997,6 +1005,16 @@
         localCutInSeconds
       };
     });
+    const runtimeTargetSeconds = getDetailRuntimeTargetSeconds();
+    const totalRuntimeSeconds = timelineRows.length ? timelineRows[timelineRows.length - 1].cumulativeSeconds : 0;
+    const derivedCloseSeconds = Number.isFinite(runtimeTargetSeconds) ? Math.max(0, runtimeTargetSeconds - totalRuntimeSeconds) : null;
+    return {
+      rows: timelineRows,
+      totalRuntimeSeconds,
+      runtimeTargetSeconds,
+      derivedCloseSeconds,
+      runtimeDeltaSeconds: Number.isFinite(runtimeTargetSeconds) ? (totalRuntimeSeconds - runtimeTargetSeconds) : null
+    };
   }
 
   function inputTypeForTimingKey(key = '') {
@@ -1008,7 +1026,12 @@
     if (!els.detailTimingEditor) return;
     const draftRows = cloneTimingRows(rows).map((row, index) => canonicalizeTimingDraftRow(row, index));
     state.detailTimingDraftRows = draftRows;
-    const timelineRows = buildTimingTimeline(draftRows);
+    const timeline = buildTimingTimeline(draftRows);
+    const timelineRows = timeline.rows || [];
+    const runtimeSummary = Number.isFinite(timeline.runtimeTargetSeconds)
+      ? `Program TRT ${formatTimingClock(timeline.runtimeTargetSeconds)} · Derived Close ${formatTimingClock(timeline.derivedCloseSeconds || 0)}${timeline.runtimeDeltaSeconds === 0 ? '' : ` · Difference ${formatTimingClock(Math.abs(timeline.runtimeDeltaSeconds || 0))}`}`
+      : `Timed total ${formatTimingClock(timeline.totalRuntimeSeconds || 0)}`;
+    const runtimeStatusClass = Number.isFinite(timeline.runtimeDeltaSeconds) && timeline.runtimeDeltaSeconds !== 0 ? ' warn' : '';
     els.detailTimingEditor.innerHTML = `
       <div class="segment-table-wrap">
         <table class="segment-table detail-timing-table detail-timing-editor-table">
@@ -1044,12 +1067,14 @@
           </tbody>
         </table>
       </div>
-      <div class="muted detail-timing-help">Enter act, break, and local cut-in durations only. Start, End, Break Start, and Cumulative Runtime are calculated automatically from 0:00.</div>`;
+      <div class="detail-timing-summary${runtimeStatusClass}" id="detail-timing-summary">${utils.escapeHtml(runtimeSummary)}</div>
+      <div class="muted detail-timing-help">Enter act, break, and local cut-in durations only. Local cut-ins are informational and do not add to runtime. Start, End, Break Start, and Cumulative Runtime are calculated automatically from 0:00.</div>`;
   }
 
   function updateTimingComputedCells() {
     if (!els.detailTimingEditor) return;
-    const timelineRows = buildTimingTimeline(state.detailTimingDraftRows || []);
+    const timeline = buildTimingTimeline(state.detailTimingDraftRows || []);
+    const timelineRows = timeline.rows || [];
     timelineRows.forEach((entry) => {
       const startNode = els.detailTimingEditor.querySelector(`[data-timing-display="start"][data-timing-row-index="${entry.index}"]`);
       const endNode = els.detailTimingEditor.querySelector(`[data-timing-display="end"][data-timing-row-index="${entry.index}"]`);
@@ -1060,6 +1085,14 @@
       if (breakStartNode) breakStartNode.textContent = formatTimingClock(entry.breakStartSeconds);
       if (cumulativeNode) cumulativeNode.textContent = formatTimingClock(entry.cumulativeSeconds);
     });
+    const summaryNode = els.detailTimingEditor.querySelector('#detail-timing-summary');
+    if (summaryNode) {
+      const runtimeSummary = Number.isFinite(timeline.runtimeTargetSeconds)
+        ? `Program TRT ${formatTimingClock(timeline.runtimeTargetSeconds)} · Derived Close ${formatTimingClock(timeline.derivedCloseSeconds || 0)}${timeline.runtimeDeltaSeconds === 0 ? '' : ` · Difference ${formatTimingClock(Math.abs(timeline.runtimeDeltaSeconds || 0))}`}`
+        : `Timed total ${formatTimingClock(timeline.totalRuntimeSeconds || 0)}`;
+      summaryNode.textContent = runtimeSummary;
+      summaryNode.classList.toggle('warn', Number.isFinite(timeline.runtimeDeltaSeconds) && timeline.runtimeDeltaSeconds !== 0);
+    }
   }
 
   function syncTimingDraftFromDom() {
@@ -1145,13 +1178,18 @@
     }
     const normalizedRows = normalizeTimingRows(timings);
     if (timingTableHasStructuredData(normalizedRows)) {
-      const timelineRows = buildTimingTimeline(normalizedRows.map((entry) => ({
+      const timeline = buildTimingTimeline(normalizedRows.map((entry) => ({
         segment_number: entry.sortKey,
         act_seconds: entry.programSeconds,
         break_seconds: entry.breakSeconds,
         local_cutin_seconds: entry.localCutInSeconds,
         notes: entry.note
       })));
+      const timelineRows = timeline.rows || [];
+      const runtimeSummary = Number.isFinite(timeline.runtimeTargetSeconds)
+        ? `Program TRT ${formatTimingClock(timeline.runtimeTargetSeconds)} · Derived Close ${formatTimingClock(timeline.derivedCloseSeconds || 0)}${timeline.runtimeDeltaSeconds === 0 ? '' : ` · Difference ${formatTimingClock(Math.abs(timeline.runtimeDeltaSeconds || 0))}`}`
+        : `Timed total ${formatTimingClock(timeline.totalRuntimeSeconds || 0)}`;
+      const runtimeStatusClass = Number.isFinite(timeline.runtimeDeltaSeconds) && timeline.runtimeDeltaSeconds !== 0 ? ' warn' : '';
       els.timingList.innerHTML = `
         <article class="timing-card">
           <div class="segment-table-wrap">
@@ -1186,6 +1224,7 @@
               </tbody>
             </table>
           </div>
+          <div class="detail-timing-summary${runtimeStatusClass}">${utils.escapeHtml(runtimeSummary)}</div>
         </article>
       `;
       return;
