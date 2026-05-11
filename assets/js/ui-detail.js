@@ -22,6 +22,17 @@
   }
 
 
+  function friendlyTimingSaveError(error) {
+    const message = String(error?.message || error || '');
+    if (/pledge_program_timings_v2/i.test(message) && /row-level security|violates row-level security|permission denied|new row violates/i.test(message)) {
+      return 'Supabase is blocking timing-row writes on pledge_program_timings_v2. Run 08_timing_write_policy_v0.21.43.sql in Supabase, then save again.';
+    }
+    if (/pledge_program_timings_v2/i.test(message) && /permission denied/i.test(message)) {
+      return 'Supabase permissions are blocking timing-row writes on pledge_program_timings_v2. Run 08_timing_write_policy_v0.21.43.sql in Supabase, then save again.';
+    }
+    return message || 'Timing row save failed.';
+  }
+
   function friendlyCreateError(error) {
     const message = String(error?.message || error || '');
     if (/created_by_email|updated_by_email|created_by|updated_by/i.test(message)) {
@@ -1715,7 +1726,7 @@
       syncTimingDraftFromDom();
       if (createdId && (state.detailTimingDraftRows || []).length) {
         const timingResponse = await App.data.saveTimingRows(createdId, state.detailTimingDraftRows || []);
-        if (timingResponse?.error) throw timingResponse.error;
+        if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
       }
       await App.app.refreshAll();
       if (createdId) {
@@ -1735,7 +1746,7 @@
     if (error) throw error;
     syncTimingDraftFromDom();
     const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
-    if (timingResponse?.error) throw timingResponse.error;
+    if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
     state.selectedProgramId = resolvedProgramId;
     await App.app.refreshAll({ preserveDetail: true });
     await loadProgramDetail(resolvedProgramId, { preserveMode: false });
