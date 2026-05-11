@@ -182,6 +182,16 @@
     });
     els.detailEditForm?.addEventListener('input', () => App.detailUi.handleEditorInput?.());
     els.detailTimingEditor?.addEventListener('input', () => App.detailUi.syncTimingDraftFromDom?.());
+    els.detailTimingEditor?.addEventListener('keydown', (event) => {
+      const notesInput = event.target.closest('.detail-timing-input[data-timing-key="notes"]');
+      if (!notesInput || event.key !== 'Tab' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+      const rowIndex = Number(notesInput.getAttribute('data-timing-row-index') || -1);
+      const rows = App.state?.detailTimingDraftRows || [];
+      if (rowIndex < 0 || rowIndex !== rows.length - 1) return;
+      event.preventDefault();
+      App.detailUi.syncTimingDraftFromDom?.();
+      App.detailUi.addTimingDraftRow?.({ focusKey: 'segment_number' });
+    });
     els.detailTimingEditor?.addEventListener('click', (event) => {
       const removeButton = event.target.closest('.detail-remove-timing-row-button');
       if (!removeButton) return;

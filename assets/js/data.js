@@ -756,6 +756,7 @@
     delete clone.created_at;
     delete clone.updated_at;
     delete clone.program_title;
+    delete clone.__draft_row;
     delete clone.act_offset_seconds;
     Object.keys(clone).forEach((key) => {
       if (clone[key] === '') clone[key] = null;

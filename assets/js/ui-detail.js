@@ -31,10 +31,10 @@
       return 'Supabase permissions are blocking timing-row writes on pledge_program_timings_v2. Run 08_timing_write_policy_v0.21.43.sql in Supabase, then save again.';
     }
     if (/null value in column ["']source_row_number["'].*not-null constraint/i.test(message)) {
-      return 'Supabase requires source_row_number on new timing rows. Upload v0.21.45 and run 09_timing_source_row_number_default_v0.21.44.sql in Supabase, then save again.';
+      return 'Supabase requires source_row_number on new timing rows. Upload v0.21.46 and run 09_timing_source_row_number_default_v0.21.44.sql in Supabase, then save again.';
     }
     if (/null value in column ["']slot_number["'].*not-null constraint/i.test(message)) {
-      return 'Supabase requires slot_number on timing rows. Upload v0.21.45 and run 10_timing_slot_number_backfill_v0.21.45.sql in Supabase, then save again.';
+      return 'Supabase requires slot_number on timing rows. Upload v0.21.46 and run 10b_timing_slot_number_backfill_schema_safe_v0.21.45.sql in Supabase, then save again.';
     }
     return message || 'Timing row save failed.';
   }
@@ -964,7 +964,8 @@
       act_seconds: null,
       break_seconds: null,
       local_cutin_seconds: null,
-      notes: ''
+      notes: '',
+      __draft_row: true
     };
   }
 
@@ -986,6 +987,7 @@
       clone.timing_note,
       clone.timing_notes
     )) || '';
+    clone.__draft_row = Boolean(clone.__draft_row);
     delete clone.act_offset_seconds;
     return clone;
   }
@@ -996,6 +998,23 @@
     if (Number.isFinite(direct) && direct > 0) return direct;
     const minutes = Number(utils.firstNonEmpty(program.actual_runtime_minutes, program.runtime_minutes, program.length_minutes, program.length_bucket_minutes));
     return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : null;
+  }
+
+  function getCalculatedTimingRuntimeSeconds(rows = state.detailTimingDraftRows || []) {
+    const timeline = buildTimingTimeline(rows || []);
+    return Number.isFinite(timeline.totalRuntimeSeconds) && timeline.totalRuntimeSeconds > 0
+      ? timeline.totalRuntimeSeconds
+      : null;
+  }
+
+  function focusTimingCell(rowIndex, key = 'segment_number') {
+    window.setTimeout(() => {
+      const selector = `.detail-timing-input[data-timing-row-index="${rowIndex}"][data-timing-key="${key}"]`;
+      const node = els.detailTimingEditor?.querySelector(selector);
+      if (!node) return;
+      node.focus();
+      if (typeof node.select === 'function' && node.type !== 'number') node.select();
+    }, 0);
   }
 
   function buildTimingTimeline(rows = []) {
@@ -1085,7 +1104,7 @@
         </table>
       </div>
       <div class="detail-timing-summary${runtimeStatusClass}" id="detail-timing-summary">${utils.escapeHtml(runtimeSummary)}</div>
-      <div class="muted detail-timing-help">Enter act, break, and local cut-in durations only. Local cut-ins are informational and do not add to runtime. Start, End, Break Start, and Cumulative Runtime are calculated automatically from 0:00.</div>`;
+      <div class="muted detail-timing-help">Enter act, break, and local cut-in durations only. Local cut-ins are informational and do not add to runtime. Start, End, Break Start, and Cumulative Runtime are calculated automatically from 0:00. The last cumulative runtime becomes the program runtime when you save.</div>`;
   }
 
   function updateTimingComputedCells() {
@@ -1110,6 +1129,8 @@
       summaryNode.textContent = runtimeSummary;
       summaryNode.classList.toggle('warn', Number.isFinite(timeline.runtimeDeltaSeconds) && timeline.runtimeDeltaSeconds !== 0);
     }
+    const runtimeInput = els.detailEditForm?.elements?.actual_runtime_input;
+    if (runtimeInput && timelineRows.length) runtimeInput.value = formatTimingClock(timeline.totalRuntimeSeconds || 0);
   }
 
   function syncTimingDraftFromDom() {
@@ -1121,14 +1142,24 @@
       if (rowIndex < 0 || !rows[rowIndex] || !key) return;
       rows[rowIndex][key] = parseTimingInputValue(key, input.value);
     });
-    state.detailTimingDraftRows = rows.map((row, index) => canonicalizeTimingDraftRow(row, index));
+    state.detailTimingDraftRows = rows.map((row, index) => {
+      const canonical = canonicalizeTimingDraftRow(row, index);
+      if (canonical.act_seconds != null || canonical.break_seconds != null || canonical.local_cutin_seconds != null || canonical.notes) {
+        canonical.__draft_row = false;
+      }
+      return canonical;
+    });
     updateTimingComputedCells();
   }
 
-  function addTimingDraftRow() {
+  function addTimingDraftRow(options = {}) {
+    syncTimingDraftFromDom();
     const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []).map((row, index) => canonicalizeTimingDraftRow(row, index));
-    next.push(blankTimingRow(next.length));
+    const newIndex = next.length;
+    next.push(blankTimingRow(newIndex));
     renderTimingEditor(next);
+    if (options.focusKey) focusTimingCell(newIndex, options.focusKey);
+    return newIndex;
   }
 
   function removeTimingDraftRow(index) {
@@ -1557,7 +1588,8 @@
     const source = state.currentDetailProgram || blankProgram();
     setFormFieldsFromSource(source);
     bindCompactDateInputs();
-    renderTimingEditor(state.currentDetailTimings || []);
+    const timingSource = (state.detailTimingDraftRows && state.detailTimingDraftRows.length) ? state.detailTimingDraftRows : (state.currentDetailTimings || []);
+    renderTimingEditor(timingSource);
     handleEditorInput();
   }
 
@@ -1574,6 +1606,7 @@
     state.detailEditMode = false;
     state.detailCreateMode = false;
     state.detailLoadToken = null;
+    state.detailTimingDraftRows = [];
     els.detailModal.classList.remove('create-mode');
     setDetailNotice('');
   }
@@ -1587,6 +1620,7 @@
     state.currentDetailTimings = [];
     state.currentDetailDriveResults = [];
     state.currentDetailAirings = [];
+    state.detailTimingDraftRows = [];
     openDetailModal();
     els.detailTitle.textContent = 'Add Program';
     els.detailSubtitle.textContent = 'Create the library record now. NOLA is required because reports match by NOLA, not title.';
@@ -1607,6 +1641,7 @@
     state.currentDetailTimings = [];
     state.currentDetailDriveResults = [];
     state.currentDetailAirings = [];
+    state.detailTimingDraftRows = [];
     state.detailCreateMode = false;
 
     const preserveMode = Object.prototype.hasOwnProperty.call(options, 'preserveMode')
@@ -1644,6 +1679,7 @@
 
       state.currentDetailProgram = detail.program;
       state.currentDetailTimings = detail.timings;
+      if (!preserveMode) state.detailTimingDraftRows = [];
       state.currentDetailDriveResults = detail.driveResults;
       state.currentDetailAirings = detail.airings;
       setDetailNotice(detail.warnings.join(' '), detail.warnings.length ? 'warn' : '');
@@ -1701,6 +1737,9 @@
     if (!canEdit()) return;
 
     const payload = buildPayloadFromForm();
+    syncTimingDraftFromDom();
+    const calculatedRuntimeSeconds = getCalculatedTimingRuntimeSeconds(state.detailTimingDraftRows || []);
+    if (Number.isFinite(calculatedRuntimeSeconds) && calculatedRuntimeSeconds > 0) payload.actual_runtime_seconds = calculatedRuntimeSeconds;
     if (!payload.title) {
       setDetailNotice('Title is required.', 'bad');
       els.detailEditForm.elements.title.focus();
