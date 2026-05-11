@@ -798,6 +798,7 @@
       const localCutInSeconds = timingDurationValue(sanitized, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
       const segmentNumber = Number(utils.firstNonEmpty(sanitized.segment_number, sanitized.slot_number, index + 1));
       sanitized.segment_number = Number.isFinite(segmentNumber) && segmentNumber > 0 ? segmentNumber : (index + 1);
+      sanitized.slot_number = sanitized.segment_number;
       sanitized.act_seconds = Number.isFinite(actSeconds) ? actSeconds : null;
       sanitized.break_seconds = Number.isFinite(breakSeconds) ? breakSeconds : null;
       sanitized.local_cutin_seconds = Number.isFinite(localCutInSeconds) ? localCutInSeconds : null;
@@ -863,6 +864,7 @@
         const updatePayload = { ...payload };
         delete updatePayload.id;
         if (utils.isBlank(updatePayload.source_row_number)) delete updatePayload.source_row_number;
+        if (utils.isBlank(updatePayload.slot_number) && !utils.isBlank(updatePayload.segment_number)) updatePayload.slot_number = updatePayload.segment_number;
         response = await state.client.from(constants.TIMING_TABLE).update(updatePayload).eq('id', payload.id);
       } else {
         const baseInsertPayload = { ...payload };
@@ -875,6 +877,7 @@
         };
 
         if (utils.isBlank(baseInsertPayload.source_row_number)) delete baseInsertPayload.source_row_number;
+        if (utils.isBlank(baseInsertPayload.slot_number) && !utils.isBlank(baseInsertPayload.segment_number)) baseInsertPayload.slot_number = baseInsertPayload.segment_number;
         queue(baseInsertPayload);
         if (!Object.prototype.hasOwnProperty.call(baseInsertPayload, 'source_row_number')) {
           queue({ ...baseInsertPayload, source_row_number: buildManualSourceRowNumber() });
@@ -908,6 +911,11 @@
             handled = true;
             continue;
           }
+          if (/null value in column ["']slot_number["'].*not-null constraint/i.test(message) && utils.isBlank(attempt.slot_number) && !utils.isBlank(attempt.segment_number)) {
+            queue({ ...attempt, slot_number: attempt.segment_number });
+            handled = true;
+            continue;
+          }
           return response;
         }
         if (handled) continue;
@@ -920,6 +928,10 @@
       }
       if (/null value in column ["']source_row_number["'].*not-null constraint/i.test(String(response.error?.message || response.error || ''))) {
         payload = { ...payload, source_row_number: buildManualSourceRowNumber() };
+        continue;
+      }
+      if (/null value in column ["']slot_number["'].*not-null constraint/i.test(String(response.error?.message || response.error || '')) && utils.isBlank(payload.slot_number) && !utils.isBlank(payload.segment_number)) {
+        payload = { ...payload, slot_number: payload.segment_number };
         continue;
       }
       return response;
