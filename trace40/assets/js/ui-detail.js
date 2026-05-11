@@ -866,17 +866,6 @@
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
 
-  function formatTimingClock(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric < 0) return '—';
-    const rounded = Math.round(numeric);
-    const hours = Math.floor(rounded / 3600);
-    const minutes = Math.floor((rounded % 3600) / 60);
-    const seconds = rounded % 60;
-    if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  }
-
   function formatTimingInputValue(key, value) {
     if (value == null || value === '') return '';
     if (isTimingSecondsKey(key)) return formatTimingSecondsMmSs(value);
@@ -909,7 +898,7 @@
 
   function candidateColumns(rows) {
     const preferred = [
-      'segment_number', 'slot_number', 'act_seconds', 'break_seconds', 'break_offset_seconds', 'local_cutin_seconds',
+      'segment_number', 'slot_number', 'act_offset_seconds', 'act_seconds', 'break_offset_seconds', 'break_seconds', 'local_cutin_seconds',
       'segment_title', 'segment_name', 'notes', 'title', 'nola_code', 'program_title'
     ];
     const seen = new Set();
@@ -933,70 +922,24 @@
 
 
   function timingEditorColumns(rows = []) {
-    const cols = candidateColumns(rows).filter((key) => !/^(id|program_id|source_row_number|act_offset_seconds|break_offset_seconds)$/i.test(key));
-    return cols.length ? cols : ['segment_number', 'act_seconds', 'break_seconds', 'local_cutin_seconds', 'notes'];
+    const cols = candidateColumns(rows).filter((key) => !/^(id|program_id|source_row_number)$/i.test(key));
+    return cols.length ? cols : ['segment_number', 'act_offset_seconds', 'act_seconds', 'break_offset_seconds', 'break_seconds', 'local_cutin_seconds', 'notes'];
   }
 
   function cloneTimingRows(rows = []) {
     return (rows || []).map((row) => JSON.parse(JSON.stringify(row || {})));
   }
 
-  function blankTimingRow(index = 0) {
+  function blankTimingRow() {
     return {
-      segment_number: index + 1,
+      segment_number: null,
+      act_offset_seconds: null,
       act_seconds: null,
+      break_offset_seconds: null,
       break_seconds: null,
       local_cutin_seconds: null,
       notes: ''
     };
-  }
-
-  function canonicalizeTimingDraftRow(row = {}, fallbackIndex = 0) {
-    const clone = JSON.parse(JSON.stringify(row || {}));
-    const actSeconds = timingMetricSeconds(clone, ['act_seconds', 'program_segment_length_seconds', 'segment_seconds']);
-    const breakSeconds = timingMetricSeconds(clone, ['break_seconds', 'pledge_break_seconds', 'break_length_seconds']);
-    const localCutInSeconds = timingMetricSeconds(clone, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
-    const segmentNumber = Number(utils.firstNonEmpty(clone.segment_number, clone.slot_number, fallbackIndex + 1));
-    clone.segment_number = Number.isFinite(segmentNumber) && segmentNumber > 0 ? segmentNumber : (fallbackIndex + 1);
-    clone.act_seconds = Number.isFinite(actSeconds) ? actSeconds : null;
-    clone.break_seconds = Number.isFinite(breakSeconds) ? breakSeconds : null;
-    clone.local_cutin_seconds = Number.isFinite(localCutInSeconds) ? localCutInSeconds : null;
-    clone.notes = utils.normalizeText(utils.firstNonEmpty(
-      clone.notes,
-      clone.description,
-      clone.segment_title,
-      clone.segment_name,
-      clone.timing_note,
-      clone.timing_notes
-    )) || '';
-    delete clone.act_offset_seconds;
-    return clone;
-  }
-
-  function buildTimingTimeline(rows = []) {
-    let elapsed = 0;
-    return (Array.isArray(rows) ? rows : []).map((rawRow, index) => {
-      const row = canonicalizeTimingDraftRow(rawRow, index);
-      const actSeconds = Number.isFinite(Number(row.act_seconds)) ? Number(row.act_seconds) : 0;
-      const breakSeconds = Number.isFinite(Number(row.break_seconds)) ? Number(row.break_seconds) : 0;
-      const localCutInSeconds = Number.isFinite(Number(row.local_cutin_seconds)) ? Number(row.local_cutin_seconds) : 0;
-      const startSeconds = elapsed;
-      const endSeconds = startSeconds + actSeconds;
-      const breakStartSeconds = endSeconds;
-      const cumulativeSeconds = breakStartSeconds + breakSeconds + localCutInSeconds;
-      elapsed = cumulativeSeconds;
-      return {
-        row,
-        index,
-        startSeconds,
-        endSeconds,
-        breakStartSeconds,
-        cumulativeSeconds,
-        actSeconds,
-        breakSeconds,
-        localCutInSeconds
-      };
-    });
   }
 
   function inputTypeForTimingKey(key = '') {
@@ -1006,60 +949,28 @@
 
   function renderTimingEditor(rows = []) {
     if (!els.detailTimingEditor) return;
-    const draftRows = cloneTimingRows(rows).map((row, index) => canonicalizeTimingDraftRow(row, index));
+    const draftRows = cloneTimingRows(rows);
     state.detailTimingDraftRows = draftRows;
-    const timelineRows = buildTimingTimeline(draftRows);
+    const columns = timingEditorColumns(draftRows);
     els.detailTimingEditor.innerHTML = `
       <div class="segment-table-wrap">
-        <table class="segment-table detail-timing-table detail-timing-editor-table">
+        <table class="segment-table detail-timing-table">
           <thead>
             <tr>
-              <th>Act #</th>
-              <th>Act Duration</th>
-              <th>Start</th>
-              <th>End</th>
-              <th>Break Duration</th>
-              <th>Break Start</th>
-              <th>Local Cut In</th>
-              <th>Cumulative Runtime</th>
-              <th>Notes</th>
+              ${columns.map((key) => `<th>${utils.escapeHtml(displayKeyLabel(key))}</th>`).join('')}
               <th>Remove</th>
             </tr>
           </thead>
           <tbody>
-            ${timelineRows.length ? timelineRows.map((entry) => `
-              <tr data-timing-row-index="${entry.index}">
-                <td><input type="number" class="detail-timing-input" data-timing-row-index="${entry.index}" data-timing-key="segment_number" value="${utils.escapeHtml(String(entry.row.segment_number || entry.index + 1))}" min="1" step="1"></td>
-                <td><input type="text" class="detail-timing-input" inputmode="numeric" placeholder="m:ss" data-timing-row-index="${entry.index}" data-timing-key="act_seconds" value="${utils.escapeHtml(formatTimingInputValue('act_seconds', entry.row.act_seconds))}"></td>
-                <td><div class="detail-timing-calculated" data-timing-display="start" data-timing-row-index="${entry.index}">${utils.escapeHtml(formatTimingClock(entry.startSeconds))}</div></td>
-                <td><div class="detail-timing-calculated" data-timing-display="end" data-timing-row-index="${entry.index}">${utils.escapeHtml(formatTimingClock(entry.endSeconds))}</div></td>
-                <td><input type="text" class="detail-timing-input" inputmode="numeric" placeholder="m:ss" data-timing-row-index="${entry.index}" data-timing-key="break_seconds" value="${utils.escapeHtml(formatTimingInputValue('break_seconds', entry.row.break_seconds))}"></td>
-                <td><div class="detail-timing-calculated" data-timing-display="break-start" data-timing-row-index="${entry.index}">${utils.escapeHtml(formatTimingClock(entry.breakStartSeconds))}</div></td>
-                <td><input type="text" class="detail-timing-input" inputmode="numeric" placeholder="m:ss" data-timing-row-index="${entry.index}" data-timing-key="local_cutin_seconds" value="${utils.escapeHtml(formatTimingInputValue('local_cutin_seconds', entry.row.local_cutin_seconds))}"></td>
-                <td><div class="detail-timing-calculated" data-timing-display="cumulative" data-timing-row-index="${entry.index}">${utils.escapeHtml(formatTimingClock(entry.cumulativeSeconds))}</div></td>
-                <td><input type="text" class="detail-timing-input" data-timing-row-index="${entry.index}" data-timing-key="notes" value="${utils.escapeHtml(entry.row.notes || '')}"></td>
-                <td><button type="button" class="ghost detail-remove-timing-row-button" data-timing-row-index="${entry.index}">Remove</button></td>
+            ${draftRows.length ? draftRows.map((row, rowIndex) => `
+              <tr data-timing-row-index="${rowIndex}">
+                ${columns.map((key) => `<td><input type="${inputTypeForTimingKey(key)}" class="detail-timing-input" ${isTimingSecondsKey(key) ? 'inputmode="numeric" placeholder="m:ss"' : ''} data-timing-row-index="${rowIndex}" data-timing-key="${utils.escapeHtml(key)}" value="${utils.escapeHtml(formatTimingInputValue(key, row[key]))}"></td>`).join('')}
+                <td><button type="button" class="ghost detail-remove-timing-row-button" data-timing-row-index="${rowIndex}">Remove</button></td>
               </tr>
-            `).join('') : `<tr><td colspan="10" class="placeholder-row">No timing rows yet. Add one below.</td></tr>`}
+            `).join('') : `<tr><td colspan="${columns.length + 1}" class="placeholder-row">No timing rows yet. Add one below.</td></tr>`}
           </tbody>
         </table>
-      </div>
-      <div class="muted detail-timing-help">Enter act, break, and local cut-in durations only. Start, End, Break Start, and Cumulative Runtime are calculated automatically from 0:00.</div>`;
-  }
-
-  function updateTimingComputedCells() {
-    if (!els.detailTimingEditor) return;
-    const timelineRows = buildTimingTimeline(state.detailTimingDraftRows || []);
-    timelineRows.forEach((entry) => {
-      const startNode = els.detailTimingEditor.querySelector(`[data-timing-display="start"][data-timing-row-index="${entry.index}"]`);
-      const endNode = els.detailTimingEditor.querySelector(`[data-timing-display="end"][data-timing-row-index="${entry.index}"]`);
-      const breakStartNode = els.detailTimingEditor.querySelector(`[data-timing-display="break-start"][data-timing-row-index="${entry.index}"]`);
-      const cumulativeNode = els.detailTimingEditor.querySelector(`[data-timing-display="cumulative"][data-timing-row-index="${entry.index}"]`);
-      if (startNode) startNode.textContent = formatTimingClock(entry.startSeconds);
-      if (endNode) endNode.textContent = formatTimingClock(entry.endSeconds);
-      if (breakStartNode) breakStartNode.textContent = formatTimingClock(entry.breakStartSeconds);
-      if (cumulativeNode) cumulativeNode.textContent = formatTimingClock(entry.cumulativeSeconds);
-    });
+      </div>`;
   }
 
   function syncTimingDraftFromDom() {
@@ -1069,22 +980,22 @@
       const rowIndex = Number(input.getAttribute('data-timing-row-index') || -1);
       const key = input.getAttribute('data-timing-key') || '';
       if (rowIndex < 0 || !rows[rowIndex] || !key) return;
-      rows[rowIndex][key] = parseTimingInputValue(key, input.value);
+      const raw = input.value;
+      rows[rowIndex][key] = parseTimingInputValue(key, raw);
     });
-    state.detailTimingDraftRows = rows.map((row, index) => canonicalizeTimingDraftRow(row, index));
-    updateTimingComputedCells();
+    state.detailTimingDraftRows = rows;
   }
 
   function addTimingDraftRow() {
-    const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []).map((row, index) => canonicalizeTimingDraftRow(row, index));
-    next.push(blankTimingRow(next.length));
+    const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []);
+    next.push(blankTimingRow());
     renderTimingEditor(next);
   }
 
   function removeTimingDraftRow(index) {
-    const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []).map((row, rowIndex) => canonicalizeTimingDraftRow(row, rowIndex));
+    const next = cloneTimingRows(state.detailTimingDraftRows || state.currentDetailTimings || []);
     next.splice(index, 1);
-    renderTimingEditor(next.map((row, rowIndex) => ({ ...row, segment_number: rowIndex + 1 })));
+    renderTimingEditor(next);
   }
 
   function timingMetricSeconds(row = {}, keys = []) {
@@ -1145,13 +1056,6 @@
     }
     const normalizedRows = normalizeTimingRows(timings);
     if (timingTableHasStructuredData(normalizedRows)) {
-      const timelineRows = buildTimingTimeline(normalizedRows.map((entry) => ({
-        segment_number: entry.sortKey,
-        act_seconds: entry.programSeconds,
-        break_seconds: entry.breakSeconds,
-        local_cutin_seconds: entry.localCutInSeconds,
-        notes: entry.note
-      })));
       els.timingList.innerHTML = `
         <article class="timing-card">
           <div class="segment-table-wrap">
@@ -1159,28 +1063,20 @@
               <thead>
                 <tr>
                   <th>Segment</th>
-                  <th>Act Duration</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Break Duration</th>
-                  <th>Break Start</th>
+                  <th>Program</th>
+                  <th>Break</th>
                   <th>Local Cut In</th>
-                  <th>Cumulative Runtime</th>
                   <th>Notes</th>
                 </tr>
               </thead>
               <tbody>
-                ${timelineRows.map((entry) => `
+                ${normalizedRows.map((entry) => `
                   <tr>
-                    <td>${utils.escapeHtml(`Act ${entry.row.segment_number || entry.index + 1}`)}</td>
-                    <td>${utils.escapeHtml(Number.isFinite(entry.actSeconds) ? formatTimingClock(entry.actSeconds) : '—')}</td>
-                    <td>${utils.escapeHtml(formatTimingClock(entry.startSeconds))}</td>
-                    <td>${utils.escapeHtml(formatTimingClock(entry.endSeconds))}</td>
-                    <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? formatTimingClock(entry.breakSeconds) : '—')}</td>
-                    <td>${utils.escapeHtml(formatTimingClock(entry.breakStartSeconds))}</td>
-                    <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? formatTimingClock(entry.localCutInSeconds) : '—')}</td>
-                    <td>${utils.escapeHtml(formatTimingClock(entry.cumulativeSeconds))}</td>
-                    <td>${utils.escapeHtml(entry.row.notes || '—')}</td>
+                    <td>${utils.escapeHtml(entry.label)}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? formatTimingSecondsMmSs(entry.programSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? formatTimingSecondsMmSs(entry.breakSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? formatTimingSecondsMmSs(entry.localCutInSeconds) : '—')}</td>
+                    <td>${utils.escapeHtml(entry.note || '—')}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -1191,7 +1087,7 @@
       return;
     }
     const rows = [...timings].sort((a, b) => Number(a.segment_number || a.slot_number || 0) - Number(b.segment_number || b.slot_number || 0));
-    const columns = candidateColumns(rows).filter((key) => !/^(id|program_id|source_row_number|act_offset_seconds)$/i.test(key));
+    const columns = candidateColumns(rows).filter((key) => !/^(id|program_id|source_row_number)$/i.test(key));
     els.timingList.innerHTML = `
       <article class="timing-card">
         <div class="segment-table-wrap">

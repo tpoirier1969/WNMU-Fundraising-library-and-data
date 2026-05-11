@@ -3093,19 +3093,6 @@ button.primary {
   width: 100%;
   min-width: 86px;
 }
-.detail-timing-calculated {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 2px;
-  font-weight: 700;
-  color: var(--pbs-blue-dark);
-  white-space: nowrap;
-}
-.detail-timing-help {
-  margin-top: 8px;
-  font-size: .8rem;
-}
 .detail-editor-subblock {
   margin-top: 14px;
 }

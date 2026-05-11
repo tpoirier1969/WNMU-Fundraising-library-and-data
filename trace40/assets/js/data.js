@@ -563,7 +563,7 @@
     if (!pendingIds.length) return resultMap;
 
     const baseResp = await fetchManyByFieldIn(constants.BASE_TABLE, 'id', pendingIds, [], true);
-    const timingResp = await fetchManyByFieldSet(constants.TIMING_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['segment_number', 'slot_number'], true);
+    const timingResp = await fetchManyByFieldSet(constants.TIMING_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true);
     const driveResp = await fetchManyByFieldSet(constants.DRIVE_RESULTS_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false);
     const airingsResp = await fetchManyByFieldSet(constants.AIRINGS_TABLE, ['program_id', 'pledge_program_id'], pendingIds, ['aired_at', 'air_date', 'drive_date', 'created_at'], false);
 
@@ -606,7 +606,7 @@
         ? Promise.resolve({ data: null, error: null })
         : fetchOneById(constants.BASE_TABLE, programId);
       const sectionPromise = Promise.all([
-        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number'], true, { allowTitleFields: false, allowIdField: false }),
+        fetchManyByContext(constants.TIMING_TABLE, initialContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false, allowIdField: false }),
         fetchManyByContext(constants.DRIVE_RESULTS_TABLE, initialContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false, { allowIdField: false }),
         fetchManyByContext(constants.AIRINGS_TABLE, initialContext, ['aired_at', 'air_date', 'drive_date', 'created_at'], false, { allowTitleFields: false, allowIdField: false })
       ]);
@@ -619,7 +619,7 @@
 
       if (needsContextRetry(initialContext, enrichedContext)) {
         if (!(timingResp.data || []).length) {
-          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number'], true, { allowTitleFields: false, allowIdField: false });
+          timingResp = await fetchManyByContext(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true, { allowTitleFields: false, allowIdField: false });
         }
         if (!(driveResp.data || []).length) {
           driveResp = await fetchManyByContext(constants.DRIVE_RESULTS_TABLE, enrichedContext, ['drive_order', 'drive_date', 'aired_at', 'created_at'], false, { allowIdField: false });
@@ -631,7 +631,7 @@
 
       const sparseTimingRows = (timingResp.data || []).length <= 1;
       if (sparseTimingRows && !utils.isBlank(enrichedContext.title)) {
-        const titleTimingResp = await fetchManyByTitleFallback(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number'], true);
+        const titleTimingResp = await fetchManyByTitleFallback(constants.TIMING_TABLE, enrichedContext, ['segment_number', 'slot_number', 'break_offset_seconds', 'act_offset_seconds'], true);
         const mergedTimingRows = mergeTimingRows(timingResp.data || [], titleTimingResp.data || []);
         if (mergedTimingRows.length > (timingResp.data || []).length) {
           timingResp = {
@@ -756,79 +756,14 @@
     delete clone.created_at;
     delete clone.updated_at;
     delete clone.program_title;
-    delete clone.act_offset_seconds;
     Object.keys(clone).forEach((key) => {
       if (clone[key] === '') clone[key] = null;
     });
     return clone;
   }
 
-  function timingDurationValue(row = {}, keys = []) {
-    for (const key of keys) {
-      const raw = row?.[key];
-      const num = Number(raw);
-      if (Number.isFinite(num)) return num;
-      if (raw === 0) return 0;
-    }
-    return null;
-  }
-
-  function normalizeTimingSaveRows(programId, rows = []) {
-    const normalized = [];
-    let elapsed = 0;
-    (Array.isArray(rows) ? rows : []).forEach((row, index) => {
-      const sanitized = sanitizeTimingRow({ ...row, program_id: programId });
-      const actSeconds = timingDurationValue(sanitized, ['act_seconds', 'program_segment_length_seconds', 'segment_seconds']);
-      const breakSeconds = timingDurationValue(sanitized, ['break_seconds', 'pledge_break_seconds', 'break_length_seconds']);
-      const localCutInSeconds = timingDurationValue(sanitized, ['local_cutin_seconds', 'local_cutin', 'local_cutin_length_seconds']);
-      const segmentNumber = Number(utils.firstNonEmpty(sanitized.segment_number, sanitized.slot_number, index + 1));
-      sanitized.segment_number = Number.isFinite(segmentNumber) && segmentNumber > 0 ? segmentNumber : (index + 1);
-      sanitized.act_seconds = Number.isFinite(actSeconds) ? actSeconds : null;
-      sanitized.break_seconds = Number.isFinite(breakSeconds) ? breakSeconds : null;
-      sanitized.local_cutin_seconds = Number.isFinite(localCutInSeconds) ? localCutInSeconds : null;
-      delete sanitized.program_segment_length_seconds;
-      delete sanitized.segment_seconds;
-      delete sanitized.pledge_break_seconds;
-      delete sanitized.break_length_seconds;
-      delete sanitized.local_cutin;
-      delete sanitized.local_cutin_length_seconds;
-      delete sanitized.slot_number;
-      delete sanitized.act_offset_seconds;
-      sanitized.break_offset_seconds = elapsed + (Number.isFinite(actSeconds) ? actSeconds : 0);
-      elapsed = sanitized.break_offset_seconds + (Number.isFinite(breakSeconds) ? breakSeconds : 0) + (Number.isFinite(localCutInSeconds) ? localCutInSeconds : 0);
-      normalized.push(sanitized);
-    });
-    return normalized;
-  }
-
-  async function persistTimingRow(row = {}) {
-    let payload = { ...row };
-    let safety = 0;
-    while (safety < 8) {
-      safety += 1;
-      let response;
-      if (payload.id) {
-        const updatePayload = { ...payload };
-        delete updatePayload.id;
-        response = await state.client.from(constants.TIMING_TABLE).update(updatePayload).eq('id', payload.id);
-      } else {
-        const insertPayload = { ...payload };
-        delete insertPayload.id;
-        response = await state.client.from(constants.TIMING_TABLE).insert(insertPayload);
-      }
-      if (!response.error) return response;
-      const missingColumn = extractMissingColumnName(response.error?.message || response.error);
-      if (missingColumn && Object.prototype.hasOwnProperty.call(payload, missingColumn)) {
-        payload = omitKeys(payload, [missingColumn]);
-        continue;
-      }
-      return response;
-    }
-    return { error: new Error('Timing row save failed after pruning incompatible columns.') };
-  }
-
   async function saveTimingRows(programId, rows = []) {
-    const wanted = normalizeTimingSaveRows(programId, rows).filter((row) => Object.keys(row).length);
+    const wanted = Array.isArray(rows) ? rows.map((row) => sanitizeTimingRow({ ...row, program_id: programId })).filter((row) => Object.keys(row).length) : [];
     const currentResp = await fetchManyByContext(constants.TIMING_TABLE, { programId }, ['segment_number', 'slot_number'], true, { allowIdField: false });
     const currentRows = Array.isArray(currentResp?.data) ? currentResp.data : [];
     const currentIds = new Set(currentRows.map((row) => String(row.id || '')).filter(Boolean));
@@ -839,8 +774,17 @@
       if (delResp.error) return delResp;
     }
     for (const row of wanted) {
-      const response = await persistTimingRow(row);
-      if (response?.error) return response;
+      let response;
+      if (row.id) {
+        const payload = { ...row };
+        delete payload.id;
+        response = await state.client.from(constants.TIMING_TABLE).update(payload).eq('id', row.id);
+      } else {
+        const payload = { ...row };
+        delete payload.id;
+        response = await state.client.from(constants.TIMING_TABLE).insert(payload);
+      }
+      if (response.error) return response;
     }
     return { error: null };
   }
