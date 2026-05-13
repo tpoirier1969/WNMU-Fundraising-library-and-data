@@ -175,6 +175,15 @@
     });
     els.addProgramButton?.addEventListener('click', () => App.detailUi.openCreateProgram());
     els.detailEditButton.addEventListener('click', () => { if (App.auth.canEdit()) App.detailUi.setDetailMode('edit'); });
+    els.detailDeleteButton?.addEventListener('click', async () => {
+      try {
+        await App.detailUi.deleteCurrentProgram?.();
+      } catch (error) {
+        console.error(error);
+        setDetailNotice(error.message || 'Delete failed.', 'bad');
+        setNotice(error.message || 'Delete failed.', 'warn');
+      }
+    });
     els.detailCancelEditButton?.addEventListener('click', () => {
       setDetailNotice('');
       if (state.detailCreateMode) App.detailUi.closeDetailModal();

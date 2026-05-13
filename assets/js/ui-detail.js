@@ -1578,9 +1578,12 @@
 
   function setDetailMode(mode = 'view') {
     state.detailEditMode = mode === 'edit' && canEdit();
+    const canDeleteCurrent = canEdit() && !state.detailCreateMode && Boolean(state.selectedProgramId);
     els.detailModal.classList.toggle('create-mode', state.detailCreateMode);
     els.detailEditForm.classList.toggle('hidden', !state.detailEditMode);
     els.detailEditButton.classList.toggle('hidden', !canEdit() || state.detailEditMode || state.detailCreateMode);
+    els.detailDeleteButton?.classList.toggle('hidden', !canDeleteCurrent);
+    if (els.detailDeleteButton) els.detailDeleteButton.disabled = Boolean(state.detailDeleteInProgress || state.detailSaveInProgress);
     if (els.detailFormHeading) els.detailFormHeading.textContent = state.detailCreateMode ? 'Add Program' : 'Edit program';
     if (els.detailSaveButton) els.detailSaveButton.textContent = state.detailCreateMode ? 'Create program' : 'Save';
     if (!state.detailEditMode) return;
@@ -1735,69 +1738,143 @@
   async function saveDetailEdit(event) {
     event.preventDefault();
     if (!canEdit()) return;
+    if (state.detailSaveInProgress) return;
 
-    const payload = buildPayloadFromForm();
-    syncTimingDraftFromDom();
-    const calculatedRuntimeSeconds = getCalculatedTimingRuntimeSeconds(state.detailTimingDraftRows || []);
-    if (Number.isFinite(calculatedRuntimeSeconds) && calculatedRuntimeSeconds > 0) payload.actual_runtime_seconds = calculatedRuntimeSeconds;
-    if (!payload.title) {
-      setDetailNotice('Title is required.', 'bad');
-      els.detailEditForm.elements.title.focus();
-      return;
+    state.detailSaveInProgress = true;
+    const priorSaveText = els.detailSaveButton?.textContent || '';
+    if (els.detailSaveButton) {
+      els.detailSaveButton.disabled = true;
+      els.detailSaveButton.textContent = state.detailCreateMode ? 'Creating…' : 'Saving…';
     }
-    if (state.detailCreateMode && !payload.nola_code) {
-      setDetailNotice('NOLA is required for a new pledge title. Reports match to the library by NOLA.', 'bad');
-      els.detailEditForm.elements.nola_code.focus();
-      return;
-    }
+    if (els.detailDeleteButton) els.detailDeleteButton.disabled = true;
 
-    const duplicateState = editorDuplicateMessage({ title: payload.title, nola: payload.nola_code || '' });
-    if (duplicateState.blocking) {
-      setDetailNotice(duplicateState.text, 'bad');
-      els.detailEditForm.elements.nola_code.focus();
-      return;
-    }
-
-    setDetailNotice(state.detailCreateMode ? 'Creating program…' : 'Saving changes…');
-
-    if (state.detailCreateMode) {
-      const response = await App.data.createProgram(payload);
-      if (response.error) {
-        const friendly = friendlyCreateError(response.error);
-        setDetailNotice(friendly, 'bad');
-        throw new Error(friendly);
-      }
-      const createdId = derive.programId(response.data || {});
+    try {
+      const payload = buildPayloadFromForm();
       syncTimingDraftFromDom();
-      if (createdId && (state.detailTimingDraftRows || []).length) {
-        const timingResponse = await App.data.saveTimingRows(createdId, state.detailTimingDraftRows || []);
-        if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+      const calculatedRuntimeSeconds = getCalculatedTimingRuntimeSeconds(state.detailTimingDraftRows || []);
+      if (Number.isFinite(calculatedRuntimeSeconds) && calculatedRuntimeSeconds > 0) payload.actual_runtime_seconds = calculatedRuntimeSeconds;
+      if (!payload.title) {
+        setDetailNotice('Title is required.', 'bad');
+        els.detailEditForm.elements.title.focus();
+        return;
       }
-      await App.app.refreshAll();
-      if (createdId) {
-        state.detailCreateMode = false;
-        await loadProgramDetail(createdId, { preserveMode: false });
-      } else {
-        closeDetailModal();
+      if (state.detailCreateMode && !payload.nola_code) {
+        setDetailNotice('NOLA is required for a new pledge title. Reports match to the library by NOLA.', 'bad');
+        els.detailEditForm.elements.nola_code.focus();
+        return;
       }
-      App.dom.setNotice(`Added ${payload.title}.`);
-      return;
-    }
 
-    const programId = state.selectedProgramId;
-    const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
-    if (!resolvedProgramId) return;
-    const { error } = await App.data.updateProgram(resolvedProgramId, payload);
-    if (error) throw error;
-    syncTimingDraftFromDom();
-    const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
-    if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
-    state.selectedProgramId = resolvedProgramId;
-    await App.app.refreshAll({ preserveDetail: true });
-    await loadProgramDetail(resolvedProgramId, { preserveMode: false });
-    setDetailNotice('Changes saved.');
-    App.dom.setNotice('Program updated.');
-    setDetailMode('view');
+      const duplicateState = editorDuplicateMessage({ title: payload.title, nola: payload.nola_code || '' });
+      if (duplicateState.blocking) {
+        setDetailNotice(duplicateState.text, 'bad');
+        els.detailEditForm.elements.nola_code.focus();
+        return;
+      }
+
+      setDetailNotice(state.detailCreateMode ? 'Creating program…' : 'Saving changes…');
+
+      if (state.detailCreateMode) {
+        const response = await App.data.createProgram(payload);
+        if (response.error) {
+          const friendly = friendlyCreateError(response.error);
+          setDetailNotice(friendly, 'bad');
+          throw new Error(friendly);
+        }
+        const createdId = derive.programId(response.data || {});
+        syncTimingDraftFromDom();
+        if (createdId && (state.detailTimingDraftRows || []).length) {
+          const timingResponse = await App.data.saveTimingRows(createdId, state.detailTimingDraftRows || []);
+          if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+        }
+        await App.app.refreshAll();
+        if (createdId) {
+          state.detailCreateMode = false;
+          await loadProgramDetail(createdId, { preserveMode: false });
+        } else {
+          closeDetailModal();
+        }
+        App.dom.setNotice(`Added ${payload.title}.`);
+        return;
+      }
+
+      const programId = state.selectedProgramId;
+      const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
+      if (!resolvedProgramId) return;
+      const { error } = await App.data.updateProgram(resolvedProgramId, payload);
+      if (error) throw error;
+      syncTimingDraftFromDom();
+      const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
+      if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+      state.selectedProgramId = resolvedProgramId;
+      await App.app.refreshAll({ preserveDetail: true });
+      await loadProgramDetail(resolvedProgramId, { preserveMode: false });
+      setDetailNotice('Changes saved.');
+      App.dom.setNotice('Program updated.');
+      setDetailMode('view');
+    } finally {
+      state.detailSaveInProgress = false;
+      if (els.detailSaveButton) {
+        els.detailSaveButton.disabled = false;
+        els.detailSaveButton.textContent = priorSaveText || (state.detailCreateMode ? 'Create program' : 'Save');
+      }
+      if (els.detailDeleteButton) els.detailDeleteButton.disabled = Boolean(state.detailDeleteInProgress);
+      setDetailMode(state.detailEditMode ? 'edit' : 'view');
+    }
+  }
+
+  function friendlyDeleteError(error) {
+    const message = String(error?.message || error || 'Delete failed.');
+    if (/foreign key|violates foreign key constraint|still referenced/i.test(message)) {
+      return 'Delete was blocked because this program has related timing, airing, rollup, or schedule rows. For a true duplicate, remove or relink related rows first; otherwise archive it instead of hard-deleting it.';
+    }
+    if (/row-level security|permission denied|not authorized/i.test(message)) {
+      return 'Delete was blocked by Supabase permissions. Make sure you are signed in as an app admin and that the authenticated role has DELETE access on the base pledge program table.';
+    }
+    return message;
+  }
+
+  async function deleteCurrentProgram() {
+    if (!canEdit() || state.detailCreateMode || state.detailDeleteInProgress) return;
+    const program = state.currentDetailProgram || App.data.resolveProgramSnapshot?.(state.selectedProgramId) || {};
+    const title = derive.title(program) || 'this program';
+    const nola = derive.nola(program);
+    const label = `${title}${nola ? ` (${nola})` : ''}`;
+
+    const confirmed = window.confirm(`Delete ${label} permanently?\n\nUse this only for accidental duplicate records. This cannot be undone.`);
+    if (!confirmed) return;
+
+    state.detailDeleteInProgress = true;
+    const priorText = els.detailDeleteButton?.textContent || 'Delete';
+    if (els.detailDeleteButton) {
+      els.detailDeleteButton.disabled = true;
+      els.detailDeleteButton.textContent = 'Deleting…';
+    }
+    if (els.detailSaveButton) els.detailSaveButton.disabled = true;
+    setDetailNotice(`Deleting ${label}…`);
+
+    try {
+      const programId = state.selectedProgramId;
+      const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
+      const response = await App.data.deleteProgram(resolvedProgramId);
+      if (response?.error) throw new Error(friendlyDeleteError(response.error));
+
+      state.selectedProgramId = null;
+      state.currentDetailProgram = null;
+      state.currentDetailTimings = [];
+      state.currentDetailDriveResults = [];
+      state.currentDetailAirings = [];
+      state.detailTimingDraftRows = [];
+      closeDetailModal();
+      await App.app.refreshAll({ workspace: state.activeWorkspace });
+      App.dom.setNotice(`Deleted ${label}.`);
+    } finally {
+      state.detailDeleteInProgress = false;
+      if (els.detailDeleteButton) {
+        els.detailDeleteButton.disabled = false;
+        els.detailDeleteButton.textContent = priorText;
+      }
+      if (els.detailSaveButton) els.detailSaveButton.disabled = false;
+    }
   }
 
   App.detailUi = {
@@ -1808,6 +1885,7 @@
     setDetailMode,
     loadProgramDetail,
     saveDetailEdit,
+    deleteCurrentProgram,
     handleEditorInput,
     showDetailFailure,
     addTimingDraftRow,

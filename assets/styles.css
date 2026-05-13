@@ -43,6 +43,19 @@ button.primary {
 }
 button:hover { transform: translateY(-1px); }
 button.small { padding: 6px 7px; }
+button.danger {
+  border-color: rgba(191, 47, 67, 0.42);
+  background: #fff5f6;
+  color: var(--danger);
+}
+button.danger:hover:not(:disabled) {
+  background: #ffe8ec;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  transform: none;
+}
 
 .app-shell {
   padding: 10px 14px 14px;

@@ -19,6 +19,7 @@
     els.footerVersion.textContent = constants.APP_VERSION;
     document.title = `WNMU Pledge Program Library ${constants.APP_VERSION}`;
     els.detailEditButton.classList.toggle('hidden', !canEdit());
+    els.detailDeleteButton?.classList.toggle('hidden', !canEdit() || Boolean(state.detailCreateMode) || !state.selectedProgramId);
     els.addProgramButton?.classList.toggle('hidden', !canEdit());
     if (canEdit()) {
       els.roleChip.textContent = state.userEmail ? `Admin · ${state.userEmail}` : 'Admin';

@@ -44,6 +44,7 @@
     detailModal: document.getElementById('detail-modal'),
     detailCloseButton: document.getElementById('detail-close-button'),
     detailEditButton: document.getElementById('detail-edit-button'),
+    detailDeleteButton: document.getElementById('detail-delete-button'),
     detailTitle: document.getElementById('detail-title'),
     detailSubtitle: document.getElementById('detail-subtitle'),
     detailNotice: document.getElementById('detail-notice'),

@@ -723,6 +723,21 @@
     }, payload);
   }
 
+  async function deleteProgram(programId) {
+    const resolvedRow = App.programLinks?.resolveRow?.(programId) || resolveProgramSummaryRow(programId) || null;
+    const resolvedId = resolveDatabaseProgramId(programId);
+    const directId = String(utils.firstNonEmpty(resolvedRow?.id, resolvedId, '')).trim();
+
+    if (!directId || directId.startsWith('lookup:') || directId.startsWith('nonpledge:')) {
+      return { data: null, error: new Error('Could not find an exact database row ID for this program. Nothing was deleted.') };
+    }
+
+    return state.client
+      .from(constants.BASE_TABLE)
+      .delete()
+      .eq('id', directId);
+  }
+
   async function unarchiveProgram(reference = {}, payload = {}) {
     const cleanedPayload = { ...payload };
     const directId = String(utils.firstNonEmpty(reference?.id, '')).trim();
@@ -1336,6 +1351,7 @@
     resolveProgramSnapshot,
     resetDetailCaches,
     updateProgram,
+    deleteProgram,
     unarchiveProgram,
     saveTimingRows,
     mergeLibraryRows,
