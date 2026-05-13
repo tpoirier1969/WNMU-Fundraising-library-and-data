@@ -1857,6 +1857,9 @@
       const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
       const response = await App.data.deleteProgram(resolvedProgramId);
       if (response?.error) throw new Error(friendlyDeleteError(response.error));
+      if (!Array.isArray(response?.data) || response.data.length !== 1) {
+        throw new Error('Delete did not confirm exactly one removed row. Refreshing was stopped so we do not pretend the duplicate was removed.');
+      }
 
       state.selectedProgramId = null;
       state.currentDetailProgram = null;

@@ -180,8 +180,9 @@
         await App.detailUi.deleteCurrentProgram?.();
       } catch (error) {
         console.error(error);
-        setDetailNotice(error.message || 'Delete failed.', 'bad');
-        setNotice(error.message || 'Delete failed.', 'warn');
+        const message = error.message || 'Delete failed.';
+        App.dom?.setDetailNotice?.(message, 'bad');
+        setNotice(message, 'warn');
       }
     });
     els.detailCancelEditButton?.addEventListener('click', () => {

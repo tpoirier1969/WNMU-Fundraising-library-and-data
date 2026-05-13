@@ -723,19 +723,104 @@
     }, payload);
   }
 
+  function isSchemaColumnError(error) {
+    return /column .* does not exist|schema cache/i.test(error?.message || '');
+  }
+
+  function uniqueDeleteCandidates(programId, resolvedRow = null) {
+    const direct = String(programId || '').trim();
+    const row = resolvedRow || App.programLinks?.resolveRow?.(direct) || resolveProgramSummaryRow(direct) || null;
+    const candidates = [
+      row?.program_id,
+      row?.pledge_program_id,
+      row?.id,
+      direct,
+      resolveDatabaseProgramId(direct)
+    ];
+    const seen = new Set();
+    return candidates
+      .map((value) => String(value || '').trim())
+      .filter((value) => value && !value.startsWith('lookup:') && !value.startsWith('nonpledge:'))
+      .filter((value) => {
+        if (seen.has(value)) return false;
+        seen.add(value);
+        return true;
+      });
+  }
+
+  async function findSingleDeleteTarget(field, value) {
+    const response = await state.client
+      .from(constants.BASE_TABLE)
+      .select('*')
+      .eq(field, value)
+      .limit(2);
+
+    if (response.error) return response;
+    const rows = Array.isArray(response.data) ? response.data : [];
+    if (rows.length === 0) return { data: null, error: null };
+    if (rows.length > 1) {
+      return {
+        data: rows,
+        error: new Error(`Delete target is not unique: ${constants.BASE_TABLE}.${field} matched ${rows.length} rows.`)
+      };
+    }
+    return { data: rows[0], error: null };
+  }
+
+  async function deleteConfirmedTarget(targetRow = {}, fallbackField = 'id', fallbackValue = '') {
+    const targetId = String(utils.firstNonEmpty(targetRow?.id, '')).trim();
+    let query = state.client.from(constants.BASE_TABLE).delete();
+    if (targetId) query = query.eq('id', targetId);
+    else query = query.eq(fallbackField, fallbackValue);
+
+    const response = await query.select('*');
+    if (response.error) return response;
+    const rows = Array.isArray(response.data) ? response.data : [];
+    if (rows.length !== 1) {
+      return {
+        ...response,
+        error: new Error(`Delete did not confirm exactly one removed row; Supabase returned ${rows.length} rows.`)
+      };
+    }
+    return { ...response, deletedRow: rows[0] };
+  }
+
   async function deleteProgram(programId) {
     const resolvedRow = App.programLinks?.resolveRow?.(programId) || resolveProgramSummaryRow(programId) || null;
-    const resolvedId = resolveDatabaseProgramId(programId);
-    const directId = String(utils.firstNonEmpty(resolvedRow?.id, resolvedId, '')).trim();
+    const candidates = uniqueDeleteCandidates(programId, resolvedRow);
 
-    if (!directId || directId.startsWith('lookup:') || directId.startsWith('nonpledge:')) {
+    if (!candidates.length) {
       return { data: null, error: new Error('Could not find an exact database row ID for this program. Nothing was deleted.') };
     }
 
-    return state.client
-      .from(constants.BASE_TABLE)
-      .delete()
-      .eq('id', directId);
+    const attempts = [];
+
+    for (const candidate of candidates) {
+      attempts.push(`id=${candidate}`);
+      const byId = await findSingleDeleteTarget('id', candidate);
+      if (byId.error) return { ...byId, attempts };
+      if (byId.data) {
+        const deleted = await deleteConfirmedTarget(byId.data, 'id', candidate);
+        return { ...deleted, attempts };
+      }
+
+      attempts.push(`program_id=${candidate}`);
+      const byProgramId = await findSingleDeleteTarget('program_id', candidate);
+      if (byProgramId.error) {
+        if (isSchemaColumnError(byProgramId.error)) continue;
+        return { ...byProgramId, attempts };
+      }
+      if (byProgramId.data) {
+        const deleted = await deleteConfirmedTarget(byProgramId.data, 'program_id', candidate);
+        return { ...deleted, attempts };
+      }
+    }
+
+    return {
+      data: [],
+      attempts,
+      error: new Error(`No matching row was found in ${constants.BASE_TABLE}. Tried ${attempts.join(', ')}. The detail record may be coming from a summary/import row rather than the base program table.`)
+    };
   }
 
   async function unarchiveProgram(reference = {}, payload = {}) {
