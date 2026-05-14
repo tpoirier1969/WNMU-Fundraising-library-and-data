@@ -777,9 +777,13 @@
     if (response.error) return response;
     const rows = Array.isArray(response.data) ? response.data : [];
     if (rows.length !== 1) {
+      const targetLabel = targetId ? `id=${targetId}` : `${fallbackField}=${fallbackValue}`;
+      const message = rows.length === 0
+        ? `Found one matching row in ${constants.BASE_TABLE} before delete, but Supabase deleted/returned 0 rows for ${targetLabel}. This usually means DELETE is blocked by RLS policy or table grants for the authenticated role on ${constants.BASE_TABLE}.`
+        : `Delete did not confirm exactly one removed row from ${constants.BASE_TABLE}; Supabase returned ${rows.length} rows.`;
       return {
         ...response,
-        error: new Error(`Delete did not confirm exactly one removed row; Supabase returned ${rows.length} rows.`)
+        error: new Error(message)
       };
     }
     return { ...response, deletedRow: rows[0] };

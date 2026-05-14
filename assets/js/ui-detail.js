@@ -1538,16 +1538,24 @@
 
   function editorDuplicateMessage({ title = '', nola = '' } = {}) {
     const duplicates = findDuplicates({ title, nola, excludeId: state.detailCreateMode ? '' : state.selectedProgramId });
+    const createMode = Boolean(state.detailCreateMode);
     if (duplicates.exactNola) {
+      const existingTitle = derive.title(duplicates.exactNola);
+      const existingNola = derive.nola(duplicates.exactNola);
       return {
-        text: `NOLA ${derive.nola(duplicates.exactNola)} already exists on “${derive.title(duplicates.exactNola)}”. NOLA is king, so this would create a duplicate title record.`,
+        text: createMode
+          ? `NOLA ${existingNola} already exists on “${existingTitle}”. NOLA is king, so creating this would make a duplicate title record.`
+          : `Another existing record already uses NOLA ${existingNola} on “${existingTitle}”. This record is already part of a duplicate set; delete the extra record or change the NOLA before saving changes.`,
         type: 'warn',
         blocking: true
       };
     }
     if (duplicates.exactTitle) {
+      const existingNola = derive.nola(duplicates.exactTitle);
       return {
-        text: `Title matches existing record “${derive.title(duplicates.exactTitle)}”${derive.nola(duplicates.exactTitle) ? ` (${derive.nola(duplicates.exactTitle)})` : ''}. Double-check before saving.`,
+        text: createMode
+          ? `Title matches existing record “${derive.title(duplicates.exactTitle)}”${existingNola ? ` (${existingNola})` : ''}. Double-check before saving.`
+          : `Another existing record has this same title${existingNola ? ` (${existingNola})` : ''}. That may be intentional, but review before saving changes.`,
         type: 'warn',
         blocking: false
       };
@@ -1827,8 +1835,8 @@
     if (/foreign key|violates foreign key constraint|still referenced/i.test(message)) {
       return 'Delete was blocked because this program has related timing, airing, rollup, or schedule rows. For a true duplicate, remove or relink related rows first; otherwise archive it instead of hard-deleting it.';
     }
-    if (/row-level security|permission denied|not authorized/i.test(message)) {
-      return 'Delete was blocked by Supabase permissions. Make sure you are signed in as an app admin and that the authenticated role has DELETE access on the base pledge program table.';
+    if (/row-level security|permission denied|not authorized|DELETE is blocked by RLS policy|table grants for the authenticated role/i.test(message)) {
+      return 'Delete was blocked by Supabase permissions on pledge_programs_v2. The app found the row, but the database did not allow the authenticated role to delete it. Run the focused pledge delete policy/grant SQL, then try again.';
     }
     return message;
   }
