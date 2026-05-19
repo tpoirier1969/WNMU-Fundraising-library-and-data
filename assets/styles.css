@@ -4420,7 +4420,7 @@ body.schedule-inline-scrollbar-dragging * {
   }
 }
 
-/* v0.21.51 scheduling detail + Slot Fit tracking */
+/* v0.21.52 scheduling detail + Slot Fit tracking */
 .scheduled-break-needed {
   display: inline-flex;
   width: fit-content;
@@ -4495,7 +4495,7 @@ body.schedule-inline-scrollbar-dragging * {
 }
 
 
-/* v0.21.51 calendar-level break warning */
+/* v0.21.52 calendar-level break warning */
 .schedule-placement-break-needed {
   display: inline-flex;
   width: fit-content;

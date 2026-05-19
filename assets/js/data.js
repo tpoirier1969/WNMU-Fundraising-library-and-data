@@ -691,23 +691,34 @@
 
     let lastResponse = { data: null, error: new Error('No usable program identifier was available.') };
     for (const attempt of attempts) {
-      let query = state.client.from(constants.BASE_TABLE).update(cleanedPayload);
-      if (attempt.kind === 'pair') {
-        const [nolaValue, titleValue] = attempt.value;
-        query = query.eq('nola_code', nolaValue).eq('title', titleValue);
-      } else {
-        query = query.eq(attempt.label, attempt.value);
-      }
-      const response = await query.select('id').limit(2);
-      lastResponse = response;
-      if (response.error) {
-        const message = String(response.error.message || '').toLowerCase();
-        if ((attempt.label === 'program_id') && (message.includes('column') && message.includes('program_id'))) {
-          continue;
+      let attemptPayload = { ...cleanedPayload };
+      let safety = 0;
+      while (safety < 12) {
+        safety += 1;
+        let query = state.client.from(constants.BASE_TABLE).update(attemptPayload);
+        if (attempt.kind === 'pair') {
+          const [nolaValue, titleValue] = attempt.value;
+          query = query.eq('nola_code', nolaValue).eq('title', titleValue);
+        } else {
+          query = query.eq(attempt.label, attempt.value);
         }
-        return response;
+        const response = await query.select('id').limit(2);
+        lastResponse = response;
+        if (response.error) {
+          const message = String(response.error.message || '').toLowerCase();
+          if ((attempt.label === 'program_id') && (message.includes('column') && message.includes('program_id'))) {
+            break;
+          }
+          const missingColumn = extractMissingColumnName(response.error);
+          if (missingColumn && Object.prototype.hasOwnProperty.call(attemptPayload, missingColumn)) {
+            attemptPayload = omitKeys(attemptPayload, [missingColumn]);
+            continue;
+          }
+          return response;
+        }
+        if (Array.isArray(response.data) && response.data.length) return response;
+        break;
       }
-      if (Array.isArray(response.data) && response.data.length) return response;
     }
     return lastResponse;
   }
@@ -1114,12 +1125,8 @@
       const message = String(response.error?.message || '');
       const missingColumn = extractMissingColumnName(message);
 
-      if (missingColumn === 'workspace_key' && Object.prototype.hasOwnProperty.call(attempt, 'workspace_key')) {
-        pushAttempt(omitKeys(attempt, ['workspace_key']), true);
-        continue;
-      }
-      if (missingColumn === 'source_row_number' && Object.prototype.hasOwnProperty.call(attempt, 'source_row_number')) {
-        pushAttempt(omitKeys(attempt, ['source_row_number']), true);
+      if (missingColumn && Object.prototype.hasOwnProperty.call(attempt, missingColumn)) {
+        pushAttempt(omitKeys(attempt, [missingColumn]), true);
         continue;
       }
       if (/workspace_key/i.test(message) && !Object.prototype.hasOwnProperty.call(attempt, 'workspace_key')) continue;

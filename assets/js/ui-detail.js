@@ -1007,6 +1007,58 @@
       : null;
   }
 
+  function timingRowsHaveProgramAndBreak(rows = state.detailTimingDraftRows || []) {
+    const normalized = (Array.isArray(rows) ? rows : [])
+      .map((row, index) => canonicalizeTimingDraftRow(row, index));
+    const hasProgramTime = normalized.some((row) => Number.isFinite(Number(row.act_seconds)) && Number(row.act_seconds) > 0);
+    const hasBreakTime = normalized.some((row) => Number.isFinite(Number(row.break_seconds)) && Number(row.break_seconds) > 0);
+    return hasProgramTime && hasBreakTime;
+  }
+
+  function applyCalculatedRuntimeToPayload(payload = {}, runtimeSeconds = null) {
+    const seconds = Number(runtimeSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0 || !timingRowsHaveProgramAndBreak(state.detailTimingDraftRows || [])) return payload;
+
+    const roundedMinutes = Math.round(seconds / 60);
+    payload.actual_runtime_seconds = Math.round(seconds);
+
+    // These runtime fields appear in older/imported schemas and summary rows.
+    // updateProgram/createProgram drop fields that the active base table does not actually have.
+    // Deliberately do NOT change length_bucket_minutes; that bucket is used for broader grouping/filtering.
+    payload.runtime_seconds = Math.round(seconds);
+    payload.actual_runtime = Math.round(seconds);
+    payload.actual_runtime_minutes = roundedMinutes;
+    payload.runtime_minutes = roundedMinutes;
+    payload.length_minutes = roundedMinutes;
+    return payload;
+  }
+
+  function applyCalculatedRuntimeLocally(programId = '', runtimeSeconds = null) {
+    const seconds = Number(runtimeSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0 || !timingRowsHaveProgramAndBreak(state.detailTimingDraftRows || [])) return;
+    const roundedMinutes = Math.round(seconds / 60);
+    const patch = {
+      actual_runtime_seconds: Math.round(seconds),
+      runtime_seconds: Math.round(seconds),
+      actual_runtime: Math.round(seconds),
+      actual_runtime_minutes: roundedMinutes,
+      runtime_minutes: roundedMinutes,
+      length_minutes: roundedMinutes
+    };
+    const applyPatch = (row) => {
+      if (!row || typeof row !== 'object') return;
+      Object.assign(row, patch);
+    };
+    applyPatch(state.currentDetailProgram);
+    const key = String(programId || state.selectedProgramId || '').trim();
+    (state.rawRows || []).forEach((row) => {
+      if (String(derive.programId(row) || '') === key) applyPatch(row);
+    });
+    (state.baseRows || []).forEach((row) => {
+      if (String(derive.programId(row) || '') === key) applyPatch(row);
+    });
+  }
+
   function focusTimingCell(rowIndex, key = 'segment_number') {
     window.setTimeout(() => {
       const selector = `.detail-timing-input[data-timing-row-index="${rowIndex}"][data-timing-key="${key}"]`;
@@ -1760,7 +1812,7 @@
       const payload = buildPayloadFromForm();
       syncTimingDraftFromDom();
       const calculatedRuntimeSeconds = getCalculatedTimingRuntimeSeconds(state.detailTimingDraftRows || []);
-      if (Number.isFinite(calculatedRuntimeSeconds) && calculatedRuntimeSeconds > 0) payload.actual_runtime_seconds = calculatedRuntimeSeconds;
+      applyCalculatedRuntimeToPayload(payload, calculatedRuntimeSeconds);
       if (!payload.title) {
         setDetailNotice('Title is required.', 'bad');
         els.detailEditForm.elements.title.focus();
@@ -1793,6 +1845,7 @@
         if (createdId && (state.detailTimingDraftRows || []).length) {
           const timingResponse = await App.data.saveTimingRows(createdId, state.detailTimingDraftRows || []);
           if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+          applyCalculatedRuntimeLocally(createdId, calculatedRuntimeSeconds);
           App.schedulingUi?.invalidateScheduleDetail?.(createdId);
         }
         await App.app.refreshAll({ workspace: state.activeWorkspace });
@@ -1814,6 +1867,7 @@
       syncTimingDraftFromDom();
       const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
       if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+      applyCalculatedRuntimeLocally(resolvedProgramId, calculatedRuntimeSeconds);
       App.schedulingUi?.invalidateScheduleDetail?.(resolvedProgramId);
       state.selectedProgramId = resolvedProgramId;
       await App.app.refreshAll({ preserveDetail: true, workspace: state.activeWorkspace });

@@ -195,14 +195,60 @@
     }
   }
 
+  function scheduleWarmupDelay(defer = true) {
+    if (!defer) return Promise.resolve();
+    return new Promise((resolve) => {
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(resolve, { timeout: 1600 });
+        return;
+      }
+      window.setTimeout(resolve, 350);
+    });
+  }
+
+  async function warmup(options = {}) {
+    const defer = options.defer !== false;
+    const renderHidden = options.renderHidden !== false;
+    if (state.schedulingReady) {
+      ensureCurrentScheduleApplied();
+      if (renderHidden) renderAll();
+      return true;
+    }
+    if (state.schedulingWarmupPromise) return state.schedulingWarmupPromise;
+
+    state.schedulingWarmupPromise = (async () => {
+      await scheduleWarmupDelay(defer);
+      if (!state.schedulingReady) await loadSchedules();
+      ensureCurrentScheduleApplied();
+      if (renderHidden) renderAll();
+      return true;
+    })().finally(() => {
+      state.schedulingWarmupPromise = null;
+    });
+
+    return state.schedulingWarmupPromise;
+  }
+
   async function ensureReady() {
-    if (!state.schedulingReady) await loadSchedules();
-    await healImportedSchedulesIfNeeded();
+    if (!state.schedulingReady) {
+      if (state.schedulingWarmupPromise) await state.schedulingWarmupPromise;
+      else await warmup({ defer: false, renderHidden: false });
+    }
     ensureCurrentScheduleApplied();
+    renderAll();
+
     if (!state.performance?.ready && !state.scheduleExpectationLoading && App.performanceUi?.refreshData) {
       requestScheduleExpectationData();
     }
-    renderAll();
+
+    void healImportedSchedulesIfNeeded()
+      .then(() => {
+        ensureCurrentScheduleApplied();
+        if (state.activeWorkspace === 'scheduling') renderAll();
+      })
+      .catch((error) => {
+        console.warn('Imported schedule auto-heal failed.', error);
+      });
   }
 
   async function persistSchedules(schedule) {
@@ -432,10 +478,11 @@
       displayDateKey = utils.plusDays(displayDateKey, -1);
       displayStartMinutes += 1440;
     }
-    const lengthMinutes = Math.max(1, Number(placement.lengthMinutes || 30));
+    const lengthMinutes = Math.max(1, Number(scheduledPlacementRuntimeMinutes(placement) || placement.lengthMinutes || 30));
     const displayEndMinutes = displayStartMinutes + Math.max(constants.DEFAULT_SLOT_MINUTES, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES);
     return {
       ...placement,
+      lengthMinutes,
       displayDateKey,
       displayStartMinutes,
       displayEndMinutes,
@@ -2018,6 +2065,43 @@
       .sort((a, b) => a.sortKey - b.sortKey);
   }
 
+  function scheduledTimingRuntimeSeconds(detail = {}) {
+    const rows = normalizeScheduledTimingRows(detail?.timings || []);
+    const hasProgramTime = rows.some((entry) => Number.isFinite(entry.programSeconds) && entry.programSeconds > 0);
+    const hasBreakTime = rows.some((entry) => Number.isFinite(entry.breakSeconds) && entry.breakSeconds > 0);
+    if (!hasProgramTime || !hasBreakTime) return null;
+    const totalSeconds = rows.reduce((sum, entry) => {
+      const programSeconds = Number.isFinite(entry.programSeconds) ? entry.programSeconds : 0;
+      const breakSeconds = Number.isFinite(entry.breakSeconds) ? entry.breakSeconds : 0;
+      return sum + programSeconds + breakSeconds;
+    }, 0);
+    return Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : null;
+  }
+
+  function scheduledRuntimeInfo(row = {}, cache = null, fallbackMinutes = null) {
+    const timingSeconds = cache?.loaded && !cache?.error ? scheduledTimingRuntimeSeconds(cache.detail || {}) : null;
+    if (Number.isFinite(timingSeconds) && timingSeconds > 0) {
+      return { minutes: Math.round(timingSeconds / 60), label: utils.formatSeconds(timingSeconds), source: 'timing' };
+    }
+    const runtimeMinutes = Number(derive.runtimeMinutes(row));
+    const runtimeClock = derive.actualRuntimeLabel(row);
+    if (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0 && runtimeClock !== '—') return { minutes: runtimeMinutes, label: runtimeClock, source: 'program' };
+    if (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0) return { minutes: runtimeMinutes, label: `${runtimeMinutes} min`, source: 'program' };
+    const fallback = Number(fallbackMinutes);
+    if (Number.isFinite(fallback) && fallback > 0) return { minutes: fallback, label: `${fallback} min`, source: 'placement' };
+    return { minutes: null, label: 'Length unknown', source: 'unknown' };
+  }
+
+  function scheduledPlacementRuntimeMinutes(placement = {}) {
+    if (!placement || placement.isNonPledge) return null;
+    const detailKey = scheduleDetailKeyForPlacement(placement);
+    const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
+    const row = getProgramRowById(placement.programId || '') || {};
+    const displayRow = cache?.detail?.program ? utils.mergeRows(cache.detail.program, row) : row;
+    const info = scheduledRuntimeInfo(displayRow, cache, placement.lengthMinutes);
+    return Number.isFinite(info.minutes) && info.minutes > 0 ? info.minutes : null;
+  }
+
   function premiumLines(value) {
     const text = utils.normalizeText(value);
     if (!text) return ['—'];
@@ -2377,12 +2461,14 @@
       const row = getProgramRowById(programId) || getProgramRowById(occurrences?.[0]?.programId || '') || {};
       const cache = state.scheduleDetailCache[detailKeyByGroup.get(programId) || ''];
       const detail = cache?.detail || null;
+      const displayRow = detail?.program ? utils.mergeRows(detail.program, row) : row;
       const breakNeeded = breakInfoNeededHtml(cache);
-      const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
-      const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
-      const avgPerFundraiser = Number(derive.avgPerFundraiser(row) || 0) || 0;
-      const fundraiserCount = historicalFundraiserCount(row, detail);
-      const rawTotalRaised = Number(derive.totalRaised(row) || 0) || 0;
+      const runtimeInfo = scheduledRuntimeInfo(displayRow, cache, occurrences[0]?.lengthMinutes);
+      const runtimeLabel = runtimeInfo.label;
+      const metaBits = [runtimeLabel, derive.nola(displayRow) || 'No NOLA', derive.topicPrimary(displayRow) || 'No topic'];
+      const avgPerFundraiser = Number(derive.avgPerFundraiser(displayRow) || 0) || 0;
+      const fundraiserCount = historicalFundraiserCount(displayRow, detail);
+      const rawTotalRaised = Number(derive.totalRaised(displayRow) || 0) || 0;
       const computedHistoricalTotal = rawTotalRaised > 0
         ? rawTotalRaised
         : (avgPerFundraiser > 0 ? (fundraiserCount > 0 ? (avgPerFundraiser * fundraiserCount) : avgPerFundraiser) : 0);
@@ -2413,16 +2499,16 @@
         <article class="scheduled-program-card compact-program-card">
           <div class="scheduled-program-line scheduled-program-line-top">
             <div class="scheduled-program-title-wrap">
-              ${renderProgramTitleLink(programId, derive.title(row) || occurrences[0].programTitle, { className: 'schedule-card-title-link' })}
+              ${renderProgramTitleLink(programId, derive.title(displayRow) || occurrences[0].programTitle, { className: 'schedule-card-title-link' })}
               <div class="scheduled-program-meta-inline">${metaBits.map((bit) => `<span>${utils.escapeHtml(bit)}</span>`).join('<span class="meta-dot">•</span>')}</div>
               ${breakNeeded}
             </div>
           </div>
           <div class="scheduled-program-line scheduled-program-line-bottom">
-            <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(row) || '—')}</span></div>
+            <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(displayRow) || '—')}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span>${historicalAiringHtml}</div>
-            <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(row) || '—')}</div>
+            <div class="scheduled-data-chunk scheduled-premium-chunk"><span class="mini-label inline">Premiums</span>${premiumLinesHtml(derive.premiumSummary(displayRow) || '—')}</div>
             <div class="scheduled-data-chunk scheduled-occurrence-chunk"><span class="mini-label inline">Breaks in ProTrack</span><div class="scheduled-occurrence-list">${scheduledRows}</div></div>
             <div class="scheduled-data-chunk scheduled-break-detail-chunk"><span class="mini-label inline">Break Detail</span>${breakHtml}</div>
           </div>
@@ -3233,6 +3319,7 @@
 
   App.schedulingUi = {
     loadSchedules,
+    warmup,
     ensureReady,
     renderAll,
     bindEvents,

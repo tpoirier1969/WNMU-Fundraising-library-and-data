@@ -132,11 +132,12 @@
     await App.auth.initAuthRole();
     App.auth.bindAuthListener();
 
-    void App.schedulingUi?.loadSchedules().catch((error) => {
-      console.warn('Background fundraiser load failed.', error);
+    await App.libraryLoader.refreshAll({ workspace: 'library' });
+
+    void App.schedulingUi?.warmup?.({ defer: true, renderHidden: true }).catch((error) => {
+      console.warn('Background fundraiser warmup failed.', error);
     });
 
-    await App.libraryLoader.refreshAll({ workspace: 'library' });
     startVersionChecks();
   }
 
