@@ -2059,6 +2059,23 @@
     if (existing) existing.remove();
   }
 
+  function scheduleDetailKeyForPlacement(placement = {}) {
+    if (!placement || placement.isNonPledge) return '';
+    const directId = String(placement.programId || '').trim();
+    const row = directId ? getProgramRowById(directId) : null;
+    return String(derive.programId(row) || directId || '').trim();
+  }
+
+  function scheduleCalendarBreakInfoNeededHtml(placement = null) {
+    if (!placement || placement.isNonPledge) return '';
+    const detailKey = scheduleDetailKeyForPlacement(placement);
+    if (!detailKey) return '';
+    const cache = state.scheduleDetailCache?.[detailKey];
+    if (!cache?.loaded || cache?.error) return '';
+    if (scheduleDetailHasBreakInfo(cache.detail || {})) return '';
+    return '<span class="schedule-placement-break-needed">BREAK INFO NEEDED</span>';
+  }
+
   function renderScheduleGrid() {
     const schedule = getActiveSchedule();
     if (!schedule) {
@@ -2092,6 +2109,8 @@
     const times = [];
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
+    const calendarDetailIds = [...new Set(placements.map((placement) => scheduleDetailKeyForPlacement(placement)).filter(Boolean))];
+    if (calendarDetailIds.length) void ensureScheduledDetailsBatch(calendarDetailIds);
     const placementByDisplaySlot = new Map();
     const placementStartByDisplaySlot = new Map();
     placements.forEach((placement) => {
@@ -2141,6 +2160,7 @@
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : ''].filter(Boolean).join(' ');
         const expectationBadge = isStart ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
+        const breakWarning = isStart ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const subtitleBits = [];
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
@@ -2155,7 +2175,7 @@
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${transferToggle}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${transferToggle}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -2297,7 +2317,8 @@
         });
       } finally {
         delete state.scheduleDetailBatchPending[batchKey];
-        scheduleScheduledProgramDetailsRerender();
+        if (state.activeWorkspace === 'scheduling' && getActiveSchedule()) renderScheduleGrid();
+        else scheduleScheduledProgramDetailsRerender();
       }
     })();
     state.scheduleDetailBatchPending[batchKey] = task;
@@ -3212,6 +3233,7 @@
 
   App.schedulingUi = {
     loadSchedules,
+    ensureReady,
     renderAll,
     bindEvents,
     renderScheduleGrid,

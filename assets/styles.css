@@ -4420,7 +4420,7 @@ body.schedule-inline-scrollbar-dragging * {
   }
 }
 
-/* v0.21.50 scheduling detail + Slot Fit tracking */
+/* v0.21.51 scheduling detail + Slot Fit tracking */
 .scheduled-break-needed {
   display: inline-flex;
   width: fit-content;
@@ -4492,4 +4492,26 @@ body.schedule-inline-scrollbar-dragging * {
 .performance-slot-fit-accuracy-note {
   color: #52657a;
   font-size: .88rem;
+}
+
+
+/* v0.21.51 calendar-level break warning */
+.schedule-placement-break-needed {
+  display: inline-flex;
+  width: fit-content;
+  max-width: calc(100% - 8px);
+  margin-top: 2px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #fff3c4;
+  border: 1px solid rgba(216,148,0,.95);
+  color: #6f3e00;
+  font-weight: 950;
+  letter-spacing: .06em;
+  font-size: clamp(.38rem, .42vw, .50rem) !important;
+  line-height: 1.05;
+  text-transform: uppercase;
+  opacity: 1 !important;
+  text-shadow: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,.16);
 }
