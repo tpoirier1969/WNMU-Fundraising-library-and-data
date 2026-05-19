@@ -155,14 +155,24 @@
     }
     state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
     state.schedulingReady = true;
-    const activeSchedule = getActiveSchedule();
+    ensureCurrentScheduleApplied();
+    renderScheduleList();
+  }
+
+  function ensureCurrentScheduleApplied() {
+    const ordered = sortSchedulesNewestFirst(state.schedules || []);
+    if (!ordered.length) {
+      state.activeScheduleId = '';
+      return null;
+    }
+    let activeSchedule = getActiveSchedule();
     const activeInfo = activeSchedule ? getScheduleDateSpanInfo(activeSchedule) : null;
     if (!state.activeScheduleId || !activeSchedule || !activeInfo?.ok) {
-      const firstSafeSchedule = state.schedules.find((item) => getScheduleDateSpanInfo(item).ok) || state.schedules[0] || null;
-      state.activeScheduleId = firstSafeSchedule?.id || '';
+      activeSchedule = ordered.find((item) => getScheduleDateSpanInfo(item).ok) || ordered[0] || null;
+      state.activeScheduleId = activeSchedule?.id || '';
     }
-    if (getActiveSchedule() && getScheduleDateSpanInfo(getActiveSchedule()).ok) applyScheduleToView(getActiveSchedule());
-    renderScheduleList();
+    if (activeSchedule && getScheduleDateSpanInfo(activeSchedule).ok) applyScheduleToView(activeSchedule);
+    return activeSchedule;
   }
 
   async function healImportedSchedulesIfNeeded() {
@@ -188,6 +198,7 @@
   async function ensureReady() {
     if (!state.schedulingReady) await loadSchedules();
     await healImportedSchedulesIfNeeded();
+    ensureCurrentScheduleApplied();
     if (!state.performance?.ready && !state.scheduleExpectationLoading && App.performanceUi?.refreshData) {
       requestScheduleExpectationData();
     }
@@ -2168,6 +2179,55 @@
     renderScheduledProgramDetails();
   }
 
+
+  function scheduleDetailHasBreakInfo(detail = {}) {
+    const rows = normalizeScheduledTimingRows(detail?.timings || []);
+    return rows.some((entry) => Number.isFinite(entry.breakSeconds) || Number.isFinite(entry.localCutInSeconds));
+  }
+
+  function breakInfoNeededHtml(cache = null) {
+    if (!cache?.loaded || cache?.error) return '';
+    return scheduleDetailHasBreakInfo(cache.detail || {}) ? '' : '<div class="scheduled-break-needed">BREAK INFO NEEDED</div>';
+  }
+
+  function signedMoney(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '—';
+    const prefix = numeric > 0 ? '+' : (numeric < 0 ? '-' : '');
+    return `${prefix}${utils.formatMoney(Math.abs(numeric))}`;
+  }
+
+  function slotFitResultForOccurrence(placement = {}) {
+    try {
+      const direct = App.performanceUi?.getScheduleExpectationForPlacement?.(placement, placement.dateKey, placement.startMinutes);
+      if (direct) return direct;
+    } catch (error) {
+      console.warn('Schedule detail Slot Fit projection failed.', error);
+    }
+    return placement?.slotFitCache?.result || null;
+  }
+
+  function slotFitOccurrenceHtml(placement = {}) {
+    const result = slotFitResultForOccurrence(placement);
+    const projected = Number(result?.projectedAvg);
+    const actualRaw = Number(placement?.importedBroadcastDollars);
+    const actualKnown = Number.isFinite(actualRaw) && (actualRaw > 0 || placement?.importedFromReport || placement?.sourceAiringHash);
+    if (!Number.isFinite(projected) && !actualKnown) return '';
+    const actualText = actualKnown ? utils.formatMoney(actualRaw) : 'Actual TBD';
+    const projectedText = Number.isFinite(projected) ? utils.formatMoney(projected) : 'Projection TBD';
+    const deltaText = Number.isFinite(projected) && actualKnown ? ` · Δ ${signedMoney(actualRaw - projected)}` : '';
+    const tone = Number.isFinite(projected) && actualKnown
+      ? (actualRaw >= projected ? 'good' : 'weak')
+      : 'pending';
+    return `<div class="scheduled-slot-fit-tracker ${tone}"><span class="mini-label inline">Slot Fit</span><span>Projected ${utils.escapeHtml(projectedText)} · Actual ${utils.escapeHtml(actualText)}${utils.escapeHtml(deltaText)}</span></div>`;
+  }
+
+  function invalidateScheduleDetail(programId = '') {
+    state.scheduleDetailCache = {};
+    state.scheduleDetailBatchPending = {};
+    if (state.activeWorkspace === 'scheduling') renderScheduledProgramDetails();
+  }
+
   function timingSummaryHtml(cacheEntry) {
     const timings = cacheEntry?.timings || [];
     const rows = normalizeScheduledTimingRows(timings);
@@ -2296,6 +2356,7 @@
       const row = getProgramRowById(programId) || getProgramRowById(occurrences?.[0]?.programId || '') || {};
       const cache = state.scheduleDetailCache[detailKeyByGroup.get(programId) || ''];
       const detail = cache?.detail || null;
+      const breakNeeded = breakInfoNeededHtml(cache);
       const runtimeLabel = derive.actualRuntimeLabel(row) !== '—' ? derive.actualRuntimeLabel(row) : `${occurrences[0]?.lengthMinutes || '—'} min`;
       const metaBits = [runtimeLabel, derive.nola(row) || 'No NOLA', derive.topicPrimary(row) || 'No topic'];
       const avgPerFundraiser = Number(derive.avgPerFundraiser(row) || 0) || 0;
@@ -2314,12 +2375,16 @@
         : `<div class="scheduled-program-note">${cache?.loaded ? 'TBD' : 'Loading…'}</div>`;
       const scheduledRows = occurrences
         .sort((a, b) => (`${a.dateKey}|${a.startMinutes}`).localeCompare(`${b.dateKey}|${b.startMinutes}`))
-        .map((item) => `
+        .map((item) => {
+          const slotFitHtml = slotFitOccurrenceHtml(item);
+          return `
           <label class="scheduled-occurrence-row">
             <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
             <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${hasLiveBreakFlag(item) ? ' · live-break' : ''}</span>
+            ${slotFitHtml}
           </label>
-        `).join('');
+        `;
+        }).join('');
       let breakHtml = '<div class="scheduled-program-note">Loading…</div>';
       if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
       else if (cache?.loaded) breakHtml = timingSummaryHtml(cache.detail);
@@ -2329,6 +2394,7 @@
             <div class="scheduled-program-title-wrap">
               ${renderProgramTitleLink(programId, derive.title(row) || occurrences[0].programTitle, { className: 'schedule-card-title-link' })}
               <div class="scheduled-program-meta-inline">${metaBits.map((bit) => `<span>${utils.escapeHtml(bit)}</span>`).join('<span class="meta-dot">•</span>')}</div>
+              ${breakNeeded}
             </div>
           </div>
           <div class="scheduled-program-line scheduled-program-line-bottom">
@@ -3151,6 +3217,7 @@
     renderScheduleGrid,
     renderScheduleList,
     renderScheduledProgramDetails,
+    invalidateScheduleDetail,
     buildSchedulesFromImportedReports,
     mergeImportedRowsIntoSchedules,
     closeScheduleModal

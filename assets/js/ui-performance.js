@@ -2961,6 +2961,82 @@
     `).join('');
   }
 
+
+  function slotFitAccuracySchedules() {
+    if (Array.isArray(state.schedules) && state.schedules.length) return state.schedules;
+    const stored = utils.storageGet?.(constants.SCHEDULE_STORAGE_KEY, []);
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  function placementSlotFitActual(placement = {}) {
+    const value = Number(placement?.importedBroadcastDollars);
+    if (Number.isFinite(value) && (value > 0 || placement?.importedFromReport || placement?.sourceAiringHash)) return value;
+    return null;
+  }
+
+  function placementSlotFitProjection(placement = {}) {
+    const value = Number(placement?.slotFitCache?.result?.projectedAvg);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function collectSlotFitAccuracyRows() {
+    const rows = [];
+    slotFitAccuracySchedules().forEach((schedule) => {
+      (schedule?.placements || []).forEach((placement) => {
+        const projected = placementSlotFitProjection(placement);
+        const actual = placementSlotFitActual(placement);
+        if (!Number.isFinite(projected) || !Number.isFinite(actual)) return;
+        rows.push({
+          scheduleId: schedule.id || '',
+          scheduleTitle: schedule.title || 'Fundraiser',
+          scheduleDate: utils.firstNonEmpty(schedule.endDate, schedule.startDate, schedule.createdAt, ''),
+          programTitle: placement.programTitle || 'Untitled program',
+          projected,
+          actual,
+          error: actual - projected,
+          absError: Math.abs(actual - projected)
+        });
+      });
+    });
+    return rows.sort((a, b) => utils.compareDate(a.scheduleDate, b.scheduleDate));
+  }
+
+  function renderSlotFitAccuracy() {
+    if (!els.performanceSlotFitAccuracy) return;
+    const rows = collectSlotFitAccuracyRows();
+    if (!rows.length) {
+      if (els.performanceSlotFitAccuracyPill) els.performanceSlotFitAccuracyPill.textContent = 'No matched results yet';
+      els.performanceSlotFitAccuracy.innerHTML = 'No scheduled imported placements currently have both a saved Slot Fit projection and actual imported dollars. Open Pledge Scheduling after importing a fundraiser so the app can cache projections, then return here.';
+      return;
+    }
+    const count = rows.length;
+    const totalProjected = rows.reduce((sum, row) => sum + row.projected, 0);
+    const totalActual = rows.reduce((sum, row) => sum + row.actual, 0);
+    const meanAbsError = rows.reduce((sum, row) => sum + row.absError, 0) / count;
+    const bias = rows.reduce((sum, row) => sum + row.error, 0) / count;
+    const within25 = rows.filter((row) => row.projected > 0 && (row.absError / row.projected) <= 0.25).length;
+    const accuracyPct = count ? Math.round((within25 / count) * 100) : 0;
+    const recent = rows.slice(-5).reverse();
+    if (els.performanceSlotFitAccuracyPill) els.performanceSlotFitAccuracyPill.textContent = `${utils.formatCount(count)} checked`;
+    els.performanceSlotFitAccuracy.innerHTML = `
+      <div class="performance-slot-fit-accuracy-grid">
+        <div class="performance-slot-fit-accuracy-cardlet"><div class="label">Compared slots</div><div class="value">${utils.escapeHtml(utils.formatCount(count))}</div></div>
+        <div class="performance-slot-fit-accuracy-cardlet"><div class="label">Mean error</div><div class="value">${utils.escapeHtml(utils.formatMoney(meanAbsError))}</div></div>
+        <div class="performance-slot-fit-accuracy-cardlet"><div class="label">Average bias</div><div class="value">${utils.escapeHtml(`${bias >= 0 ? '+' : '-'}${utils.formatMoney(Math.abs(bias))}`)}</div></div>
+        <div class="performance-slot-fit-accuracy-cardlet"><div class="label">Within 25%</div><div class="value">${utils.escapeHtml(`${accuracyPct}%`)}</div></div>
+      </div>
+      <div class="performance-slot-fit-accuracy-note">Projected total ${utils.escapeHtml(utils.formatMoney(totalProjected))}; actual imported total ${utils.escapeHtml(utils.formatMoney(totalActual))}. This should get steadier as more matched, imported airings build the historical base, but it will only improve if the report rows, titles, NOLAs, and saved schedule placements stay clean.</div>
+      <div class="table-wrap performance-table-wrap">
+        <table class="programs-table performance-table">
+          <thead><tr><th>Recent fundraiser</th><th>Title</th><th>Projected</th><th>Actual</th><th>Difference</th></tr></thead>
+          <tbody>
+            ${recent.map((row) => `<tr><td>${utils.escapeHtml(row.scheduleTitle)}</td><td>${utils.escapeHtml(row.programTitle)}</td><td>${utils.escapeHtml(utils.formatMoney(row.projected))}</td><td>${utils.escapeHtml(utils.formatMoney(row.actual))}</td><td>${utils.escapeHtml(`${row.error >= 0 ? '+' : '-'}${utils.formatMoney(Math.abs(row.error))}`)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   function renderNotes(records, groups) {
     if (!els.performanceSourceNotes) return;
     const notes = [];
@@ -3420,6 +3496,7 @@
     renderTable(perf().groups);
     renderSlotDrilldown();
     renderSchedulingIntelligence();
+    renderSlotFitAccuracy();
     renderNotes(records, perf().groups);
     enhanceAnalyticsTables();
     if (els.performanceChartTitle) {

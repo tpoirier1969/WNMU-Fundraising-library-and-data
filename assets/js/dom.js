@@ -192,6 +192,8 @@
     performanceTableBody: document.getElementById('performance-table-body'),
     performanceIntelligencePill: document.getElementById('performance-intelligence-pill'),
     performanceIntelligence: document.getElementById('performance-intelligence'),
+    performanceSlotFitAccuracyPill: document.getElementById('performance-slot-fit-accuracy-pill'),
+    performanceSlotFitAccuracy: document.getElementById('performance-slot-fit-accuracy'),
     performanceSlotCompareA: document.getElementById('performance-slot-compare-a'),
     performanceSlotCompareB: document.getElementById('performance-slot-compare-b'),
     performanceSlotCompareControls: document.getElementById('performance-slot-compare-controls'),

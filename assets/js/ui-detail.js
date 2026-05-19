@@ -1793,8 +1793,9 @@
         if (createdId && (state.detailTimingDraftRows || []).length) {
           const timingResponse = await App.data.saveTimingRows(createdId, state.detailTimingDraftRows || []);
           if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+          App.schedulingUi?.invalidateScheduleDetail?.(createdId);
         }
-        await App.app.refreshAll();
+        await App.app.refreshAll({ workspace: state.activeWorkspace });
         if (createdId) {
           state.detailCreateMode = false;
           await loadProgramDetail(createdId, { preserveMode: false });
@@ -1813,8 +1814,9 @@
       syncTimingDraftFromDom();
       const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
       if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
+      App.schedulingUi?.invalidateScheduleDetail?.(resolvedProgramId);
       state.selectedProgramId = resolvedProgramId;
-      await App.app.refreshAll({ preserveDetail: true });
+      await App.app.refreshAll({ preserveDetail: true, workspace: state.activeWorkspace });
       await loadProgramDetail(resolvedProgramId, { preserveMode: false });
       setDetailNotice('Changes saved.');
       App.dom.setNotice('Program updated.');
