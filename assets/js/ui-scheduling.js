@@ -3059,40 +3059,294 @@
     menu.style.top = `${event.pageY}px`;
   }
 
-  async function exportScheduleView() {
-    const schedule = getActiveSchedule();
-    if (!schedule) return;
-    const rows = annotatePlacements(schedule);
-    await ensureScheduleExportDetails(rows);
+  function scheduleExportTextLines(value = '') {
+    const text = utils.normalizeText(value);
+    if (!text) return ['—'];
+    const lines = text
+      .replace(/\r/g, '')
+      .split(/\n+/)
+      .map((line) => utils.normalizeText(line))
+      .filter(Boolean);
+    return lines.length ? lines : [text];
+  }
+
+  function scheduleExportMultilineHtml(value = '') {
+    return scheduleExportTextLines(value)
+      .map((line) => `<div>${utils.escapeHtml(line)}</div>`)
+      .join('');
+  }
+
+  function scheduleExportPremiumHtml(value = '') {
+    return premiumLines(value)
+      .map((line) => `<div>${utils.escapeHtml(line)}</div>`)
+      .join('');
+  }
+
+  function scheduleExportTimingHtml(timings = []) {
+    const rows = normalizeScheduledTimingRows(timings);
+    if (!rows.length) {
+      return '<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">No break timing rows are available yet.</div>';
+    }
+    return `
+      <table class="export-timing-table">
+        <thead>
+          <tr>
+            <th>Act</th>
+            <th>Program</th>
+            <th>Break</th>
+            <th>Local Cut In</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((entry) => `
+            <tr>
+              <td>${utils.escapeHtml(entry.label || 'Act')}</td>
+              <td>${Number.isFinite(entry.programSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.programSeconds)) : '—'}</td>
+              <td>${Number.isFinite(entry.breakSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.breakSeconds)) : '<span class="export-warning-inline">TBD</span>'}</td>
+              <td>${Number.isFinite(entry.localCutInSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.localCutInSeconds)) : '—'}</td>
+              <td>${entry.note ? utils.escapeHtml(entry.note) : '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function scheduleExportProgramHtml(item = {}) {
+    const detailKey = scheduleDetailKeyForPlacement(item);
+    const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
+    const detail = cache?.detail || null;
+    const baseRow = item.isNonPledge ? {} : (getProgramRowById(item.programId || '') || {});
+    const displayRow = detail?.program ? utils.mergeRows(detail.program, baseRow) : baseRow;
+    const runtime = scheduledRuntimeInfo(displayRow, cache, item.lengthMinutes);
+    const markerBits = [];
+    if (item.isNonPledge) markerBits.push('non-pledge marker');
+    if (hasLiveBreakFlag(item)) markerBits.push('live break');
+    if (item.transferredToStation) markerBits.push('entered in traffic');
+    const nola = item.isNonPledge ? '' : derive.nola(displayRow);
+    const topic = item.isNonPledge ? '' : derive.topicPrimary(displayRow);
+    const distributor = item.isNonPledge ? '' : derive.distributor(displayRow);
+    const description = item.isNonPledge ? '' : derive.description(displayRow);
+    const premiums = item.isNonPledge ? '' : derive.premiumSummary(displayRow);
+    const metaBits = [
+      runtime?.label || (Number.isFinite(Number(item.lengthMinutes)) ? `${item.lengthMinutes} min` : ''),
+      nola,
+      topic,
+      distributor,
+      markerBits.join(' · ')
+    ].map((part) => utils.normalizeText(part)).filter(Boolean);
+
+    let timingHtml = '';
+    if (!item.isNonPledge && item.programId) {
+      if (cache?.loaded && !cache?.error) {
+        const missingBreakInfo = !scheduleDetailHasBreakInfo(cache.detail || {});
+        timingHtml = `
+          ${missingBreakInfo ? '<div class="export-warning">BREAK INFO NEEDED</div>' : ''}
+          <div class="export-subsection-title">Break detail</div>
+          ${scheduleExportTimingHtml(cache.detail?.timings || [])}
+        `;
+      } else if (cache?.error) {
+        timingHtml = `<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">Break timing detail could not load: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
+      } else {
+        timingHtml = '<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">Break timing detail did not finish loading before export.</div>';
+      }
+    }
+
+    return `
+      <article class="export-program">
+        <div class="export-program-heading">
+          <span class="export-program-time">${utils.escapeHtml(utils.minutesToLabel(item.startMinutes))}</span>
+          <span class="export-program-title">${utils.escapeHtml(item.programTitle || derive.title(displayRow) || 'Untitled program')}</span>
+        </div>
+        ${metaBits.length ? `<div class="export-program-meta">${utils.escapeHtml(metaBits.join(' · '))}</div>` : ''}
+        <div class="export-program-body">
+          <div class="export-field">
+            <div class="export-field-label">Description</div>
+            <div class="export-field-value">${scheduleExportMultilineHtml(description)}</div>
+          </div>
+          <div class="export-field">
+            <div class="export-field-label">Premiums</div>
+            <div class="export-field-value">${scheduleExportPremiumHtml(premiums)}</div>
+          </div>
+          ${timingHtml}
+        </div>
+      </article>
+    `;
+  }
+
+  function scheduleExportDocumentHtml(schedule = {}, rows = []) {
     const byDay = new Map();
     rows.forEach((item) => {
       if (!byDay.has(item.dateKey)) byDay.set(item.dateKey, []);
       byDay.get(item.dateKey).push(item);
     });
-    const lines = [`${schedule.title}`, ''];
-    for (const [dateKey, items] of [...byDay.entries()]) {
-      lines.push(formatScheduleDay(dateKey));
-      for (const item of items.sort((a, b) => a.startMinutes - b.startMinutes)) {
-        const markerBits = [];
-        if (item.isNonPledge) markerBits.push('non-pledge marker');
-        if (hasLiveBreakFlag(item)) markerBits.push('live-break');
-        lines.push(`- ${utils.minutesToLabel(item.startMinutes)} ${item.programTitle} (${item.lengthMinutes} min)${markerBits.length ? ` | ${markerBits.join(' · ')}` : ''}`);
-        let breakLines = ['Break timings: TBD'];
-        if (!item.isNonPledge && item.programId) {
-          const cache = state.scheduleDetailCache[item.programId];
-          if (cache?.detail?.timings) breakLines = timingExportLines(cache.detail.timings);
-          else if (cache?.error) breakLines = [`Break timings unavailable: ${cache.error.message || 'load failed'}`];
-          else breakLines = ['Break timings: Loading…'];
-        }
-        breakLines.forEach((line) => lines.push(`  ${line}`));
-      }
-      lines.push('');
+    const daySections = [...byDay.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([dateKey, items]) => `
+        <section class="export-day">
+          <h2>${utils.escapeHtml(formatScheduleDay(dateKey))}</h2>
+          ${items.sort((a, b) => Number(a.startMinutes || 0) - Number(b.startMinutes || 0)).map(scheduleExportProgramHtml).join('')}
+        </section>
+      `).join('');
+    const generatedAt = new Date().toLocaleString();
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${utils.escapeHtml(schedule.title || 'Pledge Schedule')}</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #111111;
+      font-family: Aptos, "Segoe UI", Arial, Helvetica, sans-serif;
+      font-size: 15px;
+      line-height: 1.45;
     }
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    .export-page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 44px 52px 64px;
+      background: #ffffff;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      line-height: 1.12;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #000000;
+    }
+    .export-subtitle {
+      margin: 0 0 34px;
+      color: #444444;
+      font-size: 14px;
+    }
+    .export-day {
+      margin-top: 42px;
+      padding-top: 20px;
+      border-top: 2px solid #111111;
+      page-break-inside: avoid;
+    }
+    .export-day:first-of-type { margin-top: 28px; }
+    h2 {
+      margin: 0 0 18px;
+      font-size: 22px;
+      font-weight: 800;
+      color: #000000;
+    }
+    .export-program {
+      margin: 0 0 20px;
+      padding: 0 0 16px;
+      border-bottom: 1px solid #dddddd;
+      page-break-inside: avoid;
+    }
+    .export-program:last-child { border-bottom: 0; }
+    .export-program-heading {
+      font-weight: 800;
+      color: #000000;
+      font-size: 16px;
+      margin-bottom: 3px;
+    }
+    .export-program-time {
+      display: inline-block;
+      min-width: 86px;
+      font-weight: 800;
+    }
+    .export-program-title {
+      font-weight: 800;
+      font-style: italic;
+    }
+    .export-program-meta {
+      margin-left: 86px;
+      color: #444444;
+      font-size: 13px;
+      margin-bottom: 9px;
+    }
+    .export-program-body {
+      margin-left: 86px;
+      padding-left: 18px;
+      border-left: 3px solid #e4e4e4;
+    }
+    .export-field { margin: 8px 0 10px; }
+    .export-field-label,
+    .export-subsection-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.055em;
+      font-weight: 800;
+      color: #000000;
+      margin-bottom: 3px;
+    }
+    .export-field-value { color: #111111; }
+    .export-warning {
+      display: inline-block;
+      margin: 10px 0 8px;
+      padding: 4px 8px;
+      border: 2px solid #000000;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #000000;
+      background: #ffffff;
+    }
+    .export-warning-inline {
+      font-weight: 900;
+      text-transform: uppercase;
+      color: #000000;
+    }
+    .export-muted { color: #555555; font-size: 13px; }
+    .export-timing-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 7px;
+      font-size: 13px;
+    }
+    .export-timing-table th,
+    .export-timing-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #dddddd;
+      text-align: left;
+      vertical-align: top;
+    }
+    .export-timing-table th {
+      font-weight: 800;
+      color: #000000;
+      background: #f6f6f6;
+    }
+    @media print {
+      body { font-size: 12pt; }
+      .export-page { max-width: none; padding: 0.45in; }
+      .export-day { break-inside: avoid; }
+      .export-program { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main class="export-page">
+    <h1>${utils.escapeHtml(schedule.title || 'Pledge Schedule')}</h1>
+    <div class="export-subtitle">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · Exported ${utils.escapeHtml(generatedAt)}</div>
+    ${daySections || '<p>No scheduled programs found.</p>'}
+  </main>
+</body>
+</html>`;
+  }
+
+  async function exportScheduleView() {
+    const schedule = getActiveSchedule();
+    if (!schedule) return;
+    const rows = annotatePlacements(schedule);
+    await ensureScheduleExportDetails(rows);
+    const html = scheduleExportDocumentHtml(schedule, rows);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${schedule.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'fundraiser'}-schedule.txt`;
+    a.download = `${schedule.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'fundraiser'}-schedule.html`;
     document.body.appendChild(a);
     a.click();
     a.remove();
