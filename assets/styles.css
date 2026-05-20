@@ -4515,3 +4515,86 @@ body.schedule-inline-scrollbar-dragging * {
   text-shadow: none;
   box-shadow: 0 1px 2px rgba(0,0,0,.16);
 }
+
+/* v0.21.55 daily rundown button + compact schedule detail cards */
+.workspace-action-tab.daily-rundown-tab {
+  min-width: 154px;
+  padding: 8px 16px;
+  line-height: 1.05;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+}
+.workspace-action-tab.daily-rundown-tab span:first-child {
+  font-size: .96rem;
+  font-weight: 950;
+}
+.workspace-action-tab.daily-rundown-tab span:last-child {
+  font-size: .72rem;
+  font-weight: 850;
+  opacity: .78;
+  letter-spacing: .02em;
+  text-transform: lowercase;
+}
+.workspace-action-tab.daily-rundown-tab:hover,
+.workspace-action-tab.daily-rundown-tab:focus-visible {
+  border-color: rgba(16,58,102,.38);
+  box-shadow: 0 12px 24px rgba(14,48,78,.14);
+}
+.scheduled-program-card.compact-program-card.scheduled-program-card-collapsed {
+  padding: 8px 10px;
+  gap: 0;
+}
+.scheduled-program-summary-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.scheduled-program-summary-row .scheduled-program-title-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.scheduled-program-summary-row .schedule-card-title-link {
+  font-size: .98rem;
+  line-height: 1.18;
+}
+.scheduled-program-summary-row .scheduled-program-meta-inline {
+  font-size: .82rem;
+  line-height: 1.18;
+  gap: 6px;
+}
+.scheduled-program-expand-button {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.scheduled-program-expanded-detail {
+  margin-top: 8px;
+}
+.scheduled-program-expanded-detail[hidden] {
+  display: none !important;
+}
+.scheduled-program-card.expanded .scheduled-program-expanded-detail {
+  display: grid;
+}
+
+@media (max-width: 720px) {
+  .workspace-action-tab.daily-rundown-tab {
+    min-width: 0;
+    width: 100%;
+  }
+  .scheduled-program-summary-row {
+    align-items: stretch;
+  }
+  .scheduled-program-expand-button {
+    align-self: flex-start;
+  }
+}

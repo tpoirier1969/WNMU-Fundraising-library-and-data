@@ -2496,15 +2496,16 @@
       if (cache?.error) breakHtml = `<div class="scheduled-program-note">Break detail unavailable: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
       else if (cache?.loaded) breakHtml = timingSummaryHtml(cache.detail);
       return `
-        <article class="scheduled-program-card compact-program-card">
-          <div class="scheduled-program-line scheduled-program-line-top">
+        <article class="scheduled-program-card compact-program-card scheduled-program-card-collapsed" data-scheduled-detail-card>
+          <div class="scheduled-program-summary-row">
             <div class="scheduled-program-title-wrap">
               ${renderProgramTitleLink(programId, derive.title(displayRow) || occurrences[0].programTitle, { className: 'schedule-card-title-link' })}
               <div class="scheduled-program-meta-inline">${metaBits.map((bit) => `<span>${utils.escapeHtml(bit)}</span>`).join('<span class="meta-dot">•</span>')}</div>
               ${breakNeeded}
             </div>
+            <button type="button" class="ghost scheduled-program-expand-button" data-scheduled-card-toggle aria-expanded="false">Details</button>
           </div>
-          <div class="scheduled-program-line scheduled-program-line-bottom">
+          <div class="scheduled-program-line scheduled-program-line-bottom scheduled-program-expanded-detail" hidden>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Distributor</span><span>${utils.escapeHtml(derive.distributor(displayRow) || '—')}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Total Raised</span><span>${utils.escapeHtml(historicalTotalDisplay)}</span></div>
             <div class="scheduled-data-chunk"><span class="mini-label inline">Historical Avg / Fundraiser</span><span>${utils.escapeHtml(historicalAvgDisplay)}</span>${historicalAiringHtml}</div>
@@ -3162,6 +3163,10 @@
         ${metaBits.length ? `<div class="export-program-meta">${utils.escapeHtml(metaBits.join(' · '))}</div>` : ''}
         <div class="export-program-body">
           <div class="export-field">
+            <div class="export-field-label">Distributor</div>
+            <div class="export-field-value">${utils.escapeHtml(distributor || '—')}</div>
+          </div>
+          <div class="export-field">
             <div class="export-field-label">Description</div>
             <div class="export-field-value">${scheduleExportMultilineHtml(description)}</div>
           </div>
@@ -3336,21 +3341,62 @@
 </html>`;
   }
 
-  async function exportScheduleView() {
-    const schedule = getActiveSchedule();
-    if (!schedule) return;
-    const rows = annotatePlacements(schedule);
-    await ensureScheduleExportDetails(rows);
-    const html = scheduleExportDocumentHtml(schedule, rows);
+  function scheduleExportFallbackDownload(html = '', schedule = {}) {
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${schedule.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'fundraiser'}-schedule.html`;
+    a.download = `${(schedule.title || 'fundraiser').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'fundraiser'}-daily-rundown.html`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
+  }
+
+  function scheduleExportWriteTab(tab, html = '') {
+    if (!tab || tab.closed) return false;
+    try {
+      tab.document.open();
+      tab.document.write(html);
+      tab.document.close();
+      try { tab.focus(); } catch {}
+      return true;
+    } catch (error) {
+      console.warn('Could not write daily rundown tab:', error);
+      return false;
+    }
+  }
+
+  function scheduleExportStatusHtml(message = 'Building daily rundown…') {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Daily Rundown</title><style>body{font-family:Aptos,"Segoe UI",Arial,sans-serif;margin:40px;color:#111;background:#fff;}h1{font-size:26px;margin:0 0 10px;}p{font-size:15px;}</style></head><body><h1>Daily Rundown</h1><p>${utils.escapeHtml(message)}</p></body></html>`;
+  }
+
+  async function exportScheduleView() {
+    let previewTab = null;
+    try {
+      previewTab = window.open('', '_blank');
+      if (previewTab) scheduleExportWriteTab(previewTab, scheduleExportStatusHtml('Building daily rundown…'));
+    } catch (error) {
+      previewTab = null;
+    }
+
+    try {
+      if (!state.schedulingReady) await ensureReady();
+      const schedule = getActiveSchedule();
+      if (!schedule) {
+        const message = 'No fundraiser is loaded yet. Open or create a fundraiser first.';
+        if (!scheduleExportWriteTab(previewTab, scheduleExportStatusHtml(message))) alert(message);
+        return;
+      }
+      const rows = annotatePlacements(schedule);
+      await ensureScheduleExportDetails(rows);
+      const html = scheduleExportDocumentHtml(schedule, rows);
+      if (!scheduleExportWriteTab(previewTab, html)) scheduleExportFallbackDownload(html, schedule);
+    } catch (error) {
+      console.error(error);
+      const message = error?.message || 'Daily rundown export failed.';
+      if (!scheduleExportWriteTab(previewTab, scheduleExportStatusHtml(message))) alert(message);
+    }
   }
 
   function bindEvents() {
@@ -3521,7 +3567,23 @@
     els.scheduleStartLaterButton?.addEventListener('click', () => adjustRange('start', 1));
     els.scheduleEndEarlierButton?.addEventListener('click', () => adjustRange('end', -1));
     els.scheduleEndLaterButton?.addEventListener('click', () => adjustRange('end', 1));
-    els.scheduleExportButton?.addEventListener('click', () => { void exportScheduleView(); });
+    const openDailyRundown = () => { void exportScheduleView(); };
+    els.scheduleExportButton?.addEventListener('click', openDailyRundown);
+    els.scheduleDailyRundownButton?.addEventListener('click', openDailyRundown);
+    els.scheduleProgramDetails?.addEventListener('click', (event) => {
+      const toggle = event.target.closest('[data-scheduled-card-toggle]');
+      if (!toggle) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const card = toggle.closest('[data-scheduled-detail-card]');
+      const detail = card?.querySelector('.scheduled-program-expanded-detail');
+      if (!card || !detail) return;
+      const nextExpanded = detail.hasAttribute('hidden');
+      detail.toggleAttribute('hidden', !nextExpanded);
+      card.classList.toggle('expanded', nextExpanded);
+      toggle.textContent = nextExpanded ? 'Hide' : 'Details';
+      toggle.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+    });
     els.scheduleProgramDetails?.addEventListener('change', (event) => {
       const checkbox = event.target.closest('[data-transfer-placement-id]');
       if (!checkbox) return;

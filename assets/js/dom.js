@@ -121,6 +121,7 @@
     scheduleAssignmentNote: document.getElementById('schedule-assignment-note'),
     scheduleProgramDetails: document.getElementById('schedule-program-details'),
     scheduleExportButton: document.getElementById('schedule-export-button'),
+    scheduleDailyRundownButton: document.getElementById('schedule-daily-rundown-button'),
     scheduleProgramBackdrop: document.getElementById('schedule-program-backdrop'),
     scheduleProgramModal: document.getElementById('schedule-program-modal'),
     scheduleProgramCloseButton: document.getElementById('schedule-program-close-button'),
