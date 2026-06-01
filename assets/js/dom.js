@@ -20,6 +20,7 @@
     updateDismissButton: document.getElementById('update-dismiss-button'),
     workspaceButtons: [...document.querySelectorAll('[data-workspace-button]')],
     workspacePanes: [...document.querySelectorAll('[data-workspace-pane]')],
+    homeDriveSummary: document.getElementById('home-drive-summary'),
     scaffoldLibraryCount: document.getElementById('scaffold-library-count'),
     scaffoldTopicGapCount: document.getElementById('scaffold-topic-gap-count'),
     scaffoldDistributorGapCount: document.getElementById('scaffold-distributor-gap-count'),

@@ -157,6 +157,7 @@
     state.schedulingReady = true;
     ensureCurrentScheduleApplied();
     renderScheduleList();
+    renderHomeDriveSummary();
   }
 
   function ensureCurrentScheduleApplied() {
@@ -211,6 +212,7 @@
     const renderHidden = options.renderHidden !== false;
     if (state.schedulingReady) {
       ensureCurrentScheduleApplied();
+      renderHomeDriveSummary();
       if (renderHidden) renderAll();
       return true;
     }
@@ -220,6 +222,7 @@
       await scheduleWarmupDelay(defer);
       if (!state.schedulingReady) await loadSchedules();
       ensureCurrentScheduleApplied();
+      renderHomeDriveSummary();
       if (renderHidden) renderAll();
       return true;
     })().finally(() => {
@@ -235,6 +238,7 @@
       else await warmup({ defer: false, renderHidden: false });
     }
     ensureCurrentScheduleApplied();
+    renderHomeDriveSummary();
     renderAll();
 
     if (!state.performance?.ready && !state.scheduleExpectationLoading && App.performanceUi?.refreshData) {
@@ -457,6 +461,67 @@
 
   function scheduleGrandTotal(schedule = {}) {
     return scheduleBroadcastTotal(schedule) + (Number(schedule?.onlineDollars || 0) || 0) + (Number(schedule?.mailDollars || 0) || 0);
+  }
+
+  function localTodayKey() {
+    const now = new Date();
+    return utils.dateKeyFromDate ? utils.dateKeyFromDate(now) : now.toISOString().slice(0, 10);
+  }
+
+  function scheduleDriveSummaryWindow(schedule = {}) {
+    const span = getScheduleDateSpanInfo(schedule);
+    if (!span.ok) return { show: false, mode: '', endOfWindow: '' };
+    const today = localTodayKey();
+    const startKey = utils.normalizeText(schedule.startDate);
+    const endKey = utils.normalizeText(schedule.endDate);
+    const endOfWindow = utils.plusDays ? utils.plusDays(endKey, 7) : endKey;
+    if (today >= startKey && today <= endKey) return { show: true, mode: 'Live drive', endOfWindow };
+    if (today > endKey && today <= endOfWindow) return { show: true, mode: 'Post-drive week', endOfWindow };
+    return { show: false, mode: '', endOfWindow };
+  }
+
+  function getDriveSummarySchedule() {
+    const active = getActiveSchedule();
+    if (active && scheduleDriveSummaryWindow(active).show) return active;
+    return sortSchedulesNewestFirst(state.schedules || []).find((schedule) => scheduleDriveSummaryWindow(schedule).show) || null;
+  }
+
+  function renderHomeDriveSummary() {
+    const box = els.homeDriveSummary || document.getElementById('home-drive-summary');
+    if (!box) return;
+    const schedule = getDriveSummarySchedule();
+    if (!schedule) {
+      box.classList.add('hidden');
+      box.innerHTML = '';
+      return;
+    }
+    const windowInfo = scheduleDriveSummaryWindow(schedule);
+    const values = [
+      ['Broadcast $', utils.formatMoney(scheduleBroadcastTotal(schedule))],
+      ['Pledges', utils.formatCount(scheduleImportedPledgesTotal(schedule))],
+      ['Online $', utils.formatMoney(Number(schedule.onlineDollars || 0) || 0)],
+      ['Mail $', utils.formatMoney(Number(schedule.mailDollars || 0) || 0)],
+      ['Non-Specific $', utils.formatMoney(scheduleImportedNonSpecificTotal(schedule))],
+      ['Total Raised $', utils.formatMoney(scheduleGrandTotal(schedule))]
+    ];
+    box.innerHTML = `
+      <div class="home-drive-summary-head">
+        <div>
+          <div class="home-drive-summary-kicker">${utils.escapeHtml(windowInfo.mode)}</div>
+          <div class="home-drive-summary-title">${utils.escapeHtml(schedule.title || 'Loaded fundraiser')}</div>
+        </div>
+        <div class="home-drive-summary-date">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))}</div>
+      </div>
+      <div class="home-drive-summary-grid">
+        ${values.map(([label, value]) => `
+          <div class="home-drive-summary-card">
+            <div class="home-drive-summary-label">${utils.escapeHtml(label)}</div>
+            <div class="home-drive-summary-value">${utils.escapeHtml(value)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    box.classList.remove('hidden');
   }
 
   function getScheduleWindow(source = {}) {
@@ -1976,6 +2041,7 @@
     if (els.fundraiserImportDifference) els.fundraiserImportDifference.value = utils.formatMoney(diff);
     if (els.fundraiserNonSpecificTotal) els.fundraiserNonSpecificTotal.value = utils.formatMoney(importedNonSpecific);
     if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
+    renderHomeDriveSummary();
     if (els.fundraiserBroadcastDiagnostic) {
       const show = imported > 0;
       const mismatch = show && Math.abs(diff) >= 0.01;
@@ -2733,6 +2799,7 @@
     await persistScheduleMetadataOnly(schedule);
     renderScheduleList();
     renderScheduleForm();
+    renderHomeDriveSummary();
     if (dateRangeChanged || windowChanged || moneyChanged) renderScheduleGrid();
     if (!options.silent) {
       const actionLabel = titleChanged && !(dateRangeChanged || windowChanged) ? 'Renamed' : 'Saved';
@@ -3631,6 +3698,7 @@
     renderScheduleList();
     renderScheduleForm();
     renderScheduleGrid();
+    renderHomeDriveSummary();
   }
 
   App.schedulingUi = {
@@ -3641,6 +3709,7 @@
     bindEvents,
     renderScheduleGrid,
     renderScheduleList,
+    renderHomeDriveSummary,
     renderScheduledProgramDetails,
     invalidateScheduleDetail,
     buildSchedulesFromImportedReports,
