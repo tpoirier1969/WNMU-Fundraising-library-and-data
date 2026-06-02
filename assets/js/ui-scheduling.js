@@ -558,6 +558,23 @@
     return sortSchedulesNewestFirst(state.schedules || []).find((schedule) => scheduleDriveSummaryWindow(schedule).show) || null;
   }
 
+  function scheduleBroadcastUpdateStats(schedule = {}) {
+    const placements = Array.isArray(schedule?.placements) ? schedule.placements : [];
+    const counted = placements.filter((placement) => {
+      if (!placement || placement.isNonPledge) return false;
+      if (placementLooksNonSpecific(placement)) return false;
+      return Boolean(utils.normalizeText(placement.programTitle || '') || placement.programId);
+    });
+    const total = counted.length;
+    const loaded = Boolean(state.scheduleAiringHistoryLoaded) || counted.some((placement) => placement?.importedFromReport || placement?.sourceAiringHash || Number(placement?.importedBroadcastDollars || 0) > 0);
+    if (!total) return { total: 0, updated: 0, loading: false, label: '0 of 0 broadcasts updated' };
+    if (!loaded) return { total, updated: 0, loading: true, label: 'checking broadcast updates…' };
+    const updated = counted.reduce((sum, placement) => {
+      return sum + (placementHasImportedAiring(placement, placement.dateKey, placement.startMinutes) ? 1 : 0);
+    }, 0);
+    return { total, updated, loading: false, label: `${utils.formatCount(updated)} of ${utils.formatCount(total)} broadcasts updated` };
+  }
+
   function renderHomeDriveSummary() {
     const box = els.homeDriveSummary || document.getElementById('home-drive-summary');
     if (!box) return;
@@ -568,6 +585,8 @@
       return;
     }
     const windowInfo = scheduleDriveSummaryWindow(schedule);
+    const driveTitle = [windowInfo.mode, schedule.title || 'Loaded fundraiser'].filter(Boolean).join(' — ');
+    const updateStats = scheduleBroadcastUpdateStats(schedule);
     const values = [
       ['Broadcast $', utils.formatMoney(scheduleBroadcastTotal(schedule))],
       ['Pledges', utils.formatCount(scheduleImportedPledgesTotal(schedule))],
@@ -578,9 +597,11 @@
     ];
     box.innerHTML = `
       <div class="home-drive-summary-head">
-        <div>
-          <div class="home-drive-summary-kicker">${utils.escapeHtml(windowInfo.mode)}</div>
-          <div class="home-drive-summary-title">${utils.escapeHtml(schedule.title || 'Loaded fundraiser')}</div>
+        <div class="home-drive-summary-title-wrap">
+          <div class="home-drive-summary-title-line">
+            <span class="home-drive-summary-title">${utils.escapeHtml(driveTitle)}</span>
+            <span class="home-drive-summary-coverage ${updateStats.loading ? 'loading' : ''}">${utils.escapeHtml(updateStats.label)}</span>
+          </div>
         </div>
         <div class="home-drive-summary-date">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))}</div>
       </div>
@@ -1648,7 +1669,10 @@
       state.scheduleAiringHistoryLoaded = true;
     } finally {
       state.scheduleAiringHistoryLoading = false;
-      if (getActiveSchedule()) renderScheduleGrid();
+      if (getActiveSchedule()) {
+        renderScheduleGrid();
+        renderHomeDriveSummary();
+      }
       if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
     }
   }

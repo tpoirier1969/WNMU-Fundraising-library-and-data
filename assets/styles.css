@@ -5111,3 +5111,34 @@ body.version-gate-active .schedule-modal-card {
   font-weight: 950;
   letter-spacing: .05em;
 }
+
+
+/* v0.21.65 compact live-drive title + broadcast update count */
+.home-drive-summary-title-wrap {
+  min-width: 0;
+}
+.home-drive-summary-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.home-drive-summary-coverage {
+  color: #41596f;
+  font-size: .76rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.home-drive-summary-coverage::before {
+  content: "·";
+  margin-right: 8px;
+  color: #8ca0b2;
+}
+.home-drive-summary-coverage.loading {
+  color: var(--muted);
+  font-style: italic;
+}
+.home-drive-summary-kicker {
+  display: none;
+}
