@@ -1235,25 +1235,49 @@
 
 
   function importNaturalKey(row = {}) {
+    const identity = utils.nolaIdentityKey(
+      row.nola_code || row.nola || row.program_nola || '',
+      row.imported_program_title || row.program_title || row.title || row.name || ''
+    ) || utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || '');
     return [
-      utils.normalizeLookupKey(row.nola_code),
+      utils.normalizeLookupKey(row.station || ''),
+      identity,
       utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
-      utils.normalizeText(row.air_time),
-      utils.normalizeText(row.drive_start_date),
-      utils.normalizeText(row.drive_end_date)
+      utils.normalizeText(row.air_time)
     ].join('|').toLowerCase();
   }
 
-  async function fetchExistingImportedNaturalKeys(rows = []) {
+  async function fetchExistingImportedNaturalKeyRows(rows = []) {
     const wanted = new Set((Array.isArray(rows) ? rows : []).map((row) => importNaturalKey(row)).filter(Boolean));
-    if (!wanted.size) return new Set();
+    if (!wanted.size) return new Map();
     const existingRows = await fetchAllRows(constants.AIRINGS_TABLE);
-    const found = new Set();
+    const found = new Map();
     (existingRows || []).forEach((row) => {
       const key = importNaturalKey(row);
-      if (key && wanted.has(key)) found.add(key);
+      if (key && wanted.has(key) && !found.has(key)) found.set(key, row);
     });
     return found;
+  }
+
+  async function updateImportedAiringById(rowId, row = {}) {
+    const id = String(rowId || '').trim();
+    if (!id) return { error: new Error('Missing imported airing row id.') };
+    let next = sanitizeImportRow(row);
+    let safety = 0;
+    while (safety < 12) {
+      safety += 1;
+      const response = await state.client.from(constants.AIRINGS_TABLE).update(next).eq('id', id);
+      if (!response.error) return response;
+      const missingColumn = extractMissingColumnName(response.error);
+      if (missingColumn && Object.prototype.hasOwnProperty.call(next, missingColumn)) {
+        const clone = { ...next };
+        delete clone[missingColumn];
+        next = clone;
+        continue;
+      }
+      return response;
+    }
+    return { error: new Error('Could not update imported airing row with current schema.') };
   }
 
   async function fetchImportedAirings() {
@@ -1412,17 +1436,34 @@
     };
 
     const existingHashes = await fetchExistingImportHashes(airingsRows.map((row) => row?.row_hash));
-    const existingNaturalKeys = await fetchExistingImportedNaturalKeys(airingsRows);
-    const freshRows = airingsRows.filter((row) => {
+    const existingNaturalKeyRows = await fetchExistingImportedNaturalKeyRows(airingsRows);
+    const freshRows = [];
+    const updateRows = [];
+
+    (airingsRows || []).forEach((row) => {
       const rowHash = String(row?.row_hash || '');
-      if (rowHash && existingHashes.has(rowHash)) return false;
+      if (rowHash && existingHashes.has(rowHash)) return;
       const naturalKey = importNaturalKey(row);
-      if (naturalKey && existingNaturalKeys.has(naturalKey)) return false;
-      return true;
+      const existing = naturalKey ? existingNaturalKeyRows.get(naturalKey) : null;
+      if (existing?.id) {
+        updateRows.push({ id: existing.id, row });
+        return;
+      }
+      freshRows.push(row);
     });
-    summary.airings.skippedDuplicates = Math.max(0, airingsRows.length - freshRows.length);
+
+    summary.airings.skippedDuplicates = Math.max(0, airingsRows.length - freshRows.length - updateRows.length);
+    summary.airings.updatedDuplicates = updateRows.length;
+
+    for (const entry of updateRows) {
+      const response = await updateImportedAiringById(entry.id, entry.row);
+      if (response.error) throw response.error;
+      summary.airings.written += 1;
+      summary.airings.mode = 'update-existing-natural-key';
+    }
+
     if (!freshRows.length) {
-      summary.airings.mode = 'duplicate-skip';
+      if (!updateRows.length) summary.airings.mode = 'duplicate-skip';
       return summary;
     }
 
@@ -1430,7 +1471,7 @@
     for (let index = 0; index < freshRows.length; index += chunkSize) {
       const result = await writeImportChunk(constants.AIRINGS_TABLE, freshRows.slice(index, index + chunkSize));
       summary.airings.written += result.written;
-      summary.airings.mode = result.mode;
+      summary.airings.mode = updateRows.length ? `${result.mode}+updates` : result.mode;
     }
     return summary;
   }

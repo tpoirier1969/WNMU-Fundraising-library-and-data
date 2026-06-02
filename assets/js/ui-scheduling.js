@@ -1501,19 +1501,74 @@
     return Object.fromEntries(Object.entries(map).map(([key, value]) => [key, [...value].sort().reverse()]));
   }
 
+
+  function importedSlotMinute(row = {}) {
+    const direct = utils.normalizeText(row.air_time);
+    if (direct) {
+      const match = direct.match(/^(\d{1,2})(?::?(\d{2}))?/);
+      if (match) return (Number(match[1]) * 60) + Number(match[2] || 0);
+    }
+    const stamp = row.aired_at ? new Date(row.aired_at) : null;
+    if (stamp && !Number.isNaN(stamp.getTime())) return (stamp.getHours() * 60) + stamp.getMinutes();
+    return null;
+  }
+
+  function addImportedSlotKey(map, dateKey, startMinutes, kind, value) {
+    const normalizedValue = utils.normalizeLookupKey(value);
+    const date = utils.normalizeText(dateKey);
+    if (!date || !Number.isFinite(Number(startMinutes)) || !kind || !normalizedValue) return;
+    map.add(`${date}|${Number(startMinutes)}|${kind}:${normalizedValue}`);
+  }
+
+  function buildScheduleImportedSlotMap(rows = []) {
+    const map = new Set();
+    (rows || []).forEach((row) => {
+      const dateKey = utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '';
+      const startMinutes = importedSlotMinute(row);
+      if (!dateKey || !Number.isFinite(startMinutes)) return;
+      addImportedSlotKey(map, dateKey, startMinutes, 'id', row.program_id || row.pledge_program_id);
+      addImportedSlotKey(map, dateKey, startMinutes, 'nola', row.nola_code || row.nola || row.program_nola);
+      addImportedSlotKey(map, dateKey, startMinutes, 'title', row.matched_library_title || row.program_title || row.title || row.imported_program_title || row.name);
+      addImportedSlotKey(map, dateKey, startMinutes, 'imported', row.imported_program_title || row.program_title || row.title || row.name);
+    });
+    return map;
+  }
+
+  function placementHasImportedAiring(placement = {}, dateKey = '', startMinutes = null) {
+    if (!placement || placement.isNonPledge) return false;
+    if (placement.importedFromReport || Number(placement.importedBroadcastDollars || 0) > 0 || placement.sourceAiringHash) return true;
+    const map = state.scheduleImportedSlotMap;
+    if (!(map instanceof Set) || !map.size) return false;
+    const row = getProgramRowById(placement.programId) || {};
+    const date = utils.normalizeText(dateKey || placement.dateKey);
+    const minutes = Number.isFinite(Number(startMinutes)) ? Number(startMinutes) : Number(placement.startMinutes || 0);
+    const candidates = [
+      ['id', placement.programId || derive.programId(row)],
+      ['nola', placement.nolaCode || placement.nola || derive.nola(row)],
+      ['title', placement.programTitle || derive.title(row)]
+    ];
+    return candidates.some(([kind, value]) => {
+      const normalizedValue = utils.normalizeLookupKey(value);
+      return normalizedValue && map.has(`${date}|${minutes}|${kind}:${normalizedValue}`);
+    });
+  }
+
   async function ensureScheduleAiringHistoryLoaded() {
     if (state.scheduleAiringHistoryLoading || state.scheduleAiringHistoryLoaded) return;
     state.scheduleAiringHistoryLoading = true;
     try {
       const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
       state.scheduleAiringHistoryMap = buildScheduleAiringHistoryMap(rows || []);
+      state.scheduleImportedSlotMap = buildScheduleImportedSlotMap(rows || []);
       state.scheduleAiringHistoryLoaded = true;
     } catch (error) {
       console.warn('Could not load scheduler airing history.', error);
       state.scheduleAiringHistoryMap = {};
+      state.scheduleImportedSlotMap = new Set();
       state.scheduleAiringHistoryLoaded = true;
     } finally {
       state.scheduleAiringHistoryLoading = false;
+      if (getActiveSchedule()) renderScheduleGrid();
       if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
     }
   }
@@ -2252,6 +2307,7 @@
     els.scheduleEditor.classList.remove('hidden');
 
     requestScheduleExpectationData();
+    if (!state.scheduleAiringHistoryLoaded && !state.scheduleAiringHistoryLoading) void ensureScheduleAiringHistoryLoaded();
     const dayKeys = visibleDateKeys(schedule);
     const windowConfig = getScheduleWindow(state.scheduleView);
     const visibleStartMin = windowConfig.startMinutes;
@@ -2308,7 +2364,8 @@
         const placement = placementByDisplaySlot.get(displaySlotKey) || null;
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : ''].filter(Boolean).join(' ');
+        const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : ''].filter(Boolean).join(' ');
         const expectationBadge = isStart ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const breakWarning = isStart ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const subtitleBits = [];

@@ -1615,7 +1615,7 @@
       return;
     }
     setStatus(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows to Supabase…`);
-    setResultBanner(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be imported without a library link so their dollars still count toward fundraiser totals${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}. Existing duplicates will be ignored automatically.`);
+    setResultBanner(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be imported without a library link so their dollars still count toward fundraiser totals${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
     try {
       const summary = await App.data.importNormalizedRows({
         airingsRows: allRows,
@@ -1632,7 +1632,8 @@
       } catch (verifyError) {
         console.warn('Import verification query failed:', verifyError);
       }
-      let success = `Imported ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
+      const updatedDuplicateCount = Number(summary.airings.updatedDuplicates || 0) || 0;
+      let success = `Imported/updated ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} in Supabase. ${utils.formatCount(updatedDuplicateCount)} existing row${updatedDuplicateCount === 1 ? '' : 's'} matched a prior report and were updated instead of duplicated. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} unchanged duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
       if (verification && summary.airings.written > 0) {
         const verificationText = ` Verified in Supabase: ${utils.formatCount(verification.count)} row${verification.count === 1 ? '' : 's'}, ${utils.formatMoney(verification.totalDollars)}, ${utils.formatCount(verification.totalPledges)} pledge${verification.totalPledges === 1 ? '' : 's'}.`;
         success += verificationText;
@@ -1670,19 +1671,17 @@
   function renderTableStatus() {
     if (!els.importTableStatus || !els.importTablePill) return;
     if (!imp().tableStatus.length) {
-      els.importTableStatus.innerHTML = '<div class="placeholder-row">No table probe yet.</div>';
+      els.importTableStatus.innerHTML = '<div class="import-table-status-compact">No table probe yet.</div>';
       els.importTablePill.textContent = 'Pending probe';
       return;
     }
     const readableCount = imp().tableStatus.filter((item) => item.readable).length;
-    els.importTablePill.textContent = `${utils.formatCount(readableCount)} / ${utils.formatCount(imp().tableStatus.length)} readable`;
-    els.importTableStatus.innerHTML = imp().tableStatus.map((item) => `
-      <div class="import-table-status-row ${item.readable ? '' : 'bad'}">
-        <strong>${escape(item.tableName)}</strong>
-        <div>${item.readable ? `${escape(utils.formatCount(item.count))} readable rows` : 'Unreadable right now'}</div>
-        <div>${item.error ? escape(item.error) : (item.writable ? 'Ready for matched-row writes.' : 'Readable derived view.')}</div>
-      </div>
-    `).join('');
+    const writableCount = imp().tableStatus.filter((item) => item.writable && item.readable && !item.error).length;
+    const badItems = imp().tableStatus.filter((item) => !item.readable || item.error);
+    els.importTablePill.textContent = badItems.length ? 'Check tables' : 'Ready';
+    const statusText = `${utils.formatCount(readableCount)} of ${utils.formatCount(imp().tableStatus.length)} import tables readable; ${utils.formatCount(writableCount)} writable table${writableCount === 1 ? '' : 's'} available.`;
+    const badText = badItems.length ? ` ${badItems.map((item) => `${item.tableName}: ${item.error || 'unreadable'}`).join(' | ')}` : '';
+    els.importTableStatus.innerHTML = `<div class="import-table-status-compact ${badItems.length ? 'bad' : ''}">${escape(statusText + badText)}</div>`;
   }
 
   function renderWarnings() {
