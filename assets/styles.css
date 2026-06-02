@@ -4695,7 +4695,7 @@ body.schedule-inline-scrollbar-dragging * {
   .home-drive-summary-value { font-size: .9rem; }
 }
 
-/* v0.21.58 import review layout cleanup */
+/* v0.21.59 import review layout cleanup */
 .import-shell {
   gap: 0.72rem;
 }
@@ -4855,5 +4855,123 @@ details[open] > .import-details-summary::before {
   .import-match-card-controls .import-rule-check,
   .import-match-card-controls .import-match-actions {
     justify-content: flex-start;
+  }
+}
+
+/* v0.21.59 importer layout cleanup */
+.import-shell .performance-card-head {
+  padding-top: 0.45rem;
+  padding-bottom: 0.35rem;
+}
+.import-shell .performance-card-head h3 {
+  line-height: 1.1;
+}
+.import-preview-grid {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.58rem !important;
+}
+.import-preview-grid > article,
+.import-preview-grid > details {
+  width: 100% !important;
+}
+.import-file-table-wrap {
+  overflow-x: hidden !important;
+}
+.import-file-audit-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+.import-file-audit-table th,
+.import-file-audit-table td {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  vertical-align: top !important;
+  line-height: 1.25 !important;
+}
+.import-file-audit-table th:nth-child(1),
+.import-file-audit-table td:nth-child(1) { width: 20% !important; }
+.import-file-audit-table th:nth-child(2),
+.import-file-audit-table td:nth-child(2) { width: 22% !important; }
+.import-file-audit-table th:nth-child(3),
+.import-file-audit-table td:nth-child(3) { width: 5.5% !important; text-align: center; }
+.import-file-audit-table th:nth-child(4),
+.import-file-audit-table td:nth-child(4) { width: 6% !important; text-align: center; }
+.import-file-audit-table th:nth-child(5),
+.import-file-audit-table td:nth-child(5) { width: 16% !important; }
+.import-file-audit-table th:nth-child(6),
+.import-file-audit-table td:nth-child(6) { width: 20% !important; }
+.import-file-audit-table th:nth-child(7),
+.import-file-audit-table td:nth-child(7) { width: 10.5% !important; }
+.import-file-details-stack {
+  display: grid;
+  gap: 0.1rem;
+}
+.import-file-details-stack span {
+  display: block;
+}
+.import-report-total-cell {
+  display: grid;
+  gap: 0.14rem;
+}
+.import-report-total-cell .mini-label {
+  white-space: normal;
+  line-height: 1.05;
+}
+.import-report-total-input {
+  width: 100% !important;
+  max-width: 9rem !important;
+  min-width: 0 !important;
+}
+.import-file-money-row td {
+  padding: 0.3rem 0.5rem !important;
+}
+.import-file-money-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  gap: 0.25rem 0.85rem !important;
+}
+.import-airings-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+.import-airings-table th,
+.import-airings-table td {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.2 !important;
+}
+.import-airings-table th span {
+  display: inline-block;
+  line-height: 1.05;
+}
+.import-airings-table th:nth-child(1),
+.import-airings-table td:nth-child(1) { width: 23% !important; }
+.import-airings-table th:nth-child(2),
+.import-airings-table td:nth-child(2) { width: 24% !important; }
+.import-airings-table th:nth-child(3),
+.import-airings-table td:nth-child(3) { width: 8% !important; }
+.import-airings-table th:nth-child(4),
+.import-airings-table td:nth-child(4) { width: 10.5% !important; }
+.import-airings-table th:nth-child(5),
+.import-airings-table td:nth-child(5) { width: 7% !important; }
+.import-airings-table th:nth-child(6),
+.import-airings-table td:nth-child(6) { width: 5.5% !important; }
+.import-airings-table th:nth-child(7),
+.import-airings-table td:nth-child(7) { width: 7.5% !important; }
+.import-airings-table th:nth-child(8),
+.import-airings-table td:nth-child(8) { width: 14.5% !important; }
+.import-airings-table tr.import-preview-row-needs-match td {
+  background: #fff2df !important;
+}
+.import-airings-table tr.import-preview-row-needs-match:hover td {
+  background: #ffe8c4 !important;
+}
+@media (max-width: 950px) {
+  .import-file-money-grid {
+    grid-template-columns: repeat(2, minmax(8rem, 1fr));
   }
 }

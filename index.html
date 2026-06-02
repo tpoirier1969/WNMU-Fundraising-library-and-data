@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.21.58</title>
+  <title>WNMU Pledge Program Library v0.21.59</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.21.58">
+  <link rel="stylesheet" href="assets/styles.css?v=0.21.59">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.21.58"></script>
-  <script defer src="assets/js/program-filters.js?v=0.21.58"></script>
-  <script defer src="assets/js/dom.js?v=0.21.58"></script>
-  <script defer src="assets/js/data.js?v=0.21.58"></script>
-  <script defer src="assets/js/ui-list.js?v=0.21.58"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.21.58"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.21.58"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.21.58"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.21.58"></script>
-  <script defer src="assets/js/auth.js?v=0.21.58"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.21.58"></script>
-  <script defer src="assets/js/program-open.js?v=0.21.58"></script>
-  <script defer src="assets/js/library-load.js?v=0.21.58"></script>
-  <script defer src="assets/js/app.js?v=0.21.58"></script>
-  <script defer src="assets/js/app-init.js?v=0.21.58"></script>
+  <script defer src="assets/js/core.js?v=0.21.59"></script>
+  <script defer src="assets/js/program-filters.js?v=0.21.59"></script>
+  <script defer src="assets/js/dom.js?v=0.21.59"></script>
+  <script defer src="assets/js/data.js?v=0.21.59"></script>
+  <script defer src="assets/js/ui-list.js?v=0.21.59"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.21.59"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.21.59"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.21.59"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.21.59"></script>
+  <script defer src="assets/js/auth.js?v=0.21.59"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.21.59"></script>
+  <script defer src="assets/js/program-open.js?v=0.21.59"></script>
+  <script defer src="assets/js/library-load.js?v=0.21.59"></script>
+  <script defer src="assets/js/app.js?v=0.21.59"></script>
+  <script defer src="assets/js/app-init.js?v=0.21.59"></script>
   </head>
 <body>
 
@@ -56,7 +56,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.21.58</span>
+            <span class="version-pill" id="version-flag">v0.21.59</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -447,7 +447,6 @@
           <article class="import-stat-card"><div class="performance-stat-label">Files loaded</div><div class="performance-stat-value">0</div></article>
           <article class="import-stat-card"><div class="performance-stat-label">Parsed rows</div><div class="performance-stat-value">0</div></article>
           <article class="import-stat-card"><div class="performance-stat-label">Airings rows</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Derived rollups</div><div class="performance-stat-value">0</div></article>
         </section>
 
         <section class="performance-card import-table-status-card">
@@ -470,7 +469,6 @@
                 <tr>
                   <th>File</th>
                   <th>Details</th>
-                  <th>Format</th>
                   <th>Rows</th>
                   <th>Airings</th>
                   <th>Fundraiser dates</th>
@@ -479,7 +477,7 @@
                 </tr>
               </thead>
               <tbody id="import-file-body">
-                <tr><td colspan="8" class="placeholder-row">No reports analyzed yet.</td></tr>
+                <tr><td colspan="7" class="placeholder-row">No reports analyzed yet.</td></tr>
               </tbody>
             </table>
           </div>
@@ -546,17 +544,17 @@
               <span class="mini-chip" id="import-airings-pill">0 rows</span>
             </div>
             <div class="table-wrap import-preview-wrap">
-              <table class="programs-table import-preview-table">
+              <table class="programs-table import-preview-table import-airings-table">
                 <thead>
                   <tr>
-                    <th>Imported report title</th>
+                    <th><span>Imported<br>title</span></th>
+                    <th><span>Library<br>match</span></th>
                     <th>NOLA</th>
                     <th>Aired at</th>
                     <th>Dollars</th>
                     <th>Pledges</th>
-                    <th>Program minutes</th>
-                    <th>Match status</th>
-                    <th>Library match</th>
+                    <th><span>Program<br>minutes</span></th>
+                    <th><span>Match<br>status</span></th>
                   </tr>
                 </thead>
                 <tbody id="import-airings-body">
@@ -565,31 +563,6 @@
               </table>
             </div>
           </article>
-
-          <details class="performance-card import-compact-card import-advanced-summary">
-            <summary class="performance-card-head import-details-summary">
-              <h3>Advanced summary</h3>
-              <span class="mini-chip" id="import-drive-pill">0 derived rows</span>
-            </summary>
-            <div class="muted import-review-note">Derived fundraiser rollups are grouped totals used internally for performance history and Slot Fit comparisons.</div>
-            <div class="table-wrap import-preview-wrap">
-              <table class="programs-table import-preview-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>NOLA</th>
-                    <th>Fundraiser</th>
-                    <th>Total dollars</th>
-                    <th>Total pledges</th>
-                    <th>Airings</th>
-                  </tr>
-                </thead>
-                <tbody id="import-drive-body">
-                  <tr><td colspan="6" class="placeholder-row">No derived fundraiser rollups yet.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </details>
         </section>
 
         <section class="performance-card import-compact-card import-unmatched-card">
@@ -1091,7 +1064,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.21.58</div>
+      <div id="footer-version">v0.21.59</div>
     </footer>
   </div>
 </body>

@@ -1664,7 +1664,7 @@
     if (!els.importFileBody || !els.importFilePill) return;
     els.importFilePill.textContent = imp().fileSummaries.length ? `${utils.formatCount(imp().fileSummaries.length)} files` : 'No files';
     if (!imp().fileSummaries.length) {
-      els.importFileBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No reports analyzed yet.</td></tr>';
+      els.importFileBody.innerHTML = '<tr><td colspan="7" class="placeholder-row">No reports analyzed yet.</td></tr>';
       return;
     }
     els.importFileBody.innerHTML = imp().fileSummaries.map((item) => {
@@ -1674,25 +1674,24 @@
       const dateRange = item.detectedStartDate && item.detectedEndDate
         ? `${utils.formatDate(item.detectedStartDate)} – ${utils.formatDate(item.detectedEndDate)}${Number(item.fundraiserClusterCount || 0) > 1 ? ` (${utils.formatCount(item.fundraiserClusterCount)} clusters)` : ''}`
         : '—';
-      const details = [
-        item.sheetName ? `Tab: ${item.sheetName}` : '',
-        item.delimiter ? `Delimiter: ${item.delimiter}` : '',
-        item.detectedFormat ? `Detected: ${item.detectedFormat}` : ''
-      ].filter(Boolean).join(' · ') || '—';
+      const detailBits = [
+        item.sheetName ? `<span><strong>Tab</strong> ${escape(item.sheetName)}</span>` : '',
+        item.delimiter ? `<span><strong>Delimiter</strong> ${escape(item.delimiter)}</span>` : '',
+        item.detectedFormat ? `<span><strong>Format</strong> ${escape(item.detectedFormat)}</span>` : ''
+      ].filter(Boolean).join('');
       const warnings = (item.warnings || []).join(' | ') || '—';
       return `
       <tr class="import-file-main-row">
-        <td>${escape(item.fileName)}</td>
-        <td>${escape(details)}</td>
-        <td>${escape(item.detectedFormat || '—')}</td>
+        <td class="import-file-name-cell">${escape(item.fileName)}</td>
+        <td class="import-file-details-cell"><div class="import-file-details-stack">${detailBits || '<span>—</span>'}</div></td>
         <td>${escape(item.parsedRows)}</td>
         <td>${escape(item.normalizedRows)}</td>
         <td>${escape(dateRange)}</td>
-        <td>${escape(warnings)}</td>
+        <td class="import-file-issues-cell">${escape(warnings)}</td>
         <td><div class="import-report-total-cell"><div class="mini-label">Full report total</div><input type="text" class="import-report-total-input" data-file-key="${escape(item.fileKey || '')}" value="${escape(reportValue)}" placeholder="Full total" title="Enter the full report total from the original report. The app calculates Non-specific dollars automatically."></div></td>
       </tr>
       <tr class="import-file-money-row">
-        <td colspan="8">
+        <td colspan="7">
           <div class="import-file-money-grid">
             <span><strong>Program $</strong> ${escape(utils.formatMoney(item.rawProgramSpecificTotalDollars || 0))}</span>
             <span><strong>Non-specific $</strong> ${escape(utils.formatMoney(item.rawNonSpecificTotalDollars || 0))}</span>
@@ -1948,17 +1947,19 @@
     renderSuspectPreview();
   }
 
-  function renderPreviewRows(rows, bodyEl, columns, emptyMessage) {
+  function renderPreviewRows(rows, bodyEl, columns, emptyMessage, options = {}) {
     if (!bodyEl) return;
     if (!rows.length) {
       bodyEl.innerHTML = `<tr><td colspan="${columns.length}" class="placeholder-row">${escape(emptyMessage)}</td></tr>`;
       return;
     }
-    bodyEl.innerHTML = rows.slice(0, 25).map((row) => `
-      <tr>
+    bodyEl.innerHTML = rows.slice(0, 25).map((row) => {
+      const rowClass = typeof options.rowClass === 'function' ? options.rowClass(row) : '';
+      return `
+      <tr class="${escape(rowClass)}">
         ${columns.map((column) => `<td>${escape(column.format ? column.format(row[column.key], row) : row[column.key])}</td>`).join('')}
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   }
 
 
@@ -2387,6 +2388,7 @@
 
     renderPreviewRows(imp().airingsRows, els.importAiringsBody, [
       { key: 'imported_program_title', format: (_value, row) => row.imported_program_title || row.title || '—' },
+      { key: 'matched_library_title', format: (value) => value || '—' },
       { key: 'nola_code' },
       { key: 'aired_at', format: (_value, row) => formatImportedAiredAt(row) },
       { key: 'dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
@@ -2400,9 +2402,13 @@
         if (value === 'non_specific') return 'non-specific';
         if (value === 'unmatched_nola') return 'needs review';
         return value || row.match_reason || '—';
-      } },
-      { key: 'matched_library_title', format: (value) => value || '—' }
-    ], 'No parsed airings rows yet.');
+      } }
+    ], 'No parsed airings rows yet.', {
+      rowClass: (row) => {
+        const hasLibraryMatch = Boolean(row.matched_library_title || row.program_id || row.pledge_program_id || row.manual_match_program_id);
+        return !row.is_non_specific && !hasLibraryMatch ? 'import-preview-row-needs-match' : '';
+      }
+    });
 
     renderPreviewRows(imp().driveRows, els.importDriveBody, [
       { key: 'title' },
