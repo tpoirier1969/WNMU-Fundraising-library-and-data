@@ -1235,10 +1235,13 @@
 
 
   function importNaturalKey(row = {}) {
-    const identity = utils.nolaIdentityKey(
-      row.nola_code || row.nola || row.program_nola || '',
-      row.imported_program_title || row.program_title || row.title || row.name || ''
-    ) || utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || '');
+    const canonicalProgramId = String(utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.manual_match_program_id, '') || '').trim();
+    const identity = canonicalProgramId
+      ? `program_id:${canonicalProgramId}`
+      : (utils.nolaIdentityKey(
+          row.nola_code || row.nola || row.program_nola || '',
+          row.imported_program_title || row.program_title || row.title || row.name || ''
+        ) || utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || ''));
     return [
       utils.normalizeLookupKey(row.station || ''),
       identity,

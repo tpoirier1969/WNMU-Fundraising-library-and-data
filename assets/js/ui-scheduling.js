@@ -588,11 +588,19 @@
     return ['file', utils.normalizeLookupKey(row.source_file_name)].join('|').toLowerCase();
   }
 
+  function importedNolaCodeKey(value = '') {
+    if (typeof utils.nolaCodeKey === 'function') return utils.nolaCodeKey(value);
+    return utils.normalizeText(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
   function importedNaturalKey(row = {}) {
-    const identity = utils.nolaIdentityKey(
-      row.nola_code || row.nola || row.program_nola || '',
-      row.program_title || row.imported_program_title || row.title || row.name || ''
-    ) || utils.normalizeLookupKey(row.program_title || row.imported_program_title || row.title || row.name || '');
+    const canonicalProgramId = String(utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.manual_match_program_id, '') || '').trim();
+    const identity = canonicalProgramId
+      ? `program_id:${canonicalProgramId}`
+      : (utils.nolaIdentityKey(
+          row.nola_code || row.nola || row.program_nola || '',
+          row.program_title || row.imported_program_title || row.title || row.name || ''
+        ) || utils.normalizeLookupKey(row.program_title || row.imported_program_title || row.title || row.name || ''));
     return [
       identity,
       utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
@@ -813,7 +821,7 @@
     for (const programId of candidateIds) {
       if (programId && lookup.byProgramId.has(programId)) return lookup.byProgramId.get(programId);
     }
-    const wantedNola = utils.normalizeLookupKey(utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''));
+    const wantedNola = importedNolaCodeKey(utils.firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''));
     if (wantedNola && lookup.byNola.has(wantedNola)) return lookup.byNola.get(wantedNola);
     const titleCandidates = [row.matched_library_title, row.program_title, row.imported_program_title, row.title, row.name]
       .map((value) => utils.normalizeLookupKey(value))
@@ -1514,7 +1522,7 @@
   }
 
   function addImportedSlotKey(map, dateKey, startMinutes, kind, value) {
-    const normalizedValue = utils.normalizeLookupKey(value);
+    const normalizedValue = kind === 'nola' ? importedNolaCodeKey(value) : utils.normalizeLookupKey(value);
     const date = utils.normalizeText(dateKey);
     if (!date || !Number.isFinite(Number(startMinutes)) || !kind || !normalizedValue) return;
     map.add(`${date}|${Number(startMinutes)}|${kind}:${normalizedValue}`);
@@ -1526,7 +1534,7 @@
       const dateKey = utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '';
       const startMinutes = importedSlotMinute(row);
       if (!dateKey || !Number.isFinite(startMinutes)) return;
-      addImportedSlotKey(map, dateKey, startMinutes, 'id', row.program_id || row.pledge_program_id);
+      addImportedSlotKey(map, dateKey, startMinutes, 'id', row.program_id || row.pledge_program_id || row.manual_match_program_id);
       addImportedSlotKey(map, dateKey, startMinutes, 'nola', row.nola_code || row.nola || row.program_nola);
       addImportedSlotKey(map, dateKey, startMinutes, 'title', row.matched_library_title || row.program_title || row.title || row.imported_program_title || row.name);
       addImportedSlotKey(map, dateKey, startMinutes, 'imported', row.imported_program_title || row.program_title || row.title || row.name);
@@ -1548,7 +1556,7 @@
       ['title', placement.programTitle || derive.title(row)]
     ];
     return candidates.some(([kind, value]) => {
-      const normalizedValue = utils.normalizeLookupKey(value);
+      const normalizedValue = kind === 'nola' ? importedNolaCodeKey(value) : utils.normalizeLookupKey(value);
       return normalizedValue && map.has(`${date}|${minutes}|${kind}:${normalizedValue}`);
     });
   }
@@ -1557,7 +1565,7 @@
     if (state.scheduleAiringHistoryLoading || state.scheduleAiringHistoryLoaded) return;
     state.scheduleAiringHistoryLoading = true;
     try {
-      const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
+      const rows = await App.data.fetchImportedAirings();
       state.scheduleAiringHistoryMap = buildScheduleAiringHistoryMap(rows || []);
       state.scheduleImportedSlotMap = buildScheduleImportedSlotMap(rows || []);
       state.scheduleAiringHistoryLoaded = true;
@@ -1599,7 +1607,7 @@
     if (state.scheduleImportedAiringsPromise) return state.scheduleImportedAiringsPromise;
     state.scheduleImportedAiringsPromise = (async () => {
       try {
-        const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
+        const rows = await App.data.fetchImportedAirings();
         state.scheduleImportedAiringsCache = Array.isArray(rows) ? rows : [];
       } catch (error) {
         console.warn('Could not load imported airings for slot rescue.', error);
@@ -3748,6 +3756,15 @@
     });
   }
 
+  async function refreshImportedAiringMarkers() {
+    state.scheduleAiringHistoryLoaded = false;
+    state.scheduleAiringHistoryLoading = false;
+    state.scheduleImportedSlotMap = new Set();
+    state.scheduleImportedAiringsCache = null;
+    state.scheduleImportedAiringsPromise = null;
+    await ensureScheduleAiringHistoryLoaded();
+  }
+
   function renderAll() {
     const schedulingPane = document.querySelector('[data-workspace-pane="scheduling"]');
     if (schedulingPane) schedulingPane.dataset.scheduleState = getActiveSchedule() ? 'active' : 'empty';
@@ -3769,6 +3786,7 @@
     renderHomeDriveSummary,
     renderScheduledProgramDetails,
     invalidateScheduleDetail,
+    refreshImportedAiringMarkers,
     buildSchedulesFromImportedReports,
     mergeImportedRowsIntoSchedules,
     closeScheduleModal

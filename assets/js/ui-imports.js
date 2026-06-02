@@ -71,30 +71,57 @@
     utils.storageSet(IMPORT_MATCH_RULES_STORAGE_KEY, imp().aliasRules);
   }
 
-  function aliasRuleKey(station = '', importedTitle = '') {
-    return `${importStationKey(station)}|${importTitleKey(importedTitle)}`;
+  function importNolaCodeKey(value = '') {
+    if (typeof utils.nolaCodeKey === 'function') return utils.nolaCodeKey(value);
+    return utils.normalizeText(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function broadImportedTitle(title = '') {
+    const key = importTitleKey(title);
+    if (!key) return true;
+    const broad = new Set(['great performances', 'masterpiece', 'nova', 'nature', 'frontline', 'american experience', 'pbs newshour']);
+    if (broad.has(key)) return true;
+    return titleTokens(title).length <= 2 && key.length < 22;
+  }
+
+  function aliasRuleKey(station = '', importedTitle = '', importedNola = '') {
+    return `${importStationKey(station)}|${importTitleKey(importedTitle)}|${importNolaCodeKey(importedNola)}`;
+  }
+
+  function legacyAliasRuleKey(station = '', importedTitle = '') {
+    return `${importStationKey(station)}|${importTitleKey(importedTitle)}|`;
   }
 
   function findAliasRuleForRow(row = {}) {
-    const key = aliasRuleKey(row.station, row.imported_program_title || row.program_title || row.title);
-    return getStoredAliasRules().find((rule) => aliasRuleKey(rule.station, rule.importedTitle) === key && rule.active !== false) || null;
+    const importedTitle = row.imported_program_title || row.program_title || row.title;
+    const importedNola = row.nola_code || row.nola || row.program_nola || '';
+    const exactKey = aliasRuleKey(row.station, importedTitle, importedNola);
+    const rules = getStoredAliasRules();
+    const exact = rules.find((rule) => aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola || rule.nola_code || '') === exactKey && rule.active !== false);
+    if (exact) return exact;
+    if (importedNola && broadImportedTitle(importedTitle)) return null;
+    const legacyKey = legacyAliasRuleKey(row.station, importedTitle);
+    return rules.find((rule) => legacyAliasRuleKey(rule.station, rule.importedTitle) === legacyKey && !importNolaCodeKey(rule.importedNola || rule.nola_code || '') && rule.active !== false) || null;
   }
 
-  function storeAliasRule({ station = '', importedTitle = '', targetProgram = null }) {
+  function storeAliasRule({ station = '', importedTitle = '', importedNola = '', targetProgram = null }) {
     if (!targetProgram || !importedTitle) return null;
     const rules = getStoredAliasRules().slice();
     const nextRule = {
       id: utils.makeId('importrule'),
       station,
       importedTitle,
+      importedNola: utils.normalizeText(importedNola || ''),
       importedTitleKey: importTitleKey(importedTitle),
+      importedNolaKey: importNolaCodeKey(importedNola || ''),
       targetProgramId: String(derive.programId(targetProgram) || '').trim(),
       targetProgramTitle: derive.title(targetProgram) || importedTitle,
       targetProgramNola: derive.nola(targetProgram) || '',
       active: true,
       updatedAt: new Date().toISOString()
     };
-    const existingIndex = rules.findIndex((rule) => aliasRuleKey(rule.station, rule.importedTitle) === aliasRuleKey(station, importedTitle));
+    const nextKey = aliasRuleKey(station, importedTitle, importedNola);
+    const existingIndex = rules.findIndex((rule) => aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola || rule.nola_code || '') === nextKey);
     if (existingIndex >= 0) nextRule.id = rules[existingIndex].id || nextRule.id;
     if (existingIndex >= 0) rules.splice(existingIndex, 1, nextRule);
     else rules.push(nextRule);
@@ -150,7 +177,7 @@
         label: nola ? `${title} (${nola})` : title,
         sortLabel: `${title} ${nola || ''}`.trim().toLowerCase(),
         titleKey: utils.normalizeLookupKey(title),
-        nolaKey: utils.normalizeLookupKey(nola)
+        nolaKey: importNolaCodeKey(nola)
       };
     }).filter(Boolean);
     options.sort((a, b) => {
@@ -737,7 +764,7 @@
     const titleCandidates = [];
     const seenCandidateIds = new Set();
     rows.forEach((row) => {
-      const nolaKey = utils.normalizeLookupKey(derive.nola(row));
+      const nolaKey = importNolaCodeKey(derive.nola(row));
       if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, row);
       const title = derive.title(row);
       const titleKey = utils.normalizeLookupKey(title);
@@ -884,16 +911,20 @@
   }
 
   function findProgramForImport({ importedTitle = '', nola = '', station = '' }, libraryLookup) {
-    const nolaKey = utils.normalizeLookupKey(nola);
-    if (nolaKey && libraryLookup.byNola.has(nolaKey)) {
-      return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: '' };
-    }
     const aliasRule = findAliasRuleForRow({ station, imported_program_title: importedTitle, nola_code: nola });
     if (aliasRule) {
       const target = (state.rawRows || []).find((row) => String(derive.programId(row) || '').trim() === String(aliasRule.targetProgramId || '').trim()) || null;
       if (target) {
-        return { program: target, matchMethod: 'saved_title_rule', matchReason: 'Matched from a saved import-title rule.' };
+        return { program: target, matchMethod: 'saved_title_rule', matchReason: 'Matched from a saved import-title/NOLA rule.' };
       }
+    }
+    const nolaKey = importNolaCodeKey(nola);
+    if (nolaKey && libraryLookup.byNola.has(nolaKey)) {
+      return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: `Matched by NOLA ${nola}.` };
+    }
+    const specificNola = /\d{3,}/.test(nolaKey);
+    if (specificNola && broadImportedTitle(importedTitle)) {
+      return { program: null, matchMethod: 'unmatched', matchReason: `NOLA ${nola} did not match a pledge-library NOLA after normalization. The imported title “${importedTitle}” is too broad for safe automatic title matching.` };
     }
     const titleKey = importTitleKey(importedTitle);
     if (titleKey && libraryLookup.byUniqueTitle.has(titleKey)) {
@@ -1644,6 +1675,7 @@
       setStatus(success);
       setResultBanner(success, verification?.missingDateCount ? 'warn' : 'success');
       setNotice(success, verification?.missingDateCount ? 'warn' : 'success');
+      await App.schedulingUi?.refreshImportedAiringMarkers?.();
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
     } catch (error) {
@@ -2069,7 +2101,7 @@
       airing.pending_persist_match_rule = Boolean(shouldPersist);
       airing.row_hash = computeImportRowHash(airing);
     });
-    if (shouldPersist) storeAliasRule({ station: rows[0]?.station || '', importedTitle: rows[0]?.imported_program_title || rows[0]?.title || '', targetProgram: targetRow });
+    if (shouldPersist) storeAliasRule({ station: rows[0]?.station || '', importedTitle: rows[0]?.imported_program_title || rows[0]?.title || '', importedNola: rows[0]?.nola_code || '', targetProgram: targetRow });
     imp().driveRows = deriveRollups(imp().airingsRows);
     imp().rawAccountingSummaries = buildAccountingSummaryRows();
     renderAll();

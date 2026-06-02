@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.21.62',
+    APP_VERSION: 'v0.21.63',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -325,13 +325,19 @@ window.PledgeLib = window.PledgeLib || {};
       return 'NSPL';
     },
 
+    nolaCodeKey(value) {
+      return utils.normalizeText(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+    },
+
     isPlaceholderNoNola(value) {
-      const key = utils.normalizeLookupKey(value || '').replace(/\s+/g, '');
+      const key = utils.nolaCodeKey(value || '');
       return key === 'nonola';
     },
 
     nolaIdentityKey(nolaValue, titleValue = '') {
-      const nolaKey = utils.normalizeLookupKey(nolaValue || '');
+      const nolaKey = utils.nolaCodeKey(nolaValue || '');
       if (!nolaKey) return '';
       if (utils.isPlaceholderNoNola(nolaValue)) {
         const titleKey = utils.normalizeLookupKey(titleValue || '');
