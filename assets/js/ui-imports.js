@@ -436,13 +436,20 @@
     return Object.fromEntries(Object.entries(row).map(([key, value]) => [keyify(key), value]));
   }
 
+  function hasImportValue(value) {
+    if (value instanceof Date) return !Number.isNaN(value.getTime());
+    if (typeof value === 'number') return Number.isFinite(value);
+    if (typeof value === 'boolean') return true;
+    return !utils.isBlank(value);
+  }
+
   function firstMatching(row, exactKeys = [], regex = null) {
     for (const key of exactKeys) {
-      if (Object.prototype.hasOwnProperty.call(row, key) && !utils.isBlank(row[key])) return row[key];
+      if (Object.prototype.hasOwnProperty.call(row, key) && hasImportValue(row[key])) return row[key];
     }
     if (!regex) return null;
     for (const [key, value] of Object.entries(row || {})) {
-      if (regex.test(key) && !utils.isBlank(value)) return value;
+      if (regex.test(key) && hasImportValue(value)) return value;
     }
     return null;
   }
@@ -1154,7 +1161,7 @@
 
   function pickValueByKeys(row = {}, keys = []) {
     for (const key of keys) {
-      if (Object.prototype.hasOwnProperty.call(row, key) && !utils.isBlank(row[key])) return row[key];
+      if (Object.prototype.hasOwnProperty.call(row, key) && hasImportValue(row[key])) return row[key];
     }
     return null;
   }
@@ -1558,6 +1565,24 @@
     }
   }
 
+  async function verifyLastImportBatch() {
+    const batchId = utils.normalizeText(imp().importBatchId);
+    if (!batchId) return null;
+    const { data, error } = await state.client
+      .from(constants.AIRINGS_TABLE)
+      .select('id,air_date,air_time,aired_at,dollars,pledge_count,import_batch_id,source_file_name')
+      .eq('import_batch_id', batchId);
+    if (error) throw error;
+    const rows = Array.isArray(data) ? data : [];
+    return {
+      rows,
+      count: rows.length,
+      missingDateCount: rows.filter((row) => !row.air_date && !row.aired_at).length,
+      totalDollars: rows.reduce((sum, row) => sum + (Number(row.dollars || 0) || 0), 0),
+      totalPledges: rows.reduce((sum, row) => sum + (Number(row.pledge_count || 0) || 0), 0)
+    };
+  }
+
   async function importToSupabase() {
     if (!App.auth.canEdit()) {
       setNotice('Direct import is admin-only. Export the normalized CSV if you need a handoff first.', 'warn');
@@ -1601,10 +1626,23 @@
       await refreshTableStatus({ silent: true });
       await refreshExistingUnlinkedRows({ silent: true });
       renderAll();
-      const success = `Imported ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
+      let verification = null;
+      try {
+        verification = await verifyLastImportBatch();
+      } catch (verifyError) {
+        console.warn('Import verification query failed:', verifyError);
+      }
+      let success = `Imported ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} to Supabase. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically, so reimporting corrected reports is safe. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
+      if (verification && summary.airings.written > 0) {
+        const verificationText = ` Verified in Supabase: ${utils.formatCount(verification.count)} row${verification.count === 1 ? '' : 's'}, ${utils.formatMoney(verification.totalDollars)}, ${utils.formatCount(verification.totalPledges)} pledge${verification.totalPledges === 1 ? '' : 's'}.`;
+        success += verificationText;
+        if (verification.missingDateCount > 0) {
+          success += ` WARNING: ${utils.formatCount(verification.missingDateCount)} imported row${verification.missingDateCount === 1 ? '' : 's'} still lack an air date; check the report parser before using these totals.`;
+        }
+      }
       setStatus(success);
-      setResultBanner(success);
-      setNotice(success);
+      setResultBanner(success, verification?.missingDateCount ? 'warn' : 'success');
+      setNotice(success, verification?.missingDateCount ? 'warn' : 'success');
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
     } catch (error) {
