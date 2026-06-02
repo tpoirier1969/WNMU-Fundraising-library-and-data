@@ -116,6 +116,8 @@
     if (row.match_method === 'manual_library') return 'Matched manually in import review';
     if (row.match_method === 'saved_title_rule') return 'Matched from a saved “always equals this” rule';
     if (row.match_method === 'title_exact') return 'Matched by exact imported title';
+    if (row.match_method === 'title_fuzzy') return row.match_reason || 'Auto-matched by strong title similarity';
+    if (row.match_method === 'suggested_title') return row.match_reason || 'Suggested title match needs review';
     if (row.match_method === 'non_specific') return 'Non-specific broadcast row';
     if (row.match_method === 'ignored') return row.match_reason || 'Ignored during import review';
     return row.match_reason || 'No pledge-library match yet';
@@ -464,6 +466,21 @@
     return Number.isFinite(num) ? Math.trunc(num) : null;
   }
 
+  function parseDurationMinutes(value) {
+    if (value == null || value === '') return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
+    const text = utils.normalizeText(value);
+    if (!text) return null;
+    const parts = text.split(':').map((part) => Number(part));
+    if (parts.length === 3 && parts.every((part) => Number.isFinite(part))) {
+      return Math.round((parts[0] * 60) + parts[1] + (parts[2] / 60));
+    }
+    if (parts.length === 2 && parts.every((part) => Number.isFinite(part))) {
+      return Math.round(parts[0] + (parts[1] / 60));
+    }
+    return parseInteger(value);
+  }
+
   function extractImportedFields(record = {}) {
     const mapped = mapRowKeys(record);
     const importedTitle = utils.normalizeText(firstMatching(mapped, ['program_title', 'program_name', 'title', 'program', 'show_title'], /(program(_name|_title)?|show(_title)?|title)/i));
@@ -624,6 +641,12 @@
   }
 
   function parseDateish(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return utils.dateKeyFromDate(value);
+    if (typeof value === 'number' && Number.isFinite(value) && value > 20000 && value < 80000) {
+      const base = Date.UTC(1899, 11, 30);
+      const date = new Date(base + Math.round(value) * 86400000);
+      if (!Number.isNaN(date.getTime())) return utils.dateKeyFromDate(date);
+    }
     const text = utils.normalizeText(value);
     if (!text) return '';
     if (/^\d{6}$/.test(text)) {
@@ -643,6 +666,9 @@
 
   function parseTimeish(value) {
     if (value == null || value === '') return '';
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}:00`;
+    }
     if (typeof value === 'number' && Number.isFinite(value)) {
       const raw = String(Math.trunc(value));
       if (raw.length <= 4) {
@@ -701,19 +727,129 @@
     const rows = state.rawRows || [];
     const byNola = new Map();
     const titleBuckets = new Map();
+    const titleCandidates = [];
+    const seenCandidateIds = new Set();
     rows.forEach((row) => {
       const nolaKey = utils.normalizeLookupKey(derive.nola(row));
       if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, row);
-      const titleKey = utils.normalizeLookupKey(derive.title(row));
+      const title = derive.title(row);
+      const titleKey = utils.normalizeLookupKey(title);
       if (!titleKey) return;
       if (!titleBuckets.has(titleKey)) titleBuckets.set(titleKey, []);
       titleBuckets.get(titleKey).push(row);
+      const id = String(derive.programId(row) || '').trim() || `${titleKey}|${titleCandidates.length}`;
+      if (seenCandidateIds.has(id)) return;
+      seenCandidateIds.add(id);
+      titleCandidates.push({
+        row,
+        id,
+        title,
+        titleKey,
+        compactTitleKey: compactImportTitleKey(title),
+        tokens: titleTokens(title)
+      });
     });
     const byUniqueTitle = new Map();
     titleBuckets.forEach((items, key) => {
       if (items.length === 1) byUniqueTitle.set(key, items[0]);
     });
-    return { byNola, byUniqueTitle };
+    return { byNola, byUniqueTitle, titleCandidates };
+  }
+
+
+  function compactImportTitleKey(title = '') {
+    return utils.normalizeLookupKey(title)
+      .replace(/\b(wnmu|pbs|tv|hd)\b/g, ' ')
+      .replace(/\b(the|a|an)\b/g, ' ')
+      .replace(/\bseason\s+\d+\b/g, ' ')
+      .replace(/\bepisode\s+\d+\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function titleTokens(title = '') {
+    return compactImportTitleKey(title)
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 3);
+  }
+
+  function levenshteinDistance(a = '', b = '') {
+    const left = String(a || '');
+    const right = String(b || '');
+    if (left === right) return 0;
+    if (!left.length) return right.length;
+    if (!right.length) return left.length;
+    const prev = Array.from({ length: right.length + 1 }, (_v, i) => i);
+    const curr = Array(right.length + 1).fill(0);
+    for (let i = 1; i <= left.length; i += 1) {
+      curr[0] = i;
+      for (let j = 1; j <= right.length; j += 1) {
+        const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+        curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      }
+      for (let j = 0; j <= right.length; j += 1) prev[j] = curr[j];
+    }
+    return prev[right.length];
+  }
+
+  function tokenOverlapScore(importedTokens = [], libraryTokens = []) {
+    const a = new Set(importedTokens || []);
+    const b = new Set(libraryTokens || []);
+    if (!a.size || !b.size) return 0;
+    let hits = 0;
+    a.forEach((token) => { if (b.has(token)) hits += 1; });
+    return (2 * hits) / (a.size + b.size);
+  }
+
+  function titleSimilarityScore(importedTitle = '', candidate = {}) {
+    const importedKey = compactImportTitleKey(importedTitle);
+    const libraryKey = candidate.compactTitleKey || compactImportTitleKey(candidate.title);
+    if (!importedKey || !libraryKey) return 0;
+    if (importedKey === libraryKey) return 1;
+
+    const shorter = importedKey.length <= libraryKey.length ? importedKey : libraryKey;
+    const longer = importedKey.length > libraryKey.length ? importedKey : libraryKey;
+    if (shorter.length >= 12 && longer.startsWith(shorter)) return 0.97;
+    if (shorter.length >= 14 && longer.includes(shorter)) return 0.94;
+
+    const maxLen = Math.max(importedKey.length, libraryKey.length);
+    const levScore = maxLen ? 1 - (levenshteinDistance(importedKey, libraryKey) / maxLen) : 0;
+    const tokenScore = tokenOverlapScore(titleTokens(importedTitle), candidate.tokens || titleTokens(candidate.title));
+    return Math.max(0, Math.min(1, (levScore * 0.56) + (tokenScore * 0.44)));
+  }
+
+  function findFuzzyTitleMatch(importedTitle = '', libraryLookup = {}) {
+    const title = utils.normalizeText(importedTitle);
+    if (!title || !Array.isArray(libraryLookup.titleCandidates)) return null;
+    const scored = libraryLookup.titleCandidates
+      .map((candidate) => ({ ...candidate, score: titleSimilarityScore(title, candidate) }))
+      .filter((candidate) => candidate.score >= 0.82)
+      .sort((a, b) => b.score - a.score || utils.compareText(a.title, b.title));
+    if (!scored.length) return null;
+    const best = scored[0];
+    const second = scored[1] || null;
+    const margin = second ? best.score - second.score : 1;
+    const bestPercent = Math.round(best.score * 100);
+    const secondPercent = second ? Math.round(second.score * 100) : null;
+    const ambiguous = second && second.score >= 0.9 && margin < 0.04;
+    if (best.score >= 0.94 && !ambiguous && margin >= 0.025) {
+      return {
+        row: best.row,
+        mode: 'auto',
+        score: best.score,
+        reason: `Auto-matched by strong title similarity (${bestPercent}%). Imported “${title}” → library “${derive.title(best.row)}”.`
+      };
+    }
+    if (best.score >= 0.86) {
+      return {
+        row: best.row,
+        mode: 'suggest',
+        score: best.score,
+        reason: `Suggested title match (${bestPercent}%${secondPercent ? `; next closest ${secondPercent}%` : ''}). Review before applying: “${title}” → “${derive.title(best.row)}”.`
+      };
+    }
+    return null;
   }
 
   function guessTarget(headers = [], rows = [], fileName = '') {
@@ -756,6 +892,13 @@
     if (titleKey && libraryLookup.byUniqueTitle.has(titleKey)) {
       return { program: libraryLookup.byUniqueTitle.get(titleKey), matchMethod: 'title_exact', matchReason: 'Matched by exact imported title.' };
     }
+    const fuzzy = findFuzzyTitleMatch(importedTitle, libraryLookup);
+    if (fuzzy?.mode === 'auto' && fuzzy.row) {
+      return { program: fuzzy.row, matchMethod: 'title_fuzzy', matchReason: fuzzy.reason, fuzzyScore: fuzzy.score };
+    }
+    if (fuzzy?.mode === 'suggest' && fuzzy.row) {
+      return { program: null, suggestedProgram: fuzzy.row, matchMethod: 'suggested_title', matchReason: fuzzy.reason, fuzzyScore: fuzzy.score };
+    }
     return { program: null, matchMethod: 'unmatched', matchReason: nola ? `No pledge-library match found for NOLA ${nola}.` : 'No pledge-library match found for that imported title.' };
   }
 
@@ -784,6 +927,7 @@
     const reportTotalDollars = Number.isFinite(Number(meta.reportTotalDollars)) ? Number(meta.reportTotalDollars) : null;
 
     let matchedProgram = null;
+    let suggestedProgram = null;
     let matchMethod = 'unmatched';
     let matchReason = '';
     if (isNonSpecific) {
@@ -794,6 +938,7 @@
       matchedProgram = match.program || null;
       matchMethod = match.matchMethod;
       matchReason = match.matchReason;
+      suggestedProgram = match.suggestedProgram || null;
     }
     const matchedLibraryTitle = matchedProgram ? derive.title(matchedProgram) : '';
     const matchedProgramId = matchedProgram ? derive.programId(matchedProgram) : '';
@@ -828,12 +973,14 @@
       import_batch_id: imp().importBatchId || '',
       imported_by_email: state.userEmail || null,
       is_non_specific: isNonSpecific,
-      match_method: isNonSpecific ? 'non_specific' : (matchedProgram ? matchMethod : 'unmatched_nola'),
+      match_method: isNonSpecific ? 'non_specific' : (matchedProgram ? matchMethod : (suggestedProgram ? 'suggested_title' : 'unmatched_nola')),
       match_reason: isNonSpecific ? 'Non-specific broadcast row' : (matchedProgram ? matchReason : matchReason || `No pledge-library match found for ${nola || importedTitle || 'that row'}.`),
       title_mismatch_flag: titleMismatch || false,
       pending_persist_match_rule: false,
       manual_match_program_id: null,
       manual_match_label: '',
+      pending_manual_match_program_id: suggestedProgram ? String(derive.programId(suggestedProgram) || '').trim() : '',
+      pending_manual_match_label: suggestedProgram ? (derive.title(suggestedProgram) || '') : '',
       raw_payload: extracted.mapped
     };
     normalizedRow.row_hash = computeImportRowHash(normalizedRow);
@@ -970,11 +1117,142 @@
   }
 
   async function readFileText(file) {
+    return file.text();
+  }
+
+  function normalizeWorkbookCell(value) {
+    return value == null ? '' : value;
+  }
+
+  function workbookSheetPreference(name = '') {
+    const key = utils.normalizeLookupKey(name);
+    if (key === 'pbs break report') return 1;
+    if (key === 'pledge break report summary') return 2;
+    if (key === 'pledge detail break report') return 3;
+    if (key === 'on air break tally sheet') return 4;
+    return 99;
+  }
+
+  function findWorksheetHeaderRow(rows = []) {
+    let best = { index: -1, score: 0 };
+    rows.forEach((cells, index) => {
+      const keys = (cells || []).map((value) => keyify(value));
+      const joined = keys.join(' ');
+      const score = [
+        /station|call_letters/.test(joined),
+        /air_date|date/.test(joined),
+        /air_time|program_time|break_time/.test(joined),
+        /nola|program/.test(joined),
+        /program_title|program_name|title/.test(joined),
+        /dollars/.test(joined),
+        /pledges/.test(joined)
+      ].filter(Boolean).length;
+      if (score > best.score) best = { index, score };
+    });
+    return best.score >= 4 ? best.index : -1;
+  }
+
+  function pickValueByKeys(row = {}, keys = []) {
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(row, key) && !utils.isBlank(row[key])) return row[key];
+    }
+    return null;
+  }
+
+  function mapWorkbookRowToImportRecord(raw = {}) {
+    const mapped = mapRowKeys(raw);
+    const title = pickValueByKeys(mapped, ['program_title', 'program_name', 'title', 'show_title'])
+      || firstMatching(mapped, ['program_title', 'program_name', 'title', 'show_title'], /(program_name|program_title|show_title|title)/i);
+    const station = pickValueByKeys(mapped, ['station', 'call_letters']) || firstMatching(mapped, ['station', 'call_letters'], /(station|call_letters)/i);
+    const airDate = pickValueByKeys(mapped, ['air_date', 'date', 'broadcast_date']) || firstMatching(mapped, ['air_date', 'date', 'broadcast_date'], /(^date$|air_date|broadcast_date)/i);
+    const airTime = pickValueByKeys(mapped, ['air_time', 'program_time', 'break_time', 'broadcast_time']) || firstMatching(mapped, ['air_time', 'program_time', 'break_time', 'broadcast_time'], /(air_time|program_time|break_time|broadcast_time)/i);
+    const nola = pickValueByKeys(mapped, ['nola', 'nola_code', 'program_nola']) || firstMatching(mapped, ['nola', 'nola_code', 'program_nola'], /(^nola$|nola_code|program_nola)/i);
+    const dollars = pickValueByKeys(mapped, ['dollars', 'on_air_dollars']) || firstMatching(mapped, ['dollars', 'on_air_dollars'], /(^dollars$|on_air_dollars)/i);
+    const pledges = pickValueByKeys(mapped, ['pledges', 'on_air_pledges']) || firstMatching(mapped, ['pledges', 'on_air_pledges'], /(^pledges$|on_air_pledges)/i);
+    const programMinutes = pickValueByKeys(mapped, ['program_minutes', 'minutes'])
+      || parseDurationMinutes(pickValueByKeys(mapped, ['break_minutes', 'length']));
+    const sustainers = pickValueByKeys(mapped, ['sustainers']);
+    const premiumCount = pickValueByKeys(mapped, ['num_of_premiums', 'number_of_premiums', 'of_premiums']);
+
+    const titleText = utils.normalizeText(title);
+    if (!titleText || /^totals?\b|^final total\b|^total\b/i.test(titleText)) return null;
+    if (!utils.normalizeText(station) && /^totals?\b|^total\b/i.test(utils.normalizeText(pickValueByKeys(mapped, ['call_letters', 'station'])))) return null;
+
+    return {
+      Station: station || '',
+      'Air Date': normalizeWorkbookCell(airDate),
+      'Air Time': normalizeWorkbookCell(airTime),
+      NOLA: nola || '',
+      'Program Title': titleText,
+      Dollars: dollars ?? '',
+      Pledges: pledges ?? '',
+      'Program Minutes': programMinutes ?? '',
+      Sustainers: sustainers ?? '',
+      'Premium Count': premiumCount ?? '',
+      raw_workbook_row: raw
+    };
+  }
+
+  function parseWorksheetRows(rows = [], sheetName = '') {
+    const headerIndex = findWorksheetHeaderRow(rows);
+    if (headerIndex < 0) return null;
+    const headers = (rows[headerIndex] || []).map((value, index) => utils.normalizeText(value) || `column_${index + 1}`);
+    const rawRecords = rows.slice(headerIndex + 1).map((cells) => {
+      const out = {};
+      headers.forEach((header, index) => { out[header] = cells[index] ?? ''; });
+      return out;
+    }).filter((record) => Object.values(record).some((value) => !utils.isBlank(value)));
+
+    const records = rawRecords.map(mapWorkbookRowToImportRecord).filter(Boolean);
+    if (!records.length) return null;
+    const skipped = rawRecords.length - records.length;
+    return {
+      headers: ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Pledges', 'Program Minutes', 'Sustainers', 'Premium Count'],
+      records,
+      diagnostics: {
+        detectedFormat: 'excel_workbook',
+        workbookSheetName: sheetName,
+        workbookRowsSkipped: skipped,
+        trailerRowsSkipped: skipped,
+        trailerTotalsDollars: 0,
+        embeddedHeaderRows: 0,
+        totalRowsSkipped: skipped
+      }
+    };
+  }
+
+  async function parseExcelWorkbook(file) {
+    if (!window.XLSX?.read || !window.XLSX?.utils?.sheet_to_json) {
+      throw new Error('Excel parser did not load yet. Refresh the page and try the .xls again.');
+    }
+    const buffer = await file.arrayBuffer();
+    const workbook = window.XLSX.read(buffer, { type: 'array', cellDates: true, dense: false });
+    const sheetNames = (workbook.SheetNames || []).slice().sort((a, b) => workbookSheetPreference(a) - workbookSheetPreference(b));
+    const attempted = [];
+    for (const sheetName of sheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) continue;
+      const rows = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
+      const parsed = parseWorksheetRows(rows, sheetName);
+      attempted.push(sheetName);
+      if (parsed?.records?.length) return parsed;
+    }
+    throw new Error(`No usable pledge break rows were found in this workbook. Sheets checked: ${attempted.join(', ') || 'none'}.`);
+  }
+
+  async function parseImportFile(file) {
     const name = String(file?.name || '').toLowerCase();
     if (/\.(xlsx|xls)$/.test(name)) {
-      throw new Error(`Excel workbooks are still not parsed in-browser. Export the PBS Break Report tab from ${file.name} as CSV, then load that CSV here.`);
+      const parsed = await parseExcelWorkbook(file);
+      return {
+        parsed,
+        delimiterInfo: { label: parsed.diagnostics?.workbookSheetName ? `Excel: ${parsed.diagnostics.workbookSheetName}` : 'Excel workbook', delimiter: null }
+      };
     }
-    return file.text();
+    const text = await readFileText(file);
+    const delimiterInfo = detectDelimiter(text);
+    const parsed = parseDelimited(text, delimiterInfo.delimiter);
+    return { parsed, delimiterInfo };
   }
 
   async function analyzeFiles(files = []) {
@@ -1005,9 +1283,7 @@
       for (const [fileIndex, file] of files.entries()) {
         const fileWarnings = [];
         try {
-          const text = await readFileText(file);
-          const delimiterInfo = detectDelimiter(text);
-          const parsed = parseDelimited(text, delimiterInfo.delimiter);
+          const { parsed, delimiterInfo } = await parseImportFile(file);
           const fileKey = fileKeyForMeta(file, fileIndex);
           const detectedReportTotalDollars = Number.isFinite(Number(parsed?.diagnostics?.trailerTotalsDollars)) && Number(parsed.diagnostics.trailerTotalsDollars) > 0
             ? Number(parsed.diagnostics.trailerTotalsDollars)
@@ -1041,6 +1317,7 @@
             target: 'airings',
             normalizedRows: normalized.length,
             detectedFormat: parsed?.diagnostics?.detectedFormat || 'headered_csv',
+            workbookSheetName: parsed?.diagnostics?.workbookSheetName || '',
             warnings: [],
             detectedReportTotalDollars,
             reportTotalDollarsInput: Number(rawMoneySummary.rawFileTotalDollars || 0) || 0,
@@ -1063,6 +1340,9 @@
 
           const parseDiagnostics = parsed.diagnostics || {};
           const summaryWarnings = [...new Set(fileWarnings)];
+          if (parseDiagnostics.detectedFormat === 'excel_workbook') {
+            summaryWarnings.unshift(`Excel workbook tab used: ${parseDiagnostics.workbookSheetName || 'detected sheet'}.`);
+          }
           if (parseDiagnostics.detectedFormat === 'legacy_pbs_break_report') {
             summaryWarnings.unshift('Detected legacy PBS Break Report CSV format.');
           }
@@ -1295,7 +1575,7 @@
     }
     if (!imp().airingsRows.length) {
       setNotice('There is nothing to import yet.', 'warn');
-      setResultBanner('There is nothing to import yet. Load a PBS Break Report CSV first.', 'warn');
+      setResultBanner('There is nothing to import yet. Load a PBS Break Report Excel or CSV file first.', 'warn');
       return;
     }
     const allRows = Array.isArray(imp().airingsRows) ? imp().airingsRows.slice() : [];
@@ -1303,7 +1583,7 @@
     const unmatchedCount = allRows.length - matchedRows.length;
     const unmatchedDollarTotal = getUnmatchedDollarTotal();
     if (!allRows.length) {
-      const message = 'No imported rows are available for direct import yet. Load a PBS Break Report CSV first.';
+      const message = 'No imported rows are available for direct import yet. Load a PBS Break Report Excel or CSV file first.';
       setStatus(message, 'warn');
       setNotice(message, 'warn');
       setResultBanner(message, 'warn');
