@@ -2291,6 +2291,24 @@
       .sort((a, b) => a.sortKey - b.sortKey);
   }
 
+  function timingRowsWithCutTimes(timings = []) {
+    let cumulativeSeconds = 0;
+    return normalizeScheduledTimingRows(timings).map((entry) => {
+      const programSeconds = Number.isFinite(entry.programSeconds) ? entry.programSeconds : null;
+      const breakSeconds = Number.isFinite(entry.breakSeconds) ? entry.breakSeconds : null;
+      const localCutInSeconds = Number.isFinite(entry.localCutInSeconds) ? entry.localCutInSeconds : null;
+      let cutTimeSeconds = null;
+      if (localCutInSeconds != null && breakSeconds != null) {
+        cutTimeSeconds = Math.max(0, localCutInSeconds - breakSeconds);
+      } else if (programSeconds != null) {
+        cutTimeSeconds = cumulativeSeconds + programSeconds;
+      }
+      if (localCutInSeconds != null) cumulativeSeconds = Math.max(cumulativeSeconds, localCutInSeconds);
+      else if (cutTimeSeconds != null) cumulativeSeconds = cutTimeSeconds + (breakSeconds || 0);
+      return { ...entry, cutTimeSeconds };
+    });
+  }
+
   function scheduledTimingRuntimeSeconds(detail = {}) {
     const rows = normalizeScheduledTimingRows(detail?.timings || []);
     const hasProgramTime = rows.some((entry) => Number.isFinite(entry.programSeconds) && entry.programSeconds > 0);
@@ -2571,7 +2589,7 @@
             <tr>
               <th>Act</th>
               <th>Program</th>
-              <th>Break</th>
+              <th>Break <span class="export-muted">(cut time)</span></th>
               <th>Local Cut In</th>
               <th>Notes</th>
             </tr>
@@ -3313,7 +3331,7 @@
   }
 
   function scheduleExportTimingHtml(timings = []) {
-    const rows = normalizeScheduledTimingRows(timings);
+    const rows = timingRowsWithCutTimes(timings);
     if (!rows.length) {
       return '<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">No break timing rows are available yet.</div>';
     }
@@ -3333,7 +3351,7 @@
             <tr>
               <td>${utils.escapeHtml(entry.label || 'Act')}</td>
               <td>${Number.isFinite(entry.programSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.programSeconds)) : '—'}</td>
-              <td>${Number.isFinite(entry.breakSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.breakSeconds)) : '<span class="export-warning-inline">TBD</span>'}</td>
+              <td>${Number.isFinite(entry.breakSeconds) ? `${utils.escapeHtml(utils.formatSeconds(entry.breakSeconds))}${Number.isFinite(entry.cutTimeSeconds) ? ` <span class="export-cut-time">(${utils.escapeHtml(utils.formatSeconds(entry.cutTimeSeconds))})</span>` : ''}` : '<span class="export-warning-inline">TBD</span>'}</td>
               <td>${Number.isFinite(entry.localCutInSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.localCutInSeconds)) : '—'}</td>
               <td>${entry.note ? utils.escapeHtml(entry.note) : '—'}</td>
             </tr>
@@ -3532,6 +3550,11 @@
       font-weight: 900;
       text-transform: uppercase;
       color: #000000;
+    }
+    .export-cut-time {
+      font-weight: 800;
+      color: #222222;
+      white-space: nowrap;
     }
     .export-muted { color: #555555; font-size: 13px; }
     .export-timing-table {

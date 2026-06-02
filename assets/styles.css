@@ -5142,3 +5142,39 @@ body.version-gate-active .schedule-modal-card {
 .home-drive-summary-kicker {
   display: none;
 }
+
+/* v0.21.67 Program Library list density and column balance */
+.workspace-pane[data-workspace-pane="library"] .programs-table thead th {
+  font-size: .72rem;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.workspace-pane[data-workspace-pane="library"] .programs-table tbody td {
+  font-size: .76rem;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.22;
+}
+.workspace-pane[data-workspace-pane="library"] .programs-table .title-open-button,
+.workspace-pane[data-workspace-pane="library"] .programs-table .description-snippet,
+.workspace-pane[data-workspace-pane="library"] .programs-table .sub {
+  font-size: inherit;
+}
+.workspace-pane[data-workspace-pane="library"] .programs-table .col-title,
+.workspace-pane[data-workspace-pane="library"] .programs-table .title-cell {
+  width: 36.6%;
+}
+.workspace-pane[data-workspace-pane="library"] .programs-table .col-topic,
+.workspace-pane[data-workspace-pane="library"] .programs-table tbody td:nth-child(3) {
+  width: 126px;
+  max-width: 126px;
+}
+.workspace-pane[data-workspace-pane="library"] .programs-table .col-distributor,
+.workspace-pane[data-workspace-pane="library"] .programs-table tbody td:nth-child(4) {
+  width: 126px;
+  max-width: 126px;
+}
+.workspace-pane[data-workspace-pane="library"] .programs-table .col-total,
+.workspace-pane[data-workspace-pane="library"] .programs-table .total-cell {
+  text-align: left;
+}
