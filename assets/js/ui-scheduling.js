@@ -2303,7 +2303,11 @@
         ? breakCutTimeSeconds + breakSeconds
         : null;
 
-      if (localCutInCutTimeSeconds != null) cumulativeSeconds = localCutInCutTimeSeconds + (localCutInSeconds || 0);
+      // Cut times are positions inside the delivered program/break file.
+      // Local cut-ins are station inserts after the break; they should be listed with
+      // their start point, but they are not part of the program file and must not
+      // push later cut times forward.
+      if (localCutInCutTimeSeconds != null) cumulativeSeconds = localCutInCutTimeSeconds;
       else if (breakCutTimeSeconds != null) cumulativeSeconds = breakCutTimeSeconds + (breakSeconds || 0);
       else if (programSeconds != null) cumulativeSeconds += programSeconds;
 
