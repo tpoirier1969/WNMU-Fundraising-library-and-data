@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.21.69</title>
+  <title>WNMU Pledge Program Library v0.21.70</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.21.69">
+  <link rel="stylesheet" href="assets/styles.css?v=0.21.70">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.21.69"></script>
-  <script defer src="assets/js/program-filters.js?v=0.21.69"></script>
-  <script defer src="assets/js/dom.js?v=0.21.69"></script>
-  <script defer src="assets/js/data.js?v=0.21.69"></script>
-  <script defer src="assets/js/ui-list.js?v=0.21.69"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.21.69"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.21.69"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.21.69"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.21.69"></script>
-  <script defer src="assets/js/auth.js?v=0.21.69"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.21.69"></script>
-  <script defer src="assets/js/program-open.js?v=0.21.69"></script>
-  <script defer src="assets/js/library-load.js?v=0.21.69"></script>
-  <script defer src="assets/js/app.js?v=0.21.69"></script>
-  <script defer src="assets/js/app-init.js?v=0.21.69"></script>
+  <script defer src="assets/js/core.js?v=0.21.70"></script>
+  <script defer src="assets/js/program-filters.js?v=0.21.70"></script>
+  <script defer src="assets/js/dom.js?v=0.21.70"></script>
+  <script defer src="assets/js/data.js?v=0.21.70"></script>
+  <script defer src="assets/js/ui-list.js?v=0.21.70"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.21.70"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.21.70"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.21.70"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.21.70"></script>
+  <script defer src="assets/js/auth.js?v=0.21.70"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.21.70"></script>
+  <script defer src="assets/js/program-open.js?v=0.21.70"></script>
+  <script defer src="assets/js/library-load.js?v=0.21.70"></script>
+  <script defer src="assets/js/app.js?v=0.21.70"></script>
+  <script defer src="assets/js/app-init.js?v=0.21.70"></script>
   </head>
 <body>
 
@@ -56,7 +56,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.21.69</span>
+            <span class="version-pill" id="version-flag">v0.21.70</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -84,19 +84,16 @@
         </div>
         <div id="update-banner-text" class="update-banner-text"></div>
       </div>
-      <div class="toolbar-actions wrap update-banner-actions">
-        <button type="button" class="primary version-reload-button" id="update-refresh-button" data-version-reload="true" onclick="window.PledgeLib?.appInit?.forceFreshReload ? window.PledgeLib.appInit.forceFreshReload() : window.location.reload();">Reload latest version now</button>
-        <button type="button" class="ghost" id="update-dismiss-button">Later</button>
-      </div>
+      <div class="update-refresh-message" id="update-refresh-message">The user must refresh this page to load the new version of the site to keep working.</div>
     </div>
 
     <div id="version-gate" class="version-gate hidden" role="alertdialog" aria-modal="true" aria-labelledby="version-gate-title">
       <div class="version-gate-card">
         <div class="version-gate-kicker">Update required</div>
         <h2 id="version-gate-title">A newer app version is available</h2>
-        <p id="version-gate-message">This page is running an older version. Reload before using the pledge app.</p>
+        <p id="version-gate-message">The user must refresh this page to load the new version of the site to keep working.</p>
         <div id="version-gate-version-pill" class="version-gate-version-pill"></div>
-        <button type="button" class="primary version-reload-button" id="version-gate-refresh-button" data-version-reload="true" onclick="window.PledgeLib?.appInit?.forceFreshReload ? window.PledgeLib.appInit.forceFreshReload() : window.location.reload();">Reload latest version now</button>
+        <p class="version-gate-manual-refresh">Use the browser refresh button, press Ctrl+R, or close and reopen this page.</p>
         <p class="version-gate-note">The app is locked so old code can’t import, edit, or schedule with stale logic.</p>
       </div>
     </div>
@@ -1077,7 +1074,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.21.69</div>
+      <div id="footer-version">v0.21.70</div>
     </footer>
   </div>
 </body>

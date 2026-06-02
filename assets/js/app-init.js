@@ -11,7 +11,6 @@
       gate: document.getElementById('version-gate'),
       message: document.getElementById('version-gate-message'),
       pill: document.getElementById('version-gate-version-pill'),
-      refreshButton: document.getElementById('version-gate-refresh-button'),
       dismissButton: els.updateDismissButton
     };
   }
@@ -34,15 +33,11 @@
     const local = cleanVersion(localVersion || constants.APP_VERSION);
     if (gateEls.message) {
       gateEls.message.textContent = remote
-        ? `This browser is running v${local}, but v${remote} is published. Reload before using the pledge app.`
-        : `This browser is running v${local}. Reload before using the pledge app.`;
+        ? `The user must refresh this page to load the new version of the site to keep working. This page is running v${local}; v${remote} is published.`
+        : `The user must refresh this page to load the new version of the site to keep working.`;
     }
     if (gateEls.pill) {
       gateEls.pill.textContent = remote ? `Current page v${local} · Required v${remote}` : `Current page v${local}`;
-    }
-    if (gateEls.refreshButton && !gateEls.refreshButton.dataset.boundVersionGate) {
-      gateEls.refreshButton.dataset.boundVersionGate = 'true';
-      gateEls.refreshButton.addEventListener('click', forceFreshReload);
     }
   }
 
@@ -143,13 +138,11 @@
       checkedAt: new Date().toISOString()
     };
     if (!remoteVersion || compareVersions(remoteVersion, localVersion) <= 0) {
-      if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Reload latest version now';
       setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
       setVersionGate({ active: false, remoteVersion: '', localVersion });
       return false;
     }
-    if (els.updateRefreshButton) els.updateRefreshButton.textContent = `Reload latest version now`; 
-    setUpdateBanner(`Update required. This page is running v${localVersion}; v${remoteVersion} is published. Reload before using the pledge app.`, { visible: true, remoteVersion, localVersion });
+    setUpdateBanner(`The user must refresh this page to load the new version of the site to keep working. This page is running v${localVersion}; v${remoteVersion} is published.`, { visible: true, remoteVersion, localVersion });
     setVersionGate({ active: true, remoteVersion, localVersion });
     return true;
   }
@@ -182,7 +175,7 @@
     setBuildMeta(state.configVersionMismatch || '');
     const updateRequired = await checkForRemoteUpdate({ silent: true });
     if (updateRequired) {
-      setNotice('Update required. Reload the latest version before using the pledge app.', 'warn');
+      setNotice('Update required. The user must refresh this page to load the new version of the site to keep working.', 'warn');
       startVersionChecks();
       return;
     }
@@ -226,8 +219,6 @@
     App.app?.bindEvents?.();
     App.app?.ensureMobileModeControls?.();
     window.addEventListener('resize', App.app?.ensureMobileModeControls || (() => {}));
-    document.querySelectorAll('[data-version-reload], #update-refresh-button, #version-gate-refresh-button')
-      .forEach((button) => button.addEventListener('click', forceFreshReload));
     if (els.updateDismissButton) els.updateDismissButton.addEventListener('click', () => dismissRemoteVersion(state.remoteVersionInfo?.remoteVersion || ''));
     void init().catch((error) => {
       console.error(error);
