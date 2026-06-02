@@ -312,6 +312,78 @@
   }
 
   const importedBroadcastHydration = new Map();
+  const importedScheduleTotalsHydration = new Map();
+
+  function importedRowsForSchedule(schedule = {}, rows = []) {
+    const startKey = utils.normalizeText(schedule?.startDate);
+    const endKey = utils.normalizeText(schedule?.endDate);
+    if (!(startKey && endKey)) return [];
+    return (Array.isArray(rows) ? rows : []).filter((row) => {
+      const dateKey = importedRowDateKey(row);
+      return dateKey && dateKey >= startKey && dateKey <= endKey;
+    });
+  }
+
+  function importedTotalsSignature(schedule = {}, rows = []) {
+    const latestStamp = (Array.isArray(rows) ? rows : []).reduce((latest, row) => {
+      const stamp = utils.normalizeText(row?.updated_at || row?.created_at || row?.imported_at || '');
+      return stamp > latest ? stamp : latest;
+    }, '');
+    return [
+      utils.normalizeText(schedule?.id),
+      utils.normalizeText(schedule?.startDate),
+      utils.normalizeText(schedule?.endDate),
+      String(Array.isArray(rows) ? rows.length : 0),
+      latestStamp
+    ].join('|');
+  }
+
+  function applyImportedTotalsToSchedule(schedule = {}, totals = {}, signature = '') {
+    if (!schedule) return false;
+    const currentMeta = schedule.meta || {};
+    const nextMeta = {
+      ...currentMeta,
+      importedBroadcastTotalDollars: Number(totals.importedBroadcastTotalDollars || 0) || 0,
+      importedProgramSpecificBroadcastTotalDollars: Number(totals.importedProgramSpecificBroadcastTotalDollars || 0) || 0,
+      importedNonSpecificBroadcastTotalDollars: Number(totals.importedNonSpecificBroadcastTotalDollars || 0) || 0,
+      importedPledgesTotal: Number(totals.importedPledgesTotal || 0) || 0,
+      reportedBroadcastTotalDollars: Number(totals.reportedBroadcastTotalDollars || 0) || Number(currentMeta.reportedBroadcastTotalDollars || 0) || 0,
+      importedTotalsHydratedFromAirings: true,
+      importedTotalsHydratedAt: new Date().toISOString(),
+      importedTotalsHydratedSignature: signature
+    };
+    const changed = JSON.stringify(currentMeta) !== JSON.stringify(nextMeta);
+    schedule.meta = nextMeta;
+    schedule.__importedTotalsSignature = signature;
+    return changed;
+  }
+
+  async function ensureScheduleImportedTotals(schedule = {}) {
+    if (!schedule?.id || !(schedule.startDate && schedule.endDate)) return;
+    const key = utils.normalizeText(schedule.id);
+    if (importedScheduleTotalsHydration.has(key)) return importedScheduleTotalsHydration.get(key);
+    const task = (async () => {
+      try {
+        const rows = await ensureScheduleImportedAiringsLoaded();
+        const signature = importedTotalsSignature(schedule, rows);
+        if (schedule.__importedTotalsSignature === signature || schedule?.meta?.importedTotalsHydratedSignature === signature) return;
+        const relevantRows = importedRowsForSchedule(schedule, rows);
+        const totals = summarizeImportedRows(relevantRows);
+        const changed = applyImportedTotalsToSchedule(schedule, totals, signature);
+        if (changed) {
+          renderScheduleForm();
+          renderHomeDriveSummary();
+          renderScheduledProgramDetails();
+        }
+      } catch (error) {
+        console.warn('Unable to hydrate schedule totals from imported airings.', error);
+      } finally {
+        importedScheduleTotalsHydration.delete(key);
+      }
+    })();
+    importedScheduleTotalsHydration.set(key, task);
+    return task;
+  }
 
   function placementBroadcastTotal(schedule = {}) {
     return (schedule?.placements || []).reduce((sum, placement) => {
@@ -2091,6 +2163,7 @@
     if (els.fundraiserOnlineInput) els.fundraiserOnlineInput.value = Number(state.scheduleDraft.onlineDollars || 0) || 0;
     if (els.fundraiserMailInput) els.fundraiserMailInput.value = Number(state.scheduleDraft.mailDollars || 0) || 0;
     const schedule = getActiveSchedule();
+    if (schedule) void ensureScheduleImportedTotals(schedule);
     const working = schedule || state.scheduleDraft || {};
     const broadcast = scheduleBroadcastTotal(working);
     const imported = scheduleImportedAiringTotal(working);
@@ -3762,7 +3835,16 @@
     state.scheduleImportedSlotMap = new Set();
     state.scheduleImportedAiringsCache = null;
     state.scheduleImportedAiringsPromise = null;
+    importedScheduleTotalsHydration.clear();
+    (state.schedules || []).forEach((schedule) => {
+      if (schedule) {
+        delete schedule.__importedTotalsSignature;
+        if (schedule.meta) delete schedule.meta.importedTotalsHydratedSignature;
+      }
+    });
     await ensureScheduleAiringHistoryLoaded();
+    const active = getActiveSchedule();
+    if (active) await ensureScheduleImportedTotals(active);
   }
 
   function renderAll() {
