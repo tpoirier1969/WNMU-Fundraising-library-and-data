@@ -87,16 +87,50 @@
     }
   }
 
-  function forceFreshReload() {
-    const next = new URL(window.location.href);
+  async function forceFreshReload(event = null) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+
     const remote = cleanVersion(state.remoteVersionInfo?.remoteVersion || '');
-    next.searchParams.set('reload', remote ? `${remote}-${Date.now()}` : String(Date.now()));
+    const stamp = `${remote || 'latest'}-${Date.now()}`;
+    const next = new URL(window.location.href);
+    next.searchParams.set('reload', stamp);
+    next.searchParams.set('_v', stamp);
+
+    document.querySelectorAll('[data-version-reload], #update-refresh-button, #version-gate-refresh-button')
+      .forEach((button) => {
+        if ('disabled' in button) button.disabled = true;
+        button.textContent = 'Reloading…';
+      });
+
     try {
       window.sessionStorage.removeItem('wnmuDismissedRemoteVersion');
     } catch (_error) {
       // ignore sessionStorage failures
     }
-    window.location.replace(next.toString());
+
+    try {
+      if ('caches' in window) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.map((key) => window.caches.delete(key)));
+      }
+    } catch (_error) {
+      // ignore cache API failures
+    }
+
+    try {
+      if (navigator.serviceWorker?.getRegistrations) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.unregister()));
+      }
+    } catch (_error) {
+      // ignore service worker failures
+    }
+
+    window.location.assign(next.toString());
+    window.setTimeout(() => {
+      try { window.location.reload(); } catch (_error) { /* ignore */ }
+    }, 900);
   }
 
   function applyRemoteVersionBanner(payload = {}) {
@@ -109,12 +143,12 @@
       checkedAt: new Date().toISOString()
     };
     if (!remoteVersion || compareVersions(remoteVersion, localVersion) <= 0) {
-      if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Load latest version';
+      if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Reload latest version now';
       setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
       setVersionGate({ active: false, remoteVersion: '', localVersion });
       return false;
     }
-    if (els.updateRefreshButton) els.updateRefreshButton.textContent = `Reload to v${remoteVersion}`;
+    if (els.updateRefreshButton) els.updateRefreshButton.textContent = `Reload latest version now`; 
     setUpdateBanner(`Update required. This page is running v${localVersion}; v${remoteVersion} is published. Reload before using the pledge app.`, { visible: true, remoteVersion, localVersion });
     setVersionGate({ active: true, remoteVersion, localVersion });
     return true;
@@ -192,7 +226,8 @@
     App.app?.bindEvents?.();
     App.app?.ensureMobileModeControls?.();
     window.addEventListener('resize', App.app?.ensureMobileModeControls || (() => {}));
-    if (els.updateRefreshButton) els.updateRefreshButton.addEventListener('click', forceFreshReload);
+    document.querySelectorAll('[data-version-reload], #update-refresh-button, #version-gate-refresh-button')
+      .forEach((button) => button.addEventListener('click', forceFreshReload));
     if (els.updateDismissButton) els.updateDismissButton.addEventListener('click', () => dismissRemoteVersion(state.remoteVersionInfo?.remoteVersion || ''));
     void init().catch((error) => {
       console.error(error);
