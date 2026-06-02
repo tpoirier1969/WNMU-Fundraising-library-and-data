@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.21.57</title>
+  <title>WNMU Pledge Program Library v0.21.58</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.21.57">
+  <link rel="stylesheet" href="assets/styles.css?v=0.21.58">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.21.57"></script>
-  <script defer src="assets/js/program-filters.js?v=0.21.57"></script>
-  <script defer src="assets/js/dom.js?v=0.21.57"></script>
-  <script defer src="assets/js/data.js?v=0.21.57"></script>
-  <script defer src="assets/js/ui-list.js?v=0.21.57"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.21.57"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.21.57"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.21.57"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.21.57"></script>
-  <script defer src="assets/js/auth.js?v=0.21.57"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.21.57"></script>
-  <script defer src="assets/js/program-open.js?v=0.21.57"></script>
-  <script defer src="assets/js/library-load.js?v=0.21.57"></script>
-  <script defer src="assets/js/app.js?v=0.21.57"></script>
-  <script defer src="assets/js/app-init.js?v=0.21.57"></script>
+  <script defer src="assets/js/core.js?v=0.21.58"></script>
+  <script defer src="assets/js/program-filters.js?v=0.21.58"></script>
+  <script defer src="assets/js/dom.js?v=0.21.58"></script>
+  <script defer src="assets/js/data.js?v=0.21.58"></script>
+  <script defer src="assets/js/ui-list.js?v=0.21.58"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.21.58"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.21.58"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.21.58"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.21.58"></script>
+  <script defer src="assets/js/auth.js?v=0.21.58"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.21.58"></script>
+  <script defer src="assets/js/program-open.js?v=0.21.58"></script>
+  <script defer src="assets/js/library-load.js?v=0.21.58"></script>
+  <script defer src="assets/js/app.js?v=0.21.58"></script>
+  <script defer src="assets/js/app-init.js?v=0.21.58"></script>
   </head>
 <body>
 
@@ -56,7 +56,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.21.57</span>
+            <span class="version-pill" id="version-flag">v0.21.58</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -459,31 +459,27 @@
           <div id="import-warning-list" class="import-warning-list"></div>
         </section>
 
-        <section class="performance-card">
+        <section class="performance-card import-compact-card import-file-audit-card">
           <div class="performance-card-head">
             <h3>Batch file audit</h3>
             <span class="mini-chip" id="import-file-pill">No files</span>
           </div>
           <div class="table-wrap import-file-table-wrap">
-            <table class="programs-table import-file-table">
+            <table class="programs-table import-file-table import-file-audit-table">
               <thead>
                 <tr>
                   <th>File</th>
-                  <th>Delimiter</th>
-                  <th>Detected format</th>
-                  <th>Parsed rows</th>
+                  <th>Details</th>
+                  <th>Format</th>
+                  <th>Rows</th>
                   <th>Airings</th>
-                  <th>Raw program $</th>
-                  <th>Raw non-specific $</th>
-                  <th>Raw file total $</th>
-                  <th>Difference</th>
                   <th>Fundraiser dates</th>
                   <th>Issues</th>
-                  <th>Details</th>
+                  <th>Report total</th>
                 </tr>
               </thead>
               <tbody id="import-file-body">
-                <tr><td colspan="12" class="placeholder-row">No reports analyzed yet.</td></tr>
+                <tr><td colspan="8" class="placeholder-row">No reports analyzed yet.</td></tr>
               </tbody>
             </table>
           </div>
@@ -493,12 +489,12 @@
 
         </section>
 
-        <section class="performance-card">
-          <div class="performance-card-head">
+        <details class="performance-card import-compact-card import-accounting-section import-advanced-summary">
+          <summary class="performance-card-head import-details-summary">
             <h3>Money accounting ledger</h3>
             <span class="mini-chip" id="import-accounting-pill">No rows</span>
-          </div>
-          <div class="muted import-review-note">Temporary diagnostic view. This shows where the importer says each dollar-bearing row went: raw total, non-specific, matched, unmatched, or skipped.</div>
+          </summary>
+          <div class="muted import-review-note">Diagnostic view. This shows where the importer says each dollar-bearing row went: raw total, non-specific, matched, unmatched, or skipped.</div>
           <div class="table-wrap import-file-table-wrap">
             <table class="programs-table import-file-table">
               <thead>
@@ -541,40 +537,41 @@
               </tbody>
             </table>
           </div>
-        </section>
+        </details>
 
         <section class="import-preview-grid">
           <article class="performance-card">
             <div class="performance-card-head">
-              <h3>Normalized airings preview</h3>
+              <h3>Parsed airings preview</h3>
               <span class="mini-chip" id="import-airings-pill">0 rows</span>
             </div>
             <div class="table-wrap import-preview-wrap">
               <table class="programs-table import-preview-table">
                 <thead>
                   <tr>
-                    <th>Title</th>
+                    <th>Imported report title</th>
                     <th>NOLA</th>
                     <th>Aired at</th>
                     <th>Dollars</th>
                     <th>Pledges</th>
                     <th>Program minutes</th>
                     <th>Match status</th>
-                    <th>Matched library title</th>
+                    <th>Library match</th>
                   </tr>
                 </thead>
                 <tbody id="import-airings-body">
-                  <tr><td colspan="8" class="placeholder-row">No normalized airings rows yet.</td></tr>
+                  <tr><td colspan="8" class="placeholder-row">No parsed airings rows yet.</td></tr>
                 </tbody>
               </table>
             </div>
           </article>
 
-          <article class="performance-card">
-            <div class="performance-card-head">
-              <h3>Derived fundraiser rollups preview</h3>
+          <details class="performance-card import-compact-card import-advanced-summary">
+            <summary class="performance-card-head import-details-summary">
+              <h3>Advanced summary</h3>
               <span class="mini-chip" id="import-drive-pill">0 derived rows</span>
-            </div>
+            </summary>
+            <div class="muted import-review-note">Derived fundraiser rollups are grouped totals used internally for performance history and Slot Fit comparisons.</div>
             <div class="table-wrap import-preview-wrap">
               <table class="programs-table import-preview-table">
                 <thead>
@@ -582,26 +579,24 @@
                     <th>Title</th>
                     <th>NOLA</th>
                     <th>Fundraiser</th>
-                    <th>Drive start</th>
-                    <th>Drive end</th>
                     <th>Total dollars</th>
                     <th>Total pledges</th>
                     <th>Airings</th>
                   </tr>
                 </thead>
                 <tbody id="import-drive-body">
-                  <tr><td colspan="8" class="placeholder-row">No derived fundraiser rollups yet.</td></tr>
+                  <tr><td colspan="6" class="placeholder-row">No derived fundraiser rollups yet.</td></tr>
                 </tbody>
               </table>
             </div>
-          </article>
+          </details>
         </section>
 
-        <section class="performance-card">
+        <section class="performance-card import-compact-card import-unmatched-card">
           <div class="performance-card-head import-unmatched-head">
             <div>
-              <h3>Unmatched rows needing attention</h3>
-              <p class="muted">Review unmatched report rows, map them to the correct pledge title, then import or reimport without worrying about duplicates.</p>
+              <h3>Rows needing match approval</h3>
+              <p class="muted">Review suggested and unmatched report rows, approve the correct pledge title, then import or reimport.</p>
             </div>
             <div class="import-unmatched-head-actions">
               <button type="button" class="ghost" id="import-apply-all-button">Apply all staged matches</button>
@@ -609,19 +604,9 @@
             </div>
           </div>
           <div class="table-wrap import-preview-wrap import-unmatched-wrap">
-            <table class="programs-table import-preview-table import-unmatched-table">
+            <table class="programs-table import-preview-table import-unmatched-table import-match-review-table">
               <thead>
-                <tr>
-                  <th>Imported title</th>
-                  <th>NOLA</th>
-                  <th>Air date</th>
-                  <th>Air time</th>
-                  <th>Dollars</th>
-                  <th>Why unmatched</th>
-                  <th>Match to library title</th>
-                  <th>Always equals this</th>
-                  <th>Apply</th>
-                </tr>
+                <tr><th>Rows needing match approval</th></tr>
               </thead>
               <tbody id="import-unmatched-body">
                 <tr><td colspan="9" class="placeholder-row">No unmatched rows right now.</td></tr>
@@ -1106,7 +1091,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.21.57</div>
+      <div id="footer-version">v0.21.58</div>
     </footer>
   </div>
 </body>

@@ -4694,3 +4694,166 @@ body.schedule-inline-scrollbar-dragging * {
   .home-drive-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-drive-summary-value { font-size: .9rem; }
 }
+
+/* v0.21.58 import review layout cleanup */
+.import-shell {
+  gap: 0.72rem;
+}
+.import-compact-card .performance-card-head,
+.import-shell > .performance-card .performance-card-head,
+.import-shell > .import-toolbar-card .performance-card-head {
+  margin-bottom: 0.42rem;
+}
+.import-shell h3 {
+  margin-top: 0;
+  margin-bottom: 0.18rem;
+}
+.import-shell .muted,
+.import-review-note {
+  margin-top: 0.16rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.3;
+}
+.import-details-summary {
+  cursor: pointer;
+  list-style: none;
+}
+.import-details-summary::-webkit-details-marker {
+  display: none;
+}
+.import-details-summary::before {
+  content: '▸';
+  font-weight: 800;
+  color: var(--pbs-blue-dark);
+}
+details[open] > .import-details-summary::before {
+  content: '▾';
+}
+.import-accounting-section {
+  order: 999;
+}
+.import-preview-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 0.72rem;
+}
+.import-preview-wrap,
+.import-file-table-wrap {
+  max-height: 360px;
+}
+.import-preview-table th,
+.import-preview-table td,
+.import-file-table th,
+.import-file-table td,
+.import-unmatched-table th,
+.import-unmatched-table td {
+  padding: 0.28rem 0.42rem;
+  font-size: 0.84rem;
+}
+.import-file-table,
+.import-file-audit-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+.import-file-audit-table th:nth-child(1),
+.import-file-audit-table td:nth-child(1) { width: 20%; }
+.import-file-audit-table th:nth-child(2),
+.import-file-audit-table td:nth-child(2) { width: 19%; }
+.import-file-audit-table th:nth-child(3),
+.import-file-audit-table td:nth-child(3) { width: 12%; }
+.import-file-audit-table th:nth-child(4),
+.import-file-audit-table td:nth-child(4),
+.import-file-audit-table th:nth-child(5),
+.import-file-audit-table td:nth-child(5) { width: 7%; white-space: nowrap; }
+.import-file-audit-table th:nth-child(6),
+.import-file-audit-table td:nth-child(6) { width: 15%; }
+.import-file-audit-table th:nth-child(7),
+.import-file-audit-table td:nth-child(7) { width: 16%; }
+.import-file-audit-table th:nth-child(8),
+.import-file-audit-table td:nth-child(8) { width: 12%; }
+.import-file-money-row td {
+  background: #f7fbff;
+  border-top: 0;
+  padding-top: 0.18rem !important;
+}
+.import-file-money-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1.2rem;
+  font-size: 0.83rem;
+}
+.import-file-main-row td {
+  border-bottom-color: #eef4fb;
+}
+.import-match-review-table thead {
+  display: none;
+}
+.import-match-review-table,
+.import-unmatched-table.import-match-review-table {
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+.import-match-review-row td {
+  padding: 0.4rem 0.48rem !important;
+}
+.import-match-card {
+  border: 1px solid #d9e6f2;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.58rem 0.7rem;
+  display: grid;
+  gap: 0.38rem;
+}
+.import-match-card-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.55rem;
+}
+.import-match-card-main strong {
+  color: var(--pbs-blue-dark);
+  font-size: 0.95rem;
+}
+.import-match-card-reason {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.import-match-card-controls {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.import-match-card-controls select.import-manual-match-select,
+.import-unmatched-wrap select.import-manual-match-select {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+.import-match-card-controls .import-rule-check {
+  justify-content: center;
+}
+.import-match-card-controls .import-match-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.import-accounting-table th:nth-child(5),
+.import-accounting-table td:nth-child(5) {
+  width: 16.2%;
+}
+.import-accounting-table th:nth-child(9),
+.import-accounting-table td:nth-child(9) {
+  min-width: 9rem;
+}
+@media (max-width: 1100px) {
+  .import-preview-grid {
+    grid-template-columns: 1fr;
+  }
+  .import-match-card-controls {
+    grid-template-columns: 1fr;
+  }
+  .import-match-card-controls .import-rule-check,
+  .import-match-card-controls .import-match-actions {
+    justify-content: flex-start;
+  }
+}

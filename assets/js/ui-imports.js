@@ -1664,7 +1664,7 @@
     if (!els.importFileBody || !els.importFilePill) return;
     els.importFilePill.textContent = imp().fileSummaries.length ? `${utils.formatCount(imp().fileSummaries.length)} files` : 'No files';
     if (!imp().fileSummaries.length) {
-      els.importFileBody.innerHTML = '<tr><td colspan="12" class="placeholder-row">No reports analyzed yet.</td></tr>';
+      els.importFileBody.innerHTML = '<tr><td colspan="8" class="placeholder-row">No reports analyzed yet.</td></tr>';
       return;
     }
     els.importFileBody.innerHTML = imp().fileSummaries.map((item) => {
@@ -1674,22 +1674,33 @@
       const dateRange = item.detectedStartDate && item.detectedEndDate
         ? `${utils.formatDate(item.detectedStartDate)} – ${utils.formatDate(item.detectedEndDate)}${Number(item.fundraiserClusterCount || 0) > 1 ? ` (${utils.formatCount(item.fundraiserClusterCount)} clusters)` : ''}`
         : '—';
+      const details = [
+        item.sheetName ? `Tab: ${item.sheetName}` : '',
+        item.delimiter ? `Delimiter: ${item.delimiter}` : '',
+        item.detectedFormat ? `Detected: ${item.detectedFormat}` : ''
+      ].filter(Boolean).join(' · ') || '—';
+      const warnings = (item.warnings || []).join(' | ') || '—';
       return `
-      <tr>
+      <tr class="import-file-main-row">
         <td>${escape(item.fileName)}</td>
-        <td>${escape(item.delimiter || '—')}</td>
+        <td>${escape(details)}</td>
         <td>${escape(item.detectedFormat || '—')}</td>
         <td>${escape(item.parsedRows)}</td>
         <td>${escape(item.normalizedRows)}</td>
-        <td>${escape(utils.formatMoney(item.rawProgramSpecificTotalDollars || 0))}</td>
-        <td>${escape(utils.formatMoney(item.rawNonSpecificTotalDollars || 0))}</td>
-        <td>${escape(utils.formatMoney(item.rawFileTotalDollars || 0))}</td>
-        <td><div class="import-report-total-cell"><div class="mini-label">Enter full report total</div><input type="text" class="import-report-total-input" data-file-key="${escape(item.fileKey || '')}" value="${escape(reportValue)}" placeholder="Full total" title="Enter the full report total from the original report. The app calculates Non-specific dollars automatically."></div></td>
-        <td class="${diffWarn ? 'import-diff-warn' : ''}">${item.reportDifferenceDollars == null ? '—' : escape(utils.formatMoney(item.reportDifferenceDollars))}</td>
         <td>${escape(dateRange)}</td>
-        <td>${escape((item.warnings || []).join(' | ') || '—')}</td>
+        <td>${escape(warnings)}</td>
+        <td><div class="import-report-total-cell"><div class="mini-label">Full report total</div><input type="text" class="import-report-total-input" data-file-key="${escape(item.fileKey || '')}" value="${escape(reportValue)}" placeholder="Full total" title="Enter the full report total from the original report. The app calculates Non-specific dollars automatically."></div></td>
       </tr>
-    `;
+      <tr class="import-file-money-row">
+        <td colspan="8">
+          <div class="import-file-money-grid">
+            <span><strong>Program $</strong> ${escape(utils.formatMoney(item.rawProgramSpecificTotalDollars || 0))}</span>
+            <span><strong>Non-specific $</strong> ${escape(utils.formatMoney(item.rawNonSpecificTotalDollars || 0))}</span>
+            <span><strong>File total $</strong> ${escape(utils.formatMoney(item.rawFileTotalDollars || 0))}</span>
+            <span class="${diffWarn ? 'import-diff-warn' : ''}"><strong>Difference</strong> ${item.reportDifferenceDollars == null ? '—' : escape(utils.formatMoney(item.reportDifferenceDollars))}</span>
+          </div>
+        </td>
+      </tr>`;
     }).join('');
   }
 
@@ -1948,6 +1959,14 @@
         ${columns.map((column) => `<td>${escape(column.format ? column.format(row[column.key], row) : row[column.key])}</td>`).join('')}
       </tr>
     `).join('');
+  }
+
+
+  function formatImportedAiredAt(row = {}) {
+    const dateText = row.air_date ? utils.formatDate(row.air_date, '') : '';
+    const timeText = row.air_time ? utils.formatTime(row.air_time, '') : '';
+    if (dateText || timeText) return [dateText, timeText].filter(Boolean).join(' · ');
+    return utils.formatDateTime(row.aired_at, '—');
   }
 
   function unmatchedTitleGroupKey(row) {
@@ -2230,7 +2249,7 @@
     if (!bodyEl) return;
     const rows = getUnmatchedRows();
     if (!rows.length) {
-      bodyEl.innerHTML = '<tr><td colspan="9" class="placeholder-row">No unmatched rows right now.</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="9" class="placeholder-row">No rows need match approval right now.</td></tr>';
       return;
     }
     bodyEl.innerHTML = rows.slice(0, 80).map((row) => {
@@ -2239,33 +2258,39 @@
       const optionHtml = ['<option value="">Select a pledge title…</option>']
         .concat(options.map((entry) => `<option value="${escape(entry.value)}" ${selectedProgramId === String(entry.value) ? 'selected' : ''}>${escape(entry.label)}</option>`))
         .join('');
+      const importedTitle = row.imported_program_title || row.title || 'Imported row';
+      const reason = getMatchReason(row);
+      const suggestedTitle = row.pending_manual_match_program_id || row.manual_match_program_id
+        ? (options.find((entry) => String(entry.value) === selectedProgramId)?.label || '')
+        : '';
       return `
-      <tr>
-        <td>${escape(row.imported_program_title || row.title || '—')}</td>
-        <td>${escape(row.nola_code || '—')}</td>
-        <td>${escape(row.air_date || '—')}</td>
-        <td>${escape(row.air_time || '—')}</td>
-        <td>${row.dollars == null ? '—' : escape(utils.formatMoney(row.dollars))}</td>
-        <td>${escape(getMatchReason(row))}</td>
-        <td>
-          <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
-        </td>
-        <td>
-          <label class="import-rule-check">
-            <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule ? 'checked' : ''}>
-            <span>Always</span>
-          </label>
-        </td>
-        <td>
-          <div class="import-match-actions">
-            <button type="button" class="ghost import-apply-match-button" data-row-hash="${escape(row.row_hash)}">Apply</button>
-            <button type="button" class="ghost import-create-link-button" data-row-hash="${escape(row.row_hash)}">Create + link</button>
+      <tr class="import-match-review-row">
+        <td colspan="9">
+          <div class="import-match-card">
+            <div class="import-match-card-main">
+              <strong>${escape(importedTitle)}</strong>
+              <span class="mini-chip">${escape(row.nola_code || 'No NOLA')}</span>
+              <span class="mini-chip">${escape(formatImportedAiredAt(row))}</span>
+              <span class="mini-chip">${row.dollars == null ? 'No dollars' : escape(utils.formatMoney(row.dollars))}</span>
+            </div>
+            <div class="import-match-card-reason">${escape(reason)}${suggestedTitle ? ` · Suggested: ${escape(suggestedTitle)}` : ''}</div>
+            <div class="import-match-card-controls">
+              <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
+              <label class="import-rule-check">
+                <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule ? 'checked' : ''}>
+                <span>Always equals this</span>
+              </label>
+              <div class="import-match-actions">
+                <button type="button" class="ghost import-apply-match-button" data-row-hash="${escape(row.row_hash)}">Apply</button>
+                <button type="button" class="ghost import-create-link-button" data-row-hash="${escape(row.row_hash)}">Create + link</button>
+              </div>
+            </div>
           </div>
         </td>
-      </tr>
-    `;
+      </tr>`;
     }).join('');
   }
+
 
   function filteredExistingUnlinkedRows() {
     const rows = imp().existingUnlinkedRows || [];
@@ -2361,9 +2386,9 @@
     if (els.importDrivePill) els.importDrivePill.textContent = `${utils.formatCount(imp().driveRows.length)} derived rows`;
 
     renderPreviewRows(imp().airingsRows, els.importAiringsBody, [
-      { key: 'title' },
+      { key: 'imported_program_title', format: (_value, row) => row.imported_program_title || row.title || '—' },
       { key: 'nola_code' },
-      { key: 'aired_at', format: (value) => utils.formatDateTime(value, '—') },
+      { key: 'aired_at', format: (_value, row) => formatImportedAiredAt(row) },
       { key: 'dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
       { key: 'pledge_count' },
       { key: 'program_minutes' },
@@ -2371,19 +2396,18 @@
         if (value === 'manual_library') return 'manual match';
         if (value === 'saved_title_rule') return 'saved rule';
         if (value === 'title_exact') return 'exact title';
+        if (value === 'title_fuzzy') return 'fuzzy title';
         if (value === 'non_specific') return 'non-specific';
         if (value === 'unmatched_nola') return 'needs review';
-        return value;
+        return value || row.match_reason || '—';
       } },
-      { key: 'matched_library_title' }
-    ], 'No normalized airings rows yet.');
+      { key: 'matched_library_title', format: (value) => value || '—' }
+    ], 'No parsed airings rows yet.');
 
     renderPreviewRows(imp().driveRows, els.importDriveBody, [
       { key: 'title' },
       { key: 'nola_code' },
       { key: 'fundraiser_label' },
-      { key: 'drive_start_date' },
-      { key: 'drive_end_date' },
       { key: 'total_dollars', format: (value) => value == null ? '—' : utils.formatMoney(value) },
       { key: 'total_pledges' },
       { key: 'airing_count' }
