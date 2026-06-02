@@ -4975,3 +4975,84 @@ details[open] > .import-details-summary::before {
     grid-template-columns: repeat(2, minmax(8rem, 1fr));
   }
 }
+
+/* v0.21.61 required-version lockout */
+.version-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(8, 18, 31, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.version-gate.hidden {
+  display: none !important;
+}
+
+.version-gate-card {
+  width: min(560px, 100%);
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: #ffffff;
+  color: #101820;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+  padding: 1.55rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.version-gate-kicker {
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #b31b1b;
+}
+
+.version-gate-card h2 {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  line-height: 1.08;
+  color: #102f55;
+}
+
+.version-gate-card p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.version-gate-version-pill {
+  justify-self: start;
+  padding: 0.42rem 0.72rem;
+  border-radius: 999px;
+  background: rgba(179, 27, 27, 0.08);
+  border: 1px solid rgba(179, 27, 27, 0.22);
+  color: #7b1212;
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
+.version-gate-card .primary {
+  justify-self: start;
+  font-size: 1rem;
+  padding: 0.72rem 1rem;
+}
+
+.version-gate-note {
+  font-size: 0.9rem;
+  color: #55616f;
+}
+
+body.version-gate-active {
+  overflow: hidden;
+}
+
+body.version-gate-active .app-shell,
+body.version-gate-active .auth-shell,
+body.version-gate-active .detail-modal,
+body.version-gate-active .schedule-modal-card {
+  pointer-events: none;
+}

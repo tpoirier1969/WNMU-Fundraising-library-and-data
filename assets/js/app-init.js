@@ -6,6 +6,46 @@
   const { els, setNotice, setBuildMeta, setUpdateBanner } = App.dom;
   let versionCheckTimer = 0;
 
+  function versionGateEls() {
+    return {
+      gate: document.getElementById('version-gate'),
+      message: document.getElementById('version-gate-message'),
+      pill: document.getElementById('version-gate-version-pill'),
+      refreshButton: document.getElementById('version-gate-refresh-button'),
+      dismissButton: els.updateDismissButton
+    };
+  }
+
+  function setVersionGate({ active = false, remoteVersion = '', localVersion = '' } = {}) {
+    const gateEls = versionGateEls();
+    state.versionGateActive = Boolean(active);
+    state.remoteVersionInfo = {
+      ...(state.remoteVersionInfo || {}),
+      localVersion: cleanVersion(localVersion || constants.APP_VERSION),
+      remoteVersion: cleanVersion(remoteVersion || state.remoteVersionInfo?.remoteVersion || ''),
+      blocked: Boolean(active)
+    };
+
+    document.body.classList.toggle('version-gate-active', Boolean(active));
+    if (gateEls.gate) gateEls.gate.classList.toggle('hidden', !active);
+    if (gateEls.dismissButton) gateEls.dismissButton.classList.toggle('hidden', Boolean(active));
+
+    const remote = cleanVersion(remoteVersion || state.remoteVersionInfo?.remoteVersion || '');
+    const local = cleanVersion(localVersion || constants.APP_VERSION);
+    if (gateEls.message) {
+      gateEls.message.textContent = remote
+        ? `This browser is running v${local}, but v${remote} is published. Reload before using the pledge app.`
+        : `This browser is running v${local}. Reload before using the pledge app.`;
+    }
+    if (gateEls.pill) {
+      gateEls.pill.textContent = remote ? `Current page v${local} · Required v${remote}` : `Current page v${local}`;
+    }
+    if (gateEls.refreshButton && !gateEls.refreshButton.dataset.boundVersionGate) {
+      gateEls.refreshButton.dataset.boundVersionGate = 'true';
+      gateEls.refreshButton.addEventListener('click', forceFreshReload);
+    }
+  }
+
   function cleanVersion(value = '') {
     return String(value || '').trim().replace(/^v/i, '');
   }
@@ -24,6 +64,7 @@
   }
 
   function dismissRemoteVersion(version = '') {
+    if (state.versionGateActive) return;
     const cleaned = cleanVersion(version);
     state.remoteVersionInfo = {
       ...(state.remoteVersionInfo || {}),
@@ -70,15 +111,13 @@
     if (!remoteVersion || compareVersions(remoteVersion, localVersion) <= 0) {
       if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Load latest version';
       setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
-      return;
+      setVersionGate({ active: false, remoteVersion: '', localVersion });
+      return false;
     }
-    if (getDismissedRemoteVersion() === remoteVersion) {
-      if (els.updateRefreshButton) els.updateRefreshButton.textContent = 'Load latest version';
-      setUpdateBanner('', { visible: false, remoteVersion: '', localVersion: '' });
-      return;
-    }
-    if (els.updateRefreshButton) els.updateRefreshButton.textContent = `Load v${remoteVersion} now`;
-    setUpdateBanner(`A newer build is ready. This page is still running v${localVersion}. Reload to switch to v${remoteVersion}.`, { visible: true, remoteVersion, localVersion });
+    if (els.updateRefreshButton) els.updateRefreshButton.textContent = `Reload to v${remoteVersion}`;
+    setUpdateBanner(`Update required. This page is running v${localVersion}; v${remoteVersion} is published. Reload before using the pledge app.`, { visible: true, remoteVersion, localVersion });
+    setVersionGate({ active: true, remoteVersion, localVersion });
+    return true;
   }
 
   async function checkForRemoteUpdate({ silent = true } = {}) {
@@ -87,9 +126,10 @@
       const response = await window.fetch(manifestPath, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Version check failed (${response.status})`);
       const payload = await response.json();
-      applyRemoteVersionBanner(payload || {});
+      return applyRemoteVersionBanner(payload || {});
     } catch (error) {
       if (!silent) console.warn('Could not check for updates.', error);
+      return false;
     }
   }
 
@@ -106,6 +146,12 @@
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
     App.schedulingUi?.renderAll();
     setBuildMeta(state.configVersionMismatch || '');
+    const updateRequired = await checkForRemoteUpdate({ silent: true });
+    if (updateRequired) {
+      setNotice('Update required. Reload the latest version before using the pledge app.', 'warn');
+      startVersionChecks();
+      return;
+    }
     if (!App.data.validateConfig()) {
       setNotice('Fill in config.js with your Supabase URL and anon key. Until then this page is decorative.', 'warn');
       if (state.configVersionMismatch) setBuildMeta(state.configVersionMismatch);
