@@ -2297,15 +2297,23 @@
       const programSeconds = Number.isFinite(entry.programSeconds) ? entry.programSeconds : null;
       const breakSeconds = Number.isFinite(entry.breakSeconds) ? entry.breakSeconds : null;
       const localCutInSeconds = Number.isFinite(entry.localCutInSeconds) ? entry.localCutInSeconds : null;
-      let cutTimeSeconds = null;
-      if (localCutInSeconds != null && breakSeconds != null) {
-        cutTimeSeconds = Math.max(0, localCutInSeconds - breakSeconds);
-      } else if (programSeconds != null) {
-        cutTimeSeconds = cumulativeSeconds + programSeconds;
-      }
-      if (localCutInSeconds != null) cumulativeSeconds = Math.max(cumulativeSeconds, localCutInSeconds);
-      else if (cutTimeSeconds != null) cumulativeSeconds = cutTimeSeconds + (breakSeconds || 0);
-      return { ...entry, cutTimeSeconds };
+      const programStartSeconds = cumulativeSeconds;
+      const breakCutTimeSeconds = programSeconds != null ? cumulativeSeconds + programSeconds : null;
+      const localCutInCutTimeSeconds = breakCutTimeSeconds != null && breakSeconds != null
+        ? breakCutTimeSeconds + breakSeconds
+        : null;
+
+      if (localCutInCutTimeSeconds != null) cumulativeSeconds = localCutInCutTimeSeconds + (localCutInSeconds || 0);
+      else if (breakCutTimeSeconds != null) cumulativeSeconds = breakCutTimeSeconds + (breakSeconds || 0);
+      else if (programSeconds != null) cumulativeSeconds += programSeconds;
+
+      return {
+        ...entry,
+        programStartSeconds,
+        breakCutTimeSeconds,
+        localCutInCutTimeSeconds,
+        cutTimeSeconds: breakCutTimeSeconds
+      };
     });
   }
 
@@ -2580,7 +2588,7 @@
 
   function timingSummaryHtml(cacheEntry) {
     const timings = cacheEntry?.timings || [];
-    const rows = normalizeScheduledTimingRows(timings);
+    const rows = timingRowsWithCutTimes(timings);
     if (!rows.length) return '<div class="scheduled-program-note">TBD</div>';
     return `
       <div class="segment-table-wrap scheduled-break-detail-table-wrap">
@@ -2599,8 +2607,8 @@
               <tr>
                 <td>${utils.escapeHtml(entry.label)}</td>
                 <td>${utils.escapeHtml(Number.isFinite(entry.programSeconds) ? utils.formatSeconds(entry.programSeconds) : '—')}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.breakSeconds) ? utils.formatSeconds(entry.breakSeconds) : 'TBD')}</td>
-                <td>${utils.escapeHtml(Number.isFinite(entry.localCutInSeconds) ? utils.formatSeconds(entry.localCutInSeconds) : 'TBD')}</td>
+                <td>${Number.isFinite(entry.breakSeconds) ? `${utils.escapeHtml(utils.formatSeconds(entry.breakSeconds))}${Number.isFinite(entry.breakCutTimeSeconds) ? ` <span class="export-cut-time">(${utils.escapeHtml(utils.formatSeconds(entry.breakCutTimeSeconds))})</span>` : ''}` : 'TBD'}</td>
+                <td>${Number.isFinite(entry.localCutInSeconds) ? `${utils.escapeHtml(utils.formatSeconds(entry.localCutInSeconds))}${Number.isFinite(entry.localCutInCutTimeSeconds) ? ` <span class="export-cut-time">(${utils.escapeHtml(utils.formatSeconds(entry.localCutInCutTimeSeconds))})</span>` : ''}` : 'TBD'}</td>
                 <td>${utils.escapeHtml(entry.note || '—')}</td>
               </tr>
             `).join('')}
@@ -3341,8 +3349,8 @@
           <tr>
             <th>Act</th>
             <th>Program</th>
-            <th>Break</th>
-            <th>Local Cut In</th>
+            <th>Break <span class="export-muted">(cut time)</span></th>
+            <th>Local Cut In <span class="export-muted">(cut time)</span></th>
             <th>Notes</th>
           </tr>
         </thead>
@@ -3351,8 +3359,8 @@
             <tr>
               <td>${utils.escapeHtml(entry.label || 'Act')}</td>
               <td>${Number.isFinite(entry.programSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.programSeconds)) : '—'}</td>
-              <td>${Number.isFinite(entry.breakSeconds) ? `${utils.escapeHtml(utils.formatSeconds(entry.breakSeconds))}${Number.isFinite(entry.cutTimeSeconds) ? ` <span class="export-cut-time">(${utils.escapeHtml(utils.formatSeconds(entry.cutTimeSeconds))})</span>` : ''}` : '<span class="export-warning-inline">TBD</span>'}</td>
-              <td>${Number.isFinite(entry.localCutInSeconds) ? utils.escapeHtml(utils.formatSeconds(entry.localCutInSeconds)) : '—'}</td>
+              <td>${Number.isFinite(entry.breakSeconds) ? `${utils.escapeHtml(utils.formatSeconds(entry.breakSeconds))}${Number.isFinite(entry.breakCutTimeSeconds) ? ` <span class="export-cut-time">(${utils.escapeHtml(utils.formatSeconds(entry.breakCutTimeSeconds))})</span>` : ''}` : '<span class="export-warning-inline">TBD</span>'}</td>
+              <td>${Number.isFinite(entry.localCutInSeconds) ? `${utils.escapeHtml(utils.formatSeconds(entry.localCutInSeconds))}${Number.isFinite(entry.localCutInCutTimeSeconds) ? ` <span class="export-cut-time">(${utils.escapeHtml(utils.formatSeconds(entry.localCutInCutTimeSeconds))})</span>` : ''}` : '—'}</td>
               <td>${entry.note ? utils.escapeHtml(entry.note) : '—'}</td>
             </tr>
           `).join('')}

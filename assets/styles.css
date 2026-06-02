@@ -5143,7 +5143,7 @@ body.version-gate-active .schedule-modal-card {
   display: none;
 }
 
-/* v0.21.67 Program Library list density and column balance */
+/* v0.21.68 Program Library list density and column balance */
 .workspace-pane[data-workspace-pane="library"] .programs-table thead th {
   font-size: .72rem;
   padding-top: 7px;
