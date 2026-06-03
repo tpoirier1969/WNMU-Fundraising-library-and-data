@@ -1181,6 +1181,7 @@
       slotNotes: row.schedule_data?.slotNotes || {},
       onlineDollars: Number(row.schedule_data?.onlineDollars || 0) || 0,
       mailDollars: Number(row.schedule_data?.mailDollars || 0) || 0,
+      goalDollars: Number(row.schedule_data?.goalDollars || row.schedule_data?.goal || 0) || 0,
       meta: row.schedule_data?.meta || {}
     }));
   }
@@ -1200,6 +1201,7 @@
         dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60),
         onlineDollars: Number(schedule.onlineDollars || 0) || 0,
         mailDollars: Number(schedule.mailDollars || 0) || 0,
+        goalDollars: Number(schedule.goalDollars || 0) || 0,
         meta: schedule.meta || {}
       },
       updated_at: new Date().toISOString()

@@ -4665,7 +4665,7 @@ body.schedule-inline-scrollbar-dragging * {
 }
 .home-drive-summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 8px;
 }
 .home-drive-summary-card {
@@ -5202,4 +5202,35 @@ body.version-gate-active .schedule-modal-card {
 .workspace-pane[data-workspace-pane="library"] .programs-table .col-total,
 .workspace-pane[data-workspace-pane="library"] .programs-table .total-cell {
   text-align: left;
+}
+
+
+/* v0.21.72 pledge goal and difference totals */
+.goal-difference-value.goal-difference-positive,
+.goal-difference-positive {
+  color: #137333 !important;
+}
+.goal-difference-value.goal-difference-negative,
+.goal-difference-negative {
+  color: #b42318 !important;
+}
+.goal-difference-value.goal-difference-neutral,
+.goal-difference-neutral {
+  color: var(--heading) !important;
+}
+input.goal-difference-positive {
+  color: #137333 !important;
+  border-color: rgba(19,115,51,.35) !important;
+}
+input.goal-difference-negative {
+  color: #b42318 !important;
+  border-color: rgba(180,35,24,.35) !important;
+}
+.home-drive-summary-card.goal-difference-positive {
+  border-color: rgba(19,115,51,.24);
+  background: #f2fbf5;
+}
+.home-drive-summary-card.goal-difference-negative {
+  border-color: rgba(180,35,24,.24);
+  background: #fff5f4;
 }

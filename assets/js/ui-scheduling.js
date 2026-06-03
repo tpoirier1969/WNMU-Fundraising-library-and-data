@@ -289,7 +289,7 @@
     renderAll();
   }
 
-  function createScheduleRecord({ title, startDate, endDate, dayStartHour, dayEndHour, dayStartMinutes, dayEndMinutes, onlineDollars = 0, mailDollars = 0, meta = {} }) {
+  function createScheduleRecord({ title, startDate, endDate, dayStartHour, dayEndHour, dayStartMinutes, dayEndMinutes, onlineDollars = 0, mailDollars = 0, goalDollars = 0, meta = {} }) {
     const resolvedStartMinutes = Number.isFinite(Number(dayStartMinutes)) ? Number(dayStartMinutes) : (Number(dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60);
     let resolvedEndMinutes = Number.isFinite(Number(dayEndMinutes)) ? Number(dayEndMinutes) : (Number(dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60);
     if (resolvedEndMinutes <= resolvedStartMinutes) resolvedEndMinutes += 1440;
@@ -307,6 +307,7 @@
       slotNotes: {},
       onlineDollars: Number(onlineDollars || 0) || 0,
       mailDollars: Number(mailDollars || 0) || 0,
+      goalDollars: Number(goalDollars || 0) || 0,
       meta: meta || {}
     };
   }
@@ -535,6 +536,27 @@
     return scheduleBroadcastTotal(schedule) + (Number(schedule?.onlineDollars || 0) || 0) + (Number(schedule?.mailDollars || 0) || 0);
   }
 
+  function scheduleGoalTotal(schedule = {}) {
+    return Number(schedule?.goalDollars || schedule?.goal || 0) || 0;
+  }
+
+  function scheduleGoalDifference(schedule = {}) {
+    return scheduleGoalTotal(schedule) - scheduleGrandTotal(schedule);
+  }
+
+  function goalDifferenceTone(value = 0) {
+    const numeric = Number(value || 0) || 0;
+    if (numeric < 0) return 'negative';
+    if (numeric > 0) return 'positive';
+    return 'neutral';
+  }
+
+  function applyGoalDifferenceClass(node, value = 0) {
+    if (!node) return;
+    node.classList.remove('goal-difference-positive', 'goal-difference-negative', 'goal-difference-neutral');
+    node.classList.add(`goal-difference-${goalDifferenceTone(value)}`);
+  }
+
   function localTodayKey() {
     const now = new Date();
     return utils.dateKeyFromDate ? utils.dateKeyFromDate(now) : now.toISOString().slice(0, 10);
@@ -587,13 +609,16 @@
     const windowInfo = scheduleDriveSummaryWindow(schedule);
     const driveTitle = [windowInfo.mode, schedule.title || 'Loaded fundraiser'].filter(Boolean).join(' — ');
     const updateStats = scheduleBroadcastUpdateStats(schedule);
+    const goalDifference = scheduleGoalDifference(schedule);
     const values = [
-      ['Broadcast $', utils.formatMoney(scheduleBroadcastTotal(schedule))],
-      ['Pledges', utils.formatCount(scheduleImportedPledgesTotal(schedule))],
-      ['Online $', utils.formatMoney(Number(schedule.onlineDollars || 0) || 0)],
-      ['Mail $', utils.formatMoney(Number(schedule.mailDollars || 0) || 0)],
-      ['Non-Specific $', utils.formatMoney(scheduleImportedNonSpecificTotal(schedule))],
-      ['Total Raised $', utils.formatMoney(scheduleGrandTotal(schedule))]
+      { label: 'Broadcast $', value: utils.formatMoney(scheduleBroadcastTotal(schedule)) },
+      { label: 'Pledges', value: utils.formatCount(scheduleImportedPledgesTotal(schedule)) },
+      { label: 'Online $', value: utils.formatMoney(Number(schedule.onlineDollars || 0) || 0) },
+      { label: 'Mail $', value: utils.formatMoney(Number(schedule.mailDollars || 0) || 0) },
+      { label: 'Non-Specific $', value: utils.formatMoney(scheduleImportedNonSpecificTotal(schedule)) },
+      { label: 'Total Raised $', value: utils.formatMoney(scheduleGrandTotal(schedule)) },
+      { label: 'Goal', value: utils.formatMoney(scheduleGoalTotal(schedule)) },
+      { label: 'Difference', value: utils.formatMoney(goalDifference), tone: goalDifferenceTone(goalDifference) }
     ];
     box.innerHTML = `
       <div class="home-drive-summary-head">
@@ -606,10 +631,10 @@
         <div class="home-drive-summary-date">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))}</div>
       </div>
       <div class="home-drive-summary-grid">
-        ${values.map(([label, value]) => `
-          <div class="home-drive-summary-card">
-            <div class="home-drive-summary-label">${utils.escapeHtml(label)}</div>
-            <div class="home-drive-summary-value">${utils.escapeHtml(value)}</div>
+        ${values.map((item) => `
+          <div class="home-drive-summary-card ${item.tone ? `goal-difference-card goal-difference-${item.tone}` : ''}">
+            <div class="home-drive-summary-label">${utils.escapeHtml(item.label)}</div>
+            <div class="home-drive-summary-value ${item.tone ? `goal-difference-value goal-difference-${item.tone}` : ''}">${utils.escapeHtml(item.value)}</div>
           </div>
         `).join('')}
       </div>
@@ -1341,6 +1366,7 @@
     state.scheduleDraft.dayEndMinutes = windowConfig.endMinutes;
     state.scheduleDraft.onlineDollars = Number(schedule.onlineDollars || 0) || 0;
     state.scheduleDraft.mailDollars = Number(schedule.mailDollars || 0) || 0;
+    state.scheduleDraft.goalDollars = Number(schedule.goalDollars || 0) || 0;
     void ensureScheduleBroadcastTotal(schedule);
   }
 
@@ -2167,7 +2193,8 @@
       dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES,
       dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES,
       onlineDollars: 0,
-      mailDollars: 0
+      mailDollars: 0,
+      goalDollars: 0
     };
     state.scheduleView.dayStartMinutes = constants.DEFAULT_DAY_START_MINUTES;
     state.scheduleView.dayEndMinutes = preferredVisibleEndMinutes(constants.DEFAULT_DAY_START_MINUTES, constants.DEFAULT_DAY_END_MINUTES);
@@ -2186,6 +2213,7 @@
     els.fundraiserEndInput.value = state.scheduleDraft.endDate || '';
     if (els.fundraiserOnlineInput) els.fundraiserOnlineInput.value = Number(state.scheduleDraft.onlineDollars || 0) || 0;
     if (els.fundraiserMailInput) els.fundraiserMailInput.value = Number(state.scheduleDraft.mailDollars || 0) || 0;
+    if (els.fundraiserGoalInput) els.fundraiserGoalInput.value = Number(state.scheduleDraft.goalDollars || 0) || 0;
     const schedule = getActiveSchedule();
     if (schedule) void ensureScheduleImportedTotals(schedule);
     const working = schedule || state.scheduleDraft || {};
@@ -2201,6 +2229,11 @@
     if (els.fundraiserImportDifference) els.fundraiserImportDifference.value = utils.formatMoney(diff);
     if (els.fundraiserNonSpecificTotal) els.fundraiserNonSpecificTotal.value = utils.formatMoney(importedNonSpecific);
     if (els.fundraiserGrandTotal) els.fundraiserGrandTotal.value = utils.formatMoney(scheduleGrandTotal(working));
+    const goalDifference = scheduleGoalDifference(working);
+    if (els.fundraiserGoalDifference) {
+      els.fundraiserGoalDifference.value = utils.formatMoney(goalDifference);
+      applyGoalDifferenceClass(els.fundraiserGoalDifference, goalDifference);
+    }
     renderHomeDriveSummary();
     if (els.fundraiserBroadcastDiagnostic) {
       const show = imported > 0;
@@ -2212,7 +2245,7 @@
     }
     const builderTitle = document.getElementById('schedule-builder-title');
     if (builderTitle) builderTitle.textContent = working.title || state.scheduleDraft.title || 'New fundraiser';
-    [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
+    [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.fundraiserGoalInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
     if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
 
@@ -2915,6 +2948,7 @@
             dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60),
             onlineDollars: Number(schedule.onlineDollars || 0) || 0,
             mailDollars: Number(schedule.mailDollars || 0) || 0,
+            goalDollars: Number(schedule.goalDollars || 0) || 0,
             meta: schedule.meta || {}
           }
         });
@@ -2937,6 +2971,7 @@
     const nextDayEndMinutes = Number(state.scheduleView.dayEndMinutes ?? (state.scheduleView.dayEndHour * 60));
     const nextOnlineDollars = Number(els.fundraiserOnlineInput?.value || 0) || 0;
     const nextMailDollars = Number(els.fundraiserMailInput?.value || 0) || 0;
+    const nextGoalDollars = Number(els.fundraiserGoalInput?.value || 0) || 0;
     const fallbackStartDate = schedule?.startDate || state.scheduleDraft.startDate || '';
     const fallbackEndDate = schedule?.endDate || state.scheduleDraft.endDate || '';
     const startDate = els.fundraiserStartInput?.value || fallbackStartDate;
@@ -2954,6 +2989,7 @@
       state.scheduleDraft.dayEndHour = Math.floor(nextDayEndMinutes / 60);
       state.scheduleDraft.onlineDollars = nextOnlineDollars;
       state.scheduleDraft.mailDollars = nextMailDollars;
+      state.scheduleDraft.goalDollars = nextGoalDollars;
       return true;
     }
 
@@ -2968,7 +3004,7 @@
     const titleChanged = schedule.title !== title;
     const dateRangeChanged = schedule.startDate !== startDate || schedule.endDate !== endDate;
     const windowChanged = Number(schedule.dayStartMinutes) !== nextDayStartMinutes || Number(schedule.dayEndMinutes) !== nextDayEndMinutes;
-    const moneyChanged = Number(schedule.onlineDollars || 0) !== nextOnlineDollars || Number(schedule.mailDollars || 0) !== nextMailDollars;
+    const moneyChanged = Number(schedule.onlineDollars || 0) !== nextOnlineDollars || Number(schedule.mailDollars || 0) !== nextMailDollars || Number(schedule.goalDollars || 0) !== nextGoalDollars;
     schedule.title = title;
     schedule.startDate = startDate;
     schedule.endDate = endDate;
@@ -2978,6 +3014,7 @@
     schedule.dayEndHour = Math.floor(schedule.dayEndMinutes / 60);
     schedule.onlineDollars = nextOnlineDollars;
     schedule.mailDollars = nextMailDollars;
+    schedule.goalDollars = nextGoalDollars;
     state.scheduleDraft.title = title;
     state.scheduleDraft.startDate = startDate;
     state.scheduleDraft.endDate = endDate;
@@ -2987,6 +3024,7 @@
     state.scheduleDraft.dayEndHour = schedule.dayEndHour;
     state.scheduleDraft.onlineDollars = nextOnlineDollars;
     state.scheduleDraft.mailDollars = nextMailDollars;
+    state.scheduleDraft.goalDollars = nextGoalDollars;
     if (!(titleChanged || dateRangeChanged || windowChanged || moneyChanged)) return true;
     await persistScheduleMetadataOnly(schedule);
     renderScheduleList();
@@ -3020,7 +3058,8 @@
       dayStartHour: constants.DEFAULT_DAY_START_HOUR,
       dayEndHour: constants.DEFAULT_DAY_END_HOUR,
       onlineDollars: Number(els.fundraiserOnlineInput?.value || 0) || 0,
-      mailDollars: Number(els.fundraiserMailInput?.value || 0) || 0
+      mailDollars: Number(els.fundraiserMailInput?.value || 0) || 0,
+      goalDollars: Number(els.fundraiserGoalInput?.value || 0) || 0
     });
     state.schedules.unshift(schedule);
     applyScheduleToView(schedule);
@@ -3695,6 +3734,7 @@
     els.fundraiserEndInput?.addEventListener('change', saveScheduleDraft);
     els.fundraiserOnlineInput?.addEventListener('change', saveScheduleDraft);
     els.fundraiserMailInput?.addEventListener('change', saveScheduleDraft);
+    els.fundraiserGoalInput?.addEventListener('change', saveScheduleDraft);
     els.scheduleList?.addEventListener('click', (event) => {
       const open = event.target.closest('[data-schedule-id]');
       if (open) {
