@@ -5234,3 +5234,29 @@ input.goal-difference-negative {
   border-color: rgba(180,35,24,.24);
   background: #fff5f4;
 }
+
+/* v0.21.74 Drive Comparison modal */
+.drive-comparison-card { width: min(1180px, calc(100vw - 32px)); }
+.drive-comparison-body { padding: 16px 18px 18px; overflow:auto; display:grid; gap: 14px; }
+.drive-comparison-controls { display:grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; align-items:end; }
+.drive-comparison-chart { background:#fff; border:1px solid var(--border); border-radius:14px; padding: 12px; min-height: 320px; }
+.drive-comparison-chart svg { width:100%; height:auto; display:block; }
+.drive-comparison-chart-bg { fill:#fff; }
+.drive-comparison-grid-line { stroke:#d9e3ef; stroke-width:1; }
+.drive-comparison-axis-line { stroke:#68809c; stroke-width:1.2; }
+.drive-comparison-axis-label { fill:#5e7086; font-size:12px; }
+.drive-comparison-axis-title { fill:#173a5e; font-size:13px; font-weight:800; }
+.drive-comparison-x-label { fill:#173a5e; font-size:12px; font-weight:700; }
+.drive-comparison-legend { display:flex; flex-wrap:wrap; gap: 10px 14px; align-items:center; margin: 0 0 8px; font-size:.86rem; font-weight:700; color:var(--text); }
+.drive-comparison-legend-item { display:inline-flex; align-items:center; gap:6px; }
+.drive-comparison-legend-item span { width:18px; height:4px; border-radius:999px; display:inline-block; }
+.drive-comparison-empty { min-height:260px; display:grid; place-items:center; color:var(--muted); border:1px dashed var(--border); border-radius:12px; background:#fbfdff; font-weight:700; }
+.drive-comparison-empty.error { color:#8a1f1f; border-color:#e2b9b9; background:#fff7f7; }
+.drive-comparison-results-wrap { max-height:260px; overflow:auto; }
+.drive-comparison-results-table th,
+.drive-comparison-results-table td { white-space:nowrap; }
+.drive-comparison-results-table th:not(:first-child),
+.drive-comparison-results-table td:not(:first-child) { text-align:right; }
+@media (max-width: 760px) {
+  .drive-comparison-controls { grid-template-columns: 1fr 1fr; }
+}

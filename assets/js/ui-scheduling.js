@@ -3703,6 +3703,308 @@
     }
   }
 
+
+  function driveComparisonDateFromRow(row = {}) {
+    return utils.normalizeText(row.air_date)
+      || utils.normalizeText(row.drive_start_date)
+      || utils.dateKeyFromDate(row.aired_at)
+      || utils.dateKeyFromDate(row.created_at)
+      || '';
+  }
+
+  function driveComparisonDateFromSchedule(schedule = {}) {
+    return utils.normalizeText(schedule.startDate || schedule.createdAt || schedule.updatedAt || '');
+  }
+
+  function driveComparisonQuarter(dateKey = '') {
+    const month = Number(String(dateKey || '').slice(5, 7));
+    if (!Number.isFinite(month) || month < 1 || month > 12) return 0;
+    return Math.floor((month - 1) / 3) + 1;
+  }
+
+  function driveComparisonYear(dateKey = '') {
+    const year = Number(String(dateKey || '').slice(0, 4));
+    return Number.isFinite(year) ? year : 0;
+  }
+
+  function driveComparisonDateInRange(dateKey = '', startKey = '', endKey = '') {
+    if (!dateKey) return false;
+    if (startKey && dateKey < startKey) return false;
+    if (endKey && dateKey > endKey) return false;
+    return true;
+  }
+
+  function driveComparisonRangesOverlap(startA = '', endA = '', startB = '', endB = '') {
+    if (!(startA && endA)) return false;
+    if (startB && endA < startB) return false;
+    if (endB && startA > endB) return false;
+    return true;
+  }
+
+  function driveComparisonDefaults(rows = []) {
+    const importedDates = (Array.isArray(rows) ? rows : [])
+      .map(driveComparisonDateFromRow)
+      .filter(Boolean)
+      .sort();
+    const scheduleDates = (state.schedules || [])
+      .flatMap((schedule) => [utils.normalizeText(schedule.startDate), utils.normalizeText(schedule.endDate)])
+      .filter(Boolean)
+      .sort();
+    const allDates = [...importedDates, ...scheduleDates].filter(Boolean).sort();
+    const today = localTodayKey();
+    const active = getActiveSchedule();
+    const activeQuarter = driveComparisonQuarter(active?.startDate) || driveComparisonQuarter(today) || 1;
+    return {
+      startDate: importedDates[0] || allDates[0] || today,
+      endDate: allDates[allDates.length - 1] || today,
+      quarter: String(activeQuarter)
+    };
+  }
+
+  function driveComparisonSummaryForRows(rows = []) {
+    const totals = summarizeImportedRows(rows || []);
+    return {
+      broadcast: Number(totals.importedBroadcastTotalDollars || 0) || 0,
+      pledges: Number(totals.importedPledgesTotal || 0) || 0
+    };
+  }
+
+  function driveComparisonBuildSeriesRows(rows = []) {
+    const startKey = els.driveComparisonStartDate?.value || '';
+    const endKey = els.driveComparisonEndDate?.value || '';
+    const mode = els.driveComparisonMode?.value || 'annual';
+    const quarter = Number(els.driveComparisonQuarter?.value || 0) || 0;
+    const rowsArray = Array.isArray(rows) ? rows : [];
+    const validSchedules = (state.schedules || [])
+      .filter((schedule) => getScheduleDateSpanInfo(schedule).ok)
+      .filter((schedule) => driveComparisonRangesOverlap(schedule.startDate, schedule.endDate, startKey, endKey));
+
+    const buckets = new Map();
+    const coveredRowHashes = new Set();
+
+    const addBucket = (dateKey, values = {}, sourceLabel = '') => {
+      if (!dateKey) return;
+      if (mode === 'quarter' && driveComparisonQuarter(dateKey) !== quarter) return;
+      const year = driveComparisonYear(dateKey);
+      if (!year) return;
+      const q = driveComparisonQuarter(dateKey);
+      const key = mode === 'quarter' ? `${year}-Q${quarter}` : `${year}`;
+      const label = mode === 'quarter' ? `${year} Q${quarter}` : `${year}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          key,
+          label,
+          year,
+          quarter: q,
+          broadcast: 0,
+          online: 0,
+          mail: 0,
+          total: 0,
+          pledges: 0,
+          fundraiserCount: 0,
+          importedRows: 0,
+          sources: new Set()
+        });
+      }
+      const bucket = buckets.get(key);
+      bucket.broadcast += Number(values.broadcast || 0) || 0;
+      bucket.online += Number(values.online || 0) || 0;
+      bucket.mail += Number(values.mail || 0) || 0;
+      bucket.pledges += Number(values.pledges || 0) || 0;
+      bucket.total += Number(values.total || 0) || 0;
+      bucket.fundraiserCount += Number(values.fundraiserCount || 0) || 0;
+      bucket.importedRows += Number(values.importedRows || 0) || 0;
+      if (sourceLabel) bucket.sources.add(sourceLabel);
+    };
+
+    validSchedules.forEach((schedule) => {
+      const scheduleRows = importedRowsForSchedule(schedule, rowsArray)
+        .filter((row) => driveComparisonDateInRange(driveComparisonDateFromRow(row), startKey, endKey));
+      scheduleRows.forEach((row) => {
+        const hash = utils.normalizeText(row.row_hash || row.id || '');
+        if (hash) coveredRowHashes.add(hash);
+      });
+      const importSummary = driveComparisonSummaryForRows(scheduleRows);
+      const online = Number(schedule.onlineDollars || 0) || 0;
+      const mail = Number(schedule.mailDollars || 0) || 0;
+      const broadcast = importSummary.broadcast > 0 ? importSummary.broadcast : scheduleBroadcastTotal(schedule);
+      const total = broadcast + online + mail;
+      addBucket(schedule.startDate, {
+        broadcast,
+        online,
+        mail,
+        total,
+        pledges: importSummary.pledges || scheduleImportedPledgesTotal(schedule),
+        fundraiserCount: 1,
+        importedRows: scheduleRows.length
+      }, schedule.title || 'Scheduled fundraiser');
+    });
+
+    const unscheduledByDrive = new Map();
+    rowsArray.forEach((row) => {
+      const hash = utils.normalizeText(row.row_hash || row.id || '');
+      if (hash && coveredRowHashes.has(hash)) return;
+      const dateKey = driveComparisonDateFromRow(row);
+      if (!driveComparisonDateInRange(dateKey, startKey, endKey)) return;
+      const groupStart = utils.normalizeText(row.drive_start_date) || dateKey;
+      const groupEnd = utils.normalizeText(row.drive_end_date) || dateKey;
+      const key = [groupStart, groupEnd, utils.normalizeText(row.fundraiser_label || row.source_file_name || '')].join('|');
+      if (!unscheduledByDrive.has(key)) unscheduledByDrive.set(key, { startDate: groupStart, endDate: groupEnd, rows: [] });
+      unscheduledByDrive.get(key).rows.push(row);
+    });
+
+    unscheduledByDrive.forEach((entry) => {
+      const summary = driveComparisonSummaryForRows(entry.rows);
+      addBucket(entry.startDate, {
+        broadcast: summary.broadcast,
+        online: 0,
+        mail: 0,
+        total: summary.broadcast,
+        pledges: summary.pledges,
+        fundraiserCount: 1,
+        importedRows: entry.rows.length
+      }, 'Imported-only fundraiser');
+    });
+
+    return [...buckets.values()]
+      .map((bucket) => ({ ...bucket, sourceCount: bucket.sources.size }))
+      .sort((a, b) => a.year - b.year || a.key.localeCompare(b.key));
+  }
+
+  function driveComparisonFormatCompactMoney(value = 0) {
+    const num = Number(value || 0) || 0;
+    if (Math.abs(num) >= 1000000) return `$${(num / 1000000).toFixed(1)}M`;
+    if (Math.abs(num) >= 1000) return `$${Math.round(num / 1000)}K`;
+    return utils.formatMoney(num);
+  }
+
+  function driveComparisonPointPath(points = []) {
+    return points.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
+  }
+
+  function driveComparisonRenderChart(rows = []) {
+    if (!els.driveComparisonChart || !els.driveComparisonTable) return;
+    const mode = els.driveComparisonMode?.value || 'annual';
+    const quarter = Number(els.driveComparisonQuarter?.value || 0) || 0;
+    if (els.driveComparisonQuarterWrap) els.driveComparisonQuarterWrap.classList.toggle('hidden', mode !== 'quarter');
+
+    if (!rows.length) {
+      els.driveComparisonChart.innerHTML = '<div class="drive-comparison-empty">No fundraiser totals match this date range yet.</div>';
+      els.driveComparisonTable.innerHTML = '';
+      if (els.driveComparisonSummary) els.driveComparisonSummary.textContent = 'No matching fundraiser data for this comparison.';
+      return;
+    }
+
+    rows.forEach((row) => { row.total = row.broadcast + row.online + row.mail; });
+    const dollarMax = Math.max(1, ...rows.flatMap((row) => [row.broadcast, row.online, row.mail, row.total]).map((value) => Number(value || 0) || 0));
+    const pledgeMax = Math.max(1, ...rows.map((row) => Number(row.pledges || 0) || 0));
+    const width = 960;
+    const height = 420;
+    const pad = { left: 68, right: 58, top: 34, bottom: 72 };
+    const innerW = width - pad.left - pad.right;
+    const innerH = height - pad.top - pad.bottom;
+    const xFor = (index) => rows.length === 1 ? pad.left + (innerW / 2) : pad.left + (innerW * index / (rows.length - 1));
+    const yDollar = (value) => pad.top + innerH - ((Number(value || 0) || 0) / dollarMax * innerH);
+    const yPledge = (value) => pad.top + innerH - ((Number(value || 0) || 0) / pledgeMax * innerH);
+    const series = [
+      { key: 'broadcast', label: 'Broadcast $', color: '#174a7c', y: yDollar, value: (row) => row.broadcast, money: true },
+      { key: 'online', label: 'Online $', color: '#347a50', y: yDollar, value: (row) => row.online, money: true },
+      { key: 'mail', label: 'Mail $', color: '#8a5b13', y: yDollar, value: (row) => row.mail, money: true },
+      { key: 'total', label: 'Total raised $', color: '#711f6a', y: yDollar, value: (row) => row.total, money: true },
+      { key: 'pledges', label: 'Pledges', color: '#9f2f22', y: yPledge, value: (row) => row.pledges, money: false, dashed: true }
+    ];
+    const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+      const y = pad.top + innerH - (ratio * innerH);
+      const value = dollarMax * ratio;
+      return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="drive-comparison-grid-line"></line><text x="${pad.left - 10}" y="${y + 4}" text-anchor="end" class="drive-comparison-axis-label">${utils.escapeHtml(driveComparisonFormatCompactMoney(value))}</text>`;
+    }).join('');
+    const pledgeAxis = [0, 0.5, 1].map((ratio) => {
+      const y = pad.top + innerH - (ratio * innerH);
+      const value = Math.round(pledgeMax * ratio);
+      return `<text x="${width - pad.right + 10}" y="${y + 4}" text-anchor="start" class="drive-comparison-axis-label pledge-axis">${utils.escapeHtml(utils.formatCount(value))}</text>`;
+    }).join('');
+    const xLabels = rows.map((row, index) => {
+      const x = xFor(index);
+      return `<text x="${x}" y="${height - 36}" text-anchor="middle" class="drive-comparison-x-label">${utils.escapeHtml(row.label)}</text>`;
+    }).join('');
+    const seriesSvg = series.map((entry) => {
+      const points = rows.map((row, index) => ({ row, x: xFor(index), y: entry.y(entry.value(row)), value: entry.value(row) }));
+      const circles = points.map((point) => {
+        const valueText = entry.money ? utils.formatMoney(point.value) : utils.formatCount(point.value);
+        return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" fill="${entry.color}"><title>${utils.escapeHtml(`${entry.label} · ${point.row.label}: ${valueText}`)}</title></circle>`;
+      }).join('');
+      return `<path d="${driveComparisonPointPath(points)}" fill="none" stroke="${entry.color}" stroke-width="3" ${entry.dashed ? 'stroke-dasharray="7 6"' : ''}></path>${circles}`;
+    }).join('');
+    const legend = series.map((entry) => `<span class="drive-comparison-legend-item"><span style="background:${entry.color}"></span>${utils.escapeHtml(entry.label)}</span>`).join('');
+    els.driveComparisonChart.innerHTML = `
+      <div class="drive-comparison-legend">${legend}</div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Drive comparison line chart">
+        <rect x="0" y="0" width="${width}" height="${height}" class="drive-comparison-chart-bg"></rect>
+        ${grid}
+        ${pledgeAxis}
+        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top + innerH}" class="drive-comparison-axis-line"></line>
+        <line x1="${pad.left}" y1="${pad.top + innerH}" x2="${width - pad.right}" y2="${pad.top + innerH}" class="drive-comparison-axis-line"></line>
+        <text x="${pad.left}" y="18" class="drive-comparison-axis-title">Dollars</text>
+        <text x="${width - pad.right}" y="18" text-anchor="end" class="drive-comparison-axis-title">Pledges</text>
+        ${seriesSvg}
+        ${xLabels}
+      </svg>
+    `;
+    const tableRows = rows.map((row) => `
+      <tr>
+        <td>${utils.escapeHtml(row.label)}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.broadcast))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.online))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.mail))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.total))}</td>
+        <td>${utils.escapeHtml(utils.formatCount(row.pledges))}</td>
+        <td>${utils.escapeHtml(utils.formatCount(row.fundraiserCount))}</td>
+      </tr>
+    `).join('');
+    els.driveComparisonTable.innerHTML = `
+      <div class="table-wrap drive-comparison-results-wrap">
+        <table class="programs-table drive-comparison-results-table">
+          <thead><tr><th>Period</th><th>Broadcast $</th><th>Online $</th><th>Mail $</th><th>Total raised $</th><th>Pledges</th><th>Fundraisers</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    `;
+    const totalFundraisers = rows.reduce((sum, row) => sum + row.fundraiserCount, 0);
+    const comparisonLabel = mode === 'quarter' ? `Q${quarter} year-over-year` : 'annual totals';
+    if (els.driveComparisonSummary) els.driveComparisonSummary.textContent = `${comparisonLabel}: ${utils.formatCount(totalFundraisers)} fundraiser period${totalFundraisers === 1 ? '' : 's'} included.`;
+  }
+
+  async function renderDriveComparison() {
+    if (!els.driveComparisonChart) return;
+    els.driveComparisonChart.innerHTML = '<div class="drive-comparison-empty">Loading fundraiser comparison…</div>';
+    try {
+      const rows = await ensureScheduleImportedAiringsLoaded();
+      const defaults = driveComparisonDefaults(rows);
+      if (els.driveComparisonStartDate && !els.driveComparisonStartDate.value) els.driveComparisonStartDate.value = defaults.startDate;
+      if (els.driveComparisonEndDate && !els.driveComparisonEndDate.value) els.driveComparisonEndDate.value = defaults.endDate;
+      if (els.driveComparisonQuarter && !els.driveComparisonQuarter.value) els.driveComparisonQuarter.value = defaults.quarter;
+      const buckets = driveComparisonBuildSeriesRows(rows);
+      driveComparisonRenderChart(buckets);
+    } catch (error) {
+      console.error(error);
+      els.driveComparisonChart.innerHTML = `<div class="drive-comparison-empty error">${utils.escapeHtml(error?.message || 'Could not load drive comparison data.')}</div>`;
+      if (els.driveComparisonSummary) els.driveComparisonSummary.textContent = 'Drive comparison failed to load.';
+    }
+  }
+
+  async function openDriveComparison() {
+    els.driveComparisonBackdrop?.classList.remove('hidden');
+    els.driveComparisonModal?.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    await renderDriveComparison();
+  }
+
+  function closeDriveComparison() {
+    els.driveComparisonBackdrop?.classList.add('hidden');
+    els.driveComparisonModal?.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+
   function bindEvents() {
     document.addEventListener('wnmu:performance-ready', () => {
       if (!getActiveSchedule()) return;
@@ -3710,6 +4012,13 @@
     });
     els.newScheduleButton?.addEventListener('click', resetToNewScheduleDraft);
     els.scheduleMobileNewButton?.addEventListener('click', resetToNewScheduleDraft);
+    els.driveComparisonButton?.addEventListener('click', () => { void openDriveComparison(); });
+    els.driveComparisonCloseButton?.addEventListener('click', closeDriveComparison);
+    els.driveComparisonBackdrop?.addEventListener('click', closeDriveComparison);
+    els.driveComparisonRefreshButton?.addEventListener('click', () => { void renderDriveComparison(); });
+    [els.driveComparisonStartDate, els.driveComparisonEndDate, els.driveComparisonMode, els.driveComparisonQuarter]
+      .filter(Boolean)
+      .forEach((node) => node.addEventListener('change', () => { void renderDriveComparison(); }));
     const handleScheduleSelectChange = (event) => {
       const scheduleId = String(event.target?.value || '');
       if (!scheduleId) return;
@@ -3912,6 +4221,7 @@
       if (event.key === 'Escape') {
         hideScheduleContextMenu();
         if (!els.scheduleProgramModal?.classList.contains('hidden')) closeScheduleModal();
+        if (!els.driveComparisonModal?.classList.contains('hidden')) closeDriveComparison();
       }
       if (els.scheduleProgramModal?.classList.contains('hidden')) return;
       const mod = event.metaKey || event.ctrlKey;
