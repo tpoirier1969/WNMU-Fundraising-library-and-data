@@ -86,6 +86,7 @@
     driveComparisonEndDate: document.getElementById('drive-comparison-end-date'),
     driveComparisonMode: document.getElementById('drive-comparison-mode'),
     driveComparisonQuarter: document.getElementById('drive-comparison-quarter'),
+    driveComparisonChartView: document.getElementById('drive-comparison-chart-view'),
     driveComparisonQuarterWrap: document.getElementById('drive-comparison-quarter-wrap'),
     driveComparisonSummary: document.getElementById('drive-comparison-summary'),
     driveComparisonChart: document.getElementById('drive-comparison-chart'),

@@ -3886,6 +3886,7 @@
     if (!els.driveComparisonChart || !els.driveComparisonTable) return;
     const mode = els.driveComparisonMode?.value || 'annual';
     const quarter = Number(els.driveComparisonQuarter?.value || 0) || 0;
+    const chartView = els.driveComparisonChartView?.value === 'pledges' ? 'pledges' : 'dollars';
     if (els.driveComparisonQuarterWrap) els.driveComparisonQuarterWrap.classList.toggle('hidden', mode !== 'quarter');
 
     if (!rows.length) {
@@ -3898,54 +3899,62 @@
     rows.forEach((row) => { row.total = row.broadcast + row.online + row.mail; });
     const dollarMax = Math.max(1, ...rows.flatMap((row) => [row.broadcast, row.online, row.mail, row.total]).map((value) => Number(value || 0) || 0));
     const pledgeMax = Math.max(1, ...rows.map((row) => Number(row.pledges || 0) || 0));
-    const width = 960;
-    const height = 420;
-    const pad = { left: 68, right: 58, top: 34, bottom: 72 };
+    const width = 840;
+    const height = 310;
+    const pad = { left: 64, right: 28, top: 30, bottom: 54 };
     const innerW = width - pad.left - pad.right;
     const innerH = height - pad.top - pad.bottom;
     const xFor = (index) => rows.length === 1 ? pad.left + (innerW / 2) : pad.left + (innerW * index / (rows.length - 1));
     const yDollar = (value) => pad.top + innerH - ((Number(value || 0) || 0) / dollarMax * innerH);
     const yPledge = (value) => pad.top + innerH - ((Number(value || 0) || 0) / pledgeMax * innerH);
-    const series = [
+    const dollarSeries = [
       { key: 'broadcast', label: 'Broadcast $', color: '#174a7c', y: yDollar, value: (row) => row.broadcast, money: true },
       { key: 'online', label: 'Online $', color: '#347a50', y: yDollar, value: (row) => row.online, money: true },
       { key: 'mail', label: 'Mail $', color: '#8a5b13', y: yDollar, value: (row) => row.mail, money: true },
-      { key: 'total', label: 'Total raised $', color: '#711f6a', y: yDollar, value: (row) => row.total, money: true },
-      { key: 'pledges', label: 'Pledges', color: '#9f2f22', y: yPledge, value: (row) => row.pledges, money: false, dashed: true }
+      { key: 'total', label: 'Total raised $', color: '#711f6a', y: yDollar, value: (row) => row.total, money: true }
     ];
+    const pledgeSeries = [
+      { key: 'pledges', label: 'Pledges', color: '#9f2f22', y: yPledge, value: (row) => row.pledges, money: false }
+    ];
+    const activeSeries = chartView === 'pledges' ? pledgeSeries : dollarSeries;
+    const activeMax = chartView === 'pledges' ? pledgeMax : dollarMax;
+    const activeFormat = chartView === 'pledges'
+      ? (value) => utils.formatCount(Math.round(Number(value || 0) || 0))
+      : (value) => driveComparisonFormatCompactMoney(value);
+    const axisTitle = chartView === 'pledges' ? 'Pledges' : 'Dollars';
+
     const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
       const y = pad.top + innerH - (ratio * innerH);
-      const value = dollarMax * ratio;
-      return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="drive-comparison-grid-line"></line><text x="${pad.left - 10}" y="${y + 4}" text-anchor="end" class="drive-comparison-axis-label">${utils.escapeHtml(driveComparisonFormatCompactMoney(value))}</text>`;
-    }).join('');
-    const pledgeAxis = [0, 0.5, 1].map((ratio) => {
-      const y = pad.top + innerH - (ratio * innerH);
-      const value = Math.round(pledgeMax * ratio);
-      return `<text x="${width - pad.right + 10}" y="${y + 4}" text-anchor="start" class="drive-comparison-axis-label pledge-axis">${utils.escapeHtml(utils.formatCount(value))}</text>`;
+      const value = activeMax * ratio;
+      return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="drive-comparison-grid-line"></line><text x="${pad.left - 10}" y="${y + 4}" text-anchor="end" class="drive-comparison-axis-label">${utils.escapeHtml(activeFormat(value))}</text>`;
     }).join('');
     const xLabels = rows.map((row, index) => {
       const x = xFor(index);
-      return `<text x="${x}" y="${height - 36}" text-anchor="middle" class="drive-comparison-x-label">${utils.escapeHtml(row.label)}</text>`;
+      return `<text x="${x}" y="${height - 24}" text-anchor="middle" class="drive-comparison-x-label">${utils.escapeHtml(row.label)}</text>`;
     }).join('');
-    const seriesSvg = series.map((entry) => {
+    const seriesSvg = activeSeries.map((entry) => {
       const points = rows.map((row, index) => ({ row, x: xFor(index), y: entry.y(entry.value(row)), value: entry.value(row) }));
       const circles = points.map((point) => {
         const valueText = entry.money ? utils.formatMoney(point.value) : utils.formatCount(point.value);
-        return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="4.5" fill="${entry.color}"><title>${utils.escapeHtml(`${entry.label} · ${point.row.label}: ${valueText}`)}</title></circle>`;
+        return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.2" fill="${entry.color}"><title>${utils.escapeHtml(`${entry.label} · ${point.row.label}: ${valueText}`)}</title></circle>`;
       }).join('');
-      return `<path d="${driveComparisonPointPath(points)}" fill="none" stroke="${entry.color}" stroke-width="3" ${entry.dashed ? 'stroke-dasharray="7 6"' : ''}></path>${circles}`;
+      return `<path d="${driveComparisonPointPath(points)}" fill="none" stroke="${entry.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>${circles}`;
     }).join('');
-    const legend = series.map((entry) => `<span class="drive-comparison-legend-item"><span style="background:${entry.color}"></span>${utils.escapeHtml(entry.label)}</span>`).join('');
+    const legend = activeSeries.map((entry) => `<span class="drive-comparison-legend-item"><span style="background:${entry.color}"></span>${utils.escapeHtml(entry.label)}</span>`).join('');
+    const note = chartView === 'pledges'
+      ? 'Showing pledge counts only so the scale is readable.'
+      : 'Showing dollars only; switch to Pledges only to see pledge-count trends clearly.';
     els.driveComparisonChart.innerHTML = `
-      <div class="drive-comparison-legend">${legend}</div>
-      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Drive comparison line chart">
+      <div class="drive-comparison-legend-row">
+        <div class="drive-comparison-legend">${legend}</div>
+        <div class="drive-comparison-view-note">${utils.escapeHtml(note)}</div>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Drive comparison ${chartView === 'pledges' ? 'pledge count' : 'dollar'} line chart">
         <rect x="0" y="0" width="${width}" height="${height}" class="drive-comparison-chart-bg"></rect>
         ${grid}
-        ${pledgeAxis}
         <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top + innerH}" class="drive-comparison-axis-line"></line>
         <line x1="${pad.left}" y1="${pad.top + innerH}" x2="${width - pad.right}" y2="${pad.top + innerH}" class="drive-comparison-axis-line"></line>
-        <text x="${pad.left}" y="18" class="drive-comparison-axis-title">Dollars</text>
-        <text x="${width - pad.right}" y="18" text-anchor="end" class="drive-comparison-axis-title">Pledges</text>
+        <text x="${pad.left}" y="18" class="drive-comparison-axis-title">${utils.escapeHtml(axisTitle)}</text>
         ${seriesSvg}
         ${xLabels}
       </svg>
@@ -4016,7 +4025,7 @@
     els.driveComparisonCloseButton?.addEventListener('click', closeDriveComparison);
     els.driveComparisonBackdrop?.addEventListener('click', closeDriveComparison);
     els.driveComparisonRefreshButton?.addEventListener('click', () => { void renderDriveComparison(); });
-    [els.driveComparisonStartDate, els.driveComparisonEndDate, els.driveComparisonMode, els.driveComparisonQuarter]
+    [els.driveComparisonStartDate, els.driveComparisonEndDate, els.driveComparisonMode, els.driveComparisonQuarter, els.driveComparisonChartView]
       .filter(Boolean)
       .forEach((node) => node.addEventListener('change', () => { void renderDriveComparison(); }));
     const handleScheduleSelectChange = (event) => {

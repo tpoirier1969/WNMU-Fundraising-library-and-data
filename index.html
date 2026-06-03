@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.21.74</title>
+  <title>WNMU Pledge Program Library v0.21.75</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.21.74">
+  <link rel="stylesheet" href="assets/styles.css?v=0.21.75">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.21.74"></script>
-  <script defer src="assets/js/program-filters.js?v=0.21.74"></script>
-  <script defer src="assets/js/dom.js?v=0.21.74"></script>
-  <script defer src="assets/js/data.js?v=0.21.74"></script>
-  <script defer src="assets/js/ui-list.js?v=0.21.74"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.21.74"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.21.74"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.21.74"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.21.74"></script>
-  <script defer src="assets/js/auth.js?v=0.21.74"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.21.74"></script>
-  <script defer src="assets/js/program-open.js?v=0.21.74"></script>
-  <script defer src="assets/js/library-load.js?v=0.21.74"></script>
-  <script defer src="assets/js/app.js?v=0.21.74"></script>
-  <script defer src="assets/js/app-init.js?v=0.21.74"></script>
+  <script defer src="assets/js/core.js?v=0.21.75"></script>
+  <script defer src="assets/js/program-filters.js?v=0.21.75"></script>
+  <script defer src="assets/js/dom.js?v=0.21.75"></script>
+  <script defer src="assets/js/data.js?v=0.21.75"></script>
+  <script defer src="assets/js/ui-list.js?v=0.21.75"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.21.75"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.21.75"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.21.75"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.21.75"></script>
+  <script defer src="assets/js/auth.js?v=0.21.75"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.21.75"></script>
+  <script defer src="assets/js/program-open.js?v=0.21.75"></script>
+  <script defer src="assets/js/library-load.js?v=0.21.75"></script>
+  <script defer src="assets/js/app.js?v=0.21.75"></script>
+  <script defer src="assets/js/app-init.js?v=0.21.75"></script>
   </head>
 <body>
 
@@ -56,7 +56,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.21.74</span>
+            <span class="version-pill" id="version-flag">v0.21.75</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -452,6 +452,13 @@
                 <option value="2">Q2</option>
                 <option value="3">Q3</option>
                 <option value="4">Q4</option>
+              </select>
+            </label>
+            <label class="filter-field narrow">
+              <span class="filter-label">Chart view</span>
+              <select id="drive-comparison-chart-view">
+                <option value="dollars">Dollar totals</option>
+                <option value="pledges">Pledges only</option>
               </select>
             </label>
           </div>
@@ -1130,7 +1137,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.21.74</div>
+      <div id="footer-version">v0.21.75</div>
     </footer>
   </div>
 </body>
