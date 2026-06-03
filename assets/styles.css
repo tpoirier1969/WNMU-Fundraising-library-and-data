@@ -5205,7 +5205,7 @@ body.version-gate-active .schedule-modal-card {
 }
 
 
-/* v0.21.72 pledge goal and difference totals */
+/* v0.21.72/v0.21.73 pledge goal and difference totals */
 .goal-difference-value.goal-difference-positive,
 .goal-difference-positive {
   color: #137333 !important;

@@ -541,7 +541,8 @@
   }
 
   function scheduleGoalDifference(schedule = {}) {
-    return scheduleGoalTotal(schedule) - scheduleGrandTotal(schedule);
+    // Difference is over/under goal: positive means ahead of goal, negative means short.
+    return scheduleGrandTotal(schedule) - scheduleGoalTotal(schedule);
   }
 
   function goalDifferenceTone(value = 0) {
