@@ -3908,13 +3908,13 @@
     const yDollar = (value) => pad.top + innerH - ((Number(value || 0) || 0) / dollarMax * innerH);
     const yPledge = (value) => pad.top + innerH - ((Number(value || 0) || 0) / pledgeMax * innerH);
     const dollarSeries = [
-      { key: 'broadcast', label: 'Broadcast $', color: '#174a7c', y: yDollar, value: (row) => row.broadcast, money: true },
-      { key: 'online', label: 'Online $', color: '#347a50', y: yDollar, value: (row) => row.online, money: true },
-      { key: 'mail', label: 'Mail $', color: '#8a5b13', y: yDollar, value: (row) => row.mail, money: true },
-      { key: 'total', label: 'Total raised $', color: '#711f6a', y: yDollar, value: (row) => row.total, money: true }
+      { key: 'broadcast', label: 'Broadcast $', color: '#0066ff', y: yDollar, value: (row) => row.broadcast, money: true },
+      { key: 'online', label: 'Online $', color: '#00a651', y: yDollar, value: (row) => row.online, money: true },
+      { key: 'mail', label: 'Mail $', color: '#ff8c00', y: yDollar, value: (row) => row.mail, money: true },
+      { key: 'total', label: 'Total raised $', color: '#8a2be2', y: yDollar, value: (row) => row.total, money: true }
     ];
     const pledgeSeries = [
-      { key: 'pledges', label: 'Pledges', color: '#9f2f22', y: yPledge, value: (row) => row.pledges, money: false }
+      { key: 'pledges', label: 'Pledges', color: '#e31b23', y: yPledge, value: (row) => row.pledges, money: false }
     ];
     const activeSeries = chartView === 'pledges' ? pledgeSeries : dollarSeries;
     const activeMax = chartView === 'pledges' ? pledgeMax : dollarMax;

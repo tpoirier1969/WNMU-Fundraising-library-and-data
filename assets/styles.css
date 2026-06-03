@@ -5235,7 +5235,7 @@ input.goal-difference-negative {
   background: #fff5f4;
 }
 
-/* v0.21.75 Drive Comparison modal */
+/* v0.21.76 Drive Comparison modal */
 .drive-comparison-card { width: min(1040px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
 .drive-comparison-card .detail-header { padding-top: 12px; padding-bottom: 10px; }
 .drive-comparison-body { padding: 12px 14px 14px; overflow:auto; display:grid; gap: 10px; max-height: calc(100vh - 138px); }
@@ -5252,7 +5252,7 @@ input.goal-difference-negative {
 .drive-comparison-legend { display:flex; flex-wrap:wrap; gap: 8px 12px; align-items:center; margin:0; font-size:.82rem; font-weight:700; color:var(--text); }
 .drive-comparison-legend-item { display:inline-flex; align-items:center; gap:6px; }
 .drive-comparison-legend-item span { width:16px; height:3px; border-radius:999px; display:inline-block; }
-.drive-comparison-view-note { color:var(--muted); font-size:.76rem; font-weight:700; }
+.drive-comparison-view-note { color:var(--muted); font-size:.76rem; font-weight:700; flex:1 1 230px; min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; line-height:1.25; text-align:right; }
 .drive-comparison-empty { min-height:220px; display:grid; place-items:center; color:var(--muted); border:1px dashed var(--border); border-radius:12px; background:#fbfdff; font-weight:700; }
 .drive-comparison-empty.error { color:#8a1f1f; border-color:#e2b9b9; background:#fff7f7; }
 .drive-comparison-results-wrap { max-height:220px; overflow:auto; }
@@ -5262,4 +5262,5 @@ input.goal-difference-negative {
 .drive-comparison-results-table td:not(:first-child) { text-align:right; }
 @media (max-width: 760px) {
   .drive-comparison-controls { grid-template-columns: 1fr 1fr; }
+  .drive-comparison-view-note { text-align:left; flex-basis:100%; }
 }
