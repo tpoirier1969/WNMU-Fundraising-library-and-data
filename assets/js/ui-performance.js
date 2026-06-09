@@ -2849,8 +2849,259 @@
   }
 
 
+
+
+  const HOLIDAY_TOPIC_REGEX = /\b(holiday|holidays|christmas|xmas|yuletide|yule|noel|santa|reindeer|nutcracker|carol|carols|hanukkah|chanukah|kwanzaa|thanksgiving|new\s*year|new\s*year'?s|winterfest)\b/i;
+  const MONTH_ALIASES = [
+    ['January', /\b(january|jan\.?)(?=\s|\d|$)/i],
+    ['February', /\b(february|feb\.?)(?=\s|\d|$)/i],
+    ['March', /\b(march|mar\.?)(?=\s|\d|$)/i],
+    ['April', /\b(april|apr\.?)(?=\s|\d|$)/i],
+    ['May', /\bmay\b/i],
+    ['June', /\b(june|jun\.?)(?=\s|\d|$)/i],
+    ['July', /\b(july|jul\.?)(?=\s|\d|$)/i],
+    ['August', /\b(august|aug\.?)(?=\s|\d|$)/i],
+    ['September', /\b(september|sept\.?|sep\.?)(?=\s|\d|$)/i],
+    ['October', /\b(october|oct\.?)(?=\s|\d|$)/i],
+    ['November', /\b(november|nov\.?)(?=\s|\d|$)/i],
+    ['December', /\b(december|dec\.?)(?=\s|\d|$)/i]
+  ];
+
+  function monthNameFromText(value = '') {
+    const text = utils.normalizeText(value || '');
+    if (!text) return '';
+    const found = MONTH_ALIASES.find(([, pattern]) => pattern.test(text));
+    return found ? found[0] : '';
+  }
+
+  function dateFromDateKey(dateKey = '') {
+    if (!dateKey) return null;
+    const date = new Date(`${dateKey}T12:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function monthNameFromDateKey(dateKey = '') {
+    const date = dateFromDateKey(dateKey);
+    return date ? MONTH_NAMES[date.getMonth()] : '';
+  }
+
+  function scheduleSeasonLabelForRecord(record = {}) {
+    const sourceRows = Array.isArray(record.sampleSourceRows) ? record.sampleSourceRows : [];
+    const candidateRanges = sourceRows.map((row) => ({
+      start: utils.normalizeText(row?.drive_start_date || row?.fundraiser_start_date || row?.start_date || ''),
+      end: utils.normalizeText(row?.drive_end_date || row?.fundraiser_end_date || row?.end_date || ''),
+      label: utils.normalizeText(row?.fundraiser_label || row?.drive_label || row?.source_file_name || '')
+    }));
+    const schedules = Array.isArray(state.schedules) ? state.schedules : [];
+    for (const range of candidateRanges) {
+      const exactSchedules = schedules.filter((schedule) => utils.normalizeText(schedule?.startDate) === range.start && utils.normalizeText(schedule?.endDate) === range.end);
+      const preferred = exactSchedules.find((schedule) => {
+        const title = utils.normalizeText(schedule?.title || '');
+        return title && !/^imported pledge/i.test(title) && monthNameFromText(title);
+      }) || exactSchedules[0] || null;
+      const preferredTitle = utils.normalizeText(preferred?.title || '');
+      const fromTitle = /^imported pledge/i.test(preferredTitle) ? '' : monthNameFromText(preferredTitle);
+      if (fromTitle) return fromTitle;
+      const fromLabel = monthNameFromText(range.label || '');
+      if (fromLabel) return fromLabel;
+      const fromRangeEnd = monthNameFromDateKey(range.end || '');
+      if (fromRangeEnd) return fromRangeEnd;
+    }
+    const dateKey = scheduleDateKeyForRecord(record);
+    const containingSchedules = schedules.filter((schedule) => {
+      const start = utils.normalizeText(schedule?.startDate || '');
+      const end = utils.normalizeText(schedule?.endDate || '');
+      return dateKey && start && end && dateKey >= start && dateKey <= end;
+    });
+    const containing = containingSchedules.find((schedule) => {
+      const title = utils.normalizeText(schedule?.title || '');
+      return title && !/^imported pledge/i.test(title) && monthNameFromText(title);
+    }) || containingSchedules[0] || null;
+    const containedTitle = /^imported pledge/i.test(utils.normalizeText(containing?.title || '')) ? '' : monthNameFromText(containing?.title || '');
+    if (containedTitle) return containedTitle;
+    const firstRange = candidateRanges.find((range) => range.start || range.end);
+    return monthNameFromDateKey(firstRange?.end || dateKey) || monthNameFromDateKey(firstRange?.start || '') || 'Unknown season';
+  }
+
+  function recordLooksHolidayRelated(record = {}) {
+    const sourceText = (Array.isArray(record.sampleSourceRows) ? record.sampleSourceRows : [])
+      .map((row) => [row?.program_title, row?.imported_program_title, row?.title, row?.matched_library_title, row?.premium_summary, row?.notes].map((item) => utils.normalizeText(item)).filter(Boolean).join(' '))
+      .join(' ');
+    const text = [record.title, record.importedTitle, record.matchedLibraryTitle, record.topicDisplay, record.premiums, sourceText]
+      .map((item) => utils.normalizeText(item))
+      .filter(Boolean)
+      .join(' ');
+    return HOLIDAY_TOPIC_REGEX.test(text);
+  }
+
+  function topicSeasonEligibleRecords(records = []) {
+    return (Array.isArray(records) ? records : []).filter((record) => {
+      if (!record || isNonSpecificRecord(record) || record.excludedForIntegrity) return false;
+      if (!record.identityTrusted || !record.moneyTrusted || !record.hasDate || !recordFilterDate(record)) return false;
+      if (!(record.topicTokens || []).length) return false;
+      if (recordLooksHolidayRelated(record)) return false;
+      return true;
+    });
+  }
+
+  function addTopicSeasonStat(map, key, seed = {}) {
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        topic: seed.topic || '',
+        season: seed.season || '',
+        totalDollars: 0,
+        airings: 0,
+        pledges: 0,
+        titles: new Set(),
+        scheduleTitles: new Set()
+      });
+    }
+    return map.get(key);
+  }
+
+  function buildTopicSeasonLiftData(records = []) {
+    const eligible = topicSeasonEligibleRecords(records);
+    const excludedHolidayCount = (Array.isArray(records) ? records : []).filter((record) => recordLooksHolidayRelated(record)).length;
+    const seasons = new Map();
+    const topicSeasons = new Map();
+    eligible.forEach((record) => {
+      const season = scheduleSeasonLabelForRecord(record);
+      if (!season || season === 'Unknown season') return;
+      const topic = record.topicDisplay || record.topic || 'Unspecified topic';
+      const dollars = Number(record.amount || 0) || 0;
+      const seasonStat = addTopicSeasonStat(seasons, season, { season });
+      seasonStat.totalDollars += dollars;
+      seasonStat.airings += 1;
+      seasonStat.pledges += Number(record.pledges || 0) || 0;
+      if (record.title) seasonStat.titles.add(record.title);
+      seasonStat.scheduleTitles.add(recordFundraiserLabel(record));
+      const comboKey = `${topic}|${season}`;
+      const combo = addTopicSeasonStat(topicSeasons, comboKey, { topic, season });
+      combo.totalDollars += dollars;
+      combo.airings += 1;
+      combo.pledges += Number(record.pledges || 0) || 0;
+      if (record.title) combo.titles.add(record.title);
+      combo.scheduleTitles.add(recordFundraiserLabel(record));
+    });
+    const rows = [...topicSeasons.values()].map((row) => {
+      const baseline = seasons.get(row.season) || { totalDollars: 0, airings: 0 };
+      const topicAvg = row.airings ? row.totalDollars / row.airings : 0;
+      const baselineAvg = baseline.airings ? baseline.totalDollars / baseline.airings : 0;
+      const lift = baselineAvg > 0 ? ((topicAvg / baselineAvg) - 1) : 0;
+      return {
+        ...row,
+        titleCount: row.titles.size,
+        seasonTitleCount: baseline.titles?.size || 0,
+        seasonAirings: baseline.airings || 0,
+        topicAvg,
+        baselineAvg,
+        lift,
+        liftPct: Math.round(lift * 100),
+        lowSample: row.airings < 2 || (baseline.airings || 0) < 4
+      };
+    }).filter((row) => row.baselineAvg > 0)
+      .sort((a, b) => {
+        if (Math.abs(b.lift) !== Math.abs(a.lift)) return Math.abs(b.lift) - Math.abs(a.lift);
+        return b.airings - a.airings;
+      });
+    const seasonOrder = [...seasons.values()]
+      .map((row) => row.season)
+      .sort((a, b) => MONTH_NAMES.indexOf(a) - MONTH_NAMES.indexOf(b));
+    const topicOrder = [...new Set(rows.map((row) => row.topic))]
+      .map((topic) => ({
+        topic,
+        score: rows.filter((row) => row.topic === topic).reduce((sum, row) => sum + Math.abs(row.lift) * Math.max(1, row.airings), 0),
+        airings: rows.filter((row) => row.topic === topic).reduce((sum, row) => sum + row.airings, 0)
+      }))
+      .sort((a, b) => (b.score - a.score) || (b.airings - a.airings) || utils.compareText(a.topic, b.topic))
+      .map((entry) => entry.topic);
+    return { rows, seasons: seasonOrder, topics: topicOrder, eligibleCount: eligible.length, excludedHolidayCount };
+  }
+
+  function topicSeasonLiftClass(lift = 0, lowSample = false) {
+    if (lowSample) return 'low-sample';
+    if (lift >= 0.25) return 'strong-positive';
+    if (lift >= 0.10) return 'positive';
+    if (lift <= -0.25) return 'strong-negative';
+    if (lift <= -0.10) return 'negative';
+    return 'neutral';
+  }
+
+  function formatLiftPct(lift = 0) {
+    const pct = Math.round((Number(lift || 0) || 0) * 100);
+    return `${pct >= 0 ? '+' : ''}${pct}%`;
+  }
+
+  function buildTopicSeasonLiftHeatmap(records = []) {
+    const { rows, seasons, topics, eligibleCount, excludedHolidayCount } = buildTopicSeasonLiftData(records);
+    if (!rows.length || !seasons.length || !topics.length) {
+      return '<div class="placeholder-row">Not enough non-holiday topic/fundraiser data is available for seasonal lift yet.</div>';
+    }
+    const maxTopics = Math.min(14, topics.length);
+    const shownTopics = topics.slice(0, maxTopics);
+    const byKey = new Map(rows.map((row) => [`${row.topic}|${row.season}`, row]));
+    const cells = shownTopics.map((topic) => `
+      <div class="topic-season-row-label">${utils.escapeHtml(topic)}</div>
+      ${seasons.map((season) => {
+        const row = byKey.get(`${topic}|${season}`);
+        if (!row) return '<div class="topic-season-cell empty">—</div>';
+        const klass = topicSeasonLiftClass(row.lift, row.lowSample);
+        const title = `${topic} in ${season}: ${formatLiftPct(row.lift)} vs that fundraiser season's average. Topic avg ${utils.formatMoney(row.topicAvg)}; season avg ${utils.formatMoney(row.baselineAvg)}; ${utils.formatCount(row.airings)} airings.`;
+        return `<div class="topic-season-cell ${klass}" title="${utils.escapeHtml(title)}"><strong>${utils.escapeHtml(formatLiftPct(row.lift))}</strong><small>${utils.escapeHtml(utils.formatCount(row.airings))}</small></div>`;
+      }).join('')}
+    `).join('');
+    return `
+      <div class="topic-season-lift-chart" style="grid-template-columns: minmax(150px, 1.4fr) repeat(${seasons.length}, minmax(72px, 1fr));">
+        <div class="topic-season-corner">Topic</div>
+        ${seasons.map((season) => `<div class="topic-season-col-head">${utils.escapeHtml(season)}</div>`).join('')}
+        ${cells}
+      </div>
+      <div class="performance-chart-note">Seasonal lift normalizes each topic against that same fundraiser season's baseline. Example: +25% means the topic averaged 25% above the overall ${utils.escapeHtml('fundraiser-season')} average, not simply that December beat August. Holiday-related rows are excluded before the math. ${utils.formatCount(eligibleCount)} non-holiday rows used; ${utils.formatCount(excludedHolidayCount)} holiday-like rows excluded.</div>
+    `;
+  }
+
+  function renderTopicSeasonLiftTable(records = []) {
+    if (!els.performanceTableBody) return false;
+    const { rows, eligibleCount, excludedHolidayCount } = buildTopicSeasonLiftData(records);
+    setPerformanceTableHeaders(['Topic · fundraiser season', 'Airings', 'Topic avg', 'Season baseline', 'Lift', 'Read']);
+    if (!rows.length) {
+      els.performanceTableBody.innerHTML = '<tr><td colspan="6" class="placeholder-row">No non-holiday topic/season lift rows match this filter yet.</td></tr>';
+      return true;
+    }
+    const displayRows = rows.slice(0, Math.min(Number(perf().topN || 999), 60));
+    els.performanceTableBody.innerHTML = displayRows.map((row) => {
+      const direction = row.lift > 0.08 ? 'above' : row.lift < -0.08 ? 'below' : 'near';
+      const read = row.lowSample
+        ? 'Low sample — inspect before trusting.'
+        : direction === 'above'
+          ? 'Better than this season normally performs.'
+          : direction === 'below'
+            ? 'Worse than this season normally performs.'
+            : 'About normal for this season.';
+      return `
+        <tr class="topic-season-lift-row">
+          <td><strong>${utils.escapeHtml(row.topic)}</strong><div class="muted">${utils.escapeHtml(row.season)} fundraiser season${row.lowSample ? ' · low sample' : ''}</div></td>
+          <td>${utils.escapeHtml(utils.formatCount(row.airings))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(row.topicAvg))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(row.baselineAvg))}</td>
+          <td><span class="topic-season-lift-badge ${utils.escapeHtml(topicSeasonLiftClass(row.lift, row.lowSample))}">${utils.escapeHtml(formatLiftPct(row.lift))}</span></td>
+          <td>${utils.escapeHtml(read)}</td>
+        </tr>
+      `;
+    }).join('') + `
+      <tr><td colspan="6" class="performance-table-note">Seasonal lift used ${utils.escapeHtml(utils.formatCount(eligibleCount))} non-holiday imported airing events and excluded ${utils.escapeHtml(utils.formatCount(excludedHolidayCount))} holiday-related rows.</td></tr>
+    `;
+    enhanceAnalyticsTables();
+    return true;
+  }
+
   function renderChart(groups) {
     if (!els.performanceChart) return;
+    if (perf().quickFilter === 'topic_season_lift') {
+      els.performanceChart.innerHTML = buildTopicSeasonLiftHeatmap(perf().filteredRecords || []);
+      return;
+    }
     if (perf().quickFilter === 'topic_slot_winners') {
       const records = perf().filteredRecords || [];
       if (!records.length) {
@@ -2948,6 +3199,9 @@
 
   function renderTable(groups) {
     if (!els.performanceTableBody) return;
+    if (perf().quickFilter === 'topic_season_lift') {
+      if (renderTopicSeasonLiftTable(perf().filteredRecords || [])) return;
+    }
     if (perf().quickFilter === 'topic_slot_winners') {
       if (renderTopicSlotWinnerTable(perf().filteredRecords || [], currentTopicSlotWinnerGroups(perf().filteredRecords || []))) return;
     }
@@ -3101,6 +3355,47 @@
     return rows.sort((a, b) => utils.compareDate(a.scheduleDate, b.scheduleDate));
   }
 
+
+
+  function slotFitAccuracyBuckets(rows = []) {
+    const buckets = [
+      { key: 'close', label: 'Close', detail: 'Within 25%', count: 0 },
+      { key: 'under', label: 'Under-projected', detail: 'Actual was higher', count: 0 },
+      { key: 'over', label: 'Over-projected', detail: 'Actual was lower', count: 0 }
+    ];
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const projected = Number(row.projected || 0);
+      const actual = Number(row.actual || 0);
+      const absError = Math.abs(actual - projected);
+      const ratio = projected > 0 ? absError / projected : (actual === 0 ? 0 : 1);
+      if (ratio <= 0.25) buckets[0].count += 1;
+      else if (actual > projected) buckets[1].count += 1;
+      else buckets[2].count += 1;
+    });
+    return buckets;
+  }
+
+  function buildSlotFitAccuracyBars(rows = []) {
+    const buckets = slotFitAccuracyBuckets(rows);
+    const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0) || 1;
+    const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
+    return `
+      <div class="slot-fit-accuracy-bars" aria-label="Slot Fit projection accuracy buckets">
+        ${buckets.map((bucket) => {
+          const pct = Math.round((bucket.count / total) * 100);
+          const width = Math.max(3, Math.round((bucket.count / max) * 100));
+          return `
+            <div class="slot-fit-accuracy-bar-row ${utils.escapeHtml(bucket.key)}">
+              <div class="slot-fit-accuracy-bar-label"><strong>${utils.escapeHtml(bucket.label)}</strong><span>${utils.escapeHtml(bucket.detail)}</span></div>
+              <div class="slot-fit-accuracy-bar-track"><div class="slot-fit-accuracy-bar-fill" style="width:${utils.escapeHtml(String(width))}%"></div></div>
+              <div class="slot-fit-accuracy-bar-value">${utils.escapeHtml(utils.formatCount(bucket.count))} · ${utils.escapeHtml(`${pct}%`)}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
   function renderSlotFitAccuracy() {
     if (!els.performanceSlotFitAccuracy) return;
     const rows = collectSlotFitAccuracyRows();
@@ -3126,11 +3421,12 @@
         <div class="performance-slot-fit-accuracy-cardlet"><div class="label">Within 25%</div><div class="value">${utils.escapeHtml(`${accuracyPct}%`)}</div></div>
       </div>
       <div class="performance-slot-fit-accuracy-note">Projected total ${utils.escapeHtml(utils.formatMoney(totalProjected))}; actual imported total ${utils.escapeHtml(utils.formatMoney(totalActual))}. This should get steadier as more matched, imported airings build the historical base, but it will only improve if the report rows, titles, NOLAs, and saved schedule placements stay clean.</div>
-      <div class="table-wrap performance-table-wrap">
-        <table class="programs-table performance-table">
+      ${buildSlotFitAccuracyBars(rows)}
+      <div class="table-wrap performance-table-wrap slot-fit-table-wrap">
+        <table class="programs-table performance-table slot-fit-accuracy-table">
           <thead><tr><th>Recent fundraiser</th><th>Title</th><th>Projected</th><th>Actual</th><th>Difference</th></tr></thead>
           <tbody>
-            ${recent.map((row) => `<tr><td>${utils.escapeHtml(row.scheduleTitle)}</td><td>${utils.escapeHtml(row.programTitle)}</td><td>${utils.escapeHtml(utils.formatMoney(row.projected))}</td><td>${utils.escapeHtml(utils.formatMoney(row.actual))}</td><td>${utils.escapeHtml(`${row.error >= 0 ? '+' : '-'}${utils.formatMoney(Math.abs(row.error))}`)}</td></tr>`).join('')}
+            ${recent.map((row) => `<tr><td>${utils.escapeHtml(row.scheduleTitle)}</td><td>${utils.escapeHtml(row.programTitle)}</td><td>${utils.escapeHtml(utils.formatMoney(row.projected))}</td><td>${utils.escapeHtml(utils.formatMoney(row.actual))}</td><td class="${row.error >= 0 ? 'positive-diff' : 'negative-diff'}">${utils.escapeHtml(`${row.error >= 0 ? '+' : '-'}${utils.formatMoney(Math.abs(row.error))}`)}</td></tr>`).join('')}
           </tbody>
         </table>
       </div>
@@ -3352,6 +3648,7 @@
       topic_week_split: 'Topic week split',
       topic_by_day: 'Topic by day',
       topic_by_daypart_day: 'Topic by day-part by day',
+      topic_season_lift: 'Topic seasonal lift',
       recent_momentum: 'Recent momentum',
       weekend_weekday: 'Weekend vs weekday earnings',
       day_of_week: 'Day of week comparisons',
@@ -3394,6 +3691,8 @@
         return 'Splits each main topic by exact day of week, using imported airing/event records so you can see whether a topic really works better on specific days.';
       case 'topic_by_daypart_day':
         return 'Splits each main topic by both day-part and day of week. This is a sharper view for questions like whether Music works better Friday prime time or Sunday afternoon.';
+      case 'topic_season_lift':
+        return "Compares each topic inside each fundraiser season against that same season's overall average, so weak August and strong December are normalized before you judge the topic. Holiday-related rows are excluded.";
       case 'weekend_weekday':
         return 'Compares weekday versus weekend earnings so you can see whether the broad weekly pattern shifts before drilling down to exact days or times.';
       case 'day_of_week':
@@ -3451,6 +3750,8 @@
         return 'Use this when the exact day matters and the broad weekday/weekend split is too blunt.';
       case 'topic_by_daypart_day':
         return 'Use this when you need topic, day-part, and day of week in the same view instead of separate guesses.';
+      case 'topic_season_lift':
+        return 'Use this when you want to know whether a topic over- or under-performs within a fundraiser season after the season itself has been normalized.';
       case 'recent_momentum':
         return 'Use this when you care more about what is working lately than long-run library history.';
       case 'weekend_weekday':
@@ -3483,6 +3784,9 @@
     }
     if (name === 'topic_slot_winners') {
       notes.splice(1, 0, 'Main topic usually stays blank here on purpose, because the whole point is to compare topics against each other for each slot.');
+    }
+    if (name === 'topic_season_lift') {
+      notes.splice(1, 0, "Holiday-like titles are excluded automatically, and each topic is compared to the same fundraiser season's baseline rather than to raw December-versus-August dollars.");
     }
     if (['weekday_dayparts', 'saturday_dayparts', 'sunday_dayparts'].includes(name)) {
       notes.splice(1, 0, 'The Day set starts prefilled for this quick filter, but you can still change it if you want to pivot to a different week slice.');
@@ -3615,13 +3919,23 @@
         : (perf().criterion === 'daypart' && perf().daySetFilter ? ` · ${daySetLabel(perf().daySetFilter)}` : '');
       els.performanceChartTitle.textContent = perf().quickFilter === 'topic_slot_winners'
         ? 'Top topic by day + time slot'
-        : `${metricLabel()} by ${criterionDisplayName()}${focus}`;
+        : perf().quickFilter === 'topic_season_lift'
+          ? 'Topic seasonal lift'
+          : `${metricLabel()} by ${criterionDisplayName()}${focus}`;
     }
     if (els.performanceChartPill) {
-      const vizLabel = (['topic_time', 'topic_dayset', 'topic_day'].includes(perf().criterion) || perf().quickFilter === 'topic_slot_winners') ? 'Heatmap' : chartTypeLabel(effectiveChartType());
-      els.performanceChartPill.textContent = perf().ready ? `${vizLabel} · ${perf().quickFilter === 'topic_slot_winners' ? 'Topic winners' : criterionDisplayName()}` : 'Awaiting data';
+      const vizLabel = (['topic_time', 'topic_dayset', 'topic_day'].includes(perf().criterion) || ['topic_slot_winners', 'topic_season_lift'].includes(perf().quickFilter)) ? 'Heatmap' : chartTypeLabel(effectiveChartType());
+      const chartSubject = perf().quickFilter === 'topic_slot_winners' ? 'Topic winners' : perf().quickFilter === 'topic_season_lift' ? 'Seasonal lift' : criterionDisplayName();
+      els.performanceChartPill.textContent = perf().ready ? `${vizLabel} · ${chartSubject}` : 'Awaiting data';
     }
-    if (els.performanceTablePill) els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
+    if (els.performanceTablePill) {
+      if (perf().quickFilter === 'topic_season_lift') {
+        const topicSeasonRows = buildTopicSeasonLiftData(perf().filteredRecords || []).rows || [];
+        els.performanceTablePill.textContent = `${utils.formatCount(topicSeasonRows.length)} topic-season rows`;
+      } else {
+        els.performanceTablePill.textContent = `${utils.formatCount(perf().groups.length)} groups shown`;
+      }
+    }
     if (els.performanceNotesPill) els.performanceNotesPill.textContent = perf().lastLoadedAt ? `Loaded ${utils.formatDateTime(perf().lastLoadedAt)}` : 'Starter framework';
     const meta = perf().analysisMeta || {};
     const warn = meta.noTemporalSupport || meta.lowConfidenceTemporal || Boolean(perf().error);
@@ -3700,6 +4014,7 @@
     topic_week_split: { criterion: 'topic_dayset', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_by_day: { criterion: 'topic_day', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_by_daypart_day: { criterion: 'topic_daypart_day', metric: 'avg_dollars', chartType: 'bar', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
+    topic_season_lift: { criterion: 'topic', metric: 'avg_dollars', chartType: 'heatmap', topN: 999, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     recent_momentum: { criterion: 'program', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     weekend_weekday: { criterion: 'weekpart', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     day_of_week: { criterion: 'day', metric: 'avg_dollars', chartType: 'bar', topN: 8, monthFilter: '', topicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },

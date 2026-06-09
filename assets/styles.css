@@ -5264,3 +5264,179 @@ input.goal-difference-negative {
   .drive-comparison-controls { grid-template-columns: 1fr 1fr; }
   .drive-comparison-view-note { text-align:left; flex-basis:100%; }
 }
+
+/* v0.21.79 performance topic-season and Slot Fit tuning */
+.topic-season-lift-chart {
+  display: grid;
+  gap: 4px;
+  align-items: stretch;
+  min-width: 780px;
+}
+.topic-season-corner,
+.topic-season-col-head,
+.topic-season-row-label {
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #f1f5fb;
+  color: #20364f;
+  font-size: .78rem;
+  font-weight: 900;
+}
+.topic-season-col-head {
+  text-align: center;
+}
+.topic-season-row-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.topic-season-cell {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 5px 4px;
+  border: 1px solid #d9e6f5;
+  border-radius: 8px;
+  font-size: .78rem;
+  font-weight: 900;
+  color: #10263d;
+  background: #f8fbff;
+  cursor: default;
+}
+.topic-season-cell strong { line-height: 1; }
+.topic-season-cell small { font-size: .68rem; opacity: .78; }
+.topic-season-cell.empty {
+  cursor: default;
+  color: #8493a6;
+  background: #f5f7fa;
+}
+.topic-season-cell.strong-positive,
+.topic-season-lift-badge.strong-positive {
+  background: #b9f2cb;
+  border-color: #49a86a;
+  color: #0d4426;
+}
+.topic-season-cell.positive,
+.topic-season-lift-badge.positive {
+  background: #dcf8e5;
+  border-color: #78bd8e;
+  color: #185332;
+}
+.topic-season-cell.neutral,
+.topic-season-lift-badge.neutral {
+  background: #eef3f8;
+  border-color: #c9d7e8;
+  color: #30465f;
+}
+.topic-season-cell.negative,
+.topic-season-lift-badge.negative {
+  background: #ffe3dd;
+  border-color: #d98b7a;
+  color: #7b2516;
+}
+.topic-season-cell.strong-negative,
+.topic-season-lift-badge.strong-negative {
+  background: #ffc8bc;
+  border-color: #ca5c43;
+  color: #6b1f12;
+}
+.topic-season-cell.low-sample,
+.topic-season-lift-badge.low-sample {
+  background: #fff4cf;
+  border-color: #d7a73e;
+  color: #6c4700;
+}
+.topic-season-lift-badge {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 4.25rem;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 900;
+}
+.topic-season-lift-row td:first-child { white-space: normal; }
+.performance-table-note {
+  font-size: .82rem;
+  color: #52657a;
+  background: #f7faff;
+}
+.slot-fit-accuracy-bars {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #dbe8f5;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+.slot-fit-accuracy-bar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 170px) 1fr minmax(72px, auto);
+  gap: 8px;
+  align-items: center;
+}
+.slot-fit-accuracy-bar-label {
+  display: grid;
+  gap: 1px;
+  font-size: .78rem;
+  color: #233a54;
+}
+.slot-fit-accuracy-bar-label span {
+  font-size: .72rem;
+  color: #60758f;
+}
+.slot-fit-accuracy-bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #e7edf5;
+  overflow: hidden;
+}
+.slot-fit-accuracy-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #52779c;
+}
+.slot-fit-accuracy-bar-row.close .slot-fit-accuracy-bar-fill { background: #3aa764; }
+.slot-fit-accuracy-bar-row.under .slot-fit-accuracy-bar-fill { background: #d88428; }
+.slot-fit-accuracy-bar-row.over .slot-fit-accuracy-bar-fill { background: #b74a42; }
+.slot-fit-accuracy-bar-value {
+  font-size: .78rem;
+  font-weight: 900;
+  color: #1b334d;
+  white-space: nowrap;
+}
+.slot-fit-table-wrap { max-height: 260px; }
+.programs-table.slot-fit-accuracy-table {
+  table-layout: fixed;
+}
+.programs-table.slot-fit-accuracy-table th:nth-child(1),
+.programs-table.slot-fit-accuracy-table td:nth-child(1) {
+  width: 9%;
+  min-width: 70px;
+  max-width: 92px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.programs-table.slot-fit-accuracy-table th:nth-child(2),
+.programs-table.slot-fit-accuracy-table td:nth-child(2) {
+  width: 56%;
+  min-width: 240px;
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.programs-table.slot-fit-accuracy-table th:nth-child(3),
+.programs-table.slot-fit-accuracy-table td:nth-child(3),
+.programs-table.slot-fit-accuracy-table th:nth-child(4),
+.programs-table.slot-fit-accuracy-table td:nth-child(4),
+.programs-table.slot-fit-accuracy-table th:nth-child(5),
+.programs-table.slot-fit-accuracy-table td:nth-child(5) {
+  width: 11%;
+  max-width: 92px;
+  white-space: nowrap;
+}
+.slot-fit-accuracy-table .positive-diff { color: #17603c; font-weight: 900; }
+.slot-fit-accuracy-table .negative-diff { color: #9d3024; font-weight: 900; }
+@media (max-width: 760px) {
+  .slot-fit-accuracy-bar-row { grid-template-columns: 1fr; }
+  .slot-fit-accuracy-bar-value { white-space: normal; }
+}
