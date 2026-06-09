@@ -5440,3 +5440,80 @@ input.goal-difference-negative {
   .slot-fit-accuracy-bar-row { grid-template-columns: 1fr; }
   .slot-fit-accuracy-bar-value { white-space: normal; }
 }
+
+/* v0.21.80 performance cleanup */
+.performance-disclosure {
+  padding: 0 !important;
+  overflow: hidden;
+}
+.performance-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  font-weight: 900;
+  color: #173b5d;
+  border-bottom: 1px solid #e3edf8;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+.performance-disclosure > summary::-webkit-details-marker { display: none; }
+.performance-disclosure > summary::after {
+  content: '▾';
+  flex: 0 0 auto;
+  color: #60758f;
+  transition: transform .15s ease;
+}
+.performance-disclosure:not([open]) > summary {
+  border-bottom: 0;
+}
+.performance-disclosure:not([open]) > summary::after {
+  transform: rotate(-90deg);
+}
+.performance-disclosure-hint {
+  margin-left: auto;
+  font-size: .78rem;
+  font-weight: 700;
+  color: #6c7f94;
+}
+.performance-advanced-controls {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #dbe8f5;
+  border-radius: 14px;
+  background: #ffffff;
+}
+.performance-advanced-controls .performance-toolbar-grid.expanded {
+  padding: 12px;
+  margin: 0;
+}
+.performance-disclosure-body,
+.performance-slot-compare-controls,
+.performance-explain-wrap,
+.performance-source-notes {
+  padding: 12px 14px 14px;
+}
+.performance-intelligence-card .performance-slot-compare-controls {
+  padding-bottom: 0;
+}
+.performance-repeat-fatigue-row .repeat-fatigue-title {
+  font-weight: 900;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.performance-repeat-fatigue-row .positive-diff,
+.performance-table .positive-diff { color: #17603c; font-weight: 900; }
+.performance-repeat-fatigue-row .negative-diff,
+.performance-table .negative-diff { color: #9d3024; font-weight: 900; }
+@media (max-width: 760px) {
+  .performance-disclosure > summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .performance-disclosure-hint {
+    width: 100%;
+    margin-left: 0;
+  }
+}

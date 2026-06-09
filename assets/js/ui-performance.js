@@ -1743,9 +1743,20 @@
 
 
   function setPerformanceTableHeaders(headers = []) {
-    const ths = els.performanceTableBody?.closest('table')?.querySelectorAll('thead th') || [];
-    headers.forEach((value, index) => {
-      if (ths[index]) ths[index].textContent = value;
+    const headerRow = els.performanceTableBody?.closest('table')?.querySelector('thead tr');
+    if (!headerRow) return;
+    const wanted = Array.isArray(headers) ? headers : [];
+    const ths = headerRow.querySelectorAll('th');
+    if (wanted.length && wanted.length !== ths.length) {
+      headerRow.innerHTML = wanted.map((value, index) => {
+        const id = index === 0 ? 'performance-table-group-header' : index === 3 ? 'performance-table-metric-header' : index === 4 ? 'performance-table-confidence-header' : '';
+        return `<th${id ? ` id="${id}"` : ''}>${utils.escapeHtml(value)}</th>`;
+      }).join('');
+      return;
+    }
+    wanted.forEach((value, index) => {
+      const th = headerRow.querySelectorAll('th')[index];
+      if (th) th.textContent = value;
     });
   }
 
@@ -3197,8 +3208,100 @@
     return true;
   }
 
+
+  function repeatFatigueProgramKey(record = {}) {
+    return utils.normalizeLookupKey(utils.firstNonEmpty(record.programId, record.nolaCode, record.title, record.importedTitle, ''));
+  }
+
+  function buildRepeatFatigueRows(records = []) {
+    const grouped = new Map();
+    (Array.isArray(records) ? records : []).forEach((record) => {
+      if (!record || isNonSpecificRecord(record) || record.excludedForIntegrity) return;
+      if (!record.identityTrusted || !record.moneyTrusted || !record.hasDate || !recordFilterDate(record)) return;
+      const programKey = repeatFatigueProgramKey(record);
+      if (!programKey) return;
+      const fundraiser = recordFundraiserLabel(record);
+      const fundraiserKey = utils.normalizeLookupKey(fundraiser || 'Unknown fundraiser');
+      const key = `${programKey}|${fundraiserKey}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          programTitle: record.title || record.importedTitle || 'Unknown title',
+          fundraiser: fundraiser || 'Unknown fundraiser',
+          records: []
+        });
+      }
+      grouped.get(key).records.push(record);
+    });
+
+    return [...grouped.values()].map((group) => {
+      const ordered = group.records.slice().sort((a, b) => {
+        const ad = recordFilterDate(a);
+        const bd = recordFilterDate(b);
+        const at = ad instanceof Date && !Number.isNaN(ad.getTime()) ? ad.getTime() : 0;
+        const bt = bd instanceof Date && !Number.isNaN(bd.getTime()) ? bd.getTime() : 0;
+        if (at !== bt) return at - bt;
+        return utils.compareText(a.title || '', b.title || '');
+      });
+      if (ordered.length < 2) return null;
+      const best = ordered.reduce((winner, record) => Number(record.amount || 0) > Number(winner.amount || 0) ? record : winner, ordered[0]);
+      const last = ordered[ordered.length - 1];
+      const bestTotal = Number(best.amount || 0) || 0;
+      const lastTotal = Number(last.amount || 0) || 0;
+      const difference = lastTotal - bestTotal;
+      const fatiguePct = bestTotal > 0 ? (difference / bestTotal) * 100 : 0;
+      return {
+        ...group,
+        airings: ordered.length,
+        best,
+        last,
+        bestTotal,
+        lastTotal,
+        difference,
+        fatiguePct
+      };
+    }).filter(Boolean).sort((a, b) => {
+      if (a.difference !== b.difference) return a.difference - b.difference;
+      if (b.bestTotal !== a.bestTotal) return b.bestTotal - a.bestTotal;
+      return utils.compareText(a.programTitle, b.programTitle);
+    });
+  }
+
+  function renderRepeatFatigueTable(records = []) {
+    if (!els.performanceTableBody) return false;
+    const rows = buildRepeatFatigueRows(records);
+    const headers = ['Program', 'Fundraiser', 'Airings', 'Best date', 'Best total', 'Last date', 'Last total', 'Difference'];
+    setPerformanceTableHeaders(headers);
+    if (!rows.length) {
+      els.performanceTableBody.innerHTML = `<tr><td colspan="${headers.length}" class="placeholder-row">No repeated program/fundraiser pairs match this filter yet.</td></tr>`;
+      enhanceAnalyticsTables();
+      return true;
+    }
+    els.performanceTableBody.innerHTML = rows.slice(0, Math.max(1, Number(perf().topN) || 12)).map((row) => {
+      const diffClass = row.difference >= 0 ? 'positive-diff' : 'negative-diff';
+      const pctText = Number.isFinite(row.fatiguePct) ? ` (${row.fatiguePct >= 0 ? '+' : ''}${Math.round(row.fatiguePct)}%)` : '';
+      return `
+        <tr class="performance-repeat-fatigue-row">
+          <td class="repeat-fatigue-title">${utils.escapeHtml(row.programTitle)}</td>
+          <td>${utils.escapeHtml(row.fundraiser)}</td>
+          <td>${utils.escapeHtml(utils.formatCount(row.airings))}</td>
+          <td>${utils.escapeHtml(formatRecordDateTime(row.best))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(row.bestTotal))}</td>
+          <td>${utils.escapeHtml(formatRecordDateTime(row.last))}</td>
+          <td>${utils.escapeHtml(utils.formatMoney(row.lastTotal))}</td>
+          <td class="${diffClass}">${utils.escapeHtml(`${row.difference >= 0 ? '+' : '-'}${utils.formatMoney(Math.abs(row.difference))}${pctText}`)}</td>
+        </tr>
+      `;
+    }).join('');
+    enhanceAnalyticsTables();
+    return true;
+  }
+
   function renderTable(groups) {
     if (!els.performanceTableBody) return;
+    if (perf().quickFilter === 'repeat_fatigue') {
+      if (renderRepeatFatigueTable(perf().filteredRecords || [])) return;
+    }
     if (perf().quickFilter === 'topic_season_lift') {
       if (renderTopicSeasonLiftTable(perf().filteredRecords || [])) return;
     }
@@ -3337,8 +3440,12 @@
     const rows = [];
     slotFitAccuracySchedules().forEach((schedule) => {
       (schedule?.placements || []).forEach((placement) => {
-        const projected = placementSlotFitProjection(placement);
         const actual = placementSlotFitActual(placement);
+        let projected = placementSlotFitProjection(placement);
+        if (!Number.isFinite(projected) && Number.isFinite(actual)) {
+          const generated = getScheduleExpectationForPlacement(placement, placement.dateKey, placement.startMinutes);
+          projected = Number(generated?.projectedAvg);
+        }
         if (!Number.isFinite(projected) || !Number.isFinite(actual)) return;
         rows.push({
           scheduleId: schedule.id || '',
@@ -3980,6 +4087,13 @@
   async function ensureReady() {
     if (perf().loading) return;
     if (!perf().ready) await refreshData();
+    if (App.schedulingUi?.warmup) {
+      try {
+        await App.schedulingUi.warmup({ defer: false, renderHidden: false });
+      } catch (error) {
+        console.warn('Performance schedule warmup failed.', error);
+      }
+    }
     renderAll();
   }
 
