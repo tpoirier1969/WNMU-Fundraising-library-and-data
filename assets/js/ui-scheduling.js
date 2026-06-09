@@ -127,8 +127,40 @@
     return next;
   }
 
+  function scheduleManualMoneyTotal(schedule = {}) {
+    return (Number(schedule?.onlineDollars || 0) || 0)
+      + (Number(schedule?.mailDollars || 0) || 0)
+      + (Number(schedule?.goalDollars || 0) || 0);
+  }
+
+  function scheduleLooksAutoImported(schedule = {}) {
+    const titleKey = utils.normalizeLookupKey(schedule?.title || '');
+    return titleKey.startsWith('imported pledge')
+      || Boolean(schedule?.meta?.importedFromReports)
+      || Boolean(utils.normalizeText(schedule?.meta?.importedFundraiserKey || ''));
+  }
+
+  function scheduleSameRangePreferenceScore(schedule = {}) {
+    let score = 0;
+    const moneyTotal = scheduleManualMoneyTotal(schedule);
+    if (moneyTotal > 0) score += 1000000 + Math.min(999999, Math.round(moneyTotal));
+    if (!scheduleLooksAutoImported(schedule)) score += 100000;
+    if ((schedule?.placements || []).some((placement) => !placement?.importedFromReport)) score += 50000;
+    if ((schedule?.placements || []).some((placement) => placement?.importedFromReport)) score += 10000;
+    if (schedule?.meta?.importedTotalsHydratedFromAirings) score += 5000;
+    const updated = Date.parse(schedule?.updatedAt || schedule?.updated_at || schedule?.createdAt || '');
+    if (Number.isFinite(updated)) score += Math.floor(updated / 1000000000);
+    return score;
+  }
+
   function sortSchedulesNewestFirst(items = []) {
     return [...items].sort((a, b) => {
+      const aRange = `${utils.normalizeText(a.startDate) || ''}|${utils.normalizeText(a.endDate) || ''}`;
+      const bRange = `${utils.normalizeText(b.startDate) || ''}|${utils.normalizeText(b.endDate) || ''}`;
+      if (aRange && aRange === bRange) {
+        const preferenceDelta = scheduleSameRangePreferenceScore(b) - scheduleSameRangePreferenceScore(a);
+        if (preferenceDelta !== 0) return preferenceDelta;
+      }
       const aKey = `${utils.normalizeText(a.endDate) || ''}|${utils.normalizeText(a.startDate) || ''}|${utils.normalizeText(a.createdAt) || ''}`;
       const bKey = `${utils.normalizeText(b.endDate) || ''}|${utils.normalizeText(b.startDate) || ''}|${utils.normalizeText(b.createdAt) || ''}`;
       return bKey.localeCompare(aKey);
@@ -906,6 +938,15 @@
     return !(endA < startB || endB < startA);
   }
 
+  function findBestSameRangeScheduleForImportedGroup(group = {}) {
+    const candidates = (state.schedules || []).filter((item) => {
+      return utils.normalizeText(item?.startDate) === utils.normalizeText(group?.startDate)
+        && utils.normalizeText(item?.endDate) === utils.normalizeText(group?.endDate);
+    });
+    if (!candidates.length) return null;
+    return [...candidates].sort((a, b) => scheduleSameRangePreferenceScore(b) - scheduleSameRangePreferenceScore(a))[0] || null;
+  }
+
 
   function getProgramLookupCache() {
     const rawRows = Array.isArray(state.rawRows) ? state.rawRows : [];
@@ -1182,6 +1223,9 @@
           const importedPlacement = (item.placements || []).find((placement) => placement?.importedFromReport && utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key));
           return Boolean(importedPlacement);
         }) || null;
+      }
+      if (!schedule) {
+        schedule = findBestSameRangeScheduleForImportedGroup(group);
       }
       if (!schedule) {
         schedule = state.schedules.find((item) => {
@@ -2932,7 +2976,8 @@
   }
 
 
-  async function persistScheduleMetadataOnly(schedule) {
+  async function persistScheduleMetadataOnly(schedule, options = {}) {
+    const requireRemote = Boolean(options.requireRemote);
     if (state.scheduleStoreMode === 'remote' && state.client) {
       try {
         await state.client.from(constants.SCHEDULES_TABLE).upsert({
@@ -2957,9 +3002,17 @@
         return true;
       } catch (error) {
         console.warn('Remote schedule metadata save failed.', error);
+        if (requireRemote) {
+          state.scheduleSyncMessage = `Remote save failed. Manual fundraiser dollars were NOT saved to Supabase. ${error.message || ''}`.trim();
+          throw error;
+        }
         state.scheduleStoreMode = 'local';
         state.scheduleSyncMessage = `Remote save failed. Using this browser only. ${error.message || ''}`.trim();
       }
+    }
+    if (requireRemote) {
+      state.scheduleSyncMessage = 'Manual fundraiser dollars were NOT saved because Supabase schedule sync is unavailable.';
+      return false;
     }
     utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
     return false;
@@ -3027,7 +3080,20 @@
     state.scheduleDraft.mailDollars = nextMailDollars;
     state.scheduleDraft.goalDollars = nextGoalDollars;
     if (!(titleChanged || dateRangeChanged || windowChanged || moneyChanged)) return true;
-    await persistScheduleMetadataOnly(schedule);
+    try {
+      const remoteSaved = await persistScheduleMetadataOnly(schedule, { requireRemote: moneyChanged });
+      if (moneyChanged && !remoteSaved) {
+        renderScheduleForm();
+        renderHomeDriveSummary();
+        setNotice('Manual fundraiser dollars were NOT saved to Supabase. Refreshing or switching browsers may lose these values. Check Supabase sync before continuing.', 'bad');
+        return false;
+      }
+    } catch (error) {
+      renderScheduleForm();
+      renderHomeDriveSummary();
+      setNotice(`Manual fundraiser dollars were NOT saved to Supabase. ${error.message || ''}`.trim(), 'bad');
+      return false;
+    }
     renderScheduleList();
     renderScheduleForm();
     renderHomeDriveSummary();
