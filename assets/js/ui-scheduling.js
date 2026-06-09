@@ -3,6 +3,7 @@
   const { state, constants, utils, derive } = App;
   const filters = App.programFilters;
   const { els, setNotice } = App.dom;
+  const DELETE_ACTIVE_SCHEDULE_OPTION = '__delete_active_schedule__';
   let scheduledDetailRerenderTimer = 0;
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
@@ -151,6 +152,68 @@
     const updated = Date.parse(schedule?.updatedAt || schedule?.updated_at || schedule?.createdAt || '');
     if (Number.isFinite(updated)) score += Math.floor(updated / 1000000000);
     return score;
+  }
+
+  function sameDateRangeSchedules(startDate = '', endDate = '', exceptId = '') {
+    const startKey = utils.normalizeText(startDate);
+    const endKey = utils.normalizeText(endDate);
+    if (!(startKey && endKey)) return [];
+    return (state.schedules || []).filter((item) => {
+      if (exceptId && utils.normalizeText(item?.id) === utils.normalizeText(exceptId)) return false;
+      return utils.normalizeText(item?.startDate) === startKey && utils.normalizeText(item?.endDate) === endKey;
+    }).sort((a, b) => scheduleSameRangePreferenceScore(b) - scheduleSameRangePreferenceScore(a));
+  }
+
+  function bestScheduleForDateRange(startDate = '', endDate = '', exceptId = '') {
+    return sameDateRangeSchedules(startDate, endDate, exceptId)[0] || null;
+  }
+
+  function deleteScheduleWarningText(schedule = {}) {
+    const placementCount = Array.isArray(schedule?.placements) ? schedule.placements.length : 0;
+    const dateRange = `${utils.formatDate(schedule?.startDate)} – ${utils.formatDate(schedule?.endDate)}`;
+    const moneyLines = [
+      `Broadcast: ${utils.formatMoney(scheduleBroadcastTotal(schedule))}`,
+      `Online: ${utils.formatMoney(Number(schedule?.onlineDollars || 0) || 0)}`,
+      `Mail: ${utils.formatMoney(Number(schedule?.mailDollars || 0) || 0)}`,
+      `Goal: ${utils.formatMoney(Number(schedule?.goalDollars || 0) || 0)}`,
+      `Total raised: ${utils.formatMoney(scheduleGrandTotal(schedule))}`
+    ].join('\n');
+    return [
+      'ARE YOU FUCKING CRAZY?',
+      '',
+      'This will permanently delete this fundraiser schedule row:',
+      '',
+      schedule?.title || 'Untitled fundraiser',
+      dateRange,
+      `${utils.formatCount(placementCount)} scheduled block${placementCount === 1 ? '' : 's'}`,
+      moneyLines,
+      '',
+      'This does NOT delete imported pledge report rows, but it DOES remove this fundraiser calendar from the app.',
+      '',
+      'Click OK only if this is the wrong duplicate fundraiser.'
+    ].join('\n');
+  }
+
+  async function requestDeleteSchedule(scheduleId = '') {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to delete fundraiser schedules.', 'warn'); return false; }
+    const schedule = (state.schedules || []).find((item) => item.id === scheduleId) || null;
+    if (!schedule) { setNotice('That fundraiser schedule is not loaded anymore.', 'warn'); renderScheduleList(); return false; }
+    const duplicateCount = sameDateRangeSchedules(schedule.startDate, schedule.endDate).length;
+    if (!window.confirm(deleteScheduleWarningText(schedule))) {
+      setNotice('Fundraiser delete cancelled. Nothing was removed.', 'warn');
+      renderScheduleList();
+      return false;
+    }
+    const typed = window.prompt(`Type DELETE to remove "${schedule.title || 'Untitled fundraiser'}".${duplicateCount > 1 ? ' There are duplicate fundraisers with this same date range.' : ''}`);
+    if (String(typed || '').trim() !== 'DELETE') {
+      setNotice('Fundraiser delete cancelled because DELETE was not typed. Nothing was removed.', 'warn');
+      renderScheduleList();
+      return false;
+    }
+    const deletedTitle = schedule.title || 'Untitled fundraiser';
+    await deleteScheduleRecord(schedule.id);
+    setNotice(`Deleted fundraiser schedule ${deletedTitle}. ${state.scheduleSyncMessage || ''}`.trim());
+    return true;
   }
 
   function sortSchedulesNewestFirst(items = []) {
@@ -2163,13 +2226,21 @@
   function renderScheduleList() {
     const orderedSchedules = sortSchedulesNewestFirst(state.schedules || []);
     const selected = state.activeScheduleId || '';
-    const scheduleOptionsHtml = ['<option value="">Select fundraiser…</option>'].concat(orderedSchedules.map((schedule) => {
+    const deleteOptionHtml = canScheduleEdit() && selected
+      ? [
+          '<option value="" disabled>──────────</option>',
+          `<option value="${DELETE_ACTIVE_SCHEDULE_OPTION}">DELETE CURRENT FUNDRAISER…</option>`
+        ]
+      : [];
+    const scheduleOptionsHtml = ['<option value="">Select fundraiser…</option>'].concat(deleteOptionHtml, orderedSchedules.map((schedule) => {
       const spanInfo = getScheduleDateSpanInfo(schedule);
       const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
       const totalRaised = scheduleGrandTotal(schedule);
+      const sameRangeCount = sameDateRangeSchedules(schedule.startDate, schedule.endDate).length;
       const selectedAttr = schedule.id === selected ? ' selected' : '';
       const invalidSuffix = spanInfo.ok ? '' : ' · INVALID DATE RANGE';
-      return `<option value="${utils.escapeHtml(schedule.id)}"${selectedAttr}>${utils.escapeHtml(`${schedule.title} · ${utils.formatDate(schedule.startDate)} – ${utils.formatDate(schedule.endDate)} · ${placementCount} blocks · ${utils.formatMoney(totalRaised)}${invalidSuffix}`)}</option>`;
+      const duplicateSuffix = sameRangeCount > 1 ? ' · DUPLICATE DATES' : '';
+      return `<option value="${utils.escapeHtml(schedule.id)}"${selectedAttr}>${utils.escapeHtml(`${schedule.title} · ${utils.formatDate(schedule.startDate)} – ${utils.formatDate(schedule.endDate)} · ${placementCount} blocks · ${utils.formatMoney(totalRaised)}${invalidSuffix}${duplicateSuffix}`)}</option>`;
     })).join('');
     if (els.scheduleDesktopSelect) {
       els.scheduleDesktopSelect.innerHTML = scheduleOptionsHtml;
@@ -2195,13 +2266,15 @@
       const active = schedule.id === state.activeScheduleId;
       const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
       const totalRaised = scheduleGrandTotal(schedule);
+      const sameRangeCount = sameDateRangeSchedules(schedule.startDate, schedule.endDate).length;
+      const duplicateSuffix = sameRangeCount > 1 ? ' · DUPLICATE DATES' : '';
       return `
         <div class="schedule-list-item ${active ? 'active' : ''}${spanInfo.ok ? '' : ' invalid'}">
           <button type="button" class="schedule-list-open" data-schedule-id="${utils.escapeHtml(schedule.id)}" ${spanInfo.ok ? '' : 'data-invalid-schedule="true"'}>
             <span class="schedule-list-title">${utils.escapeHtml(schedule.title)}</span>
-            <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} blocks · ${utils.escapeHtml(utils.formatMoney(totalRaised))}${spanInfo.ok ? '' : ' · INVALID DATE RANGE'}</span>
+            <span class="schedule-list-meta">${utils.escapeHtml(utils.formatDate(schedule.startDate))} – ${utils.escapeHtml(utils.formatDate(schedule.endDate))} · ${placementCount} blocks · ${utils.escapeHtml(utils.formatMoney(totalRaised))}${spanInfo.ok ? '' : ' · INVALID DATE RANGE'}${duplicateSuffix}</span>
           </button>
-          ${canScheduleEdit() ? `<button type="button" class="ghost tiny-button" data-delete-schedule-id="${utils.escapeHtml(schedule.id)}">Remove</button>` : ''}
+          ${canScheduleEdit() ? `<button type="button" class="ghost tiny-button" data-delete-schedule-id="${utils.escapeHtml(schedule.id)}">Delete</button>` : ''}
         </div>
       `;
     }).join('');
@@ -2290,6 +2363,12 @@
     }
     const builderTitle = document.getElementById('schedule-builder-title');
     if (builderTitle) builderTitle.textContent = working.title || state.scheduleDraft.title || 'New fundraiser';
+    if (els.scheduleGenerateButton) {
+      els.scheduleGenerateButton.textContent = schedule ? 'Save fundraiser' : 'Build blank calendar';
+      els.scheduleGenerateButton.title = schedule
+        ? 'Save changes to the open fundraiser. This will not create a duplicate.'
+        : 'Create a new blank fundraiser calendar from the title and dates above.';
+    }
     [els.fundraiserTitleInput, els.fundraiserStartInput, els.fundraiserEndInput, els.fundraiserOnlineInput, els.fundraiserMailInput, els.fundraiserGoalInput, els.scheduleGenerateButton].forEach((el) => { if (el) el.disabled = !editable; });
     if (els.newScheduleButton) els.newScheduleButton.classList.toggle('hidden', !editable);
   }
@@ -3107,6 +3186,14 @@
 
   async function createOrUpdateScheduleFromDraft() {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to build or edit fundraiser schedules.', 'warn'); return; }
+    const activeSchedule = getActiveSchedule();
+    if (activeSchedule) {
+      const saved = await saveActiveScheduleDraft({ silent: true });
+      if (saved) {
+        setNotice(`Saved existing fundraiser ${activeSchedule.title || 'Untitled fundraiser'}. To create a blank fundraiser, click New blank fundraiser first.`);
+      }
+      return;
+    }
     const startDate = els.fundraiserStartInput.value;
     const endDate = els.fundraiserEndInput.value;
     const title = (els.fundraiserTitleInput.value || '').trim();
@@ -3116,6 +3203,12 @@
     }
     if (new Date(`${endDate}T00:00:00`) < new Date(`${startDate}T00:00:00`)) {
       setNotice('The fundraiser end date cannot be earlier than the start date.', 'warn');
+      return;
+    }
+    const existingSameRange = bestScheduleForDateRange(startDate, endDate);
+    if (existingSameRange) {
+      activateScheduleById(existingSameRange.id, { focusCalendar: true });
+      setNotice(`A fundraiser already exists for ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}. Opened ${existingSameRange.title || 'that fundraiser'} instead of creating a duplicate.`, 'warn');
       return;
     }
     const schedule = createScheduleRecord({
@@ -3132,7 +3225,7 @@
     applyScheduleToView(schedule);
     await persistSchedules(schedule);
     renderAll();
-    setNotice(`Built fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
+    setNotice(`Built blank fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
   }
 
   function toggleTransferred(placementId, checked) {
@@ -4097,11 +4190,17 @@
     const handleScheduleSelectChange = (event) => {
       const scheduleId = String(event.target?.value || '');
       if (!scheduleId) return;
+      if (scheduleId === DELETE_ACTIVE_SCHEDULE_OPTION) {
+        const activeId = state.activeScheduleId || '';
+        if (event.target) event.target.value = activeId;
+        if (activeId) void requestDeleteSchedule(activeId);
+        return;
+      }
       activateScheduleById(scheduleId, { focusCalendar: true });
     };
     const reopenSelectedSchedule = (event) => {
       const scheduleId = String(event.target?.value || state.activeScheduleId || '');
-      if (!scheduleId) return;
+      if (!scheduleId || scheduleId === DELETE_ACTIVE_SCHEDULE_OPTION) return;
       activateScheduleById(scheduleId, { focusCalendar: true });
     };
     els.scheduleDesktopSelect?.addEventListener('change', handleScheduleSelectChange);
@@ -4127,9 +4226,9 @@
         return;
       }
       const del = event.target.closest('[data-delete-schedule-id], [data-delete-invalid-schedule-id]');
-      if (del && window.confirm('Remove this fundraiser schedule?')) {
+      if (del) {
         const scheduleId = del.dataset.deleteScheduleId || del.dataset.deleteInvalidScheduleId;
-        if (scheduleId) void deleteScheduleRecord(scheduleId);
+        if (scheduleId) void requestDeleteSchedule(scheduleId);
       }
     });
     els.scheduleGrid?.addEventListener('click', (event) => {
