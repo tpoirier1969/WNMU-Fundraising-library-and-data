@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Lab v0.21.86</title>
+  <title>WNMU Pledge Performance Lab v0.21.88</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -62,8 +62,8 @@
     .stat .v { font-size: 1.2rem; font-weight: 950; color: var(--accent); }
     .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 16px; }
     .panel { border: 1px solid var(--line); border-radius: 18px; background: #fffdf8; padding: 14px; min-width: 0; }
-    .bar { display: grid; grid-template-columns: minmax(150px, 300px) 1fr auto; gap: 10px; align-items: center; margin: 9px 0; }
-    .blabel { font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar { display: grid; grid-template-columns: minmax(170px, 1.25fr) minmax(90px, .85fr) auto; gap: 10px; align-items: center; margin: 9px 0; }
+    .blabel { font-weight: 850; font-size: calc(1rem - 1px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
     .mix { color: var(--muted); font-size: .82rem; font-weight: 800; }
     .track { height: 18px; background: #f0e4d3; border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), #83a9aa); border-radius: 999px; min-width: 2px; }
@@ -73,6 +73,9 @@
     table { width: 100%; border-collapse: collapse; font-size: .92rem; }
     th, td { border-bottom: 1px solid #eadcc8; text-align: left; padding: 9px 8px; vertical-align: top; }
     th { background: #f7ead8; color: #584b3b; position: sticky; top: 0; z-index: 1; }
+    .sort-th-button { width: 100%; border: 0; border-radius: 0; padding: 0; background: transparent; color: inherit; display: inline-flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 950; text-align: left; cursor: pointer; }
+    .sort-th-button:hover { color: var(--accent); }
+    .sort-arrow { color: var(--accent); font-size: .8rem; white-space: nowrap; }
     .money, .num { text-align: right; white-space: nowrap; }
     .empty { padding: 34px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; }
     .risk { color: var(--bad); font-weight: 900; }
@@ -102,7 +105,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin prototype · v0.21.86</div>
+        <div class="eyebrow">Admin prototype · v0.21.88</div>
         <h1>Pledge Performance Lab</h1>
         <p>This live-data test page does not replace the current Performance page and does not save anything.</p>
       </div>
@@ -224,7 +227,8 @@
     year: 'all',
     search: '',
     evidence: 'flag',
-    trendRows: new Map()
+    trendRows: new Map(),
+    tableSort: { question: '', index: null, direction: 'asc' }
   };
 
   const el = (id) => document.getElementById(id);
@@ -262,6 +266,20 @@
   function isMissingTopic(value) {
     const key = lookupKey(value);
     return !key || ['uncategorized', 'unassigned', 'unknown', 'unspecified', 'n a', 'na'].includes(key);
+  }
+
+  function isNonSpecificPledgeBucket(...values) {
+    return values.some((value) => {
+      const normalized = lookupKey(value);
+      const compact = normalized.replace(/\s+/g, '');
+      return compact === 'nspl'
+        || normalized === 'non specific pledges'
+        || normalized === 'non specific pledge'
+        || normalized === 'non specific web pledges'
+        || normalized === 'non specific web pledge'
+        || /(^| )non specific pledge(s)?($| )/.test(normalized)
+        || /(^| )non specific web pledge(s)?($| )/.test(normalized);
+    });
   }
 
   function parseLocalDate(value) {
@@ -447,8 +465,20 @@
       const year = date ? date.getFullYear() : '';
       const lib = resolveLibraryRow(row, indexes) || {};
       const importedTitle = text(firstNonEmpty(row.matched_library_title, row.program_title, row.title, row.imported_program_title, 'Untitled'));
-      const rawTopic = text(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''));
-      const topicMissing = isMissingTopic(rawTopic);
+      const nonSpecific = isNonSpecificPledgeBucket(
+        lib.title,
+        importedTitle,
+        row.matched_library_title,
+        row.program_title,
+        row.title,
+        row.imported_program_title,
+        lib.nola_code,
+        row.nola_code,
+        row.nola,
+        row.match_method
+      );
+      const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''));
+      const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
       const importedLiveState = importedLive(row);
       const record = {
         id: row.id || '',
@@ -457,8 +487,9 @@
         title: text(lib.title) || importedTitle || 'Untitled',
         importedTitle,
         nola: text(firstNonEmpty(lib.nola_code, row.nola_code, row.nola, '')),
-        topic: topicMissing ? 'Uncategorized' : rawTopic,
+        topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
         topicMissing,
+        isNonSpecific: nonSpecific,
         distributor: text(lib.distributor || row.distributor || ''),
         date,
         dateKey: temporal.dateKey,
@@ -712,12 +743,12 @@
       tag: 'program lens',
       read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> is the top earner in this filter at ${formatMoney(rows[0].dollars)}. The season-count badge shows whether this is broad evidence or one-drive weirdness.` : 'No program records match.',
       columns: [
-        ['Program', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`],
-        ['Total $', (row) => formatMoney(row.dollars), 'money'],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money'],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
-        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`],
-        ['Evidence', evidenceLabel]
+        ['Program', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`, '', (row) => row.seasons || 0],
+        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
       ]
     },
     topics: {
@@ -731,12 +762,12 @@
       tag: 'topic lens',
       read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> has the strongest average in this filter at ${formatMoney(rows[0].avg)} per airing. Check the M/J/A/D badge before trusting it too hard.` : 'No topic records match.',
       columns: [
-        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money'],
-        ['Total $', (row) => formatMoney(row.dollars), 'money'],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
-        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`],
-        ['Evidence', evidenceLabel]
+        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`, '', (row) => row.seasons || 0],
+        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
       ]
     },
     uncategorized: {
@@ -750,12 +781,12 @@
       tag: 'cleanup list',
       read: (rows) => rows.length ? `${formatNumber(rows.length)} title(s) are showing without a useful topic. If you expected these to have topics, this is probably a matching or library-field issue worth fixing before trusting topic analytics.` : 'No uncategorized pledge records match this filter.',
       columns: [
-        ['Title', (row) => escapeHtml(row.title)],
-        ['NOLA', (row) => escapeHtml(row.nola || '—')],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
-        ['Last seen', (row) => escapeHtml(row.lastSeen || '—')],
-        ['Season mix', (row) => escapeHtml(row.mix)],
-        ['Imported title sample', (row) => escapeHtml(row.importedTitles || '—')]
+        ['Title', (row) => escapeHtml(row.title), '', (row) => row.title],
+        ['NOLA', (row) => escapeHtml(row.nola || '—'), '', (row) => row.nola || ''],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Last seen', (row) => escapeHtml(row.lastSeen || '—'), '', (row) => seasonYearSortKey(row.lastSeen || '')],
+        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0],
+        ['Imported title sample', (row) => escapeHtml(row.importedTitles || '—'), '', (row) => row.importedTitles || '']
       ]
     },
     seasonal: {
@@ -770,14 +801,14 @@
       tag: 'season lift',
       read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> is strongest in <b>${escapeHtml(rows[0].bestSeason)}</b>. One-season topics are weak evidence, not proof.` : 'No seasonal topic records match.',
       columns: [
-        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
-        ['Seasons', (row) => formatNumber(row.seasons), 'num'],
-        ['Best season', (row) => escapeHtml(row.bestSeason)],
-        ['Best lift', (row) => formatPercent(row.bestLift), 'num'],
-        ['Worst season', (row) => escapeHtml(row.worstSeason)],
-        ['Worst lift', (row) => formatPercent(row.worstLift), 'num'],
-        ['Evidence', evidenceLabel]
+        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Seasons', (row) => formatNumber(row.seasons), 'num', (row) => row.seasons],
+        ['Best season', (row) => escapeHtml(row.bestSeason), '', (row) => SEASONS.indexOf(row.bestSeason)],
+        ['Best lift', (row) => formatPercent(row.bestLift), 'num', (row) => row.bestLift],
+        ['Worst season', (row) => escapeHtml(row.worstSeason), '', (row) => SEASONS.indexOf(row.worstSeason)],
+        ['Worst lift', (row) => formatPercent(row.worstLift), 'num', (row) => row.worstLift],
+        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
       ]
     },
     history: {
@@ -796,12 +827,12 @@
       chartLabel: (row) => `${formatMoney(row.first.total)} → ${formatMoney(row.last.total)}`,
       columns: [
         ['Program', (row) => escapeHtml(row.title)],
-        ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`],
-        ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`],
-        ['Change first → latest', (row) => formatPercent(row.firstChange), 'num'],
-        ['Peak fundraiser', (row) => `${escapeHtml(row.peak.seasonYear)}<br>${formatMoney(row.peak.total)}`],
-        ['Trend', trendCell],
-        ['Evidence', evidenceLabel]
+        ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`, '', (row) => row.first.sortKey],
+        ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`, '', (row) => row.last.sortKey],
+        ['Change first → latest', (row) => formatPercent(row.firstChange), 'num', (row) => row.firstChange],
+        ['Peak fundraiser', (row) => `${escapeHtml(row.peak.seasonYear)}<br>${formatMoney(row.peak.total)}`, '', (row) => row.peak.total],
+        ['Trend', trendCell, '', (row) => row.last?.total || 0],
+        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
       ]
     },
     comeback: {
@@ -820,12 +851,12 @@
       chartLabel: (row) => `${row.pauseYears.toFixed(1)} yrs · ${formatMoney(row.last.total)}`,
       columns: [
         ['Program', (row) => escapeHtml(row.title)],
-        ['Previous fundraiser', (row) => row.previous ? `${escapeHtml(row.previous.seasonYear)}<br>${formatMoney(row.previous.total)}` : '—'],
-        ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`],
-        ['Gap', (row) => `${row.pauseYears.toFixed(1)} yrs`, 'num'],
-        ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`],
-        ['Trend', trendCell],
-        ['Evidence', evidenceLabel]
+        ['Previous fundraiser', (row) => row.previous ? `${escapeHtml(row.previous.seasonYear)}<br>${formatMoney(row.previous.total)}` : '—', '', (row) => row.previous?.sortKey || 0],
+        ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`, '', (row) => row.last.sortKey],
+        ['Gap', (row) => `${row.pauseYears.toFixed(1)} yrs`, 'num', (row) => row.pauseYears],
+        ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`, '', (row) => row.first.sortKey],
+        ['Trend', trendCell, '', (row) => row.last?.total || 0],
+        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
       ]
     },
     live: {
@@ -846,12 +877,12 @@
           : 'Live-break evidence is incomplete in this filter.';
       },
       columns: [
-        ['Break type', (row) => escapeHtml(row.title)],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money'],
-        ['Total $', (row) => formatMoney(row.dollars), 'money'],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
-        ['Season mix', (row) => escapeHtml(row.mix)],
-        ['Evidence', evidenceLabel]
+        ['Break type', (row) => escapeHtml(row.title), '', (row) => row.title],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0],
+        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
       ]
     }
   };
@@ -980,6 +1011,7 @@
     dom.cards.querySelectorAll('[data-question]').forEach((button) => {
       button.addEventListener('click', () => {
         state.question = button.dataset.question || 'programs';
+        state.tableSort = { question: state.question, index: null, direction: 'asc' };
         render();
       });
     });
@@ -1051,12 +1083,59 @@
     }).join('');
   }
 
+  function stripHtml(value) {
+    const node = document.createElement('div');
+    node.innerHTML = String(value ?? '');
+    return text(node.textContent || node.innerText || '');
+  }
+
+  function sortValue(row, column) {
+    if (typeof column[3] === 'function') return column[3](row);
+    return stripHtml(column[1](row));
+  }
+
+  function compareSortValues(a, b) {
+    const aBlank = a == null || a === '';
+    const bBlank = b == null || b === '';
+    if (aBlank && bBlank) return 0;
+    if (aBlank) return 1;
+    if (bBlank) return -1;
+    const aNum = typeof a === 'number' ? a : Number(String(a).replace(/[$,% ,]/g, ''));
+    const bNum = typeof b === 'number' ? b : Number(String(b).replace(/[$,% ,]/g, ''));
+    if (Number.isFinite(aNum) && Number.isFinite(bNum) && String(a).match(/[0-9]/) && String(b).match(/[0-9]/)) return aNum - bNum;
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  function sortedTableRows(rows, columns) {
+    const sort = state.tableSort || {};
+    if (sort.question !== state.question || sort.index == null || !columns[sort.index]) return rows;
+    const direction = sort.direction === 'desc' ? -1 : 1;
+    return [...rows].sort((a, b) => direction * compareSortValues(sortValue(a, columns[sort.index]), sortValue(b, columns[sort.index])));
+  }
+
   function renderTable(rows, columns) {
     if (!rows.length) {
       dom.table.innerHTML = '<div class="empty">No table rows.</div>';
       return;
     }
-    dom.table.innerHTML = `<table><thead><tr>${columns.map((column) => `<th class="${column[2] || ''}">${escapeHtml(column[0])}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td class="${column[2] || ''}">${column[1](row)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const tableRows = sortedTableRows(rows, columns);
+    const sort = state.tableSort || {};
+    dom.table.innerHTML = `<table><thead><tr>${columns.map((column, index) => {
+      const active = sort.question === state.question && sort.index === index;
+      const arrow = active ? (sort.direction === 'asc' ? '▲' : '▼') : '↕';
+      return `<th class="${column[2] || ''}"><button type="button" class="sort-th-button" data-sort-index="${index}"><span>${escapeHtml(column[0])}</span><span class="sort-arrow">${arrow}</span></button></th>`;
+    }).join('')}</tr></thead><tbody>${tableRows.map((row) => `<tr>${columns.map((column) => `<td class="${column[2] || ''}">${column[1](row)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    dom.table.querySelectorAll('[data-sort-index]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number(button.getAttribute('data-sort-index'));
+        if (state.tableSort.question === state.question && state.tableSort.index === index) {
+          state.tableSort.direction = state.tableSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.tableSort = { question: state.question, index, direction: ['money', 'num'].includes(columns[index]?.[2]) ? 'desc' : 'asc' };
+        }
+        render();
+      });
+    });
     dom.table.querySelectorAll('[data-trend-id]').forEach((button) => {
       button.addEventListener('click', () => openTrend(button.dataset.trendId || ''));
     });
