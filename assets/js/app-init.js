@@ -262,3 +262,257 @@
 
   window.addEventListener('DOMContentLoaded', boot);
 })();
+
+/* v0.21.96 drive snapshot priority layout patch */
+(() => {
+  const VERSION = 'v0.21.96-drive-snapshot-priority-layout';
+  let raf = 0;
+
+  function injectStyles() {
+    if (document.getElementById('driveSnapshotPriorityLayoutStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'driveSnapshotPriorityLayoutStyles';
+    style.textContent = `
+      #home-drive-summary.drive-snapshot-priority-layout {
+        max-width: 1080px;
+        margin-left: auto;
+        margin-right: auto;
+        padding: 12px 14px;
+      }
+      #home-drive-summary .drive-summary-priority-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      #home-drive-summary .drive-summary-priority-main {
+        display: grid;
+        grid-template-columns: minmax(220px, .9fr) minmax(470px, 1.35fr);
+        gap: 12px;
+        align-items: stretch;
+        min-width: 0;
+        width: 100%;
+      }
+      #home-drive-summary .drive-summary-priority-title-wrap {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+      #home-drive-summary .drive-summary-priority-kicker {
+        color: #376d5c;
+        text-transform: uppercase;
+        letter-spacing: .12em;
+        font-weight: 850;
+        font-size: .68rem;
+      }
+      #home-drive-summary .drive-summary-priority-title {
+        font-size: clamp(1.05rem, 1.8vw, 1.42rem);
+        line-height: 1.08;
+        font-weight: 850;
+        letter-spacing: -.035em;
+        color: #1e332d;
+      }
+      #home-drive-summary .drive-summary-priority-date {
+        color: #5f7383;
+        font-size: .78rem;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+      #home-drive-summary .drive-summary-priority-row,
+      #home-drive-summary .drive-summary-secondary-row {
+        display: grid;
+        gap: 8px;
+      }
+      #home-drive-summary .drive-summary-priority-row {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      #home-drive-summary .drive-summary-secondary-row {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        margin-top: 9px;
+      }
+      #home-drive-summary .drive-summary-priority-card,
+      #home-drive-summary .drive-summary-secondary-card {
+        min-width: 0;
+        border: 1px solid #d6e4ea;
+        border-radius: 12px;
+        background: #fbfdfe;
+        padding: 8px 10px;
+      }
+      #home-drive-summary .drive-summary-priority-card {
+        background: #f6fafc;
+      }
+      #home-drive-summary .drive-summary-priority-card.important {
+        background: #fff;
+        border-color: #c8d6e2;
+        box-shadow: 0 4px 12px rgba(15,23,42,.05);
+      }
+      #home-drive-summary .drive-summary-label {
+        color: #5f7383;
+        font-size: .68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .055em;
+        white-space: nowrap;
+      }
+      #home-drive-summary .drive-summary-value {
+        margin-top: 2px;
+        color: #1e3140;
+        font-size: clamp(.95rem, 1.35vw, 1.16rem);
+        line-height: 1.1;
+        font-weight: 850;
+        letter-spacing: -.035em;
+        white-space: nowrap;
+      }
+      #home-drive-summary .drive-summary-priority-card .drive-summary-value {
+        font-size: clamp(1.1rem, 1.75vw, 1.48rem);
+      }
+      #home-drive-summary .goal-difference-positive { color: #1f7a4b; }
+      #home-drive-summary .goal-difference-negative { color: #a13a3a; }
+      #home-drive-summary .goal-difference-neutral { color: #4b5563; }
+      @media (max-width: 980px) {
+        #home-drive-summary .drive-summary-priority-head {
+          display: grid;
+        }
+        #home-drive-summary .drive-summary-priority-main {
+          grid-template-columns: 1fr;
+        }
+        #home-drive-summary .drive-summary-secondary-row {
+          grid-template-columns: repeat(5, minmax(86px, 1fr));
+          overflow-x: auto;
+          padding-bottom: 2px;
+        }
+      }
+      @media (max-width: 640px) {
+        #home-drive-summary .drive-summary-priority-row {
+          grid-template-columns: 1fr;
+        }
+        #home-drive-summary .drive-summary-secondary-row {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function clean(value) {
+    return String(value || '').trim();
+  }
+
+  function normalizeLabel(value) {
+    return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function valueClassFor(label, value) {
+    if (normalizeLabel(label) !== 'difference') return '';
+    if (/^\s*-/.test(value)) return 'goal-difference-negative';
+    if (value && !/^\s*\$?0\b/.test(String(value).replace(/,/g, ''))) return 'goal-difference-positive';
+    return 'goal-difference-neutral';
+  }
+
+  function readOriginalCards(box) {
+    const map = new Map();
+    box.querySelectorAll('.home-drive-summary-card, .drive-summary-card').forEach((card) => {
+      const label = clean(card.querySelector('.home-drive-summary-label, .drive-summary-label')?.textContent || '');
+      const value = clean(card.querySelector('.home-drive-summary-value, .drive-summary-value')?.textContent || '');
+      if (label && value) map.set(normalizeLabel(label), { label, value });
+    });
+    return map;
+  }
+
+  function pick(map, keys, fallbackLabel) {
+    for (const key of keys) {
+      const found = map.get(normalizeLabel(key));
+      if (found) return { ...found, label: fallbackLabel || found.label };
+    }
+    return { label: fallbackLabel || keys[0] || '', value: '—' };
+  }
+
+  function renderCard(item, className = '', important = false) {
+    const tone = valueClassFor(item.label, item.value);
+    return `
+      <div class="${className} ${important ? 'important' : ''}">
+        <div class="drive-summary-label">${escapeHtml(item.label)}</div>
+        <div class="drive-summary-value ${tone}">${escapeHtml(item.value)}</div>
+      </div>
+    `;
+  }
+
+  function transformDriveSummary() {
+    const box = document.getElementById('home-drive-summary');
+    if (!box || box.classList.contains('hidden')) return;
+    if (box.querySelector('.drive-summary-priority-row')) return;
+
+    const cards = readOriginalCards(box);
+    if (!cards.size) return;
+
+    const title = clean(box.querySelector('.home-drive-summary-title, .drive-summary-title')?.textContent || '');
+    const date = clean(box.querySelector('.home-drive-summary-date, .drive-summary-date')?.textContent || '');
+
+    const goal = pick(cards, ['Goal'], 'Goal');
+    const total = pick(cards, ['Total Raised $', 'Total Raised'], 'Total Raised');
+    const difference = pick(cards, ['Difference'], 'Difference');
+
+    const pledges = pick(cards, ['Pledges'], 'Pledges');
+    const broadcast = pick(cards, ['Broadcast $', 'Broadcast'], 'Broadcast');
+    const nonSpecific = pick(cards, ['Non-Specific $', 'Non Specific $', 'Non-Specific'], 'Non-Specific');
+    const online = pick(cards, ['Online $', 'Online'], 'Online');
+    const mail = pick(cards, ['Mail $', 'Mail'], 'Mail');
+
+    box.innerHTML = `
+      <div class="drive-summary-priority-head">
+        <div class="drive-summary-priority-main">
+          <div class="drive-summary-priority-title-wrap">
+            <div class="drive-summary-priority-kicker">Pledge drive snapshot</div>
+            <div class="drive-summary-priority-title">${escapeHtml(title || 'Current pledge drive')}</div>
+          </div>
+          <div class="drive-summary-priority-row">
+            ${renderCard(goal, 'drive-summary-priority-card')}
+            ${renderCard(total, 'drive-summary-priority-card', true)}
+            ${renderCard(difference, 'drive-summary-priority-card', true)}
+          </div>
+        </div>
+        ${date ? `<div class="drive-summary-priority-date">${escapeHtml(date)}</div>` : ''}
+      </div>
+      <div class="drive-summary-secondary-row">
+        ${renderCard(pledges, 'drive-summary-secondary-card')}
+        ${renderCard(broadcast, 'drive-summary-secondary-card')}
+        ${renderCard(nonSpecific, 'drive-summary-secondary-card')}
+        ${renderCard(online, 'drive-summary-secondary-card')}
+        ${renderCard(mail, 'drive-summary-secondary-card')}
+      </div>
+    `;
+    box.classList.add('drive-snapshot-priority-layout');
+    box.dataset.driveSnapshotLayoutVersion = VERSION;
+  }
+
+  function scheduleTransform() {
+    window.cancelAnimationFrame(raf);
+    raf = window.requestAnimationFrame(transformDriveSummary);
+  }
+
+  function bootPatch() {
+    injectStyles();
+    scheduleTransform();
+    const box = document.getElementById('home-drive-summary');
+    if (box) {
+      const observer = new MutationObserver(scheduleTransform);
+      observer.observe(box, { childList: true, subtree: true });
+    }
+    window.setInterval(scheduleTransform, 1500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootPatch, { once: true });
+  } else {
+    bootPatch();
+  }
+})();
