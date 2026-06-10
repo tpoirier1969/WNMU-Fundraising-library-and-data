@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.21.95</title>
+  <title>WNMU Pledge Performance Analytics v0.21.98</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -69,7 +69,24 @@
     .muted-cell { color: var(--muted); }
     .track { height: 18px; background: #f0e4d3; border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), #83a9aa); border-radius: 999px; min-width: 2px; }
-    .bval { font-weight: 950; color: var(--accent); white-space: nowrap; }
+     .bval { font-weight: 950; color: var(--accent); white-space: nowrap; }
+    .seasonal-chart { display: grid; gap: 8px; }
+    .seasonal-row { display: grid; grid-template-columns: minmax(190px, 1.05fr) minmax(360px, 1.9fr) minmax(130px, .72fr); gap: 10px; align-items: center; margin: 8px 0; }
+    .season-cells { display: grid; grid-template-columns: repeat(4, minmax(76px, 1fr)); gap: 6px; }
+    .season-cell { border: 1px solid #eadcc8; background: #f7ead8; border-radius: 12px; padding: 6px 7px; min-height: 58px; display: grid; gap: 2px; align-content: center; }
+    .season-cell.baseline { border-color: var(--accent-2); background: #edf5f4; }
+    .season-cell.no-data { opacity: .55; background: #f3eee5; }
+    .season-code { font-weight: 950; color: var(--accent); font-size: .82rem; }
+    .season-avg { font-weight: 950; color: var(--ink); font-size: .88rem; }
+    .season-lift { font-weight: 900; font-size: .8rem; }
+    .season-lift.up { color: var(--good); }
+    .season-lift.down { color: var(--bad); }
+    .season-lift.flat { color: var(--muted); }
+    .seasonal-value { text-align: right; display: grid; gap: 2px; justify-items: end; line-height: 1.12; }
+    .seasonal-value .value-kicker { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 950; }
+    .seasonal-value strong { color: var(--accent); font-size: 1.08rem; }
+    .seasonal-value span:not(.value-kicker) { color: var(--muted); font-size: .82rem; font-weight: 900; }
+    .topic-label-cell { display: grid; gap: 2px; }
     .read { border-left: 5px solid var(--accent-2); background: #edf5f4; border-radius: 14px; padding: 12px; color: #24494d; }
     .tablewrap { max-height: none; overflow: visible; border: 1px solid var(--line); border-radius: 14px; }
     table { width: 100%; border-collapse: collapse; font-size: .92rem; }
@@ -118,7 +135,9 @@
       .cards { position: static; }
       .stats, .adv { grid-template-columns: 1fr; }
       .topic-options { position: static; box-shadow: none; min-width: 0; }
-      .bar { grid-template-columns: 1fr; }
+      .bar, .seasonal-row { grid-template-columns: 1fr; }
+      .season-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .seasonal-value { text-align: left; justify-items: start; }
       .program-detail-grid, .program-detail-summary { grid-template-columns: 1fr; }
       .brand img { width: 56px; }
     }
@@ -130,7 +149,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.21.95</div>
+        <div class="eyebrow">Admin analytics · v0.21.98</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -788,6 +807,25 @@
     return { counts, label, allFour };
   }
 
+  function medianValue(values = []) {
+    const clean = values.map(Number).filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+    if (!clean.length) return 0;
+    const mid = Math.floor(clean.length / 2);
+    return clean.length % 2 ? clean[mid] : (clean[mid - 1] + clean[mid]) / 2;
+  }
+
+  function closestMedianSeason(realSeasonStats = []) {
+    const median = medianValue(realSeasonStats.map((item) => item.avg));
+    return realSeasonStats.reduce((winner, item) => {
+      if (!winner) return item;
+      const winnerDistance = Math.abs(Number(winner.avg || 0) - median);
+      const itemDistance = Math.abs(Number(item.avg || 0) - median);
+      if (itemDistance < winnerDistance) return item;
+      if (itemDistance === winnerDistance && Number(item.avg || 0) < Number(winner.avg || 0)) return item;
+      return winner;
+    }, null);
+  }
+
   function summarizeGroup(title, records) {
     const seasons = new Set(records.map((record) => record.seasonYear));
     const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
@@ -979,23 +1017,34 @@
       const bySeason = SEASONS.map((season) => {
         const matches = records.filter((record) => record.season === season);
         const dollars = matches.reduce((sum, record) => sum + record.dollars, 0);
-        return { season, broadcasts: matches.length, dollars, avg: matches.length ? dollars / matches.length : null };
+        return { season, broadcasts: matches.length, dollars, avg: matches.length ? dollars / matches.length : null, lift: null, isBaseline: false };
       });
       const real = bySeason.filter((item) => item.broadcasts > 0 && Number.isFinite(item.avg));
       if (!real.length) return;
-      const baseline = real.reduce((sum, item) => sum + item.avg, 0) / real.length;
-      const best = real.reduce((winner, item) => item.avg > winner.avg ? item : winner, real[0]);
-      const worst = real.reduce((winner, item) => item.avg < winner.avg ? item : winner, real[0]);
+      const baseline = closestMedianSeason(real) || real[0];
+      const baselineAvg = Number(baseline?.avg || 0);
+      bySeason.forEach((item) => {
+        if (!item.broadcasts || !Number.isFinite(item.avg) || !(baselineAvg > 0)) return;
+        item.lift = ((item.avg - baselineAvg) / baselineAvg) * 100;
+        item.isBaseline = item.season === baseline.season;
+      });
+      const best = real.reduce((winner, item) => Number(item.lift || 0) > Number(winner.lift || 0) ? item : winner, real[0]);
+      const worst = real.reduce((winner, item) => Number(item.lift || 0) < Number(winner.lift || 0) ? item : winner, real[0]);
+      const positiveLift = Math.max(...real.map((item) => Number(item.lift || 0)), 0);
+      const negativeLift = Math.min(...real.map((item) => Number(item.lift || 0)), 0);
       const summary = summarizeGroup(title, records);
       out.push({
         ...summary,
         seasons: real.length,
-        avg: baseline,
+        avg: baselineAvg,
+        baselineSeason: baseline.season,
+        baselineAvg,
         seasonStats: bySeason,
         bestSeason: best.season,
-        bestLift: baseline ? ((best.avg - baseline) / baseline) * 100 : 0,
+        bestLift: Number(best.lift || 0),
         worstSeason: worst.season,
-        worstLift: baseline ? ((worst.avg - baseline) / baseline) * 100 : 0,
+        worstLift: Number(worst.lift || 0),
+        liftRangeLabel: `${formatPercent(positiveLift)} / ${formatPercent(negativeLift)}`,
         weak: records.length < WEAK_BROADCASTS || real.length < WEAK_SEASONS
       });
     });
@@ -1009,10 +1058,26 @@
   }
 
 
+  function seasonStat(row, season) {
+    return (row.seasonStats || []).find((item) => item.season === season) || { broadcasts: 0, dollars: 0, avg: null, lift: null, isBaseline: false };
+  }
+
+  function liftClass(value) {
+    if (!Number.isFinite(value) || Math.abs(value) < 0.5) return 'flat';
+    return value > 0 ? 'up' : 'down';
+  }
+
   function seasonPerformanceCell(row, season) {
-    const stat = (row.seasonStats || []).find((item) => item.season === season) || { broadcasts: 0, dollars: 0, avg: null };
+    const stat = seasonStat(row, season);
     if (!stat.broadcasts) return '<span class="muted-cell">—</span>';
-    return `<b>${formatMoney(stat.avg || 0)}</b><br><span class="mix">${formatNumber(stat.broadcasts)} airings · ${formatMoney(stat.dollars || 0)}</span>`;
+    const lift = Number.isFinite(stat.lift) ? stat.lift : 0;
+    const liftText = stat.isBaseline ? '0% avg' : formatPercent(lift);
+    return `<b>${formatMoney(stat.avg || 0)}</b><br><span class="mix">${formatMoney(stat.dollars || 0)} · <span class="season-lift ${liftClass(lift)}">${escapeHtml(liftText)}</span></span>`;
+  }
+
+  function labelWithMixCell(row, labelHtml = '') {
+    const label = labelHtml || escapeHtml(row.title || '');
+    return `<span class="topic-label-cell"><span>${label}</span>${row.mix ? `<span class="mix">${escapeHtml(row.mix)}</span>` : ''}</span>`;
   }
 
   function topRowsText(rows, valueFn = (row) => formatMetricValue(row), limit = 3) {
@@ -1035,9 +1100,16 @@
 
   function seasonalRead(rows) {
     if (!rows.length) return 'No seasonal topic records match the current filters.';
-    const row = rows[0];
-    const seasonBits = SEASONS.map((season) => `${season}: ${seasonPerformanceCell(row, season).replace(/<[^>]+>/g, ' ')}`).join(' · ');
-    return `${formatNumber(rows.length)} primary topic(s) have seasonal history in the current range. This view is now a four-season comparison, not a biggest-difference-only list. The first row is <b>${escapeHtml(row.title)}</b>, averaging <b>${formatMoney(row.avg || 0)}</b> per airing across its active pledge seasons.<br><br>${escapeHtml(seasonBits)}<br><br>Read across March, June, August, and December to see where a topic is actually useful, thin, or missing.`;
+    const topLines = rows.slice(0, 3).map((row, index) => {
+      const seasonBits = SEASONS.map((season) => {
+        const stat = seasonStat(row, season);
+        if (!stat.broadcasts) return `${season}: no airings`;
+        const liftText = stat.isBaseline ? '0% avg' : formatPercent(Number(stat.lift || 0));
+        return `${season}: ${formatMoney(stat.avg || 0)} (${liftText})`;
+      }).join(' · ');
+      return `${index + 1}. <b>${escapeHtml(row.title)}</b> — baseline <b>${escapeHtml(row.baselineSeason || '')}</b> at <b>${formatMoney(row.baselineAvg || row.avg || 0)}</b>; ${escapeHtml(seasonBits)}; total <b>${formatMoney(row.dollars || 0)}</b>.`;
+    }).join('<br>');
+    return `This view compares each primary topic to <b>itself</b>, not to the whole pledge drive. For each topic, the season closest to that topic’s median seasonal average is treated as the <b>0% average</b>. The other seasons show how far above or below that topic’s own baseline they landed.<br><br>${topLines}<br><br>Use the four season columns to spot useful patterns: a topic with December +80% and August -40% is probably a December tool, even if its all-year average looks merely okay.`;
   }
 
   function liveRead(rows) {
@@ -1089,7 +1161,7 @@
       tag: 'program lens',
       read: programRead,
       columns: [
-        ['Program', (row) => `${programTitleCell(row)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Program', (row) => labelWithMixCell(row, programTitleCell(row)), '', (row) => row.title],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
@@ -1106,7 +1178,7 @@
       metricDriven: true,
       read: topicRead,
       columns: [
-        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
@@ -1146,7 +1218,7 @@
       tag: 'topic lens',
       read: topicRead,
       columns: [
-        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
         ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
@@ -1155,26 +1227,25 @@
     },
     seasonal: {
       title: 'When do topics work best?',
-      summary: 'Four pledge seasons, topic-level seasonal lift. The season selector is disabled here on purpose.',
-      graphTitle: 'Topic seasonal averages',
+      summary: 'Compares each primary topic across March, June, August, and December using that topic’s own median-like season as the baseline.',
+      graphTitle: 'Season lift by topic',
       tableTitle: 'Topic seasonal lift',
-      tableNote: 'Holiday-related titles are excluded here so December Christmas programming does not distort the read. March, June, August, and December columns show avg/airing, airing count, and total dollars.',
+      tableNote: 'Holiday-related titles are excluded. Each topic uses its own closest-to-median season as the 0% average, then March, June, August, and December show avg/airing, total dollars, and percent above or below that topic baseline.',
       useSeason: false,
       rows: rowsSeasonal,
       metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
-      tag: 'four-season table',
+      tag: 'four-season lift',
       chartValue: (row) => row.avg || 0,
       chartLabel: (row) => formatMoney(row.avg || 0),
       read: seasonalRead,
       columns: [
-        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
-        ['March', (row) => seasonPerformanceCell(row, 'March'), 'money emphasis', (row) => ((row.seasonStats || []).find((item) => item.season === 'March') || {}).avg || 0],
-        ['June', (row) => seasonPerformanceCell(row, 'June'), 'money emphasis', (row) => ((row.seasonStats || []).find((item) => item.season === 'June') || {}).avg || 0],
-        ['August', (row) => seasonPerformanceCell(row, 'August'), 'money emphasis', (row) => ((row.seasonStats || []).find((item) => item.season === 'August') || {}).avg || 0],
-        ['December', (row) => seasonPerformanceCell(row, 'December'), 'money emphasis', (row) => ((row.seasonStats || []).find((item) => item.season === 'December') || {}).avg || 0],
-        ['Best season', (row) => escapeHtml(row.bestSeason), '', (row) => SEASONS.indexOf(row.bestSeason)],
-        ['Best lift', (row) => formatPercent(row.bestLift), 'num', (row) => row.bestLift],
-        ['Worst season', (row) => escapeHtml(row.worstSeason), '', (row) => SEASONS.indexOf(row.worstSeason)]
+        ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
+        ['Average', (row) => `${formatMoney(row.baselineAvg || row.avg || 0)}<br><span class="mix">${escapeHtml(row.baselineSeason || '')} baseline</span>`, 'money emphasis', (row) => row.baselineAvg || row.avg || 0],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['March', (row) => seasonPerformanceCell(row, 'March'), 'money emphasis', (row) => Number(seasonStat(row, 'March').avg || 0)],
+        ['June', (row) => seasonPerformanceCell(row, 'June'), 'money emphasis', (row) => Number(seasonStat(row, 'June').avg || 0)],
+        ['August', (row) => seasonPerformanceCell(row, 'August'), 'money emphasis', (row) => Number(seasonStat(row, 'August').avg || 0)],
+        ['December', (row) => seasonPerformanceCell(row, 'December'), 'money emphasis', (row) => Number(seasonStat(row, 'December').avg || 0)]
       ]
     },
     history: {
@@ -1492,9 +1563,39 @@
     </svg>`;
   }
 
+  function renderSeasonalLiftChart(rows) {
+    const chartRows = rows.slice(0, 12);
+    if (!chartRows.length) {
+      dom.chart.innerHTML = '<div class="empty">No graphable rows.</div>';
+      return;
+    }
+    const seasonCellHtml = (row, season) => {
+      const stat = seasonStat(row, season);
+      if (!stat.broadcasts) {
+        return `<div class="season-cell no-data"><span class="season-code">${escapeHtml(SEASON_CODE[season])}</span><span class="season-avg">—</span><span class="season-lift flat">No data</span></div>`;
+      }
+      const lift = Number.isFinite(stat.lift) ? stat.lift : 0;
+      const liftText = stat.isBaseline ? '0% avg' : formatPercent(lift);
+      return `<div class="season-cell ${stat.isBaseline ? 'baseline' : ''}">
+        <span class="season-code">${escapeHtml(SEASON_CODE[season])}</span>
+        <span class="season-avg">${escapeHtml(formatMoney(stat.avg || 0))}</span>
+        <span class="season-lift ${liftClass(lift)}">${escapeHtml(liftText)}</span>
+      </div>`;
+    };
+    dom.chart.innerHTML = `<div class="seasonal-chart">${chartRows.map((row) => `<div class="seasonal-row">
+        <div class="blabel" title="${escapeHtml(row.title)}">${chartRowLabel(row)}</div>
+        <div class="season-cells">${SEASONS.map((season) => seasonCellHtml(row, season)).join('')}</div>
+        <div class="seasonal-value"><span class="value-kicker">Average</span><strong>${escapeHtml(formatMoney(row.baselineAvg || row.avg || 0))}</strong><span>Total ${escapeHtml(formatMoney(row.dollars || 0))}</span><span>${escapeHtml(row.liftRangeLabel || '')}</span></div>
+      </div>`).join('')}</div>`;
+  }
+
   function renderChart(rows, question) {
     if (state.question === 'seasonOverview') {
       renderSeasonTrendChart(question);
+      return;
+    }
+    if (state.question === 'seasonal') {
+      renderSeasonalLiftChart(rows);
       return;
     }
     const chartRows = rows.slice(0, 12);
