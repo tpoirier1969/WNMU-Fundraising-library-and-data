@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Lab v0.21.84</title>
+  <title>WNMU Pledge Performance Lab v0.21.85</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -102,7 +102,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin prototype · v0.21.84</div>
+        <div class="eyebrow">Admin prototype · v0.21.85</div>
         <h1>Pledge Performance Lab</h1>
         <p>This live-data test page does not replace the current Performance page and does not save anything.</p>
       </div>
@@ -927,7 +927,7 @@
   async function load() {
     note('Loading live pledge performance records…');
     const [airings, scheduleRows] = await Promise.all([
-      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,live_break_count,local_break_count', 'air_date'),
+      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,local_break_count', 'air_date'),
       fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,schedule_data', 'start_date')
     ]);
     let libraryRows = [];
