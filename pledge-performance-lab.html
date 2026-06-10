@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.21.93</title>
+  <title>WNMU Pledge Performance Analytics v0.21.95</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -82,14 +82,23 @@
     .emphasis { font-weight: 950; color: var(--accent); }
     .program-link { color: var(--accent-2); font-weight: 900; text-decoration: underline; text-underline-offset: 2px; }
     .program-link:hover { color: var(--accent); }
+    .program-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .program-detail-item { border: 1px solid var(--line); border-radius: 12px; background: #fff7e8; padding: 10px; }
+    .program-detail-label { display: block; color: var(--muted); font-size: .73rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+    .program-detail-value { font-weight: 900; overflow-wrap: anywhere; }
+    .program-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+    .program-detail-summary .stat { background: #fff7e8; }
+    .program-detail-table-wrap { max-height: 330px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
+    .program-detail-note { color: var(--muted); font-size: .9rem; margin-top: 10px; }
     .empty { padding: 34px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; }
     .risk { color: var(--bad); font-weight: 900; }
     .ok { color: var(--good); font-weight: 900; }
     details { border: 1px solid var(--line); background: #fffdf8; border-radius: 16px; padding: 11px 13px; }
     summary { cursor: pointer; font-weight: 950; color: var(--accent); }
-    .advanced-strip { border: 1px solid var(--line); background: #fffdf8; border-radius: 16px; padding: 8px 10px; }
-    .adv { display: grid; grid-template-columns: repeat(5, minmax(104px, 1fr)); gap: 6px; align-items: end; color: var(--muted); }
+    .advanced-strip { border: 1px solid var(--line); border-width: 0 0 1px; background: #fffdf8; border-radius: 22px 22px 0 0; padding: 10px 12px; }
+    .adv { display: grid; grid-template-columns: minmax(118px, 1fr) minmax(128px, 1fr) minmax(138px, 1fr) minmax(90px, .8fr) minmax(74px, .65fr); gap: 6px; align-items: end; color: var(--muted); }
     .adv .field { min-width: 0; }
+    .adv select { width: 100%; }
     .adv-help { grid-column: 1 / -1; color: var(--muted); font-size: .86rem; }
     .topic-picker { position: relative; min-width: 190px; }
     .topic-picker summary { list-style: none; border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; background: #fffdf8; color: var(--ink); font-weight: 700; cursor: pointer; }
@@ -110,6 +119,7 @@
       .stats, .adv { grid-template-columns: 1fr; }
       .topic-options { position: static; box-shadow: none; min-width: 0; }
       .bar { grid-template-columns: 1fr; }
+      .program-detail-grid, .program-detail-summary { grid-template-columns: 1fr; }
       .brand img { width: 56px; }
     }
   </style>
@@ -120,7 +130,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.21.93</div>
+        <div class="eyebrow">Admin analytics · v0.21.95</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -169,18 +179,13 @@
     <div class="layout">
       <aside id="cards" class="cards"></aside>
       <section class="detail">
-        <div class="dhead">
-          <h2 id="dt">Choose a question</h2>
-          <p id="ds">Cards choose the question. This side holds the graph, table, and plain-English read.</p>
-        </div>
-        <div class="inside">
           <div id="advanced-filters" class="advanced-strip">
             <div class="adv">
-              <div class="field">
+              <div class="field adv-distributor-field">
                 <label for="adv-distributor">Distributor</label>
                 <select id="adv-distributor"><option value="all">All distributors</option></select>
               </div>
-              <div class="field">
+              <div class="field adv-metric-field">
                 <label for="adv-metric">Money basis</label>
                 <select id="adv-metric">
                   <option value="avg">Average $ / airing</option>
@@ -189,7 +194,7 @@
                   <option value="broadcasts">Broadcast count</option>
                 </select>
               </div>
-              <div class="field">
+              <div class="field adv-live-field">
                 <label for="adv-live">Live-break filter</label>
                 <select id="adv-live">
                   <option value="all">All broadcasts</option>
@@ -197,7 +202,7 @@
                   <option value="nonlive">No live-break flag</option>
                 </select>
               </div>
-              <div class="field">
+              <div class="field adv-daypart-field">
                 <label for="adv-daypart">Daypart</label>
                 <select id="adv-daypart">
                   <option value="all">All dayparts</option>
@@ -207,7 +212,7 @@
                   <option value="overnight">Overnight</option>
                 </select>
               </div>
-              <div class="field">
+              <div class="field adv-weekpart-field">
                 <label for="adv-weekpart">Weekpart</label>
                 <select id="adv-weekpart">
                   <option value="all">All days</option>
@@ -217,6 +222,11 @@
               </div>
             </div>
           </div>
+        <div class="dhead">
+          <h2 id="dt">Choose a question</h2>
+          <p id="ds">Cards choose the question. This side holds the graph, table, and plain-English read.</p>
+        </div>
+        <div class="inside">
           <div id="stats" class="stats"></div>
           <div class="split">
             <div class="panel">
@@ -255,6 +265,20 @@
   </div>
 </div>
 
+<div id="program-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="program-modal-title">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">Program detail</div>
+        <h2 id="program-modal-title">Program</h2>
+        <p id="program-modal-subtitle">Analytics detail for this title.</p>
+      </div>
+      <button type="button" id="program-modal-close" class="ghost">Close</button>
+    </div>
+    <div id="program-modal-body" class="modal-body"></div>
+  </div>
+</div>
+
 <script>
 (() => {
   const AIRINGS_TABLE = 'pledge_program_airings_v2';
@@ -277,6 +301,9 @@
     filtered: [],
     schedules: [],
     scheduleRecords: [],
+    libraryRows: [],
+    libraryById: new Map(),
+    libraryByTitle: new Map(),
     question: 'programs',
     season: 'all',
     year: 'all',
@@ -299,7 +326,8 @@
     advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),
     cards: el('cards'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
     chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
-    trendModal: el('trend-modal'), trendTitle: el('trend-title'), trendSubtitle: el('trend-subtitle'), trendBody: el('trend-body'), trendClose: el('trend-close')
+    trendModal: el('trend-modal'), trendTitle: el('trend-title'), trendSubtitle: el('trend-subtitle'), trendBody: el('trend-body'), trendClose: el('trend-close'),
+    programModal: el('program-modal'), programModalTitle: el('program-modal-title'), programModalSubtitle: el('program-modal-subtitle'), programModalBody: el('program-modal-body'), programModalClose: el('program-modal-close')
   };
 
   function escapeHtml(value) {
@@ -773,8 +801,9 @@
 
   function programTitleCell(row) {
     const label = escapeHtml(row.title || 'Untitled program');
-    if (!row.programOpenId) return label;
-    return `<a class="program-link" href="index.html?openProgram=${encodeURIComponent(row.programOpenId)}">${label}</a>`;
+    const programId = text(row.programOpenId || row.programId || '');
+    if (!programId) return label;
+    return `<button type="button" class="program-link" data-program-detail-id="${escapeHtml(programId)}" data-program-detail-title="${escapeHtml(row.title || '')}">${label}</button>`;
   }
 
   function rowsPrograms() {
@@ -1235,6 +1264,9 @@
     } catch (_error) {
       libraryRows = await fetchAll(BASE_TABLE, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
     }
+    state.libraryRows = libraryRows;
+    state.libraryById = new Map(libraryRows.map((row) => [text(row.id), row]).filter(([id]) => id));
+    state.libraryByTitle = new Map(libraryRows.map((row) => [lookupKey(row.title), row]).filter(([title]) => title));
     state.schedules = scheduleRows.map(normalizeSchedule);
     state.records = buildRecords(airings, libraryRows, state.schedules);
     state.scheduleRecords = buildScheduleRecords(state.schedules, libraryRows, state.records);
@@ -1473,6 +1505,9 @@
     dom.table.querySelectorAll('[data-trend-id]').forEach((button) => {
       button.addEventListener('click', () => openTrend(button.dataset.trendId || ''));
     });
+    dom.table.querySelectorAll('[data-program-detail-id]').forEach((button) => {
+      button.addEventListener('click', () => openProgramDetail(button.dataset.programDetailId || '', button.dataset.programDetailTitle || button.textContent || ''));
+    });
   }
 
   function openTrend(id) {
@@ -1512,6 +1547,66 @@
     </svg>`;
   }
 
+
+  function findProgramRow(programId = '', title = '') {
+    const id = text(programId);
+    const titleKey = lookupKey(title);
+    return state.libraryById.get(id)
+      || state.libraryByTitle.get(titleKey)
+      || state.libraryRows.find((row) => text(row.id) === id)
+      || state.libraryRows.find((row) => lookupKey(row.title) === titleKey)
+      || null;
+  }
+
+  function recordsForProgram(programId = '', title = '') {
+    const id = text(programId);
+    const titleKey = lookupKey(title);
+    return state.records.filter((record) => {
+      if (id && (text(record.programOpenId) === id || text(record.programId) === id)) return true;
+      return titleKey && lookupKey(record.title) === titleKey;
+    }).sort((a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0));
+  }
+
+  function openProgramDetail(programId = '', title = '') {
+    const program = findProgramRow(programId, title) || {};
+    const displayTitle = text(program.title || title || 'Program detail');
+    const rows = recordsForProgram(programId, displayTitle);
+    const dollars = rows.reduce((sum, record) => sum + Number(record.dollars || 0), 0);
+    const pledges = rows.reduce((sum, record) => sum + Number(record.pledges || 0), 0);
+    const avg = rows.length ? dollars / rows.length : 0;
+    const mix = seasonMix(rows);
+    const recentRows = rows.slice(0, 40);
+
+    dom.programModalTitle.textContent = displayTitle;
+    dom.programModalSubtitle.textContent = rows.length
+      ? `${formatNumber(rows.length)} pledge airing row(s) in analytics history · ${formatMoney(dollars)} total`
+      : 'No pledge airing rows found in the analytics history for this title.';
+
+    dom.programModalBody.innerHTML = `
+      <div class="program-detail-grid">
+        <div class="program-detail-item"><span class="program-detail-label">Title</span><div class="program-detail-value">${escapeHtml(displayTitle)}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">NOLA</span><div class="program-detail-value">${escapeHtml(text(program.nola_code) || rows.map((record) => record.nola).find(Boolean) || '—')}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">Primary topic</span><div class="program-detail-value">${escapeHtml(text(program.topic_primary) || rows.map((record) => record.topic).find(Boolean) || '—')}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">Secondary topic</span><div class="program-detail-value">${escapeHtml(text(program.topic_secondary) || '—')}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">Distributor</span><div class="program-detail-value">${escapeHtml(text(program.distributor) || rows.map((record) => record.distributor).find(Boolean) || '—')}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">Rights</span><div class="program-detail-value">${escapeHtml([program.rights_start, program.rights_end].map(text).filter(Boolean).join(' → ') || '—')}</div></div>
+      </div>
+      <div class="program-detail-summary">
+        <div class="stat"><div class="v">${formatMoney(dollars)}</div><div>Total dollars</div></div>
+        <div class="stat"><div class="v">${formatMoney(avg)}</div><div>Avg / airing</div></div>
+        <div class="stat"><div class="v">${formatNumber(rows.length)}</div><div>Broadcasts</div></div>
+        <div class="stat"><div class="v">${escapeHtml(mix.label)}</div><div>Season mix</div></div>
+      </div>
+      ${recentRows.length ? `<div class="program-detail-table-wrap"><table><thead><tr><th>Date</th><th>Fundraiser</th><th class="money">Dollars</th><th class="num">Pledges</th><th>Live break</th></tr></thead><tbody>${recentRows.map((record) => `<tr><td>${escapeHtml(record.date ? record.date.toLocaleDateString() : '—')}</td><td>${escapeHtml(record.fundraiser || record.seasonYear || '—')}</td><td class="money">${formatMoney(record.dollars)}</td><td class="num">${formatNumber(record.pledges)}</td><td>${escapeHtml(record.liveState === 'live' ? 'Yes' : record.liveState === 'nonlive' ? 'No' : 'Unknown')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No pledge-airing detail rows found for this title.</div>'}
+      <div class="program-detail-note">This popup stays inside Performance Analytics. It uses the analytics page’s loaded library row plus pledge-airing history; it does not jump back to the Program Library.</div>`;
+    dom.programModal.classList.remove('hidden');
+  }
+
+  function closeProgramDetail() {
+    dom.programModal.classList.add('hidden');
+    dom.programModalBody.innerHTML = '';
+  }
+
   function bindEvents() {
     dom.signIn.addEventListener('click', async () => {
       if (!state.client) state.client = createClient();
@@ -1547,7 +1642,13 @@
     dom.advWeekpart.addEventListener('change', () => { state.advancedWeekpart = dom.advWeekpart.value; render(); });
     dom.trendClose.addEventListener('click', () => dom.trendModal.classList.add('hidden'));
     dom.trendModal.addEventListener('click', (event) => { if (event.target === dom.trendModal) dom.trendModal.classList.add('hidden'); });
-    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') dom.trendModal.classList.add('hidden'); });
+    dom.programModalClose.addEventListener('click', closeProgramDetail);
+    dom.programModal.addEventListener('click', (event) => { if (event.target === dom.programModal) closeProgramDetail(); });
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      dom.trendModal.classList.add('hidden');
+      closeProgramDetail();
+    });
   }
 
   window.addEventListener('DOMContentLoaded', async () => {
