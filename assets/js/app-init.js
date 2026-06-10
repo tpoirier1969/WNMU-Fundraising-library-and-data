@@ -168,6 +168,25 @@
     }, Number(constants.VERSION_CHECK_INTERVAL_MS) || (10 * 60 * 1000));
   }
 
+
+  function openProgramFromQuery() {
+    try {
+      const url = new URL(window.location.href);
+      const programId = (url.searchParams.get('openProgram') || url.searchParams.get('programId') || '').trim();
+      if (!programId) return;
+      state.activeWorkspace = 'library';
+      App.workspaceUi?.setWorkspace?.('library');
+      const preserveMode = Boolean(App.auth?.canEdit?.());
+      if (App.detailUi?.loadProgramDetail) void App.detailUi.loadProgramDetail(programId, { preserveMode });
+      url.searchParams.delete('openProgram');
+      url.searchParams.delete('programId');
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState(null, '', next || window.location.pathname);
+    } catch (error) {
+      console.warn('Could not open linked program.', error);
+    }
+  }
+
   async function init() {
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
@@ -206,6 +225,7 @@
     App.auth.bindAuthListener();
 
     await App.libraryLoader.refreshAll({ workspace: 'library' });
+    openProgramFromQuery();
 
     void App.schedulingUi?.warmup?.({ defer: true, renderHidden: true }).catch((error) => {
       console.warn('Background fundraiser warmup failed.', error);

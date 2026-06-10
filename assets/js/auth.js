@@ -17,7 +17,7 @@
       button.type = 'button';
       button.id = 'performance-lab-button';
       button.className = 'ghost hidden';
-      button.textContent = 'Performance Lab';
+      button.textContent = 'Performance Analytics';
       button.addEventListener('click', () => {
         window.location.href = 'pledge-performance-lab.html';
       });

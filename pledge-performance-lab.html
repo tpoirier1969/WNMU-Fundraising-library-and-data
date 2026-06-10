@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Lab v0.21.88</title>
+  <title>WNMU Pledge Performance Analytics v0.21.91</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -51,7 +51,6 @@
     .qcard.active { outline: 3px solid rgba(47, 93, 98, .25); border-color: var(--accent-2); }
     .qtitle { font-size: 1.05rem; font-weight: 950; }
     .qsum { color: var(--muted); font-size: .92rem; line-height: 1.35; }
-    .qmetric { font-size: 1.25rem; font-weight: 950; color: var(--accent); }
     .badge { display: inline-block; border-radius: 999px; background: #efe3d2; padding: 4px 8px; font-size: .78rem; font-weight: 900; color: #584b3b; }
     .detail { background: var(--card); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; box-shadow: 0 16px 38px rgba(56, 41, 23, .13); }
     .dhead { padding: 18px; background: var(--soft); border-bottom: 1px solid var(--line); }
@@ -63,8 +62,8 @@
     .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 16px; }
     .panel { border: 1px solid var(--line); border-radius: 18px; background: #fffdf8; padding: 14px; min-width: 0; }
     .bar { display: grid; grid-template-columns: minmax(170px, 1.25fr) minmax(90px, .85fr) auto; gap: 10px; align-items: center; margin: 9px 0; }
-    .blabel { font-weight: 850; font-size: calc(1rem - 1px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
-    .mix { color: var(--muted); font-size: .82rem; font-weight: 800; }
+    .blabel { font-weight: 850; font-size: calc(1rem - 2px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
+    .mix { color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; }
     .track { height: 18px; background: #f0e4d3; border-radius: 999px; overflow: hidden; }
     .fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), #83a9aa); border-radius: 999px; min-width: 2px; }
     .bval { font-weight: 950; color: var(--accent); white-space: nowrap; }
@@ -77,12 +76,17 @@
     .sort-th-button:hover { color: var(--accent); }
     .sort-arrow { color: var(--accent); font-size: .8rem; white-space: nowrap; }
     .money, .num { text-align: right; white-space: nowrap; }
+    .emphasis { font-weight: 950; color: var(--accent); }
+    .program-link { color: var(--accent-2); font-weight: 900; text-decoration: underline; text-underline-offset: 2px; }
+    .program-link:hover { color: var(--accent); }
     .empty { padding: 34px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; }
     .risk { color: var(--bad); font-weight: 900; }
     .ok { color: var(--good); font-weight: 900; }
     details { border: 1px solid var(--line); background: #fffdf8; border-radius: 16px; padding: 11px 13px; }
     summary { cursor: pointer; font-weight: 950; color: var(--accent); }
-    .adv { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; color: var(--muted); }
+    .adv { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; color: var(--muted); }
+    .adv .field { min-width: 0; }
+    .adv-help { grid-column: 1 / -1; color: var(--muted); font-size: .9rem; }
     .mini-spark { display: inline-block; width: 150px; height: 32px; vertical-align: middle; }
     .trend-button { padding: 5px 9px; font-size: .8rem; margin-left: 6px; }
     .modal { position: fixed; inset: 0; background: rgba(32, 24, 18, .62); display: grid; place-items: center; z-index: 1000; padding: 18px; }
@@ -105,9 +109,9 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin prototype · v0.21.88</div>
-        <h1>Pledge Performance Lab</h1>
-        <p>This live-data test page does not replace the current Performance page and does not save anything.</p>
+        <div class="eyebrow">Admin analytics · v0.21.91</div>
+        <h1>Pledge Performance Analytics</h1>
+        <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
     </div>
     <div>
@@ -170,15 +174,53 @@
             <p id="tn">The table follows the selected question so the graph and rows tell the same story.</p>
             <div id="table" class="tablewrap"></div>
           </div>
-          <details>
-            <summary>Advanced filters proposed for the real page</summary>
+          <details id="advanced-filters">
+            <summary>Advanced filters</summary>
             <div class="adv">
-              <div><b>Time</b><br>Season, year, exact date range, all history, selected fundraiser.</div>
-              <div><b>Program</b><br>Topic, secondary topic, distributor, length, rights status, NOLA/title search, active/archived.</div>
-              <div><b>Evidence</b><br>Minimum broadcasts, minimum seasons, show weak, hide weak, or flag weak evidence without hiding it.</div>
-              <div><b>Money</b><br>Total dollars, average, median, pledges, dollars/minute, exclude non-specific pledges.</div>
-              <div><b>Scheduling</b><br>Daypart, weekday/weekend, live break only, non-live only, first airing, repeat airing.</div>
-              <div><b>Inspection</b><br>Show contributing broadcasts, source fundraiser, import source, copy/export rows.</div>
+              <div class="field">
+                <label for="adv-topic">Topic</label>
+                <select id="adv-topic"><option value="all">All topics</option></select>
+              </div>
+              <div class="field">
+                <label for="adv-distributor">Distributor</label>
+                <select id="adv-distributor"><option value="all">All distributors</option></select>
+              </div>
+              <div class="field">
+                <label for="adv-metric">Money basis</label>
+                <select id="adv-metric">
+                  <option value="avg">Average $ / airing</option>
+                  <option value="total">Total dollars</option>
+                  <option value="pledges">Pledge count</option>
+                  <option value="broadcasts">Broadcast count</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="adv-live">Live-break filter</label>
+                <select id="adv-live">
+                  <option value="all">All broadcasts</option>
+                  <option value="live">Live-break only</option>
+                  <option value="nonlive">No live-break flag</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="adv-daypart">Daypart</label>
+                <select id="adv-daypart">
+                  <option value="all">All dayparts</option>
+                  <option value="morning">Morning</option>
+                  <option value="afternoon">Afternoon</option>
+                  <option value="evening">Evening</option>
+                  <option value="overnight">Overnight</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="adv-weekpart">Weekpart</label>
+                <select id="adv-weekpart">
+                  <option value="all">All days</option>
+                  <option value="weekday">Weekdays</option>
+                  <option value="weekend">Weekends</option>
+                </select>
+              </div>
+              <div class="adv-help">Time, year, search, and evidence controls stay at the top of the page so they are not repeated here.</div>
             </div>
           </details>
         </div>
@@ -227,6 +269,12 @@
     year: 'all',
     search: '',
     evidence: 'flag',
+    metric: 'avg',
+    advancedTopic: 'all',
+    advancedDistributor: 'all',
+    advancedLive: 'all',
+    advancedDaypart: 'all',
+    advancedWeekpart: 'all',
     trendRows: new Map(),
     tableSort: { question: '', index: null, direction: 'asc' }
   };
@@ -235,6 +283,7 @@
   const dom = {
     notice: el('notice'), lab: el('lab'), signIn: el('sign-in'), signOut: el('sign-out'),
     season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), reload: el('reload'), scopeNote: el('scope-note'),
+    advTopic: el('adv-topic'), advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),
     cards: el('cards'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
     chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
     trendModal: el('trend-modal'), trendTitle: el('trend-title'), trendSubtitle: el('trend-subtitle'), trendBody: el('trend-body'), trendClose: el('trend-close')
@@ -341,6 +390,22 @@
     return '';
   }
 
+  function daypartFromMinutes(minutes) {
+    if (!Number.isFinite(Number(minutes))) return '';
+    const value = Number(minutes);
+    const hour = Math.floor((((value % 1440) + 1440) % 1440) / 60);
+    if (hour >= 5 && hour < 12) return 'morning';
+    if (hour >= 12 && hour < 17) return 'afternoon';
+    if (hour >= 17 && hour < 24) return 'evening';
+    return 'overnight';
+  }
+
+  function weekpartFromDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const day = date.getDay();
+    return day === 0 || day === 6 ? 'weekend' : 'weekday';
+  }
+
   function seasonYearSortKey(label) {
     const match = String(label || '').match(/(March|June|August|December)\s+(\d{4})/);
     return match ? (Number(match[2]) * 10) + SEASONS.indexOf(match[1]) + 1 : 0;
@@ -403,7 +468,7 @@
   }
 
   function buildScheduleIndex(schedules = [], indexes) {
-    const maps = { exact: new Map(), dateProgram: new Map(), dateNola: new Map(), dateTitle: new Map() };
+    const maps = { hash: new Map(), exact: new Map(), dateProgram: new Map(), dateNola: new Map(), dateTitle: new Map() };
     const push = (map, key, value) => {
       if (!key) return;
       if (!map.has(key)) map.set(key, []);
@@ -418,7 +483,9 @@
         const pid = text(firstNonEmpty(placement.programId, placement.program_id, lib?.id, ''));
         const nola = nolaKey(firstNonEmpty(lib?.nola_code, placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
         const title = lookupKey(firstNonEmpty(lib?.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
-        const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, live: placementLive(placement), placement };
+        const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+        const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, hash, live: placementLive(placement), placement };
+        push(maps.hash, hash, entry);
         push(maps.dateProgram, `${dateKey}|${pid}`, entry);
         push(maps.dateNola, `${dateKey}|${nola}`, entry);
         push(maps.dateTitle, `${dateKey}|${title}`, entry);
@@ -431,6 +498,8 @@
   }
 
   function findScheduleMatch(record, scheduleIndex) {
+    const hashMatch = record.sourceAiringHash ? (scheduleIndex.hash.get(record.sourceAiringHash) || []) : [];
+    if (hashMatch.length) return hashMatch.some((item) => item.live) ? hashMatch.find((item) => item.live) : hashMatch[0];
     const keys = [record.programId, record.nola ? nolaKey(record.nola) : '', lookupKey(record.title)].filter(Boolean);
     const candidates = [];
     keys.forEach((key) => {
@@ -484,6 +553,8 @@
         id: row.id || '',
         row,
         programId: text(firstNonEmpty(row.pledge_program_id, row.program_id, lib.id, '')),
+        programOpenId: text(firstNonEmpty(lib.id, row.pledge_program_id, row.program_id, '')),
+        sourceAiringHash: text(row.row_hash || row.sourceAiringHash || ''),
         title: text(lib.title) || importedTitle || 'Untitled',
         importedTitle,
         nola: text(firstNonEmpty(lib.nola_code, row.nola_code, row.nola, '')),
@@ -494,6 +565,8 @@
         date,
         dateKey: temporal.dateKey,
         startMinutes: temporal.startMinutes,
+        daypart: daypartFromMinutes(temporal.startMinutes ?? (date ? ((date.getHours() * 60) + date.getMinutes()) : null)),
+        weekpart: weekpartFromDate(date),
         season,
         year,
         seasonYear: season && year ? `${season} ${year}` : 'Unseasoned',
@@ -540,8 +613,10 @@
     const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
     const pledges = records.reduce((sum, record) => sum + record.pledges, 0);
     const mix = seasonMix(records);
+    const ids = [...new Set(records.map((record) => record.programOpenId || record.programId).filter(Boolean))];
     return {
       title,
+      programOpenId: ids.length === 1 ? ids[0] : '',
       dollars,
       pledges,
       broadcasts: records.length,
@@ -572,20 +647,64 @@
       if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.topic} ${record.nola}`).includes(searchKey)) return false;
       if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
       if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;
+      if (state.advancedTopic !== 'all' && record.topic !== state.advancedTopic) return false;
+      if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
+      if (state.advancedLive !== 'all' && record.liveState !== state.advancedLive) return false;
+      if (state.advancedDaypart !== 'all' && record.daypart !== state.advancedDaypart) return false;
+      if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;
       return true;
     });
+  }
+
+  function metricValue(row) {
+    if (state.metric === 'total') return Number(row.dollars || 0);
+    if (state.metric === 'pledges') return Number(row.pledges || 0);
+    if (state.metric === 'broadcasts') return Number(row.broadcasts || 0);
+    return Number(row.avg || 0);
+  }
+
+  function formatMetricValue(row) {
+    if (state.metric === 'total') return formatMoney(row.dollars || 0);
+    if (state.metric === 'pledges') return formatNumber(row.pledges || 0);
+    if (state.metric === 'broadcasts') return formatNumber(row.broadcasts || 0);
+    return formatMoney(row.avg || 0);
+  }
+
+  function metricLabel() {
+    if (state.metric === 'total') return 'Total dollars';
+    if (state.metric === 'pledges') return 'Pledges';
+    if (state.metric === 'broadcasts') return 'Broadcasts';
+    return 'Avg / airing';
+  }
+
+  function programTitleCell(row) {
+    const label = escapeHtml(row.title || 'Untitled program');
+    if (!row.programOpenId) return label;
+    return `<a class="program-link" href="index.html?openProgram=${encodeURIComponent(row.programOpenId)}">${label}</a>`;
   }
 
   function rowsPrograms() {
     return applyEvidence([...groupBy(filteredRecordsFor('programs'), (record) => record.title)]
       .map(([title, records]) => summarizeGroup(title, records))
-      .sort((a, b) => b.dollars - a.dollars));
+      .sort((a, b) => metricValue(b) - metricValue(a) || b.dollars - a.dollars));
   }
 
   function rowsTopics() {
     return applyEvidence([...groupBy(filteredRecordsFor('topics'), (record) => record.topic)]
       .map(([title, records]) => summarizeGroup(title, records))
-      .sort((a, b) => b.avg - a.avg));
+      .sort((a, b) => metricValue(b) - metricValue(a) || b.avg - a.avg));
+  }
+
+  function rowsTopicOverview() {
+    return [...groupBy(filteredRecordsFor('topicOverview'), (record) => record.topic)]
+      .map(([title, records]) => summarizeGroup(title, records))
+      .sort((a, b) => metricValue(b) - metricValue(a) || b.dollars - a.dollars || b.avg - a.avg);
+  }
+
+  function rowsSeasonOverview() {
+    return [...groupBy(filteredRecordsFor('seasonOverview'), (record) => record.season)]
+      .map(([title, records]) => summarizeGroup(title, records))
+      .sort((a, b) => SEASONS.indexOf(a.title) - SEASONS.indexOf(b.title));
   }
 
   function rowsUncategorized() {
@@ -626,6 +745,7 @@
       const peakChange = peak.total ? ((last.total - peak.total) / peak.total) * 100 : 0;
       out.push({
         title,
+        programOpenId: [...new Set(records.map((record) => record.programOpenId || record.programId).filter(Boolean))][0] || '',
         first,
         last,
         previous,
@@ -657,16 +777,15 @@
   }
 
   function rowsLive() {
-    const make = (title, records, weakOverride = false) => {
+    const make = (title, records) => {
       const row = summarizeGroup(title, records);
-      row.weak = weakOverride || row.weak;
+      row.weak = false;
       return row;
     };
-    return applyEvidence([
+    return [
       make('Live break', filteredRecordsFor('live').filter((record) => record.liveState === 'live')),
-      make('No live break', filteredRecordsFor('live').filter((record) => record.liveState === 'nonlive')),
-      make('Unknown / not matched', filteredRecordsFor('live').filter((record) => record.liveState === 'unknown'), true)
-    ]);
+      make('No live break', filteredRecordsFor('live').filter((record) => record.liveState === 'nonlive'))
+    ];
   }
 
   function rowsSeasonal() {
@@ -739,16 +858,55 @@
       tableTitle: 'Program ranking',
       tableNote: 'Graph shows the top 12. Table shows every matching program row.',
       rows: rowsPrograms,
+      metricDriven: true,
       metric: (rows) => rows[0] ? formatMoney(rows[0].dollars) : '—',
       tag: 'program lens',
-      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> is the top earner in this filter at ${formatMoney(rows[0].dollars)}. The season-count badge shows whether this is broad evidence or one-drive weirdness.` : 'No program records match.',
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> leads this filter by ${metricLabel().toLowerCase()} at ${formatMetricValue(rows[0])}. The season-count badge shows whether this is broad evidence or one-drive weirdness.` : 'No program records match.',
       columns: [
-        ['Program', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Program', (row) => `${programTitleCell(row)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
         ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`, '', (row) => row.seasons || 0],
         ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
+      ]
+    },
+    topicOverview: {
+      title: 'Topic overview',
+      summary: 'General topic totals for the selected filters.',
+      graphTitle: 'Topic totals',
+      tableTitle: 'Topic overview',
+      tableNote: 'Uses the selected season/year/search and advanced filters at the top of the page.',
+      rows: rowsTopicOverview,
+      metricDriven: true,
+      read: (rows) => rows.length ? `${formatNumber(rows.length)} topic(s) match the current filters. Use this as the broad topic snapshot before drilling into seasonal lift.` : 'No topic records match.',
+      columns: [
+        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
+        ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`, '', (row) => row.seasons || 0]
+      ]
+    },
+    seasonOverview: {
+      title: 'Season overview',
+      summary: 'March, June, August, and December totals for the selected year/search. Season filter is disabled here.',
+      graphTitle: 'Pledge season totals',
+      tableTitle: 'Season overview',
+      tableNote: 'Season selector is disabled because this view compares seasons. Year, search, and advanced filters still apply.',
+      useSeason: false,
+      rows: rowsSeasonOverview,
+      chartValue: (row) => row.dollars,
+      chartLabel: (row) => formatMoney(row.dollars),
+      read: (rows) => rows.length ? `${formatNumber(rows.length)} pledge season(s) match the current filters.` : 'No season records match.',
+      columns: [
+        ['Season', (row) => escapeHtml(row.title), '', (row) => SEASONS.indexOf(row.title)],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
+        ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Topics represented', (row) => formatNumber(new Set(row.records.map((record) => record.topic)).size), 'num', (row) => new Set(row.records.map((record) => record.topic)).size]
       ]
     },
     topics: {
@@ -758,12 +916,13 @@
       tableTitle: 'Topic ranking',
       tableNote: 'Season mix uses M/J/A/D counts, for example [M-3, J-1, A-0, D-5].',
       rows: rowsTopics,
+      metricDriven: true,
       metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
       tag: 'topic lens',
-      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> has the strongest average in this filter at ${formatMoney(rows[0].avg)} per airing. Check the M/J/A/D badge before trusting it too hard.` : 'No topic records match.',
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> leads this filter by ${metricLabel().toLowerCase()} at ${formatMetricValue(rows[0])}. Check the M/J/A/D badge before trusting it too hard.` : 'No topic records match.',
       columns: [
         ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`, '', (row) => row.title],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
         ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`, '', (row) => row.seasons || 0],
@@ -771,17 +930,17 @@
       ]
     },
     uncategorized: {
-      title: 'Which titles need topics?',
-      summary: 'Audit titles whose matched library topic is blank, unassigned, or not recognized.',
+      title: 'Topic assignment audit',
+      summary: 'Shows titles or accounting buckets the lab cannot place into a normal topic, so you can inspect the source instead of guessing.',
       graphTitle: 'Uncategorized titles by broadcast count',
-      tableTitle: 'Uncategorized title audit',
-      tableNote: 'These should be fixed in the library or investigated as match failures.',
+      tableTitle: 'Topic assignment audit',
+      tableNote: 'This is an audit view. Real titles may need topics or match fixes; Non-Specific pledge buckets should remain accounting buckets.',
       rows: rowsUncategorized,
       metric: (rows) => `${formatNumber(rows.length)} titles`,
-      tag: 'cleanup list',
+      tag: 'audit view',
       read: (rows) => rows.length ? `${formatNumber(rows.length)} title(s) are showing without a useful topic. If you expected these to have topics, this is probably a matching or library-field issue worth fixing before trusting topic analytics.` : 'No uncategorized pledge records match this filter.',
       columns: [
-        ['Title', (row) => escapeHtml(row.title), '', (row) => row.title],
+        ['Title', (row) => programTitleCell(row), '', (row) => row.title],
         ['NOLA', (row) => escapeHtml(row.nola || '—'), '', (row) => row.nola || ''],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
         ['Last seen', (row) => escapeHtml(row.lastSeen || '—'), '', (row) => seasonYearSortKey(row.lastSeen || '')],
@@ -826,7 +985,7 @@
       chartValue: (row) => Math.abs(Math.min(row.firstChange, 0)),
       chartLabel: (row) => `${formatMoney(row.first.total)} → ${formatMoney(row.last.total)}`,
       columns: [
-        ['Program', (row) => escapeHtml(row.title)],
+        ['Program', (row) => programTitleCell(row)],
         ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`, '', (row) => row.first.sortKey],
         ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`, '', (row) => row.last.sortKey],
         ['Change first → latest', (row) => formatPercent(row.firstChange), 'num', (row) => row.firstChange],
@@ -850,7 +1009,7 @@
       chartValue: (row) => row.last.total,
       chartLabel: (row) => `${row.pauseYears.toFixed(1)} yrs · ${formatMoney(row.last.total)}`,
       columns: [
-        ['Program', (row) => escapeHtml(row.title)],
+        ['Program', (row) => programTitleCell(row)],
         ['Previous fundraiser', (row) => row.previous ? `${escapeHtml(row.previous.seasonYear)}<br>${formatMoney(row.previous.total)}` : '—', '', (row) => row.previous?.sortKey || 0],
         ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`, '', (row) => row.last.sortKey],
         ['Gap', (row) => `${row.pauseYears.toFixed(1)} yrs`, 'num', (row) => row.pauseYears],
@@ -864,25 +1023,24 @@
       summary: 'Uses saved Scheduling live-break flags first, then imported live-break/local-break fields as fallback.',
       graphTitle: 'Live-break average comparison',
       tableTitle: 'Live break split',
-      tableNote: 'Unknown rows were not matched to a schedule and did not carry an imported live-break flag.',
+      tableNote: 'Uses saved Scheduling live-break flags first, then imported live-break/local-break fields as fallback. Unknown/unmatched rows are not included in this split.',
       rows: rowsLive,
       metric: (rows) => rows.find((row) => row.title === 'Live break') ? formatMoney(rows.find((row) => row.title === 'Live break').avg) : '—',
       tag: 'schedule flags first',
+      hideWeakStats: true,
       read: (rows) => {
         const live = rows.find((row) => row.title === 'Live break');
         const nonlive = rows.find((row) => row.title === 'No live break');
-        const unknown = rows.find((row) => row.title === 'Unknown / not matched');
         return live && nonlive
-          ? `Live-break records average <b>${formatMoney(live.avg)}</b>; non-live records average <b>${formatMoney(nonlive.avg)}</b>. Unknown/unmatched records: <b>${formatNumber(unknown?.broadcasts || 0)}</b>.`
+          ? `Live-break records average <b>${formatMoney(live.avg)}</b>; non-live records average <b>${formatMoney(nonlive.avg)}</b>.`
           : 'Live-break evidence is incomplete in this filter.';
       },
       columns: [
         ['Break type', (row) => escapeHtml(row.title), '', (row) => row.title],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
-        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0],
-        ['Evidence', evidenceLabel, '', (row) => row.weak ? 1 : 0]
+        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
       ]
     }
   };
@@ -957,7 +1115,7 @@
   async function load() {
     note('Loading live pledge performance records…');
     const [airings, scheduleRows] = await Promise.all([
-      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,local_break_count', 'air_date'),
+      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash,live_break_flag,local_break_count', 'air_date'),
       fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,schedule_data', 'start_date')
     ]);
     let libraryRows = [];
@@ -981,6 +1139,16 @@
     dom.year.innerHTML = '<option value="all">All years</option>' + years.map((year) => `<option>${escapeHtml(year)}</option>`).join('');
     dom.season.value = state.season;
     dom.year.value = state.year;
+    const topics = [...new Set(state.records.map((record) => record.topic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const distributors = [...new Set(state.records.map((record) => record.distributor || 'Unknown').filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    dom.advTopic.innerHTML = '<option value="all">All topics</option>' + topics.map((topic) => `<option value="${escapeHtml(topic)}">${escapeHtml(topic)}</option>`).join('');
+    dom.advDistributor.innerHTML = '<option value="all">All distributors</option>' + distributors.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+    if (topics.includes(state.advancedTopic)) dom.advTopic.value = state.advancedTopic; else { state.advancedTopic = 'all'; dom.advTopic.value = 'all'; }
+    if (distributors.includes(state.advancedDistributor)) dom.advDistributor.value = state.advancedDistributor; else { state.advancedDistributor = 'all'; dom.advDistributor.value = 'all'; }
+    dom.advMetric.value = state.metric;
+    dom.advLive.value = state.advancedLive;
+    dom.advDaypart.value = state.advancedDaypart;
+    dom.advWeekpart.value = state.advancedWeekpart;
   }
 
   function updateFilterState() {
@@ -998,16 +1166,11 @@
   function render() {
     state.trendRows.clear();
     updateFilterState();
-    const entries = Object.entries(QUESTIONS).map(([id, question]) => ({ id, question, rows: question.rows() }));
-    dom.cards.innerHTML = entries.map(({ id, question, rows }) => {
-      const weak = rows.filter((row) => row.weak).length;
-      return `<button type="button" class="qcard ${id === state.question ? 'active' : ''}" data-question="${escapeHtml(id)}">
+    const entries = Object.entries(QUESTIONS).map(([id, question]) => ({ id, question }));
+    dom.cards.innerHTML = entries.map(({ id, question }) => `<button type="button" class="qcard ${id === state.question ? 'active' : ''}" data-question="${escapeHtml(id)}">
         <div class="qtitle">${escapeHtml(question.title)}</div>
         <div class="qsum">${escapeHtml(question.summary)}</div>
-        <div class="qmetric">${escapeHtml(question.metric(rows))}</div>
-        <span class="badge">${escapeHtml(question.tag)} · ${formatNumber(rows.length)} rows${weak ? ` · ${formatNumber(weak)} weak` : ''}</span>
-      </button>`;
-    }).join('');
+      </button>`).join('');
     dom.cards.querySelectorAll('[data-question]').forEach((button) => {
       button.addEventListener('click', () => {
         state.question = button.dataset.question || 'programs';
@@ -1016,11 +1179,12 @@
       });
     });
     const selected = entries.find((entry) => entry.id === state.question) || entries[0];
-    renderDetail(selected);
+    renderDetail({ ...selected, rows: selected.question.rows() });
   }
 
   function chartValue(row, question) {
     if (typeof question.chartValue === 'function') return question.chartValue(row);
+    if (question.metricDriven) return metricValue(row);
     if (state.question === 'seasonal') return Math.abs(row.bestLift || 0);
     if (state.question === 'topics' || state.question === 'live') return row.avg || 0;
     return row.dollars || row.broadcasts || 0;
@@ -1028,6 +1192,7 @@
 
   function chartLabel(row, question) {
     if (typeof question.chartLabel === 'function') return question.chartLabel(row);
+    if (question.metricDriven) return formatMetricValue(row);
     if (state.question === 'seasonal') return `${row.bestSeason} ${formatPercent(row.bestLift)}`;
     if (state.question === 'topics' || state.question === 'live') return formatMoney(row.avg || 0);
     if (state.question === 'uncategorized') return `${formatNumber(row.broadcasts)} broadcasts`;
@@ -1035,7 +1200,7 @@
   }
 
   function chartRowLabel(row) {
-    const showMix = ['programs', 'topics', 'seasonal', 'live'].includes(state.question) && row.mix;
+    const showMix = ['programs', 'topicOverview', 'topics', 'seasonal', 'live'].includes(state.question) && row.mix;
     return `${escapeHtml(row.title)}${showMix ? ` <span class="mix">${escapeHtml(row.mix)}</span>` : ''}`;
   }
 
@@ -1046,23 +1211,26 @@
     dom.chartTitle.textContent = question.graphTitle;
     dom.tableTitle.textContent = question.tableTitle;
     dom.tableNote.textContent = question.tableNote || 'The table follows the selected question so the graph and rows tell the same story.';
-    dom.chartNote.textContent = rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.';
+    dom.chartNote.textContent = question.metricDriven ? `Graph uses ${metricLabel()} from Advanced filters.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.');
     dom.read.innerHTML = question.read(rows);
-    renderStats(rows);
+    renderStats(rows, question);
     renderChart(rows, question);
     renderTable(rows, question.columns);
   }
 
-  function renderStats(rows) {
+  function renderStats(rows, question = {}) {
     const dollars = rows.reduce((sum, row) => sum + Number(row.dollars || row.last?.total || 0), 0);
     const broadcasts = rows.reduce((sum, row) => sum + Number(row.broadcasts || 0), 0);
     const weak = rows.filter((row) => row.weak).length;
-    dom.stats.innerHTML = [
+    const cells = [
       ['Rows', formatNumber(rows.length)],
       ['Broadcasts', formatNumber(broadcasts)],
-      ['Dollars', formatMoney(dollars)],
-      ['Weak rows', formatNumber(weak)]
-    ].map(([label, value]) => `<div class="stat"><div class="v">${escapeHtml(value)}</div><div>${escapeHtml(label)}</div></div>`).join('');
+      ['Dollars', formatMoney(dollars)]
+    ];
+    if (question.metricDriven) cells.push([metricLabel(), formatMetricValue(rows[0] || {})]);
+    else if (!question.hideWeakStats) cells.push(['Weak rows', formatNumber(weak)]);
+    else cells.push(['Avg / airing', rows[0] ? formatMoney(rows[0].avg || 0) : '—']);
+    dom.stats.innerHTML = cells.map(([label, value]) => `<div class="stat"><div class="v">${escapeHtml(value)}</div><div>${escapeHtml(label)}</div></div>`).join('');
   }
 
   function renderChart(rows, question) {
@@ -1131,7 +1299,7 @@
         if (state.tableSort.question === state.question && state.tableSort.index === index) {
           state.tableSort.direction = state.tableSort.direction === 'asc' ? 'desc' : 'asc';
         } else {
-          state.tableSort = { question: state.question, index, direction: ['money', 'num'].includes(columns[index]?.[2]) ? 'desc' : 'asc' };
+          state.tableSort = { question: state.question, index, direction: String(columns[index]?.[2] || '').split(/\s+/).some((klass) => klass === 'money' || klass === 'num' || klass === 'emphasis') ? 'desc' : 'asc' };
         }
         render();
       });
@@ -1194,6 +1362,12 @@
     dom.year.addEventListener('change', () => { state.year = dom.year.value; render(); });
     dom.search.addEventListener('input', () => { state.search = dom.search.value; render(); });
     dom.evidence.addEventListener('change', () => { state.evidence = dom.evidence.value; render(); });
+    dom.advTopic.addEventListener('change', () => { state.advancedTopic = dom.advTopic.value; render(); });
+    dom.advDistributor.addEventListener('change', () => { state.advancedDistributor = dom.advDistributor.value; render(); });
+    dom.advMetric.addEventListener('change', () => { state.metric = dom.advMetric.value; render(); });
+    dom.advLive.addEventListener('change', () => { state.advancedLive = dom.advLive.value; render(); });
+    dom.advDaypart.addEventListener('change', () => { state.advancedDaypart = dom.advDaypart.value; render(); });
+    dom.advWeekpart.addEventListener('change', () => { state.advancedWeekpart = dom.advWeekpart.value; render(); });
     dom.trendClose.addEventListener('click', () => dom.trendModal.classList.add('hidden'));
     dom.trendModal.addEventListener('click', (event) => { if (event.target === dom.trendModal) dom.trendModal.classList.add('hidden'); });
     document.addEventListener('keydown', (event) => { if (event.key === 'Escape') dom.trendModal.classList.add('hidden'); });
