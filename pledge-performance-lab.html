@@ -60,6 +60,12 @@
     .stat { background: #fff7e8; border: 1px solid var(--line); border-radius: 14px; padding: 11px; }
     .stat .v { font-size: 1.2rem; font-weight: 950; color: var(--accent); }
     .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 16px; }
+    .detail.seasonal-view .split { grid-template-columns: 1fr; }
+    .detail.seasonal-view .split .panel + .panel { margin-top: 16px; }
+    .detail.seasonal-view #chart { overflow-x: auto; padding-bottom: 2px; }
+    .detail.seasonal-view .seasonal-chart { min-width: 840px; }
+    .field.disabled-by-question { opacity: .58; }
+    .field.disabled-by-question label::after { content: " (disabled here)"; font-weight: 900; color: var(--accent); }
     .panel { border: 1px solid var(--line); border-radius: 18px; background: #fffdf8; padding: 14px; min-width: 0; }
     .bar { display: grid; grid-template-columns: minmax(170px, 1.25fr) minmax(90px, .85fr) auto; gap: 10px; align-items: center; margin: 9px 0; }
     .blabel { font-weight: 850; font-size: calc(1rem - 2px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
@@ -149,7 +155,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.21.98</div>
+        <div class="eyebrow">Admin analytics · v0.21.99</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -346,7 +352,7 @@
     notice: el('notice'), lab: el('lab'), signIn: el('sign-in'), signOut: el('sign-out'),
     season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), reload: el('reload'), scopeNote: el('scope-note'),
     advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),
-    cards: el('cards'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
+    cards: el('cards'), detail: document.querySelector('.detail'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
     chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
     trendModal: el('trend-modal'), trendTitle: el('trend-title'), trendSubtitle: el('trend-subtitle'), trendBody: el('trend-body'), trendClose: el('trend-close'),
     programModal: el('program-modal'), programModalTitle: el('program-modal-title'), programModalSubtitle: el('program-modal-subtitle'), programModalBody: el('program-modal-body'), programModalClose: el('program-modal-close')
@@ -495,10 +501,12 @@
   }
 
   function placementLive(placement = {}) {
-    const parsed = parseBooleanish(firstNonEmpty(placement.liveBreakFlag, placement.live_break_flag, placement.liveBreaks, placement.live_breaks, null));
-    if (parsed === true) return true;
-    if (parsed === false) return false;
-    return Boolean(text(firstNonEmpty(placement.liveBreakNotes, placement.live_break_notes, placement.liveBreakNote, '')));
+    // Canonical source for Performance Analytics live-break logic.
+    // Saved Scheduling placements use camelCase liveBreakFlag/liveBreakNotes.
+    // Do not read imported-airing live_break* fields here; those caused the old false $0 result.
+    if (placement?.liveBreakFlag === true) return true;
+    if (placement?.liveBreakFlag === false) return false;
+    return Boolean(text(placement?.liveBreakNotes || ''));
   }
 
   function buildLibraryIndexes(rows = []) {
@@ -869,7 +877,7 @@
       if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
       if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;
       if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
-      if (state.advancedLive !== 'all' && record.liveState !== state.advancedLive) return false;
+      if (questionId !== 'live' && state.advancedLive !== 'all' && record.liveState !== state.advancedLive) return false;
       if (state.advancedDaypart !== 'all' && record.daypart !== state.advancedDaypart) return false;
       if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;
       return true;
@@ -1118,7 +1126,7 @@
     if (!live || !nonlive) return 'No saved-schedule live-break comparison is available for this filter. This view intentionally ignores imported live-break guesses and uses saved Scheduling flags only.';
     const diff = live.avg - nonlive.avg;
     const diffText = `${diff >= 0 ? '+' : ''}${formatMoney(diff).replace('$-', '-$')}`;
-    return `This view uses <b>saved Scheduling placements only</b>; imported live-break columns are not selected, read, or used. That prevents the old zero-result fallback from driving the answer.<br><br>Live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.`;
+    return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>Live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.`;
   }
 
   function trendId(row) {
@@ -1300,7 +1308,7 @@
       graphTitle: 'Live-break average comparison',
       source: 'schedule',
       tableTitle: 'Live break split',
-      tableNote: 'Uses saved Scheduling placements only. Imported live-break columns are not selected, read, or used. If live-break placements cannot be matched to pledge dollars, the page shows a guardrail warning instead of silently reporting imported fallback results.',
+      tableNote: 'Uses saved Scheduling placements only. The live-break filter above is disabled here because this comparison must include both live and non-live scheduled airings.',
       rows: rowsLive,
       metric: (rows) => rows.find((row) => row.title === 'Live break') ? formatMoney(rows.find((row) => row.title === 'Live break').avg) : '—',
       tag: 'schedule flags only',
@@ -1445,13 +1453,17 @@
 
   function updateFilterState() {
     const question = QUESTIONS[state.question] || QUESTIONS.programs;
+    const liveComparison = state.question === 'live';
     dom.season.disabled = question.useSeason === false;
     dom.year.disabled = question.useYear === false;
+    dom.advLive.disabled = liveComparison;
+    dom.advLive.parentElement?.classList.toggle('disabled-by-question', liveComparison);
     const disabled = [];
     if (question.useSeason === false) disabled.push('season');
     if (question.useYear === false) disabled.push('year');
+    if (liveComparison) disabled.push('live-break filter');
     dom.scopeNote.textContent = disabled.length
-      ? `Disabled for this question: ${disabled.join(' and ')}. This view needs broader history. Evidence filter only hides low-sample rows when that makes sense; live-break comparison does not display evidence labels.`
+      ? `Disabled for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
       : 'Filters are active for this question. Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.';
   }
 
@@ -1498,6 +1510,7 @@
 
   function renderDetail(entry) {
     const { question, rows } = entry;
+    dom.detail?.classList.toggle('seasonal-view', state.question === 'seasonal');
     dom.detailTitle.textContent = question.title;
     dom.detailSummary.textContent = question.summary;
     dom.chartTitle.textContent = question.graphTitle;
