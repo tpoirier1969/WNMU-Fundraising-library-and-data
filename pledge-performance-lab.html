@@ -3,59 +3,978 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Lab</title>
+  <title>WNMU Pledge Performance Lab v0.21.83</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
-    :root{--bg:#f4f0e8;--card:#fffaf1;--ink:#272019;--muted:#6d6255;--line:#d7c8ae;--accent:#7b341e;--accent2:#2f5d62;--bad:#8b2d20;--good:#245d39;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}.hidden{display:none!important}.shell{max-width:1360px;margin:auto;padding:24px}button,input,select{font:inherit}button{border:1px solid var(--line);border-radius:999px;padding:10px 13px;background:#fffdf8;font-weight:800;cursor:pointer}.primary{background:var(--accent);border-color:var(--accent);color:white}.ghost{background:transparent}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:16px}.brand{display:flex;gap:13px;align-items:center}.brand img{width:72px}.eyebrow{text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-size:.75rem;font-weight:900}h1{margin:0;font-size:clamp(1.7rem,3vw,2.6rem)}p{color:var(--muted)}.notice{border:1px solid var(--line);border-radius:16px;background:#fffdf8;padding:13px 15px;margin:12px 0}.warn{background:#fff7e2;color:#62450b}.bad{background:#fff0ee;color:#681f19}.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;margin-bottom:18px}.field{display:grid;gap:4px;min-width:150px}.grow{flex:1 1 260px}label{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;font-weight:900;color:var(--muted)}input,select{border:1px solid var(--line);border-radius:11px;padding:9px 10px;background:#fffdf8}.layout{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start}.cards{display:grid;gap:12px;position:sticky;top:14px}.qcard{text-align:left;border-radius:18px;background:var(--card);border:1px solid var(--line);padding:16px;display:grid;gap:7px}.qcard.active{outline:3px solid rgba(47,93,98,.25);border-color:var(--accent2)}.qtitle{font-size:1.05rem;font-weight:950}.qsum{color:var(--muted);font-size:.92rem;line-height:1.35}.qmetric{font-size:1.3rem;font-weight:950;color:var(--accent)}.badge{display:inline-block;border-radius:999px;background:#efe3d2;padding:4px 8px;font-size:.78rem;font-weight:900;color:#584b3b}.detail{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 16px 38px rgba(56,41,23,.13)}.dhead{padding:18px;background:#fff4dd;border-bottom:1px solid var(--line)}.dhead h2{margin:0 0 5px}.inside{padding:18px;display:grid;gap:16px}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.stat{background:#fff7e8;border:1px solid var(--line);border-radius:14px;padding:11px}.stat .v{font-size:1.2rem;font-weight:950;color:var(--accent)}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:16px}.panel{border:1px solid var(--line);border-radius:18px;background:#fffdf8;padding:14px;min-width:0}.panel h3{margin:0 0 6px}.bar{display:grid;grid-template-columns:minmax(130px,230px) 1fr auto;gap:10px;align-items:center;margin:9px 0}.blabel{font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.track{height:18px;background:#f0e4d3;border-radius:999px;overflow:hidden}.fill{height:100%;background:linear-gradient(90deg,var(--accent2),#83a9aa);border-radius:999px;min-width:2px}.bval{font-weight:950;color:var(--accent);white-space:nowrap}.read{border-left:5px solid var(--accent2);background:#edf5f4;border-radius:14px;padding:12px;color:#24494d}.tablewrap{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:14px}table{width:100%;border-collapse:collapse;font-size:.92rem}th,td{border-bottom:1px solid #eadcc8;text-align:left;padding:9px 8px;vertical-align:top}th{background:#f7ead8;color:#584b3b;position:sticky;top:0}.money{text-align:right;white-space:nowrap}.empty{padding:34px 12px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:14px}.risk{color:var(--bad);font-weight:900}.ok{color:var(--good);font-weight:900}details{border:1px solid var(--line);background:#fffdf8;border-radius:16px;padding:11px 13px}summary{cursor:pointer;font-weight:950;color:var(--accent)}.adv{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;margin-top:12px;color:var(--muted)}@media(max-width:920px){.layout,.split{grid-template-columns:1fr}.cards{position:static}.stats,.adv{grid-template-columns:1fr}.bar{grid-template-columns:1fr}}
+    :root {
+      --bg: #f4f0e8;
+      --card: #fffaf1;
+      --card-strong: #fff2d4;
+      --ink: #272019;
+      --muted: #6d6255;
+      --line: #d7c8ae;
+      --accent: #7b341e;
+      --accent-2: #2f5d62;
+      --good: #245d39;
+      --warn: #8a5a00;
+      --bad: #8b2d20;
+      --shadow: 0 16px 38px rgba(56, 41, 23, 0.13);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #fff7e5 0, var(--bg) 42%, #ede3d3 100%);
+      color: var(--ink);
+    }
+    button, input, select { font: inherit; }
+    a { color: var(--accent); }
+    .hidden { display: none !important; }
+    .shell { max-width: 1380px; margin: 0 auto; padding: 24px; }
+    .topbar {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand img { width: 74px; height: auto; display: block; }
+    .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .08em; font-size: .76rem; font-weight: 800; }
+    h1 { margin: 2px 0; font-size: clamp(1.75rem, 3vw, 2.7rem); line-height: 1.05; }
+    .lede { margin: 0; color: var(--muted); max-width: 840px; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: end;
+      background: rgba(255, 250, 241, .8);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+      margin: 14px 0 18px;
+      box-shadow: 0 6px 18px rgba(56, 41, 23, .07);
+    }
+    .field { display: grid; gap: 4px; min-width: 142px; }
+    .field.grow { flex: 1 1 260px; }
+    label, .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 800; color: var(--muted); }
+    input, select {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 9px 10px;
+      background: #fffdf8;
+      color: var(--ink);
+    }
+    button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 13px;
+      background: #fffdf8;
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 750;
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+    button.ghost { background: transparent; }
+    button.active { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+    .notice {
+      border: 1px solid var(--line);
+      background: #fffdf8;
+      border-radius: 16px;
+      padding: 13px 15px;
+      margin: 12px 0;
+      color: var(--muted);
+    }
+    .notice.warn { border-color: #c99953; color: #62450b; background: #fff7e2; }
+    .notice.bad { border-color: #bd8178; color: #681f19; background: #fff0ee; }
+    .layout { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .question-stack { display: grid; gap: 12px; position: sticky; top: 16px; }
+    .question-card {
+      text-align: left;
+      border-radius: 18px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(56, 41, 23, .07);
+      display: grid;
+      gap: 8px;
+    }
+    .question-card.active { outline: 3px solid rgba(47, 93, 98, .24); border-color: var(--accent-2); }
+    .question-title { font-size: 1.04rem; font-weight: 900; }
+    .question-summary { color: var(--muted); font-size: .93rem; line-height: 1.35; }
+    .question-metric { font-size: 1.35rem; font-weight: 950; color: var(--accent); }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 8px; background: #efe3d2; color: #584b3b; font-size: .78rem; font-weight: 800; }
+    .badge.good { color: var(--good); background: #e1eddc; }
+    .badge.warn { color: var(--warn); background: #f7ecd2; }
+    .badge.bad { color: var(--bad); background: #f4ddd9; }
+    .detail-card {
+      background: rgba(255, 250, 241, .96);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .detail-head {
+      padding: 18px;
+      background: linear-gradient(135deg, #fff8e9, #f3e4ca);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: start;
+    }
+    .detail-head h2 { margin: 0 0 6px; font-size: 1.45rem; }
+    .detail-head p { margin: 0; color: var(--muted); max-width: 780px; }
+    .detail-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+    .inside { padding: 18px; display: grid; gap: 18px; }
+    .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr); gap: 16px; align-items: start; }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fffdf8;
+      padding: 14px;
+      min-width: 0;
+    }
+    .panel h3 { margin: 0 0 6px; font-size: 1rem; }
+    .panel p { margin: 0 0 8px; color: var(--muted); }
+    .chart { min-height: 300px; display: grid; align-content: center; }
+    .bar-row { display: grid; grid-template-columns: minmax(130px, 230px) 1fr auto; gap: 10px; align-items: center; margin: 9px 0; }
+    .bar-label { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { background: #f0e4d3; border-radius: 999px; overflow: hidden; height: 18px; }
+    .bar-fill { background: linear-gradient(90deg, var(--accent-2), #78a2a5); min-width: 2px; height: 100%; border-radius: 999px; }
+    .bar-value { font-weight: 900; color: var(--accent); white-space: nowrap; }
+    .empty { color: var(--muted); padding: 36px 12px; text-align: center; border: 1px dashed var(--line); border-radius: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    th, td { border-bottom: 1px solid #eadcc8; text-align: left; padding: 9px 8px; vertical-align: top; }
+    th { color: #584b3b; background: #f7ead8; position: sticky; top: 0; z-index: 1; }
+    td.money, th.money { text-align: right; white-space: nowrap; }
+    .table-wrap { max-height: 430px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
+    .explain { border-left: 5px solid var(--accent-2); background: #edf5f4; color: #24494d; padding: 12px 14px; border-radius: 14px; }
+    .explain strong { color: #18383b; }
+    details.advanced {
+      border: 1px solid var(--line);
+      background: #fffdf8;
+      border-radius: 16px;
+      padding: 11px 13px;
+    }
+    details.advanced summary { cursor: pointer; font-weight: 900; color: var(--accent); }
+    .advanced-grid { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+    .mini-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .mini-stat { background: #fff7e8; border: 1px solid var(--line); border-radius: 15px; padding: 12px; }
+    .mini-stat .value { font-size: 1.3rem; font-weight: 950; color: var(--accent); }
+    .mini-stat .caption { color: var(--muted); font-size: .85rem; }
+    .risk { color: var(--bad); font-weight: 900; }
+    .ok { color: var(--good); font-weight: 900; }
+    .muted { color: var(--muted); }
+    @media (max-width: 920px) {
+      .layout, .split { grid-template-columns: 1fr; }
+      .question-stack { position: static; }
+      .detail-head { display: grid; }
+      .advanced-grid, .mini-grid { grid-template-columns: 1fr; }
+      .bar-row { grid-template-columns: 1fr; }
+      .bar-value { text-align: left; }
+    }
   </style>
 </head>
 <body>
-<main class="shell">
-  <header class="top">
-    <div class="brand"><img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo"><div><div class="eyebrow">Admin prototype</div><h1>Pledge Performance Lab</h1><p>This live-data test page does not replace the current Performance page and does not save anything.</p></div></div>
-    <div><a href="index.html"><button class="ghost" type="button">Back to app</button></a> <button id="sign-in" class="primary hidden" type="button">Admin sign in</button> <button id="sign-out" class="ghost hidden" type="button">Sign out</button></div>
-  </header>
-  <div id="notice" class="notice">Loading admin check…</div>
-  <section id="lab" class="hidden">
-    <div class="toolbar">
-      <div class="field"><label for="season">Pledge season</label><select id="season"></select></div>
-      <div class="field"><label for="year">Year</label><select id="year"></select></div>
-      <div class="field grow"><label for="search">Program / topic search</label><input id="search" type="search" placeholder="Search titles, topics, or NOLA codes"></div>
-      <div class="field"><label for="evidence">Evidence handling</label><select id="evidence"><option value="flag">Show all, flag weak</option><option value="all">Show all evidence</option><option value="hide">Hide weak evidence</option></select></div>
-      <button id="reload" type="button">Reload live data</button>
-    </div>
-    <div class="layout"><aside id="cards" class="cards"></aside><section class="detail"><div class="dhead"><h2 id="dt">Choose a question</h2><p id="ds">Cards choose the question. This side holds the graph, table, and plain-English read.</p></div><div class="inside"><div id="stats" class="stats"></div><div class="split"><div class="panel"><h3 id="ct">Graph</h3><p id="cn">Graphs live here, not on every card.</p><div id="chart"></div></div><div class="panel"><h3>Plain-English read</h3><div id="read" class="read"></div></div></div><div class="panel"><h3 id="tt">Detail table</h3><p>The table follows the selected question so the graph and rows tell the same story.</p><div id="table" class="tablewrap"></div></div><details><summary>Advanced filters proposed for the real page</summary><div class="adv"><div><b>Time</b><br>Season, year, exact date range, all history, selected fundraiser.</div><div><b>Program</b><br>Topic, secondary topic, distributor, length, rights status, NOLA/title search, active/archived.</div><div><b>Evidence</b><br>Minimum broadcasts, minimum seasons, show weak, hide weak, or flag weak evidence without hiding it.</div><div><b>Money</b><br>Total dollars, average, median, pledges, dollars/minute, exclude non-specific pledges.</div><div><b>Scheduling</b><br>Daypart, weekday/weekend, live break only, non-live only, first airing, repeat airing.</div><div><b>Inspection</b><br>Show contributing broadcasts, source fundraiser, import source, copy/export rows.</div></div></details></div></section></div>
-  </section>
-</main>
-<script>
-(()=>{
-const AIR='pledge_program_airings_v2',LIB='pledge_program_library_summary_v2',BASE='pledge_programs_v2',SEAS=['March','June','August','December'],WB=3,WS=2;
-const S={client:null,session:null,isAdmin:false,email:'',records:[],filtered:[],q:'programs',season:'all',year:'all',search:'',evidence:'flag'};
-const $=id=>document.getElementById(id),E={notice:$('notice'),lab:$('lab'),signIn:$('sign-in'),signOut:$('sign-out'),season:$('season'),year:$('year'),search:$('search'),evidence:$('evidence'),reload:$('reload'),cards:$('cards'),dt:$('dt'),ds:$('ds'),stats:$('stats'),ct:$('ct'),cn:$('cn'),chart:$('chart'),read:$('read'),tt:$('tt'),table:$('table')};
-const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-const txt=v=>String(v??'').trim(),key=v=>txt(v).toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').trim(),nola=v=>txt(v).toLowerCase().replace(/[^a-z0-9]+/g,'');
-const first=(...a)=>{for(const v of a){if(v===0)return v;if(txt(v))return v}return null},money=v=>Number(v||0).toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}),num=v=>Number(v||0).toLocaleString(),pct=v=>Number.isFinite(v)?`${v>0?'+':''}${Math.round(v)}%`:'—';
-function note(m,t=''){E.notice.textContent=m;E.notice.className=`notice ${t}`.trim()}function pdate(v){if(!v)return null;if(typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)){const[a,b,c]=v.split('-').map(Number);return new Date(a,b-1,c)}const d=new Date(v);return Number.isNaN(d.getTime())?null:d}function seas(d){if(!(d instanceof Date))return'';const m=d.getMonth()+1;if(m===2||m===3)return'March';if(m===5||m===6)return'June';if(m===8||m===9)return'August';if(m===11||m===12)return'December';return''}function sk(label){const m=String(label||'').match(/(March|June|August|December)\s+(\d{4})/);return m?Number(m[2])*10+SEAS.indexOf(m[1])+1:0}
-function admin(session){const cfg=window.PLEDGE_MANAGER_CONFIG||{},email=txt(session?.user?.email).toLowerCase(),admins=Array.isArray(cfg.ADMIN_EMAILS)?cfg.ADMIN_EMAILS.map(x=>txt(x).toLowerCase()).filter(Boolean):[];if(!session)return{ok:false,email:''};return{ok:!admins.length||admins.includes(email),email}}
-async function waitConfig(){for(let i=0;i<80;i++){if(window.PLEDGE_MANAGER_CONFIG)return;await new Promise(r=>setTimeout(r,50))}}function client(){const c=window.PLEDGE_MANAGER_CONFIG||{},url=txt(c.SUPABASE_URL),key=txt(c.SUPABASE_ANON_KEY);return url&&key&&window.supabase?.createClient?window.supabase.createClient(url,key):null}
-async function init(){await waitConfig();S.client=client();if(!S.client){note('Missing config.js or Supabase client. This page needs the same config as the main app.','bad');return false}const{data,error}=await S.client.auth.getSession();if(error)throw error;S.session=data?.session||null;const a=admin(S.session);S.isAdmin=a.ok;S.email=a.email;E.signIn.classList.toggle('hidden',!!S.session);E.signOut.classList.toggle('hidden',!S.session);if(!S.session){note('Sign in as admin to use the Performance Lab.','warn');return false}if(!S.isAdmin){note(`Signed in as ${S.email||'viewer'}, but this lab is admin-only.`,'bad');return false}E.lab.classList.remove('hidden');note(`Admin mode · ${S.email||'signed in'} · loading live pledge records…`);return true}
-async function q(table,select,order=''){let x=S.client.from(table).select(select);if(order)x=x.order(order,{ascending:true});const{data,error}=await x;if(error)throw error;return Array.isArray(data)?data:[]}
-async function load(){note('Loading live pledge performance records…');const air=await q(AIR,'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,local_break_count','air_date');let lib=[];try{lib=await q(LIB,'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end')}catch(e){lib=await q(BASE,'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end')}S.records=records(air,lib);filters();apply();note(`Loaded ${num(S.records.length)} usable pledge airing records from live data.`)}
-function records(air,lib){const byId=new Map(),byN=new Map(),byT=new Map();lib.forEach(r=>{if(txt(r.id))byId.set(txt(r.id),r);if(nola(r.nola_code))byN.set(nola(r.nola_code),r);if(key(r.title))byT.set(key(r.title),r)});return air.map(r=>{const pid=txt(first(r.pledge_program_id,r.program_id)),title=txt(first(r.matched_library_title,r.program_title,r.title,r.imported_program_title,'Untitled')),lr=byId.get(pid)||byN.get(nola(r.nola_code))||byT.get(key(title))||{},d=pdate(first(r.air_date,r.aired_at,r.drive_start_date,r.drive_end_date)),s=seas(d),y=d?d.getFullYear():'';return{id:r.id,title:txt(lr.title)||title,nola:txt(lr.nola_code)||txt(r.nola_code),topic:txt(first(lr.topic_primary,r.topic_primary,'Uncategorized'))||'Uncategorized',date:d,season:s,year:y,seasonYear:s&&y?`${s} ${y}`:'Unseasoned',fundraiser:txt(r.fundraiser_label)||(s&&y?`${s} ${y}`:''),dollars:Number(first(r.dollars,r.contribution_amount,0)||0),pledges:Number(r.pledge_count||0),live:r.live_break_flag===true||String(r.live_break_flag).toLowerCase()==='true'||String(r.live_break_flag).toLowerCase()==='yes'||Number(r.local_break_count||0)>0}}).filter(r=>r.date&&r.dollars>0&&r.season)}
-function filters(){const years=[...new Set(S.records.map(r=>r.year).filter(Boolean))].sort((a,b)=>b-a);E.season.innerHTML='<option value="all">All pledge seasons</option>'+SEAS.map(s=>`<option>${s}</option>`).join('');E.year.innerHTML='<option value="all">All years</option>'+years.map(y=>`<option>${y}</option>`).join('');E.season.value=S.season;E.year.value=S.year}
-function apply(){const sr=key(S.search);S.filtered=S.records.filter(r=>(S.season==='all'||r.season===S.season)&&(S.year==='all'||String(r.year)===String(S.year))&&(!sr||key(`${r.title} ${r.topic} ${r.nola}`).includes(sr)));render()}
-function group(rows,fn){const m=new Map();rows.forEach(r=>{const k=fn(r)||'Unknown';if(!m.has(k))m.set(k,[]);m.get(k).push(r)});return m}function sum(k,rs){const seasons=new Set(rs.map(r=>r.seasonYear));const dollars=rs.reduce((a,r)=>a+r.dollars,0),pledges=rs.reduce((a,r)=>a+r.pledges,0);return{title:k,dollars,pledges,broadcasts:rs.length,seasons:seasons.size,avg:rs.length?dollars/rs.length:0,weak:rs.length<WB||seasons.size<WS,records:rs}}function ev(rows){return S.evidence==='hide'?rows.filter(r=>!r.weak):rows}function prog(){return ev([...group(S.filtered,r=>r.title)].map(([k,rs])=>sum(k,rs)).sort((a,b)=>b.dollars-a.dollars))}function topics(){return ev([...group(S.filtered,r=>r.topic)].map(([k,rs])=>sum(k,rs)).sort((a,b)=>b.avg-a.avg))}
-function hist(){const out=[];group(S.records,r=>r.title).forEach((rs,title)=>{const drives=[...group(rs,r=>r.seasonYear)].map(([sy,dr])=>({seasonYear:sy,sortKey:sk(sy),date:dr.map(r=>r.date).sort((a,b)=>a-b)[0],total:dr.reduce((a,r)=>a+r.dollars,0),broadcasts:dr.length})).filter(d=>d.seasonYear!=='Unseasoned').sort((a,b)=>a.sortKey-b.sortKey);if(drives.length<2)return;const first=drives[0],last=drives.at(-1),previous=drives.at(-2),peak=drives.reduce((a,d)=>d.total>a.total?d:a,drives[0]),yrs=(last.date-first.date)/(365.25*864e5),pause=previous?(last.date-previous.date)/(365.25*864e5):0,vs=peak.total?((last.total-peak.total)/peak.total)*100:0;out.push({title,first,last,previous,peak,drives:drives.length,broadcasts:rs.length,seasons:new Set(rs.map(r=>r.season)).size,years:yrs,pause,vs,dollars:last.total,weak:drives.length<3||rs.length<WB,records:rs})});return ev(out.sort((a,b)=>a.vs-b.vs))}function comeback(){return hist().filter(r=>r.pause>=2.75).sort((a,b)=>b.last.total-a.last.total)}
-function live(){const s=(title,rs)=>{const d=rs.reduce((a,r)=>a+r.dollars,0),seasons=new Set(rs.map(r=>r.seasonYear)).size;return{title,dollars:d,broadcasts:rs.length,seasons,avg:rs.length?d/rs.length:0,weak:rs.length<WB||seasons<WS,records:rs}};return ev([s('Live break / local break',S.filtered.filter(r=>r.live)),s('No live break marked',S.filtered.filter(r=>!r.live))])}
-function seasonal(){const out=[];group(S.records,r=>r.topic).forEach((rs,title)=>{const by=SEAS.map(season=>{const a=rs.filter(r=>r.season===season),d=a.reduce((x,r)=>x+r.dollars,0);return{season,broadcasts:a.length,avg:a.length?d/a.length:null}}),real=by.filter(x=>x.broadcasts);if(!real.length)return;const av=real.reduce((a,x)=>a+x.avg,0)/real.length,best=real.reduce((a,x)=>x.avg>a.avg?x:a,real[0]),worst=real.reduce((a,x)=>x.avg<a.avg?x:a,real[0]);out.push({title,dollars:rs.reduce((a,r)=>a+r.dollars,0),broadcasts:rs.length,seasons:real.length,bestSeason:best.season,bestLift:av?((best.avg-av)/av)*100:0,worstSeason:worst.season,worstLift:av?((worst.avg-av)/av)*100:0,avg:av,weak:rs.length<WB||real.length<WS,records:rs})});return ev(out.sort((a,b)=>Math.abs(b.bestLift)-Math.abs(a.bestLift)))}
-const evidence=r=>!r.weak?'<span class="ok">Strong enough</span>':S.evidence==='all'?'<span>Weak evidence</span>':'<span class="risk">Weak evidence</span>';const C={programs:{t:'What programs raise the most?',s:'Best current earners for the selected season/year.',g:'Top programs by total dollars',tab:'Program ranking',rows:prog,m:rs=>rs[0]?money(rs[0].dollars):'—',b:'graph + table',read:rs=>rs[0]?`<b>${esc(rs[0].title)}</b> is the top earner in this filter at ${money(rs[0].dollars)}.`:'No program records match.',cols:[['Program',r=>esc(r.title)],['Total $',r=>money(r.dollars),'money'],['Avg / airing',r=>money(r.avg),'money'],['Broadcasts',r=>num(r.broadcasts)],['Seasons',r=>num(r.seasons)],['Evidence',evidence]]},topics:{t:'What topics work best?',s:'Topic strength by average dollars per airing.',g:'Topics by average dollars per airing',tab:'Topic ranking',rows:topics,m:rs=>rs[0]?money(rs[0].avg):'—',b:'topic lens',read:rs=>rs[0]?`<b>${esc(rs[0].title)}</b> has the strongest average in this filter at ${money(rs[0].avg)} per airing.`:'No topic records match.',cols:[['Topic',r=>esc(r.title)],['Avg / airing',r=>money(r.avg),'money'],['Total $',r=>money(r.dollars),'money'],['Broadcasts',r=>num(r.broadcasts)],['Seasons',r=>num(r.seasons)],['Evidence',evidence]]},seasonal:{t:'When do topics work best?',s:'Four pledge seasons, topic-level seasonal lift.',g:'Largest topic-season swings',tab:'Topic seasonal lift',rows:seasonal,m:rs=>rs[0]?`${rs[0].bestSeason} ${pct(rs[0].bestLift)}`:'—',b:'season lift',read:rs=>rs[0]?`<b>${esc(rs[0].title)}</b> is strongest in <b>${rs[0].bestSeason}</b>. One-season topics are weak evidence, not proof.`:'No seasonal topic records match.',cols:[['Topic',r=>esc(r.title)],['Broadcasts',r=>num(r.broadcasts)],['Seasons',r=>num(r.seasons)],['Best season',r=>r.bestSeason],['Best lift',r=>pct(r.bestLift)],['Worst season',r=>r.worstSeason],['Worst lift',r=>pct(r.worstLift)],['Evidence',evidence]]},history:{t:'Is an old favorite fading?',s:'Compares program performance across fundraiser years, not repeats inside one drive.',g:'Biggest current drop from historical peak',tab:'Historical program decay / durability',rows:hist,m:rs=>rs[0]?pct(rs[0].vs):'—',b:'not same-drive repeats',read:rs=>rs[0]?`<b>${esc(rs[0].title)}</b> is currently ${pct(rs[0].vs)} versus its historical peak. This is the better retire-or-keep test.`:'No historical rows match.',cols:[['Program',r=>esc(r.title)],['First seen',r=>r.first.seasonYear],['Peak drive',r=>`${r.peak.seasonYear} · ${money(r.peak.total)}`],['Latest drive',r=>`${r.last.seasonYear} · ${money(r.last.total)}`],['Latest vs peak',r=>pct(r.vs)],['Years tracked',r=>r.years.toFixed(1)],['Evidence',evidence]]},comeback:{t:'What happens after a long pause?',s:'Shows programs returning after multi-year gaps.',g:'Programs returning after a long pause',tab:'Long-pause return performance',rows:comeback,m:rs=>rs[0]?money(rs[0].last.total):'—',b:'comeback lens',read:rs=>rs[0]?`<b>${esc(rs[0].title)}</b> returned after about ${rs[0].pause.toFixed(1)} years and raised ${money(rs[0].last.total)}.`:'No long-pause return rows match.',cols:[['Program',r=>esc(r.title)],['Previous drive',r=>r.previous?.seasonYear||'—'],['Latest drive',r=>r.last.seasonYear],['Pause',r=>`${r.pause.toFixed(1)} yrs`],['Latest $',r=>money(r.last.total),'money'],['Latest vs peak',r=>pct(r.vs)],['Evidence',evidence]]},live:{t:'Are live breaks helping?',s:'Live/local-break records versus records not marked that way.',g:'Live-break average comparison',tab:'Live break split',rows:live,m:rs=>rs[0]?money(rs[0].avg):'—',b:'needs clean flags',read:rs=>{const a=rs.find(r=>r.title.startsWith('Live')),b=rs.find(r=>r.title.startsWith('No'));return a&&b?`Live/local-break records average <b>${money(a.avg)}</b>; non-live-marked records average <b>${money(b.avg)}</b>.`: 'Live-break evidence is incomplete in this filter.'},cols:[['Break type',r=>esc(r.title)],['Avg / airing',r=>money(r.avg),'money'],['Total $',r=>money(r.dollars),'money'],['Broadcasts',r=>num(r.broadcasts)],['Seasons',r=>num(r.seasons)],['Evidence',evidence]]}};
-function render(){const entries=Object.entries(C).map(([id,c])=>({id,c,rows:c.rows()}));E.cards.innerHTML=entries.map(x=>{const weak=x.rows.filter(r=>r.weak).length;return`<button type="button" class="qcard ${x.id===S.q?'active':''}" data-q="${x.id}"><div class="qtitle">${esc(x.c.t)}</div><div class="qsum">${esc(x.c.s)}</div><div class="qmetric">${esc(x.c.m(x.rows))}</div><span class="badge">${esc(x.c.b)} · ${num(x.rows.length)} rows${weak?` · ${num(weak)} weak`:''}</span></button>`}).join('');E.cards.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{S.q=b.dataset.q;render()});detail(entries.find(x=>x.id===S.q)||entries[0])}
-function detail(x){E.dt.textContent=x.c.t;E.ds.textContent=x.c.s;E.ct.textContent=x.c.g;E.tt.textContent=x.c.tab;E.cn.textContent=S.q==='history'?'This deliberately avoids comparing first vs repeat airings inside one drive.':'This graph follows the selected question and filters.';E.read.innerHTML=x.c.read(x.rows);stats(x.rows);chart(x.rows);table(x.rows,x.c.cols)}
-function stats(rows){const dollars=rows.reduce((a,r)=>a+Number(r.dollars||r.last?.total||0),0),bcasts=rows.reduce((a,r)=>a+Number(r.broadcasts||0),0),weak=rows.filter(r=>r.weak).length;E.stats.innerHTML=[['Rows',num(rows.length)],['Broadcasts',num(bcasts)],['Dollars',money(dollars)],['Weak rows',num(weak)]].map(([c,v])=>`<div class="stat"><div class="v">${esc(v)}</div><div>${esc(c)}</div></div>`).join('')}function cv(r){if(S.q==='history')return Math.abs(Math.min(r.vs,0));if(S.q==='comeback')return r.last?.total||0;if(S.q==='seasonal')return Math.abs(r.bestLift||0);if(S.q==='topics'||S.q==='live')return r.avg||0;return r.dollars||0}function cl(r){if(S.q==='history')return pct(r.vs);if(S.q==='seasonal')return`${r.bestSeason} ${pct(r.bestLift)}`;if(S.q==='topics'||S.q==='live')return money(r.avg||0);if(S.q==='comeback')return money(r.last?.total||0);return money(r.dollars||0)}function chart(rows){const rr=rows.slice(0,12);if(!rr.length){E.chart.innerHTML='<div class="empty">No graphable rows.</div>';return}const max=Math.max(...rr.map(cv),1);E.chart.innerHTML=rr.map(r=>`<div class="bar"><div class="blabel" title="${esc(r.title)}">${esc(r.title)}</div><div class="track"><div class="fill" style="width:${Math.max(2,cv(r)/max*100)}%"></div></div><div class="bval">${esc(cl(r))}</div></div>`).join('')}function table(rows,cols){if(!rows.length){E.table.innerHTML='<div class="empty">No table rows.</div>';return}E.table.innerHTML=`<table><thead><tr>${cols.map(c=>`<th class="${c[2]||''}">${esc(c[0])}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c[2]||''}">${c[1](r)}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
-function bind(){E.signIn.onclick=async()=>{if(!S.client)S.client=client();const u=new URL(location.href);u.hash='';await S.client.auth.signInWithOAuth({provider:'github',options:{redirectTo:u.toString()}})};E.signOut.onclick=async()=>{if(S.client)await S.client.auth.signOut();location.reload()};E.reload.onclick=()=>load().catch(e=>note(e.message||'Could not reload data.','bad'));E.season.onchange=()=>{S.season=E.season.value;apply()};E.year.onchange=()=>{S.year=E.year.value;apply()};E.search.oninput=()=>{S.search=E.search.value;apply()};E.evidence.onchange=()=>{S.evidence=E.evidence.value;apply()}}
-window.addEventListener('DOMContentLoaded',async()=>{bind();try{if(await init())await load()}catch(e){console.error(e);note(e.message||'Performance Lab failed to load.','bad')}});
-})();
-</script>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
+        <div>
+          <div class="eyebrow">Admin prototype</div>
+          <h1>Pledge Performance Lab</h1>
+          <p class="lede">A live-data test page for simplifying Pledge Performance. It does not replace the current page and it does not save anything.</p>
+        </div>
+      </div>
+      <div class="detail-tools">
+        <a href="index.html"><button type="button" class="ghost">Back to app</button></a>
+        <button type="button" id="sign-in-button" class="primary hidden">Admin sign in</button>
+        <button type="button" id="sign-out-button" class="ghost hidden">Sign out</button>
+      </div>
+    </header>
+
+    <div id="notice" class="notice">Loading admin check…</div>
+
+    <section id="lab" class="hidden">
+      <section class="toolbar" aria-label="Performance filters">
+        <div class="field">
+          <label for="season-select">Pledge season</label>
+          <select id="season-select"></select>
+        </div>
+        <div class="field">
+          <label for="year-select">Year</label>
+          <select id="year-select"></select>
+        </div>
+        <div class="field grow">
+          <label for="search-input">Program / topic search</label>
+          <input id="search-input" type="search" placeholder="Search titles, topics, or NOLA codes">
+        </div>
+        <div class="field">
+          <label for="evidence-select">Evidence handling</label>
+          <select id="evidence-select">
+            <option value="flag">Show all, flag weak</option>
+            <option value="all">Show all evidence</option>
+            <option value="hide">Hide weak evidence</option>
+          </select>
+        </div>
+        <button type="button" id="reload-button">Reload live data</button>
+      </section>
+
+      <div class="layout">
+        <aside class="question-stack" id="question-stack"></aside>
+
+        <section class="detail-card">
+          <div class="detail-head">
+            <div>
+              <h2 id="detail-title">Choose a question</h2>
+              <p id="detail-summary">The left side is the simple question layer. This side is where the graph, table, and explanation live.</p>
+            </div>
+            <div class="detail-tools" id="detail-actions"></div>
+          </div>
+          <div class="inside">
+            <div class="mini-grid" id="mini-stats"></div>
+            <div class="split">
+              <div class="panel">
+                <h3 id="chart-title">Graph</h3>
+                <p id="chart-note">Graphs live here, not on every card.</p>
+                <div id="chart" class="chart"></div>
+              </div>
+              <div class="panel">
+                <h3>Plain-English read</h3>
+                <div id="explain" class="explain"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <h3 id="table-title">Detail table</h3>
+              <p id="table-note">The table follows the selected question so the graph and rows do not fight each other.</p>
+              <div id="table" class="table-wrap"></div>
+            </div>
+            <details class="advanced">
+              <summary>Advanced filters proposed for the real page</summary>
+              <div class="advanced-grid">
+                <div><strong>Time controls</strong><br><span class="muted">Season, year, exact start/end date, all historical data, or selected fundraiser only.</span></div>
+                <div><strong>Program controls</strong><br><span class="muted">Topic, secondary topic, distributor, length, rights status, NOLA/title search, active/archived.</span></div>
+                <div><strong>Evidence controls</strong><br><span class="muted">Minimum broadcasts, minimum seasons, show weak evidence, hide weak evidence, or flag weak evidence without hiding it.</span></div>
+                <div><strong>Money controls</strong><br><span class="muted">Total dollars, average dollars, median dollars, pledges, dollars per minute, exclude non-specific pledges.</span></div>
+                <div><strong>Scheduling controls</strong><br><span class="muted">Daypart, weekday/weekend, live break only, non-live only, first airing in drive, repeat airing in drive.</span></div>
+                <div><strong>Record inspection</strong><br><span class="muted">Show contributing broadcasts, source fundraiser, import source, and export/copy rows so no evidence disappears into dashboard fog.</span></div>
+              </div>
+            </details>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const AIRINGS_TABLE = 'pledge_program_airings_v2';
+      const LIBRARY_VIEW = 'pledge_program_library_summary_v2';
+      const BASE_TABLE = 'pledge_programs_v2';
+      const SEASONS = ['March', 'June', 'August', 'December'];
+      const WEAK_BROADCASTS = 3;
+      const WEAK_SEASONS = 2;
+
+      const state = {
+        client: null,
+        session: null,
+        isAdmin: false,
+        userEmail: '',
+        rawAirings: [],
+        libraryRows: [],
+        records: [],
+        filtered: [],
+        question: 'programs',
+        season: 'all',
+        year: 'all',
+        search: '',
+        evidence: 'flag'
+      };
+
+      const els = {
+        notice: document.getElementById('notice'),
+        lab: document.getElementById('lab'),
+        signIn: document.getElementById('sign-in-button'),
+        signOut: document.getElementById('sign-out-button'),
+        season: document.getElementById('season-select'),
+        year: document.getElementById('year-select'),
+        search: document.getElementById('search-input'),
+        evidence: document.getElementById('evidence-select'),
+        reload: document.getElementById('reload-button'),
+        stack: document.getElementById('question-stack'),
+        detailTitle: document.getElementById('detail-title'),
+        detailSummary: document.getElementById('detail-summary'),
+        detailActions: document.getElementById('detail-actions'),
+        miniStats: document.getElementById('mini-stats'),
+        chartTitle: document.getElementById('chart-title'),
+        chartNote: document.getElementById('chart-note'),
+        chart: document.getElementById('chart'),
+        explain: document.getElementById('explain'),
+        tableTitle: document.getElementById('table-title'),
+        tableNote: document.getElementById('table-note'),
+        table: document.getElementById('table')
+      };
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function setNotice(message, type = '') {
+        els.notice.textContent = message;
+        els.notice.className = `notice ${type}`.trim();
+      }
+
+      function normalizeText(value) {
+        return String(value ?? '').trim();
+      }
+
+      function lookupKey(value) {
+        return normalizeText(value).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+      }
+
+      function nolaKey(value) {
+        return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+      }
+
+      function firstValue(...values) {
+        for (const value of values) {
+          if (value === 0) return value;
+          const text = normalizeText(value);
+          if (text) return value;
+        }
+        return null;
+      }
+
+      function money(value) {
+        const numeric = Number(value || 0);
+        return numeric.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+      }
+
+      function count(value) {
+        return Number(value || 0).toLocaleString();
+      }
+
+      function pct(value) {
+        if (!Number.isFinite(value)) return '—';
+        return `${value > 0 ? '+' : ''}${Math.round(value)}%`;
+      }
+
+      function parseDate(value) {
+        if (!value) return null;
+        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+          const [y, m, d] = value.split('-').map(Number);
+          return new Date(y, m - 1, d);
+        }
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      }
+
+      function seasonFromDate(date) {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+        const month = date.getMonth() + 1;
+        if (month === 2 || month === 3) return 'March';
+        if (month === 5 || month === 6) return 'June';
+        if (month === 8 || month === 9) return 'August';
+        if (month === 11 || month === 12) return 'December';
+        return '';
+      }
+
+      function seasonSortKey(label) {
+        const match = String(label || '').match(/(March|June|August|December)\s+(\d{4})/);
+        if (!match) return 0;
+        return (Number(match[2]) * 10) + (SEASONS.indexOf(match[1]) + 1);
+      }
+
+      function computeAdmin(session) {
+        const cfg = window.PLEDGE_MANAGER_CONFIG || {};
+        const email = normalizeText(session?.user?.email).toLowerCase();
+        const admins = Array.isArray(cfg.ADMIN_EMAILS)
+          ? cfg.ADMIN_EMAILS.map((entry) => normalizeText(entry).toLowerCase()).filter(Boolean)
+          : [];
+        if (!session) return { isAdmin: false, userEmail: '' };
+        if (!admins.length) return { isAdmin: true, userEmail: email };
+        return { isAdmin: Boolean(email && admins.includes(email)), userEmail: email };
+      }
+
+      function signInRedirectUrl() {
+        const cfg = window.PLEDGE_MANAGER_CONFIG || {};
+        const configured = normalizeText(cfg.ADMIN_REDIRECT_URL);
+        if (configured) return configured.replace(/index\.html.*$/, 'pledge-performance-lab.html');
+        const url = new URL(window.location.href);
+        url.hash = '';
+        return url.toString();
+      }
+
+      async function waitForConfig() {
+        for (let i = 0; i < 80; i += 1) {
+          if (window.PLEDGE_MANAGER_CONFIG) return window.PLEDGE_MANAGER_CONFIG;
+          await new Promise((resolve) => window.setTimeout(resolve, 50));
+        }
+        return window.PLEDGE_MANAGER_CONFIG || {};
+      }
+
+      function makeClient() {
+        const cfg = window.PLEDGE_MANAGER_CONFIG || {};
+        const url = normalizeText(cfg.SUPABASE_URL);
+        const key = normalizeText(cfg.SUPABASE_ANON_KEY);
+        if (!url || !key || !window.supabase?.createClient) return null;
+        return window.supabase.createClient(url, key);
+      }
+
+      async function initAuth() {
+        const cfg = await waitForConfig();
+        state.client = makeClient();
+        if (!state.client) {
+          setNotice('Missing config.js or Supabase client. This lab page needs the same config as the main app.', 'bad');
+          return false;
+        }
+        const { data, error } = await state.client.auth.getSession();
+        if (error) throw error;
+        state.session = data?.session || null;
+        const admin = computeAdmin(state.session);
+        state.isAdmin = admin.isAdmin;
+        state.userEmail = admin.userEmail;
+        els.signIn.classList.toggle('hidden', Boolean(state.session));
+        els.signOut.classList.toggle('hidden', !state.session);
+        if (!state.session) {
+          setNotice('Sign in as admin to use the Performance Lab.', 'warn');
+          return false;
+        }
+        if (!state.isAdmin) {
+          setNotice(`Signed in as ${state.userEmail || 'viewer'}, but this lab is admin-only.`, 'bad');
+          return false;
+        }
+        setNotice(`Admin mode · ${state.userEmail || 'signed in'} · loading live pledge records…`);
+        els.lab.classList.remove('hidden');
+        return true;
+      }
+
+      async function queryMaybe(table, select, orderColumn = '') {
+        let query = state.client.from(table).select(select);
+        if (orderColumn) query = query.order(orderColumn, { ascending: true });
+        const { data, error } = await query;
+        if (error) throw error;
+        return Array.isArray(data) ? data : [];
+      }
+
+      async function loadData() {
+        setNotice('Loading live pledge performance records…');
+        const airings = await queryMaybe(
+          AIRINGS_TABLE,
+          'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,local_break_count',
+          'air_date'
+        );
+        let library = [];
+        try {
+          library = await queryMaybe(LIBRARY_VIEW, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+        } catch (_error) {
+          library = await queryMaybe(BASE_TABLE, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+        }
+        state.rawAirings = airings;
+        state.libraryRows = library;
+        state.records = buildRecords(airings, library);
+        populateFilters();
+        applyFilters();
+        setNotice(`Loaded ${count(state.records.length)} usable pledge airing records from live data.`);
+      }
+
+      function buildLookups(libraryRows) {
+        const byId = new Map();
+        const byNola = new Map();
+        const byTitle = new Map();
+        libraryRows.forEach((row) => {
+          const id = normalizeText(row.id);
+          if (id) byId.set(id, row);
+          const nola = nolaKey(row.nola_code);
+          if (nola) byNola.set(nola, row);
+          const title = lookupKey(row.title);
+          if (title) byTitle.set(title, row);
+        });
+        return { byId, byNola, byTitle };
+      }
+
+      function buildRecords(airings, libraryRows) {
+        const lookups = buildLookups(libraryRows);
+        return airings.map((row) => {
+          const programId = normalizeText(firstValue(row.pledge_program_id, row.program_id));
+          const title = normalizeText(firstValue(row.matched_library_title, row.program_title, row.title, row.imported_program_title, 'Untitled'));
+          const nola = normalizeText(row.nola_code);
+          const library = lookups.byId.get(programId)
+            || lookups.byNola.get(nolaKey(nola))
+            || lookups.byTitle.get(lookupKey(title))
+            || {};
+          const date = parseDate(firstValue(row.air_date, row.aired_at, row.drive_start_date, row.drive_end_date));
+          const season = seasonFromDate(date);
+          const year = date ? date.getFullYear() : '';
+          const dollars = Number(firstValue(row.dollars, row.contribution_amount, 0) || 0);
+          const pledgeCount = Number(row.pledge_count || 0);
+          const topic = normalizeText(firstValue(library.topic_primary, row.topic_primary, 'Uncategorized')) || 'Uncategorized';
+          const secondaryTopic = normalizeText(firstValue(library.topic_secondary, row.topic_secondary, ''));
+          const liveBreak = row.live_break_flag === true
+            || String(row.live_break_flag).toLowerCase() === 'true'
+            || String(row.live_break_flag).toLowerCase() === 'yes'
+            || Number(row.local_break_count || 0) > 0;
+          const seasonYear = season && year ? `${season} ${year}` : 'Unseasoned';
+          return {
+            id: row.id,
+            programId,
+            title: normalizeText(library.title) || title,
+            nola: normalizeText(library.nola_code) || nola,
+            topic,
+            secondaryTopic,
+            date,
+            season,
+            year,
+            seasonYear,
+            fundraiserLabel: normalizeText(row.fundraiser_label) || seasonYear,
+            dollars: Number.isFinite(dollars) ? dollars : 0,
+            pledges: Number.isFinite(pledgeCount) ? pledgeCount : 0,
+            liveBreak
+          };
+        }).filter((record) => record.date && record.dollars > 0 && record.season);
+      }
+
+      function populateFilters() {
+        const years = [...new Set(state.records.map((record) => record.year).filter(Boolean))].sort((a, b) => b - a);
+        els.season.innerHTML = '<option value="all">All pledge seasons</option>'
+          + SEASONS.map((season) => `<option value="${season}">${season}</option>`).join('');
+        els.year.innerHTML = '<option value="all">All years</option>'
+          + years.map((year) => `<option value="${year}">${year}</option>`).join('');
+        els.season.value = state.season;
+        els.year.value = state.year;
+      }
+
+      function applyFilters() {
+        const search = lookupKey(state.search);
+        state.filtered = state.records.filter((record) => {
+          if (state.season !== 'all' && record.season !== state.season) return false;
+          if (state.year !== 'all' && String(record.year) !== String(state.year)) return false;
+          if (search) {
+            const haystack = lookupKey(`${record.title} ${record.topic} ${record.secondaryTopic} ${record.nola}`);
+            if (!haystack.includes(search)) return false;
+          }
+          return true;
+        });
+        render();
+      }
+
+      function groupBy(records, keyFn) {
+        const map = new Map();
+        records.forEach((record) => {
+          const key = keyFn(record) || 'Unknown';
+          if (!map.has(key)) map.set(key, []);
+          map.get(key).push(record);
+        });
+        return map;
+      }
+
+      function summarizeGroup(key, records) {
+        const seasons = new Set(records.map((record) => record.seasonYear).filter(Boolean));
+        const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
+        const pledges = records.reduce((sum, record) => sum + record.pledges, 0);
+        return {
+          key,
+          title: key,
+          dollars,
+          pledges,
+          broadcasts: records.length,
+          seasons: seasons.size,
+          avg: records.length ? dollars / records.length : 0,
+          weak: records.length < WEAK_BROADCASTS || seasons.size < WEAK_SEASONS,
+          records
+        };
+      }
+
+      function maybeFilterEvidence(rows) {
+        if (state.evidence !== 'hide') return rows;
+        return rows.filter((row) => !row.weak);
+      }
+
+      function programLeaders() {
+        const rows = [...groupBy(state.filtered, (record) => record.title)]
+          .map(([key, records]) => summarizeGroup(key, records))
+          .sort((a, b) => b.dollars - a.dollars);
+        return maybeFilterEvidence(rows);
+      }
+
+      function topicLeaders() {
+        const rows = [...groupBy(state.filtered, (record) => record.topic)]
+          .map(([key, records]) => summarizeGroup(key, records))
+          .sort((a, b) => b.avg - a.avg);
+        return maybeFilterEvidence(rows);
+      }
+
+      function historicalRows() {
+        const groups = groupBy(state.records, (record) => record.title);
+        const rows = [];
+        groups.forEach((records, title) => {
+          const byDrive = [...groupBy(records, (record) => record.seasonYear)].map(([seasonYear, driveRecords]) => {
+            const total = driveRecords.reduce((sum, record) => sum + record.dollars, 0);
+            const date = driveRecords.map((record) => record.date).sort((a, b) => a - b)[0];
+            return { seasonYear, sortKey: seasonSortKey(seasonYear), date, total, broadcasts: driveRecords.length };
+          }).filter((drive) => drive.seasonYear !== 'Unseasoned').sort((a, b) => a.sortKey - b.sortKey);
+          if (byDrive.length < 2) return;
+          const first = byDrive[0];
+          const last = byDrive[byDrive.length - 1];
+          const previous = byDrive[byDrive.length - 2];
+          const peak = byDrive.reduce((best, drive) => drive.total > best.total ? drive : best, byDrive[0]);
+          const yearsSinceFirst = first.date && last.date ? (last.date - first.date) / (365.25 * 24 * 60 * 60 * 1000) : 0;
+          const pauseYears = previous?.date && last.date ? (last.date - previous.date) / (365.25 * 24 * 60 * 60 * 1000) : 0;
+          const currentVsPeak = peak.total ? ((last.total - peak.total) / peak.total) * 100 : 0;
+          rows.push({
+            title,
+            first,
+            peak,
+            last,
+            previous,
+            drives: byDrive.length,
+            broadcasts: records.length,
+            seasons: new Set(records.map((record) => record.season).filter(Boolean)).size,
+            yearsSinceFirst,
+            pauseYears,
+            currentVsPeak,
+            dollars: last.total,
+            weak: byDrive.length < 3 || records.length < WEAK_BROADCASTS,
+            records
+          });
+        });
+        return maybeFilterEvidence(rows.sort((a, b) => a.currentVsPeak - b.currentVsPeak));
+      }
+
+      function longPauseRows() {
+        return historicalRows()
+          .filter((row) => row.pauseYears >= 2.75)
+          .sort((a, b) => b.last.total - a.last.total);
+      }
+
+      function liveBreakRows() {
+        const live = state.filtered.filter((record) => record.liveBreak);
+        const nonLive = state.filtered.filter((record) => !record.liveBreak);
+        const summarize = (label, records) => {
+          const total = records.reduce((sum, record) => sum + record.dollars, 0);
+          const seasons = new Set(records.map((record) => record.seasonYear)).size;
+          return {
+            title: label,
+            dollars: total,
+            broadcasts: records.length,
+            seasons,
+            avg: records.length ? total / records.length : 0,
+            weak: records.length < WEAK_BROADCASTS || seasons < WEAK_SEASONS,
+            records
+          };
+        };
+        return maybeFilterEvidence([summarize('Live break / local break', live), summarize('No live break marked', nonLive)]);
+      }
+
+      function seasonalTopicRows() {
+        const rows = [];
+        const topicGroups = groupBy(state.records, (record) => record.topic);
+        topicGroups.forEach((topicRecords, topic) => {
+          const bySeason = SEASONS.map((season) => {
+            const records = topicRecords.filter((record) => record.season === season);
+            const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
+            return { season, records, broadcasts: records.length, avg: records.length ? dollars / records.length : null };
+          });
+          const real = bySeason.filter((entry) => entry.broadcasts > 0);
+          if (!real.length) return;
+          const topicAvg = real.reduce((sum, entry) => sum + entry.avg, 0) / real.length;
+          const best = real.reduce((winner, entry) => entry.avg > winner.avg ? entry : winner, real[0]);
+          const worst = real.reduce((loser, entry) => entry.avg < loser.avg ? entry : loser, real[0]);
+          rows.push({
+            title: topic,
+            dollars: topicRecords.reduce((sum, record) => sum + record.dollars, 0),
+            broadcasts: topicRecords.length,
+            seasons: real.length,
+            bestSeason: best.season,
+            bestLift: topicAvg ? ((best.avg - topicAvg) / topicAvg) * 100 : 0,
+            worstSeason: worst.season,
+            worstLift: topicAvg ? ((worst.avg - topicAvg) / topicAvg) * 100 : 0,
+            avg: topicAvg,
+            weak: topicRecords.length < WEAK_BROADCASTS || real.length < WEAK_SEASONS,
+            seasonCells: bySeason,
+            records: topicRecords
+          });
+        });
+        return maybeFilterEvidence(rows.sort((a, b) => Math.abs(b.bestLift) - Math.abs(a.bestLift)));
+      }
+
+      const questionConfig = {
+        programs: {
+          title: 'What programs raise the most?',
+          summary: 'Best current earners for the selected season/year. This is the main “what should I schedule?” lens.',
+          chartTitle: 'Top programs by total dollars',
+          tableTitle: 'Program ranking',
+          rows: programLeaders,
+          metric: (rows) => rows[0] ? money(rows[0].dollars) : '—',
+          badge: 'graph + table',
+          explain: (rows) => rows[0]
+            ? `<strong>${escapeHtml(rows[0].title)}</strong> is the top earner in the current filter at ${money(rows[0].dollars)}. Weak evidence is ${state.evidence === 'hide' ? 'hidden' : 'still visible and flagged'}.`
+            : 'No program records match the current filter.',
+          columns: [
+            ['Program', (row) => row.title],
+            ['Total $', (row) => money(row.dollars), 'money'],
+            ['Avg / airing', (row) => money(row.avg), 'money'],
+            ['Broadcasts', (row) => count(row.broadcasts)],
+            ['Fundraiser seasons', (row) => count(row.seasons)],
+            ['Evidence', evidenceLabel]
+          ]
+        },
+        topics: {
+          title: 'What topics work best?',
+          summary: 'Topic strength by average dollars per airing, with weak evidence shown or hidden by choice.',
+          chartTitle: 'Topics by average dollars per airing',
+          tableTitle: 'Topic ranking',
+          rows: topicLeaders,
+          metric: (rows) => rows[0] ? money(rows[0].avg) : '—',
+          badge: 'topic lens',
+          explain: (rows) => rows[0]
+            ? `<strong>${escapeHtml(rows[0].title)}</strong> has the strongest average in this filter at ${money(rows[0].avg)} per airing. Use this as a guide, not gospel, when broadcast counts are small.`
+            : 'No topic records match the current filter.',
+          columns: [
+            ['Topic', (row) => row.title],
+            ['Avg / airing', (row) => money(row.avg), 'money'],
+            ['Total $', (row) => money(row.dollars), 'money'],
+            ['Broadcasts', (row) => count(row.broadcasts)],
+            ['Fundraiser seasons', (row) => count(row.seasons)],
+            ['Evidence', evidenceLabel]
+          ]
+        },
+        seasonal: {
+          title: 'When do topics work best?',
+          summary: 'A focused replacement for the seasonal-lift blob: one graph, one topic-level table, four real pledge seasons.',
+          chartTitle: 'Largest topic-season swings',
+          tableTitle: 'Topic seasonal lift',
+          rows: seasonalTopicRows,
+          metric: (rows) => rows[0] ? `${rows[0].bestSeason} ${pct(rows[0].bestLift)}` : '—',
+          badge: 'March / June / August / December',
+          explain: (rows) => rows[0]
+            ? `<strong>${escapeHtml(rows[0].title)}</strong> has its strongest season in <strong>${rows[0].bestSeason}</strong>. One-season topics should be treated as “not enough history,” not as proof of lift.`
+            : 'No seasonal topic records match the current filter.',
+          columns: [
+            ['Topic', (row) => row.title],
+            ['Broadcasts', (row) => count(row.broadcasts)],
+            ['Seasons', (row) => count(row.seasons)],
+            ['Best season', (row) => row.bestSeason],
+            ['Best lift', (row) => pct(row.bestLift)],
+            ['Worst season', (row) => row.worstSeason],
+            ['Worst lift', (row) => pct(row.worstLift)],
+            ['Evidence', evidenceLabel]
+          ]
+        },
+        history: {
+          title: 'Is an old favorite fading?',
+          summary: 'Compares program performance across fundraiser years, not first vs repeat inside the same fundraiser.',
+          chartTitle: 'Biggest current drop from historical peak',
+          tableTitle: 'Historical program decay / durability',
+          rows: historicalRows,
+          metric: (rows) => rows[0] ? pct(rows[0].currentVsPeak) : '—',
+          badge: 'not same-drive repeats',
+          explain: (rows) => rows[0]
+            ? `<strong>${escapeHtml(rows[0].title)}</strong> is currently ${pct(rows[0].currentVsPeak)} versus its historical peak. This is the better “should we retire this?” test than comparing repeats within one drive.`
+            : 'No historical repeat records match the current filter.',
+          columns: [
+            ['Program', (row) => row.title],
+            ['First seen', (row) => row.first.seasonYear],
+            ['Peak drive', (row) => `${row.peak.seasonYear} · ${money(row.peak.total)}`],
+            ['Latest drive', (row) => `${row.last.seasonYear} · ${money(row.last.total)}`],
+            ['Latest vs peak', (row) => pct(row.currentVsPeak)],
+            ['Years tracked', (row) => row.yearsSinceFirst.toFixed(1)],
+            ['Evidence', evidenceLabel]
+          ]
+        },
+        comeback: {
+          title: 'What happens after a long pause?',
+          summary: 'Finds programs with a multi-year gap before their latest pledge airing and shows whether the return was worth it.',
+          chartTitle: 'Programs returning after a long pause',
+          tableTitle: 'Long-pause return performance',
+          rows: longPauseRows,
+          metric: (rows) => rows[0] ? money(rows[0].last.total) : '—',
+          badge: 'comeback lens',
+          explain: (rows) => rows[0]
+            ? `<strong>${escapeHtml(rows[0].title)}</strong> returned after about ${rows[0].pauseYears.toFixed(1)} years and raised ${money(rows[0].last.total)} in its latest drive. This is the “dust it off after three years?” view.`
+            : 'No long-pause return records match the current filter.',
+          columns: [
+            ['Program', (row) => row.title],
+            ['Previous drive', (row) => row.previous?.seasonYear || '—'],
+            ['Latest drive', (row) => row.last.seasonYear],
+            ['Pause', (row) => `${row.pauseYears.toFixed(1)} yrs`],
+            ['Latest $', (row) => money(row.last.total), 'money'],
+            ['Latest vs peak', (row) => pct(row.currentVsPeak)],
+            ['Evidence', evidenceLabel]
+          ]
+        },
+        live: {
+          title: 'Are live breaks helping?',
+          summary: 'Simple split between records marked live/local break and records not marked that way.',
+          chartTitle: 'Live-break average comparison',
+          tableTitle: 'Live break split',
+          rows: liveBreakRows,
+          metric: (rows) => rows[0] ? money(rows[0].avg) : '—',
+          badge: 'needs clean flags',
+          explain: (rows) => {
+            if (rows.length < 2) return 'Live-break evidence is incomplete in the current filter.';
+            const live = rows.find((row) => row.title.startsWith('Live'));
+            const nonLive = rows.find((row) => row.title.startsWith('No'));
+            if (!live || !nonLive) return 'Live-break evidence is incomplete in the current filter.';
+            const diff = nonLive.avg ? ((live.avg - nonLive.avg) / nonLive.avg) * 100 : 0;
+            return `Live/local-break records average <strong>${money(live.avg)}</strong>; non-live-marked records average <strong>${money(nonLive.avg)}</strong>. Difference: <strong>${pct(diff)}</strong>. This depends on live-break flags being reliable.`;
+          },
+          columns: [
+            ['Break type', (row) => row.title],
+            ['Avg / airing', (row) => money(row.avg), 'money'],
+            ['Total $', (row) => money(row.dollars), 'money'],
+            ['Broadcasts', (row) => count(row.broadcasts)],
+            ['Fundraiser seasons', (row) => count(row.seasons)],
+            ['Evidence', evidenceLabel]
+          ]
+        }
+      };
+
+      function evidenceLabel(row) {
+        if (!row.weak) return '<span class="ok">Strong enough</span>';
+        if (state.evidence === 'all') return '<span class="muted">Weak evidence</span>';
+        return '<span class="risk">Weak evidence</span>';
+      }
+
+      function render() {
+        const configs = Object.entries(questionConfig).map(([id, config]) => {
+          const rows = config.rows();
+          return { id, config, rows };
+        });
+        renderCards(configs);
+        const current = configs.find((entry) => entry.id === state.question) || configs[0];
+        renderDetail(current);
+      }
+
+      function renderCards(configs) {
+        els.stack.innerHTML = configs.map(({ id, config, rows }) => {
+          const weakCount = rows.filter((row) => row.weak).length;
+          return `<button type="button" class="question-card ${id === state.question ? 'active' : ''}" data-question="${id}">
+            <div class="question-title">${escapeHtml(config.title)}</div>
+            <div class="question-summary">${escapeHtml(config.summary)}</div>
+            <div class="question-metric">${escapeHtml(config.metric(rows))}</div>
+            <div class="badge-row">
+              <span class="badge">${escapeHtml(config.badge)}</span>
+              <span class="badge ${weakCount ? 'warn' : 'good'}">${count(rows.length)} rows${weakCount ? ` · ${count(weakCount)} weak` : ''}</span>
+            </div>
+          </button>`;
+        }).join('');
+        els.stack.querySelectorAll('[data-question]').forEach((button) => {
+          button.addEventListener('click', () => {
+            state.question = button.dataset.question;
+            render();
+          });
+        });
+      }
+
+      function renderDetail({ config, rows }) {
+        els.detailTitle.textContent = config.title;
+        els.detailSummary.textContent = config.summary;
+        els.chartTitle.textContent = config.chartTitle;
+        els.tableTitle.textContent = config.tableTitle;
+        els.explain.innerHTML = config.explain(rows);
+        els.chartNote.textContent = state.question === 'history'
+          ? 'This deliberately compares fundraiser-to-fundraiser history, not repeat airings inside a single drive.'
+          : 'This graph follows the selected question and current filters.';
+        renderStats(rows);
+        renderBarChart(rows);
+        renderTable(rows, config.columns);
+      }
+
+      function renderStats(rows) {
+        const totalDollars = rows.reduce((sum, row) => sum + Number(row.dollars || row.last?.total || 0), 0);
+        const broadcasts = rows.reduce((sum, row) => sum + Number(row.broadcasts || 0), 0);
+        const weak = rows.filter((row) => row.weak).length;
+        els.miniStats.innerHTML = [
+          ['Rows in this view', count(rows.length)],
+          ['Broadcasts behind view', count(broadcasts)],
+          ['Dollars represented', money(totalDollars)],
+          ['Weak-evidence rows', count(weak)],
+          ['Filter', `${state.season === 'all' ? 'All seasons' : state.season} · ${state.year === 'all' ? 'All years' : state.year}`],
+          ['Evidence mode', els.evidence.options[els.evidence.selectedIndex]?.textContent || 'Show all']
+        ].map(([caption, value]) => `<div class="mini-stat"><div class="value">${escapeHtml(value)}</div><div class="caption">${escapeHtml(caption)}</div></div>`).join('');
+      }
+
+      function chartValue(row) {
+        if (state.question === 'history') return Math.abs(Math.min(row.currentVsPeak, 0));
+        if (state.question === 'comeback') return row.last?.total || 0;
+        if (state.question === 'seasonal') return Math.abs(row.bestLift || 0);
+        if (state.question === 'topics' || state.question === 'live') return row.avg || 0;
+        return row.dollars || 0;
+      }
+
+      function chartLabel(row) {
+        if (state.question === 'history') return pct(row.currentVsPeak);
+        if (state.question === 'seasonal') return `${row.bestSeason} ${pct(row.bestLift)}`;
+        if (state.question === 'topics' || state.question === 'live') return money(row.avg || 0);
+        if (state.question === 'comeback') return money(row.last?.total || 0);
+        return money(row.dollars || 0);
+      }
+
+      function renderBarChart(rows) {
+        const chartRows = rows.slice(0, 12);
+        if (!chartRows.length) {
+          els.chart.innerHTML = '<div class="empty">No graphable rows for the current filter.</div>';
+          return;
+        }
+        const max = Math.max(...chartRows.map(chartValue), 1);
+        els.chart.innerHTML = chartRows.map((row) => {
+          const value = chartValue(row);
+          const width = Math.max(2, (value / max) * 100);
+          return `<div class="bar-row">
+            <div class="bar-label" title="${escapeHtml(row.title)}">${escapeHtml(row.title)}</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
+            <div class="bar-value">${escapeHtml(chartLabel(row))}</div>
+          </div>`;
+        }).join('');
+      }
+
+      function renderTable(rows, columns) {
+        if (!rows.length) {
+          els.table.innerHTML = '<div class="empty">No table rows for the current filter.</div>';
+          return;
+        }
+        els.table.innerHTML = `<table><thead><tr>${columns.map(([label, _fn, cls]) => `<th class="${cls || ''}">${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map(([_label, fn, cls]) => `<td class="${cls || ''}">${fn(row)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      }
+
+      function bindEvents() {
+        els.signIn.addEventListener('click', async () => {
+          if (!state.client) state.client = makeClient();
+          await state.client.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: signInRedirectUrl() } });
+        });
+        els.signOut.addEventListener('click', async () => {
+          if (state.client) await state.client.auth.signOut();
+          window.location.reload();
+        });
+        els.reload.addEventListener('click', () => loadData().catch((error) => setNotice(error.message || 'Could not reload data.', 'bad')));
+        els.season.addEventListener('change', () => { state.season = els.season.value; applyFilters(); });
+        els.year.addEventListener('change', () => { state.year = els.year.value; applyFilters(); });
+        els.search.addEventListener('input', () => { state.search = els.search.value; applyFilters(); });
+        els.evidence.addEventListener('change', () => { state.evidence = els.evidence.value; applyFilters(); });
+      }
+
+      async function boot() {
+        bindEvents();
+        try {
+          const ok = await initAuth();
+          if (ok) await loadData();
+        } catch (error) {
+          console.error(error);
+          setNotice(error?.message || 'Performance Lab failed to load.', 'bad');
+        }
+      }
+
+      window.addEventListener('DOMContentLoaded', boot);
+    })();
+  </script>
 </body>
 </html>

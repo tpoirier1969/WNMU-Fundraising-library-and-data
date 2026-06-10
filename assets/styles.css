@@ -5517,3 +5517,64 @@ input.goal-difference-negative {
     margin-left: 0;
   }
 }
+
+/* v0.21.81 performance live-break and seasonal-lift readability */
+.topic-season-read-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #c9d7e8;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #20364f;
+  font-size: .82rem;
+  line-height: 1.35;
+}
+.topic-season-read-guide strong {
+  flex: 0 0 auto;
+  font-weight: 900;
+}
+.topic-season-read-guide span {
+  min-width: 180px;
+  flex: 1 1 220px;
+}
+
+/* v0.21.82 topic-season readability and topic-level comparison */
+.topic-season-row-label {
+  display: grid;
+  gap: 2px;
+  align-content: center;
+}
+.topic-season-row-label strong {
+  line-height: 1.12;
+}
+.topic-season-row-label small {
+  display: block;
+  color: #5f6f82;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.topic-season-cell small {
+  text-align: center;
+  line-height: 1.05;
+}
+.topic-season-lift-row td {
+  vertical-align: top;
+}
+.topic-season-lift-row td:nth-child(1),
+.topic-season-lift-row td:nth-child(4),
+.topic-season-lift-row td:nth-child(6),
+.topic-season-lift-row td:nth-child(8) {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+.topic-season-lift-row .muted {
+  display: block;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  margin-top: 2px;
+}

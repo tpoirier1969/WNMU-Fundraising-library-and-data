@@ -7,6 +7,7 @@
     return Boolean(state.session && state.isAdmin);
   }
 
+
   function ensurePerformanceLabButton() {
     const topbarActions = document.querySelector('.topbar-actions');
     if (!topbarActions) return null;
