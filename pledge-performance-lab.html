@@ -316,8 +316,11 @@
     advancedDaypart: 'all',
     advancedWeekpart: 'all',
     trendRows: new Map(),
-    tableSort: { question: '', index: null, direction: 'asc' }
+    tableSort: { question: '', index: null, direction: 'asc' },
+    liveBreakDiagnostics: { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 }
   };
+
+  const LIVE_BREAK_ANALYTICS_SOURCE = 'saved-scheduling-placements-only';
 
   const el = (id) => document.getElementById(id);
   const dom = {
@@ -479,16 +482,6 @@
     return Boolean(text(firstNonEmpty(placement.liveBreakNotes, placement.live_break_notes, placement.liveBreakNote, '')));
   }
 
-  function importedLive(row = {}) {
-    const parsed = parseBooleanish(firstNonEmpty(row.live_break_flag, row.liveBreakFlag, row.live_breaks, row.liveBreaks, null));
-    if (parsed === true) return true;
-    if (parsed === false) return false;
-    const count = Number(firstNonEmpty(row.liveBreakCount, row.local_break_count, row.localBreakCount, null));
-    if (Number.isFinite(count) && count > 0) return true;
-    if (Number.isFinite(count) && count === 0) return false;
-    return null;
-  }
-
   function buildLibraryIndexes(rows = []) {
     const byId = new Map();
     const byNola = new Map();
@@ -589,7 +582,6 @@
       );
       const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''));
       const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
-      const importedLiveState = importedLive(row);
       const record = {
         id: row.id || '',
         row,
@@ -614,9 +606,9 @@
         fundraiser: text(row.fundraiser_label) || (season && year ? `${season} ${year}` : ''),
         dollars: Number(firstNonEmpty(row.dollars, row.contribution_amount, 0) || 0),
         pledges: Number(row.pledge_count || 0),
-        live: importedLiveState === true,
-        liveState: importedLiveState === true ? 'imported-live' : 'unknown',
-        liveSource: importedLiveState === true ? 'imported row hint' : 'none',
+        live: false,
+        liveState: 'unknown',
+        liveSource: 'none',
         scheduleMatched: false
       };
       const scheduleMatch = findScheduleMatch(record, scheduleIndex);
@@ -632,16 +624,72 @@
   }
 
 
-  function buildScheduleRecords(schedules = [], libraryRows = [], airingRecords = []) {
-    const indexes = buildLibraryIndexes(libraryRows);
-    const byHash = new Map();
+  function buildAiringRecordLookup(airingRecords = []) {
+    const maps = { hash: new Map(), exact: new Map(), dateProgram: new Map(), dateNola: new Map(), dateTitle: new Map() };
+    const push = (map, key, record) => {
+      if (!key) return;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(record);
+    };
     airingRecords.forEach((record) => {
       const hash = text(record.sourceAiringHash || record.row?.row_hash || '');
-      if (hash) byHash.set(hash, record);
+      if (hash) maps.hash.set(hash, record);
+      const dateKey = text(record.dateKey || '');
+      if (!dateKey) return;
+      const keys = [
+        text(record.programOpenId || ''),
+        text(record.programId || ''),
+        record.nola ? nolaKey(record.nola) : '',
+        lookupKey(record.title),
+        lookupKey(record.importedTitle)
+      ].filter(Boolean);
+      keys.forEach((key) => {
+        if (Number.isFinite(record.startMinutes)) push(maps.exact, `${dateKey}|${key}|${record.startMinutes}`, record);
+        push(maps.dateProgram, `${dateKey}|${key}`, record);
+        push(maps.dateNola, `${dateKey}|${key}`, record);
+        push(maps.dateTitle, `${dateKey}|${key}`, record);
+      });
     });
+    return maps;
+  }
+
+  function findAiringForSchedulePlacement({ placement = {}, dateKey = '', startMinutes = NaN, pid = '', nola = '', title = '', airingLookup }) {
+    const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+    if (hash && airingLookup.hash.has(hash)) return airingLookup.hash.get(hash);
+    const keys = [pid, nola, title, lookupKey(placement.programTitle || placement.program_title || placement.title || placement.name || '')].filter(Boolean);
+    const candidates = [];
+    keys.forEach((key) => {
+      if (Number.isFinite(startMinutes)) candidates.push(...(airingLookup.exact.get(`${dateKey}|${key}|${startMinutes}`) || []));
+      candidates.push(...(airingLookup.dateProgram.get(`${dateKey}|${key}`) || []));
+      candidates.push(...(airingLookup.dateNola.get(`${dateKey}|${key}`) || []));
+      candidates.push(...(airingLookup.dateTitle.get(`${dateKey}|${key}`) || []));
+    });
+    const unique = [];
+    const seen = new Set();
+    candidates.forEach((record) => {
+      const id = text(record.id || record.sourceAiringHash || `${record.dateKey}|${record.startMinutes}|${record.title}|${record.dollars}`);
+      if (seen.has(id)) return;
+      seen.add(id);
+      unique.push(record);
+    });
+    if (!unique.length) return null;
+    if (Number.isFinite(startMinutes)) {
+      const exact = unique.find((record) => Number(record.startMinutes) === Number(startMinutes));
+      if (exact) return exact;
+    }
+    return unique.sort((a, b) => Number(b.dollars || 0) - Number(a.dollars || 0))[0] || null;
+  }
+
+  function buildScheduleRecords(schedules = [], libraryRows = [], airingRecords = []) {
+    const indexes = buildLibraryIndexes(libraryRows);
+    const airingLookup = buildAiringRecordLookup(airingRecords);
     const out = [];
+    const diagnostics = { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 };
     schedules.forEach((schedule) => {
       (schedule.placements || []).forEach((placement) => {
+        diagnostics.schedulePlacements += 1;
+        const liveFlag = placementLive(placement);
+        if (liveFlag) diagnostics.livePlacements += 1;
         const dateKey = text(placement.dateKey || placement.date_key || '');
         const date = parseLocalDate(dateKey);
         const season = pledgeSeason(date);
@@ -649,9 +697,17 @@
         const startMinutes = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? NaN);
         if (!dateKey || !date || !season) return;
         const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
-        const matched = hash ? byHash.get(hash) : null;
-        const pid = text(firstNonEmpty(placement.programId, placement.program_id, matched?.programOpenId, matched?.programId, ''));
-        const lib = indexes.byId.get(pid) || (matched?.nola ? indexes.byNola.get(nolaKey(matched.nola)) : null) || indexes.byTitle.get(lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, matched?.title, ''))) || {};
+        const rawPid = text(firstNonEmpty(placement.programId, placement.program_id, ''));
+        const rawNola = nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
+        const rawTitle = lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''));
+        const initialLib = indexes.byId.get(rawPid) || indexes.byNola.get(rawNola) || indexes.byTitle.get(rawTitle) || {};
+        const initialPid = text(firstNonEmpty(rawPid, initialLib.id, ''));
+        const initialNola = nolaKey(firstNonEmpty(initialLib.nola_code, rawNola, ''));
+        const initialTitle = lookupKey(firstNonEmpty(initialLib.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
+        const matched = findAiringForSchedulePlacement({ placement, dateKey, startMinutes, pid: initialPid, nola: initialNola, title: initialTitle, airingLookup });
+        if (liveFlag && !matched) diagnostics.unmatchedLivePlacements += 1;
+        const pid = text(firstNonEmpty(placement.programId, placement.program_id, matched?.programOpenId, matched?.programId, initialLib.id, ''));
+        const lib = indexes.byId.get(pid) || (matched?.nola ? indexes.byNola.get(nolaKey(matched.nola)) : null) || indexes.byNola.get(initialNola) || indexes.byTitle.get(lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, matched?.title, ''))) || initialLib || {};
         const title = text(firstNonEmpty(lib.title, matched?.title, placement.programTitle, placement.program_title, placement.title, placement.name, 'Untitled'));
         const nonSpecific = isNonSpecificPledgeBucket(title, lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola);
         const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, matched?.topic, ''));
@@ -674,7 +730,10 @@
           0
         ) || 0);
         if (!(dollars > 0)) return;
-        const liveFlag = placementLive(placement);
+        if (liveFlag) {
+          diagnostics.liveRows += 1;
+          diagnostics.liveDollars += dollars;
+        }
         out.push({
           id: placement.id || hash || `${schedule.id}|${dateKey}|${startMinutes}|${title}`,
           row: matched?.row || {},
@@ -707,6 +766,7 @@
         });
       });
     });
+    state.liveBreakDiagnostics = diagnostics;
     return out;
   }
 
@@ -983,10 +1043,10 @@
   function liveRead(rows) {
     const live = rows.find((row) => row.title === 'Live break');
     const nonlive = rows.find((row) => row.title === 'No live break');
-    if (!live || !nonlive) return 'No schedule-matched live-break comparison is available for this filter. This view intentionally ignores imported live-break guesses and uses saved Scheduling flags only.';
+    if (!live || !nonlive) return 'No saved-schedule live-break comparison is available for this filter. This view intentionally ignores imported live-break guesses and uses saved Scheduling flags only.';
     const diff = live.avg - nonlive.avg;
     const diffText = `${diff >= 0 ? '+' : ''}${formatMoney(diff).replace('$-', '-$')}`;
-    return `This view uses <b>saved Scheduling placements only</b>; imported live-break guesses are ignored. That prevents the old zero-result fallback from driving the answer.<br><br>Live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.`;
+    return `This view uses <b>saved Scheduling placements only</b>; imported live-break columns are not selected, read, or used. That prevents the old zero-result fallback from driving the answer.<br><br>Live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.`;
   }
 
   function trendId(row) {
@@ -1169,7 +1229,7 @@
       graphTitle: 'Live-break average comparison',
       source: 'schedule',
       tableTitle: 'Live break split',
-      tableNote: 'Uses saved Scheduling placements only. Imported live-break guesses are ignored, so the old zero-result fallback cannot drive this view.',
+      tableNote: 'Uses saved Scheduling placements only. Imported live-break columns are not selected, read, or used. If live-break placements cannot be matched to pledge dollars, the page shows a guardrail warning instead of silently reporting imported fallback results.',
       rows: rowsLive,
       metric: (rows) => rows.find((row) => row.title === 'Live break') ? formatMoney(rows.find((row) => row.title === 'Live break').avg) : '—',
       tag: 'schedule flags only',
@@ -1255,7 +1315,7 @@
   async function load() {
     note('Loading live pledge performance records…');
     const [airings, scheduleRows] = await Promise.all([
-      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash,live_break_flag,local_break_count', 'air_date'),
+      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash', 'air_date'),
       fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,schedule_data', 'start_date')
     ]);
     let libraryRows = [];
@@ -1275,7 +1335,12 @@
     const scheduleLiveCount = state.scheduleRecords.filter((record) => record.liveState === 'live').length;
     const schedulePlacementCount = state.scheduleRecords.length;
     const scheduleMatchedCount = state.records.filter((record) => record.scheduleMatched).length;
-    note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}.`);
+    const diag = state.liveBreakDiagnostics || {};
+    if ((diag.livePlacements || 0) > 0 && (diag.liveDollars || 0) <= 0) {
+      note(`Live-break guardrail: ${formatNumber(diag.livePlacements || 0)} saved live-break placement(s) exist, but none matched pledge dollars. Analytics did not fall back to imported live-break guesses. Check schedule placement hashes/titles/times.`, 'bad');
+    } else {
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
+    }
   }
 
   function rebuildFilterOptions() {
