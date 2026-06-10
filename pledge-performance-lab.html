@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Lab v0.21.85</title>
+  <title>WNMU Pledge Performance Lab v0.21.86</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -102,7 +102,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin prototype · v0.21.85</div>
+        <div class="eyebrow">Admin prototype · v0.21.86</div>
         <h1>Pledge Performance Lab</h1>
         <p>This live-data test page does not replace the current Performance page and does not save anything.</p>
       </div>
@@ -359,7 +359,7 @@
     const parsed = parseBooleanish(firstNonEmpty(row.live_break_flag, row.liveBreakFlag, row.live_breaks, row.liveBreaks, null));
     if (parsed === true) return true;
     if (parsed === false) return false;
-    const count = Number(firstNonEmpty(row.live_break_count, row.liveBreakCount, row.local_break_count, row.localBreakCount, null));
+    const count = Number(firstNonEmpty(row.liveBreakCount, row.local_break_count, row.localBreakCount, null));
     if (Number.isFinite(count) && count > 0) return true;
     if (Number.isFinite(count) && count === 0) return false;
     return null;
@@ -371,7 +371,6 @@
     const byTitle = new Map();
     rows.forEach((row) => {
       if (text(row.id)) byId.set(text(row.id), row);
-      if (text(row.program_id)) byId.set(text(row.program_id), row);
       if (nolaKey(row.nola_code)) byNola.set(nolaKey(row.nola_code), row);
       if (lookupKey(row.title)) byTitle.set(lookupKey(row.title), row);
     });
@@ -398,7 +397,7 @@
         const dateKey = text(placement.dateKey || placement.date_key || '');
         const start = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? 0);
         const end = Number(placement.endMinutes ?? placement.end_minutes ?? start);
-        const pid = text(firstNonEmpty(placement.programId, placement.program_id, lib?.id, lib?.program_id, ''));
+        const pid = text(firstNonEmpty(placement.programId, placement.program_id, lib?.id, ''));
         const nola = nolaKey(firstNonEmpty(lib?.nola_code, placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
         const title = lookupKey(firstNonEmpty(lib?.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
         const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, live: placementLive(placement), placement };
@@ -932,9 +931,9 @@
     ]);
     let libraryRows = [];
     try {
-      libraryRows = await fetchAll(LIBRARY_VIEW, 'id,program_id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+      libraryRows = await fetchAll(LIBRARY_VIEW, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
     } catch (_error) {
-      libraryRows = await fetchAll(BASE_TABLE, 'id,program_id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+      libraryRows = await fetchAll(BASE_TABLE, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
     }
     state.schedules = scheduleRows.map(normalizeSchedule);
     state.records = buildRecords(airings, libraryRows, state.schedules);
