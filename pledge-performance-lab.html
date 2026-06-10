@@ -3,978 +3,1134 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Lab v0.21.83</title>
+  <title>WNMU Pledge Performance Lab v0.21.84</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
     :root {
       --bg: #f4f0e8;
       --card: #fffaf1;
-      --card-strong: #fff2d4;
       --ink: #272019;
       --muted: #6d6255;
       --line: #d7c8ae;
       --accent: #7b341e;
       --accent-2: #2f5d62;
-      --good: #245d39;
-      --warn: #8a5a00;
       --bad: #8b2d20;
-      --shadow: 0 16px 38px rgba(56, 41, 23, 0.13);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --good: #245d39;
+      --soft: #fff4dd;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
     }
-
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: radial-gradient(circle at top left, #fff7e5 0, var(--bg) 42%, #ede3d3 100%);
-      color: var(--ink);
-    }
+    body { margin: 0; background: var(--bg); color: var(--ink); }
     button, input, select { font: inherit; }
-    a { color: var(--accent); }
+    button { border: 1px solid var(--line); border-radius: 999px; padding: 10px 13px; background: #fffdf8; font-weight: 800; cursor: pointer; }
+    button:disabled, select:disabled, input:disabled { opacity: .48; cursor: not-allowed; }
+    .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ghost { background: transparent; }
     .hidden { display: none !important; }
-    .shell { max-width: 1380px; margin: 0 auto; padding: 24px; }
-    .topbar {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 18px;
-    }
-    .brand { display: flex; align-items: center; gap: 13px; }
-    .brand img { width: 74px; height: auto; display: block; }
-    .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .08em; font-size: .76rem; font-weight: 800; }
-    h1 { margin: 2px 0; font-size: clamp(1.75rem, 3vw, 2.7rem); line-height: 1.05; }
-    .lede { margin: 0; color: var(--muted); max-width: 840px; }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: end;
-      background: rgba(255, 250, 241, .8);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 12px;
-      margin: 14px 0 18px;
-      box-shadow: 0 6px 18px rgba(56, 41, 23, .07);
-    }
-    .field { display: grid; gap: 4px; min-width: 142px; }
-    .field.grow { flex: 1 1 260px; }
-    label, .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 800; color: var(--muted); }
-    input, select {
-      border: 1px solid var(--line);
-      border-radius: 11px;
-      padding: 9px 10px;
-      background: #fffdf8;
-      color: var(--ink);
-    }
-    button {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 10px 13px;
-      background: #fffdf8;
-      color: var(--ink);
-      cursor: pointer;
-      font-weight: 750;
-    }
-    button.primary { background: var(--accent); border-color: var(--accent); color: white; }
-    button.ghost { background: transparent; }
-    button.active { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
-    .notice {
-      border: 1px solid var(--line);
-      background: #fffdf8;
-      border-radius: 16px;
-      padding: 13px 15px;
-      margin: 12px 0;
-      color: var(--muted);
-    }
-    .notice.warn { border-color: #c99953; color: #62450b; background: #fff7e2; }
-    .notice.bad { border-color: #bd8178; color: #681f19; background: #fff0ee; }
-    .layout { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
-    .question-stack { display: grid; gap: 12px; position: sticky; top: 16px; }
-    .question-card {
-      text-align: left;
-      border-radius: 18px;
-      background: var(--card);
-      border: 1px solid var(--line);
-      padding: 16px;
-      box-shadow: 0 8px 24px rgba(56, 41, 23, .07);
-      display: grid;
-      gap: 8px;
-    }
-    .question-card.active { outline: 3px solid rgba(47, 93, 98, .24); border-color: var(--accent-2); }
-    .question-title { font-size: 1.04rem; font-weight: 900; }
-    .question-summary { color: var(--muted); font-size: .93rem; line-height: 1.35; }
-    .question-metric { font-size: 1.35rem; font-weight: 950; color: var(--accent); }
-    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 8px; background: #efe3d2; color: #584b3b; font-size: .78rem; font-weight: 800; }
-    .badge.good { color: var(--good); background: #e1eddc; }
-    .badge.warn { color: var(--warn); background: #f7ecd2; }
-    .badge.bad { color: var(--bad); background: #f4ddd9; }
-    .detail-card {
-      background: rgba(255, 250, 241, .96);
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-    .detail-head {
-      padding: 18px;
-      background: linear-gradient(135deg, #fff8e9, #f3e4ca);
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: start;
-    }
-    .detail-head h2 { margin: 0 0 6px; font-size: 1.45rem; }
-    .detail-head p { margin: 0; color: var(--muted); max-width: 780px; }
-    .detail-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
-    .inside { padding: 18px; display: grid; gap: 18px; }
-    .split { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr); gap: 16px; align-items: start; }
-    .panel {
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: #fffdf8;
-      padding: 14px;
-      min-width: 0;
-    }
-    .panel h3 { margin: 0 0 6px; font-size: 1rem; }
-    .panel p { margin: 0 0 8px; color: var(--muted); }
-    .chart { min-height: 300px; display: grid; align-content: center; }
-    .bar-row { display: grid; grid-template-columns: minmax(130px, 230px) 1fr auto; gap: 10px; align-items: center; margin: 9px 0; }
-    .bar-label { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bar-track { background: #f0e4d3; border-radius: 999px; overflow: hidden; height: 18px; }
-    .bar-fill { background: linear-gradient(90deg, var(--accent-2), #78a2a5); min-width: 2px; height: 100%; border-radius: 999px; }
-    .bar-value { font-weight: 900; color: var(--accent); white-space: nowrap; }
-    .empty { color: var(--muted); padding: 36px 12px; text-align: center; border: 1px dashed var(--line); border-radius: 14px; }
+    .shell { max-width: 1380px; margin: auto; padding: 24px; }
+    .top { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 16px; }
+    .brand { display: flex; gap: 13px; align-items: center; }
+    .brand img { width: 72px; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-size: .75rem; font-weight: 900; }
+    h1 { margin: 0; font-size: clamp(1.7rem, 3vw, 2.6rem); }
+    h2, h3 { margin-top: 0; }
+    p { color: var(--muted); }
+    .notice { border: 1px solid var(--line); border-radius: 16px; background: #fffdf8; padding: 13px 15px; margin: 12px 0; }
+    .warn { background: #fff7e2; color: #62450b; }
+    .bad { background: #fff0ee; color: #681f19; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-bottom: 18px; }
+    .field { display: grid; gap: 4px; min-width: 150px; }
+    .grow { flex: 1 1 260px; }
+    label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 900; color: var(--muted); }
+    input, select { border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; background: #fffdf8; }
+    .scope-note { flex: 1 1 100%; color: var(--muted); font-size: .9rem; }
+    .layout { display: grid; grid-template-columns: 360px 1fr; gap: 18px; align-items: start; }
+    .cards { display: grid; gap: 12px; position: sticky; top: 14px; }
+    .qcard { text-align: left; border-radius: 18px; background: var(--card); border: 1px solid var(--line); padding: 16px; display: grid; gap: 7px; }
+    .qcard.active { outline: 3px solid rgba(47, 93, 98, .25); border-color: var(--accent-2); }
+    .qtitle { font-size: 1.05rem; font-weight: 950; }
+    .qsum { color: var(--muted); font-size: .92rem; line-height: 1.35; }
+    .qmetric { font-size: 1.25rem; font-weight: 950; color: var(--accent); }
+    .badge { display: inline-block; border-radius: 999px; background: #efe3d2; padding: 4px 8px; font-size: .78rem; font-weight: 900; color: #584b3b; }
+    .detail { background: var(--card); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; box-shadow: 0 16px 38px rgba(56, 41, 23, .13); }
+    .dhead { padding: 18px; background: var(--soft); border-bottom: 1px solid var(--line); }
+    .dhead h2 { margin: 0 0 5px; }
+    .inside { padding: 18px; display: grid; gap: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .stat { background: #fff7e8; border: 1px solid var(--line); border-radius: 14px; padding: 11px; }
+    .stat .v { font-size: 1.2rem; font-weight: 950; color: var(--accent); }
+    .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 16px; }
+    .panel { border: 1px solid var(--line); border-radius: 18px; background: #fffdf8; padding: 14px; min-width: 0; }
+    .bar { display: grid; grid-template-columns: minmax(150px, 300px) 1fr auto; gap: 10px; align-items: center; margin: 9px 0; }
+    .blabel { font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mix { color: var(--muted); font-size: .82rem; font-weight: 800; }
+    .track { height: 18px; background: #f0e4d3; border-radius: 999px; overflow: hidden; }
+    .fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), #83a9aa); border-radius: 999px; min-width: 2px; }
+    .bval { font-weight: 950; color: var(--accent); white-space: nowrap; }
+    .read { border-left: 5px solid var(--accent-2); background: #edf5f4; border-radius: 14px; padding: 12px; color: #24494d; }
+    .tablewrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
     table { width: 100%; border-collapse: collapse; font-size: .92rem; }
     th, td { border-bottom: 1px solid #eadcc8; text-align: left; padding: 9px 8px; vertical-align: top; }
-    th { color: #584b3b; background: #f7ead8; position: sticky; top: 0; z-index: 1; }
-    td.money, th.money { text-align: right; white-space: nowrap; }
-    .table-wrap { max-height: 430px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
-    .explain { border-left: 5px solid var(--accent-2); background: #edf5f4; color: #24494d; padding: 12px 14px; border-radius: 14px; }
-    .explain strong { color: #18383b; }
-    details.advanced {
-      border: 1px solid var(--line);
-      background: #fffdf8;
-      border-radius: 16px;
-      padding: 11px 13px;
-    }
-    details.advanced summary { cursor: pointer; font-weight: 900; color: var(--accent); }
-    .advanced-grid { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
-    .mini-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-    .mini-stat { background: #fff7e8; border: 1px solid var(--line); border-radius: 15px; padding: 12px; }
-    .mini-stat .value { font-size: 1.3rem; font-weight: 950; color: var(--accent); }
-    .mini-stat .caption { color: var(--muted); font-size: .85rem; }
+    th { background: #f7ead8; color: #584b3b; position: sticky; top: 0; z-index: 1; }
+    .money, .num { text-align: right; white-space: nowrap; }
+    .empty { padding: 34px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; }
     .risk { color: var(--bad); font-weight: 900; }
     .ok { color: var(--good); font-weight: 900; }
-    .muted { color: var(--muted); }
-    @media (max-width: 920px) {
+    details { border: 1px solid var(--line); background: #fffdf8; border-radius: 16px; padding: 11px 13px; }
+    summary { cursor: pointer; font-weight: 950; color: var(--accent); }
+    .adv { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; color: var(--muted); }
+    .mini-spark { display: inline-block; width: 150px; height: 32px; vertical-align: middle; }
+    .trend-button { padding: 5px 9px; font-size: .8rem; margin-left: 6px; }
+    .modal { position: fixed; inset: 0; background: rgba(32, 24, 18, .62); display: grid; place-items: center; z-index: 1000; padding: 18px; }
+    .modal-card { width: min(980px, 96vw); max-height: 92vh; overflow: auto; background: #fffdf8; border-radius: 20px; border: 1px solid var(--line); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+    .modal-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px; border-bottom: 1px solid var(--line); background: var(--soft); }
+    .modal-body { padding: 18px; }
+    .trend-svg { width: 100%; min-height: 360px; }
+    @media (max-width: 960px) {
       .layout, .split { grid-template-columns: 1fr; }
-      .question-stack { position: static; }
-      .detail-head { display: grid; }
-      .advanced-grid, .mini-grid { grid-template-columns: 1fr; }
-      .bar-row { grid-template-columns: 1fr; }
-      .bar-value { text-align: left; }
+      .cards { position: static; }
+      .stats, .adv { grid-template-columns: 1fr; }
+      .bar { grid-template-columns: 1fr; }
+      .brand img { width: 56px; }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <header class="topbar">
-      <div class="brand">
-        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
-        <div>
-          <div class="eyebrow">Admin prototype</div>
-          <h1>Pledge Performance Lab</h1>
-          <p class="lede">A live-data test page for simplifying Pledge Performance. It does not replace the current page and it does not save anything.</p>
-        </div>
+<main class="shell">
+  <header class="top">
+    <div class="brand">
+      <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
+      <div>
+        <div class="eyebrow">Admin prototype · v0.21.84</div>
+        <h1>Pledge Performance Lab</h1>
+        <p>This live-data test page does not replace the current Performance page and does not save anything.</p>
       </div>
-      <div class="detail-tools">
-        <a href="index.html"><button type="button" class="ghost">Back to app</button></a>
-        <button type="button" id="sign-in-button" class="primary hidden">Admin sign in</button>
-        <button type="button" id="sign-out-button" class="ghost hidden">Sign out</button>
+    </div>
+    <div>
+      <a href="index.html"><button class="ghost" type="button">Back to app</button></a>
+      <button id="sign-in" class="primary hidden" type="button">Admin sign in</button>
+      <button id="sign-out" class="ghost hidden" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <div id="notice" class="notice">Loading admin check…</div>
+
+  <section id="lab" class="hidden">
+    <div class="toolbar">
+      <div class="field">
+        <label for="season">Pledge season</label>
+        <select id="season"></select>
       </div>
-    </header>
+      <div class="field">
+        <label for="year">Year</label>
+        <select id="year"></select>
+      </div>
+      <div class="field grow">
+        <label for="search">Program / topic search</label>
+        <input id="search" type="search" placeholder="Search titles, topics, or NOLA codes">
+      </div>
+      <div class="field">
+        <label for="evidence">Evidence handling</label>
+        <select id="evidence">
+          <option value="flag">Show all, flag weak</option>
+          <option value="all">Show all evidence</option>
+          <option value="hide">Hide weak evidence</option>
+        </select>
+      </div>
+      <button id="reload" type="button">Reload live data</button>
+      <div id="scope-note" class="scope-note"></div>
+    </div>
 
-    <div id="notice" class="notice">Loading admin check…</div>
-
-    <section id="lab" class="hidden">
-      <section class="toolbar" aria-label="Performance filters">
-        <div class="field">
-          <label for="season-select">Pledge season</label>
-          <select id="season-select"></select>
+    <div class="layout">
+      <aside id="cards" class="cards"></aside>
+      <section class="detail">
+        <div class="dhead">
+          <h2 id="dt">Choose a question</h2>
+          <p id="ds">Cards choose the question. This side holds the graph, table, and plain-English read.</p>
         </div>
-        <div class="field">
-          <label for="year-select">Year</label>
-          <select id="year-select"></select>
-        </div>
-        <div class="field grow">
-          <label for="search-input">Program / topic search</label>
-          <input id="search-input" type="search" placeholder="Search titles, topics, or NOLA codes">
-        </div>
-        <div class="field">
-          <label for="evidence-select">Evidence handling</label>
-          <select id="evidence-select">
-            <option value="flag">Show all, flag weak</option>
-            <option value="all">Show all evidence</option>
-            <option value="hide">Hide weak evidence</option>
-          </select>
-        </div>
-        <button type="button" id="reload-button">Reload live data</button>
-      </section>
-
-      <div class="layout">
-        <aside class="question-stack" id="question-stack"></aside>
-
-        <section class="detail-card">
-          <div class="detail-head">
-            <div>
-              <h2 id="detail-title">Choose a question</h2>
-              <p id="detail-summary">The left side is the simple question layer. This side is where the graph, table, and explanation live.</p>
-            </div>
-            <div class="detail-tools" id="detail-actions"></div>
-          </div>
-          <div class="inside">
-            <div class="mini-grid" id="mini-stats"></div>
-            <div class="split">
-              <div class="panel">
-                <h3 id="chart-title">Graph</h3>
-                <p id="chart-note">Graphs live here, not on every card.</p>
-                <div id="chart" class="chart"></div>
-              </div>
-              <div class="panel">
-                <h3>Plain-English read</h3>
-                <div id="explain" class="explain"></div>
-              </div>
+        <div class="inside">
+          <div id="stats" class="stats"></div>
+          <div class="split">
+            <div class="panel">
+              <h3 id="ct">Graph</h3>
+              <p id="cn">Graphs live here, not on every card.</p>
+              <div id="chart"></div>
             </div>
             <div class="panel">
-              <h3 id="table-title">Detail table</h3>
-              <p id="table-note">The table follows the selected question so the graph and rows do not fight each other.</p>
-              <div id="table" class="table-wrap"></div>
+              <h3>Plain-English read</h3>
+              <div id="read" class="read"></div>
             </div>
-            <details class="advanced">
-              <summary>Advanced filters proposed for the real page</summary>
-              <div class="advanced-grid">
-                <div><strong>Time controls</strong><br><span class="muted">Season, year, exact start/end date, all historical data, or selected fundraiser only.</span></div>
-                <div><strong>Program controls</strong><br><span class="muted">Topic, secondary topic, distributor, length, rights status, NOLA/title search, active/archived.</span></div>
-                <div><strong>Evidence controls</strong><br><span class="muted">Minimum broadcasts, minimum seasons, show weak evidence, hide weak evidence, or flag weak evidence without hiding it.</span></div>
-                <div><strong>Money controls</strong><br><span class="muted">Total dollars, average dollars, median dollars, pledges, dollars per minute, exclude non-specific pledges.</span></div>
-                <div><strong>Scheduling controls</strong><br><span class="muted">Daypart, weekday/weekend, live break only, non-live only, first airing in drive, repeat airing in drive.</span></div>
-                <div><strong>Record inspection</strong><br><span class="muted">Show contributing broadcasts, source fundraiser, import source, and export/copy rows so no evidence disappears into dashboard fog.</span></div>
-              </div>
-            </details>
           </div>
-        </section>
-      </div>
-    </section>
-  </main>
-
-  <script>
-    (() => {
-      const AIRINGS_TABLE = 'pledge_program_airings_v2';
-      const LIBRARY_VIEW = 'pledge_program_library_summary_v2';
-      const BASE_TABLE = 'pledge_programs_v2';
-      const SEASONS = ['March', 'June', 'August', 'December'];
-      const WEAK_BROADCASTS = 3;
-      const WEAK_SEASONS = 2;
-
-      const state = {
-        client: null,
-        session: null,
-        isAdmin: false,
-        userEmail: '',
-        rawAirings: [],
-        libraryRows: [],
-        records: [],
-        filtered: [],
-        question: 'programs',
-        season: 'all',
-        year: 'all',
-        search: '',
-        evidence: 'flag'
-      };
-
-      const els = {
-        notice: document.getElementById('notice'),
-        lab: document.getElementById('lab'),
-        signIn: document.getElementById('sign-in-button'),
-        signOut: document.getElementById('sign-out-button'),
-        season: document.getElementById('season-select'),
-        year: document.getElementById('year-select'),
-        search: document.getElementById('search-input'),
-        evidence: document.getElementById('evidence-select'),
-        reload: document.getElementById('reload-button'),
-        stack: document.getElementById('question-stack'),
-        detailTitle: document.getElementById('detail-title'),
-        detailSummary: document.getElementById('detail-summary'),
-        detailActions: document.getElementById('detail-actions'),
-        miniStats: document.getElementById('mini-stats'),
-        chartTitle: document.getElementById('chart-title'),
-        chartNote: document.getElementById('chart-note'),
-        chart: document.getElementById('chart'),
-        explain: document.getElementById('explain'),
-        tableTitle: document.getElementById('table-title'),
-        tableNote: document.getElementById('table-note'),
-        table: document.getElementById('table')
-      };
-
-      function escapeHtml(value) {
-        return String(value ?? '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-      }
-
-      function setNotice(message, type = '') {
-        els.notice.textContent = message;
-        els.notice.className = `notice ${type}`.trim();
-      }
-
-      function normalizeText(value) {
-        return String(value ?? '').trim();
-      }
-
-      function lookupKey(value) {
-        return normalizeText(value).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
-      }
-
-      function nolaKey(value) {
-        return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
-      }
-
-      function firstValue(...values) {
-        for (const value of values) {
-          if (value === 0) return value;
-          const text = normalizeText(value);
-          if (text) return value;
-        }
-        return null;
-      }
-
-      function money(value) {
-        const numeric = Number(value || 0);
-        return numeric.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-      }
-
-      function count(value) {
-        return Number(value || 0).toLocaleString();
-      }
-
-      function pct(value) {
-        if (!Number.isFinite(value)) return '—';
-        return `${value > 0 ? '+' : ''}${Math.round(value)}%`;
-      }
-
-      function parseDate(value) {
-        if (!value) return null;
-        if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-          const [y, m, d] = value.split('-').map(Number);
-          return new Date(y, m - 1, d);
-        }
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? null : parsed;
-      }
-
-      function seasonFromDate(date) {
-        if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-        const month = date.getMonth() + 1;
-        if (month === 2 || month === 3) return 'March';
-        if (month === 5 || month === 6) return 'June';
-        if (month === 8 || month === 9) return 'August';
-        if (month === 11 || month === 12) return 'December';
-        return '';
-      }
-
-      function seasonSortKey(label) {
-        const match = String(label || '').match(/(March|June|August|December)\s+(\d{4})/);
-        if (!match) return 0;
-        return (Number(match[2]) * 10) + (SEASONS.indexOf(match[1]) + 1);
-      }
-
-      function computeAdmin(session) {
-        const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-        const email = normalizeText(session?.user?.email).toLowerCase();
-        const admins = Array.isArray(cfg.ADMIN_EMAILS)
-          ? cfg.ADMIN_EMAILS.map((entry) => normalizeText(entry).toLowerCase()).filter(Boolean)
-          : [];
-        if (!session) return { isAdmin: false, userEmail: '' };
-        if (!admins.length) return { isAdmin: true, userEmail: email };
-        return { isAdmin: Boolean(email && admins.includes(email)), userEmail: email };
-      }
-
-      function signInRedirectUrl() {
-        const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-        const configured = normalizeText(cfg.ADMIN_REDIRECT_URL);
-        if (configured) return configured.replace(/index\.html.*$/, 'pledge-performance-lab.html');
-        const url = new URL(window.location.href);
-        url.hash = '';
-        return url.toString();
-      }
-
-      async function waitForConfig() {
-        for (let i = 0; i < 80; i += 1) {
-          if (window.PLEDGE_MANAGER_CONFIG) return window.PLEDGE_MANAGER_CONFIG;
-          await new Promise((resolve) => window.setTimeout(resolve, 50));
-        }
-        return window.PLEDGE_MANAGER_CONFIG || {};
-      }
-
-      function makeClient() {
-        const cfg = window.PLEDGE_MANAGER_CONFIG || {};
-        const url = normalizeText(cfg.SUPABASE_URL);
-        const key = normalizeText(cfg.SUPABASE_ANON_KEY);
-        if (!url || !key || !window.supabase?.createClient) return null;
-        return window.supabase.createClient(url, key);
-      }
-
-      async function initAuth() {
-        const cfg = await waitForConfig();
-        state.client = makeClient();
-        if (!state.client) {
-          setNotice('Missing config.js or Supabase client. This lab page needs the same config as the main app.', 'bad');
-          return false;
-        }
-        const { data, error } = await state.client.auth.getSession();
-        if (error) throw error;
-        state.session = data?.session || null;
-        const admin = computeAdmin(state.session);
-        state.isAdmin = admin.isAdmin;
-        state.userEmail = admin.userEmail;
-        els.signIn.classList.toggle('hidden', Boolean(state.session));
-        els.signOut.classList.toggle('hidden', !state.session);
-        if (!state.session) {
-          setNotice('Sign in as admin to use the Performance Lab.', 'warn');
-          return false;
-        }
-        if (!state.isAdmin) {
-          setNotice(`Signed in as ${state.userEmail || 'viewer'}, but this lab is admin-only.`, 'bad');
-          return false;
-        }
-        setNotice(`Admin mode · ${state.userEmail || 'signed in'} · loading live pledge records…`);
-        els.lab.classList.remove('hidden');
-        return true;
-      }
-
-      async function queryMaybe(table, select, orderColumn = '') {
-        let query = state.client.from(table).select(select);
-        if (orderColumn) query = query.order(orderColumn, { ascending: true });
-        const { data, error } = await query;
-        if (error) throw error;
-        return Array.isArray(data) ? data : [];
-      }
-
-      async function loadData() {
-        setNotice('Loading live pledge performance records…');
-        const airings = await queryMaybe(
-          AIRINGS_TABLE,
-          'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,local_break_count',
-          'air_date'
-        );
-        let library = [];
-        try {
-          library = await queryMaybe(LIBRARY_VIEW, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
-        } catch (_error) {
-          library = await queryMaybe(BASE_TABLE, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
-        }
-        state.rawAirings = airings;
-        state.libraryRows = library;
-        state.records = buildRecords(airings, library);
-        populateFilters();
-        applyFilters();
-        setNotice(`Loaded ${count(state.records.length)} usable pledge airing records from live data.`);
-      }
-
-      function buildLookups(libraryRows) {
-        const byId = new Map();
-        const byNola = new Map();
-        const byTitle = new Map();
-        libraryRows.forEach((row) => {
-          const id = normalizeText(row.id);
-          if (id) byId.set(id, row);
-          const nola = nolaKey(row.nola_code);
-          if (nola) byNola.set(nola, row);
-          const title = lookupKey(row.title);
-          if (title) byTitle.set(title, row);
-        });
-        return { byId, byNola, byTitle };
-      }
-
-      function buildRecords(airings, libraryRows) {
-        const lookups = buildLookups(libraryRows);
-        return airings.map((row) => {
-          const programId = normalizeText(firstValue(row.pledge_program_id, row.program_id));
-          const title = normalizeText(firstValue(row.matched_library_title, row.program_title, row.title, row.imported_program_title, 'Untitled'));
-          const nola = normalizeText(row.nola_code);
-          const library = lookups.byId.get(programId)
-            || lookups.byNola.get(nolaKey(nola))
-            || lookups.byTitle.get(lookupKey(title))
-            || {};
-          const date = parseDate(firstValue(row.air_date, row.aired_at, row.drive_start_date, row.drive_end_date));
-          const season = seasonFromDate(date);
-          const year = date ? date.getFullYear() : '';
-          const dollars = Number(firstValue(row.dollars, row.contribution_amount, 0) || 0);
-          const pledgeCount = Number(row.pledge_count || 0);
-          const topic = normalizeText(firstValue(library.topic_primary, row.topic_primary, 'Uncategorized')) || 'Uncategorized';
-          const secondaryTopic = normalizeText(firstValue(library.topic_secondary, row.topic_secondary, ''));
-          const liveBreak = row.live_break_flag === true
-            || String(row.live_break_flag).toLowerCase() === 'true'
-            || String(row.live_break_flag).toLowerCase() === 'yes'
-            || Number(row.local_break_count || 0) > 0;
-          const seasonYear = season && year ? `${season} ${year}` : 'Unseasoned';
-          return {
-            id: row.id,
-            programId,
-            title: normalizeText(library.title) || title,
-            nola: normalizeText(library.nola_code) || nola,
-            topic,
-            secondaryTopic,
-            date,
-            season,
-            year,
-            seasonYear,
-            fundraiserLabel: normalizeText(row.fundraiser_label) || seasonYear,
-            dollars: Number.isFinite(dollars) ? dollars : 0,
-            pledges: Number.isFinite(pledgeCount) ? pledgeCount : 0,
-            liveBreak
-          };
-        }).filter((record) => record.date && record.dollars > 0 && record.season);
-      }
-
-      function populateFilters() {
-        const years = [...new Set(state.records.map((record) => record.year).filter(Boolean))].sort((a, b) => b - a);
-        els.season.innerHTML = '<option value="all">All pledge seasons</option>'
-          + SEASONS.map((season) => `<option value="${season}">${season}</option>`).join('');
-        els.year.innerHTML = '<option value="all">All years</option>'
-          + years.map((year) => `<option value="${year}">${year}</option>`).join('');
-        els.season.value = state.season;
-        els.year.value = state.year;
-      }
-
-      function applyFilters() {
-        const search = lookupKey(state.search);
-        state.filtered = state.records.filter((record) => {
-          if (state.season !== 'all' && record.season !== state.season) return false;
-          if (state.year !== 'all' && String(record.year) !== String(state.year)) return false;
-          if (search) {
-            const haystack = lookupKey(`${record.title} ${record.topic} ${record.secondaryTopic} ${record.nola}`);
-            if (!haystack.includes(search)) return false;
-          }
-          return true;
-        });
-        render();
-      }
-
-      function groupBy(records, keyFn) {
-        const map = new Map();
-        records.forEach((record) => {
-          const key = keyFn(record) || 'Unknown';
-          if (!map.has(key)) map.set(key, []);
-          map.get(key).push(record);
-        });
-        return map;
-      }
-
-      function summarizeGroup(key, records) {
-        const seasons = new Set(records.map((record) => record.seasonYear).filter(Boolean));
-        const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
-        const pledges = records.reduce((sum, record) => sum + record.pledges, 0);
-        return {
-          key,
-          title: key,
-          dollars,
-          pledges,
-          broadcasts: records.length,
-          seasons: seasons.size,
-          avg: records.length ? dollars / records.length : 0,
-          weak: records.length < WEAK_BROADCASTS || seasons.size < WEAK_SEASONS,
-          records
-        };
-      }
-
-      function maybeFilterEvidence(rows) {
-        if (state.evidence !== 'hide') return rows;
-        return rows.filter((row) => !row.weak);
-      }
-
-      function programLeaders() {
-        const rows = [...groupBy(state.filtered, (record) => record.title)]
-          .map(([key, records]) => summarizeGroup(key, records))
-          .sort((a, b) => b.dollars - a.dollars);
-        return maybeFilterEvidence(rows);
-      }
-
-      function topicLeaders() {
-        const rows = [...groupBy(state.filtered, (record) => record.topic)]
-          .map(([key, records]) => summarizeGroup(key, records))
-          .sort((a, b) => b.avg - a.avg);
-        return maybeFilterEvidence(rows);
-      }
-
-      function historicalRows() {
-        const groups = groupBy(state.records, (record) => record.title);
-        const rows = [];
-        groups.forEach((records, title) => {
-          const byDrive = [...groupBy(records, (record) => record.seasonYear)].map(([seasonYear, driveRecords]) => {
-            const total = driveRecords.reduce((sum, record) => sum + record.dollars, 0);
-            const date = driveRecords.map((record) => record.date).sort((a, b) => a - b)[0];
-            return { seasonYear, sortKey: seasonSortKey(seasonYear), date, total, broadcasts: driveRecords.length };
-          }).filter((drive) => drive.seasonYear !== 'Unseasoned').sort((a, b) => a.sortKey - b.sortKey);
-          if (byDrive.length < 2) return;
-          const first = byDrive[0];
-          const last = byDrive[byDrive.length - 1];
-          const previous = byDrive[byDrive.length - 2];
-          const peak = byDrive.reduce((best, drive) => drive.total > best.total ? drive : best, byDrive[0]);
-          const yearsSinceFirst = first.date && last.date ? (last.date - first.date) / (365.25 * 24 * 60 * 60 * 1000) : 0;
-          const pauseYears = previous?.date && last.date ? (last.date - previous.date) / (365.25 * 24 * 60 * 60 * 1000) : 0;
-          const currentVsPeak = peak.total ? ((last.total - peak.total) / peak.total) * 100 : 0;
-          rows.push({
-            title,
-            first,
-            peak,
-            last,
-            previous,
-            drives: byDrive.length,
-            broadcasts: records.length,
-            seasons: new Set(records.map((record) => record.season).filter(Boolean)).size,
-            yearsSinceFirst,
-            pauseYears,
-            currentVsPeak,
-            dollars: last.total,
-            weak: byDrive.length < 3 || records.length < WEAK_BROADCASTS,
-            records
-          });
-        });
-        return maybeFilterEvidence(rows.sort((a, b) => a.currentVsPeak - b.currentVsPeak));
-      }
-
-      function longPauseRows() {
-        return historicalRows()
-          .filter((row) => row.pauseYears >= 2.75)
-          .sort((a, b) => b.last.total - a.last.total);
-      }
-
-      function liveBreakRows() {
-        const live = state.filtered.filter((record) => record.liveBreak);
-        const nonLive = state.filtered.filter((record) => !record.liveBreak);
-        const summarize = (label, records) => {
-          const total = records.reduce((sum, record) => sum + record.dollars, 0);
-          const seasons = new Set(records.map((record) => record.seasonYear)).size;
-          return {
-            title: label,
-            dollars: total,
-            broadcasts: records.length,
-            seasons,
-            avg: records.length ? total / records.length : 0,
-            weak: records.length < WEAK_BROADCASTS || seasons < WEAK_SEASONS,
-            records
-          };
-        };
-        return maybeFilterEvidence([summarize('Live break / local break', live), summarize('No live break marked', nonLive)]);
-      }
-
-      function seasonalTopicRows() {
-        const rows = [];
-        const topicGroups = groupBy(state.records, (record) => record.topic);
-        topicGroups.forEach((topicRecords, topic) => {
-          const bySeason = SEASONS.map((season) => {
-            const records = topicRecords.filter((record) => record.season === season);
-            const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
-            return { season, records, broadcasts: records.length, avg: records.length ? dollars / records.length : null };
-          });
-          const real = bySeason.filter((entry) => entry.broadcasts > 0);
-          if (!real.length) return;
-          const topicAvg = real.reduce((sum, entry) => sum + entry.avg, 0) / real.length;
-          const best = real.reduce((winner, entry) => entry.avg > winner.avg ? entry : winner, real[0]);
-          const worst = real.reduce((loser, entry) => entry.avg < loser.avg ? entry : loser, real[0]);
-          rows.push({
-            title: topic,
-            dollars: topicRecords.reduce((sum, record) => sum + record.dollars, 0),
-            broadcasts: topicRecords.length,
-            seasons: real.length,
-            bestSeason: best.season,
-            bestLift: topicAvg ? ((best.avg - topicAvg) / topicAvg) * 100 : 0,
-            worstSeason: worst.season,
-            worstLift: topicAvg ? ((worst.avg - topicAvg) / topicAvg) * 100 : 0,
-            avg: topicAvg,
-            weak: topicRecords.length < WEAK_BROADCASTS || real.length < WEAK_SEASONS,
-            seasonCells: bySeason,
-            records: topicRecords
-          });
-        });
-        return maybeFilterEvidence(rows.sort((a, b) => Math.abs(b.bestLift) - Math.abs(a.bestLift)));
-      }
-
-      const questionConfig = {
-        programs: {
-          title: 'What programs raise the most?',
-          summary: 'Best current earners for the selected season/year. This is the main “what should I schedule?” lens.',
-          chartTitle: 'Top programs by total dollars',
-          tableTitle: 'Program ranking',
-          rows: programLeaders,
-          metric: (rows) => rows[0] ? money(rows[0].dollars) : '—',
-          badge: 'graph + table',
-          explain: (rows) => rows[0]
-            ? `<strong>${escapeHtml(rows[0].title)}</strong> is the top earner in the current filter at ${money(rows[0].dollars)}. Weak evidence is ${state.evidence === 'hide' ? 'hidden' : 'still visible and flagged'}.`
-            : 'No program records match the current filter.',
-          columns: [
-            ['Program', (row) => row.title],
-            ['Total $', (row) => money(row.dollars), 'money'],
-            ['Avg / airing', (row) => money(row.avg), 'money'],
-            ['Broadcasts', (row) => count(row.broadcasts)],
-            ['Fundraiser seasons', (row) => count(row.seasons)],
-            ['Evidence', evidenceLabel]
-          ]
-        },
-        topics: {
-          title: 'What topics work best?',
-          summary: 'Topic strength by average dollars per airing, with weak evidence shown or hidden by choice.',
-          chartTitle: 'Topics by average dollars per airing',
-          tableTitle: 'Topic ranking',
-          rows: topicLeaders,
-          metric: (rows) => rows[0] ? money(rows[0].avg) : '—',
-          badge: 'topic lens',
-          explain: (rows) => rows[0]
-            ? `<strong>${escapeHtml(rows[0].title)}</strong> has the strongest average in this filter at ${money(rows[0].avg)} per airing. Use this as a guide, not gospel, when broadcast counts are small.`
-            : 'No topic records match the current filter.',
-          columns: [
-            ['Topic', (row) => row.title],
-            ['Avg / airing', (row) => money(row.avg), 'money'],
-            ['Total $', (row) => money(row.dollars), 'money'],
-            ['Broadcasts', (row) => count(row.broadcasts)],
-            ['Fundraiser seasons', (row) => count(row.seasons)],
-            ['Evidence', evidenceLabel]
-          ]
-        },
-        seasonal: {
-          title: 'When do topics work best?',
-          summary: 'A focused replacement for the seasonal-lift blob: one graph, one topic-level table, four real pledge seasons.',
-          chartTitle: 'Largest topic-season swings',
-          tableTitle: 'Topic seasonal lift',
-          rows: seasonalTopicRows,
-          metric: (rows) => rows[0] ? `${rows[0].bestSeason} ${pct(rows[0].bestLift)}` : '—',
-          badge: 'March / June / August / December',
-          explain: (rows) => rows[0]
-            ? `<strong>${escapeHtml(rows[0].title)}</strong> has its strongest season in <strong>${rows[0].bestSeason}</strong>. One-season topics should be treated as “not enough history,” not as proof of lift.`
-            : 'No seasonal topic records match the current filter.',
-          columns: [
-            ['Topic', (row) => row.title],
-            ['Broadcasts', (row) => count(row.broadcasts)],
-            ['Seasons', (row) => count(row.seasons)],
-            ['Best season', (row) => row.bestSeason],
-            ['Best lift', (row) => pct(row.bestLift)],
-            ['Worst season', (row) => row.worstSeason],
-            ['Worst lift', (row) => pct(row.worstLift)],
-            ['Evidence', evidenceLabel]
-          ]
-        },
-        history: {
-          title: 'Is an old favorite fading?',
-          summary: 'Compares program performance across fundraiser years, not first vs repeat inside the same fundraiser.',
-          chartTitle: 'Biggest current drop from historical peak',
-          tableTitle: 'Historical program decay / durability',
-          rows: historicalRows,
-          metric: (rows) => rows[0] ? pct(rows[0].currentVsPeak) : '—',
-          badge: 'not same-drive repeats',
-          explain: (rows) => rows[0]
-            ? `<strong>${escapeHtml(rows[0].title)}</strong> is currently ${pct(rows[0].currentVsPeak)} versus its historical peak. This is the better “should we retire this?” test than comparing repeats within one drive.`
-            : 'No historical repeat records match the current filter.',
-          columns: [
-            ['Program', (row) => row.title],
-            ['First seen', (row) => row.first.seasonYear],
-            ['Peak drive', (row) => `${row.peak.seasonYear} · ${money(row.peak.total)}`],
-            ['Latest drive', (row) => `${row.last.seasonYear} · ${money(row.last.total)}`],
-            ['Latest vs peak', (row) => pct(row.currentVsPeak)],
-            ['Years tracked', (row) => row.yearsSinceFirst.toFixed(1)],
-            ['Evidence', evidenceLabel]
-          ]
-        },
-        comeback: {
-          title: 'What happens after a long pause?',
-          summary: 'Finds programs with a multi-year gap before their latest pledge airing and shows whether the return was worth it.',
-          chartTitle: 'Programs returning after a long pause',
-          tableTitle: 'Long-pause return performance',
-          rows: longPauseRows,
-          metric: (rows) => rows[0] ? money(rows[0].last.total) : '—',
-          badge: 'comeback lens',
-          explain: (rows) => rows[0]
-            ? `<strong>${escapeHtml(rows[0].title)}</strong> returned after about ${rows[0].pauseYears.toFixed(1)} years and raised ${money(rows[0].last.total)} in its latest drive. This is the “dust it off after three years?” view.`
-            : 'No long-pause return records match the current filter.',
-          columns: [
-            ['Program', (row) => row.title],
-            ['Previous drive', (row) => row.previous?.seasonYear || '—'],
-            ['Latest drive', (row) => row.last.seasonYear],
-            ['Pause', (row) => `${row.pauseYears.toFixed(1)} yrs`],
-            ['Latest $', (row) => money(row.last.total), 'money'],
-            ['Latest vs peak', (row) => pct(row.currentVsPeak)],
-            ['Evidence', evidenceLabel]
-          ]
-        },
-        live: {
-          title: 'Are live breaks helping?',
-          summary: 'Simple split between records marked live/local break and records not marked that way.',
-          chartTitle: 'Live-break average comparison',
-          tableTitle: 'Live break split',
-          rows: liveBreakRows,
-          metric: (rows) => rows[0] ? money(rows[0].avg) : '—',
-          badge: 'needs clean flags',
-          explain: (rows) => {
-            if (rows.length < 2) return 'Live-break evidence is incomplete in the current filter.';
-            const live = rows.find((row) => row.title.startsWith('Live'));
-            const nonLive = rows.find((row) => row.title.startsWith('No'));
-            if (!live || !nonLive) return 'Live-break evidence is incomplete in the current filter.';
-            const diff = nonLive.avg ? ((live.avg - nonLive.avg) / nonLive.avg) * 100 : 0;
-            return `Live/local-break records average <strong>${money(live.avg)}</strong>; non-live-marked records average <strong>${money(nonLive.avg)}</strong>. Difference: <strong>${pct(diff)}</strong>. This depends on live-break flags being reliable.`;
-          },
-          columns: [
-            ['Break type', (row) => row.title],
-            ['Avg / airing', (row) => money(row.avg), 'money'],
-            ['Total $', (row) => money(row.dollars), 'money'],
-            ['Broadcasts', (row) => count(row.broadcasts)],
-            ['Fundraiser seasons', (row) => count(row.seasons)],
-            ['Evidence', evidenceLabel]
-          ]
-        }
-      };
-
-      function evidenceLabel(row) {
-        if (!row.weak) return '<span class="ok">Strong enough</span>';
-        if (state.evidence === 'all') return '<span class="muted">Weak evidence</span>';
-        return '<span class="risk">Weak evidence</span>';
-      }
-
-      function render() {
-        const configs = Object.entries(questionConfig).map(([id, config]) => {
-          const rows = config.rows();
-          return { id, config, rows };
-        });
-        renderCards(configs);
-        const current = configs.find((entry) => entry.id === state.question) || configs[0];
-        renderDetail(current);
-      }
-
-      function renderCards(configs) {
-        els.stack.innerHTML = configs.map(({ id, config, rows }) => {
-          const weakCount = rows.filter((row) => row.weak).length;
-          return `<button type="button" class="question-card ${id === state.question ? 'active' : ''}" data-question="${id}">
-            <div class="question-title">${escapeHtml(config.title)}</div>
-            <div class="question-summary">${escapeHtml(config.summary)}</div>
-            <div class="question-metric">${escapeHtml(config.metric(rows))}</div>
-            <div class="badge-row">
-              <span class="badge">${escapeHtml(config.badge)}</span>
-              <span class="badge ${weakCount ? 'warn' : 'good'}">${count(rows.length)} rows${weakCount ? ` · ${count(weakCount)} weak` : ''}</span>
+          <div class="panel">
+            <h3 id="tt">Detail table</h3>
+            <p id="tn">The table follows the selected question so the graph and rows tell the same story.</p>
+            <div id="table" class="tablewrap"></div>
+          </div>
+          <details>
+            <summary>Advanced filters proposed for the real page</summary>
+            <div class="adv">
+              <div><b>Time</b><br>Season, year, exact date range, all history, selected fundraiser.</div>
+              <div><b>Program</b><br>Topic, secondary topic, distributor, length, rights status, NOLA/title search, active/archived.</div>
+              <div><b>Evidence</b><br>Minimum broadcasts, minimum seasons, show weak, hide weak, or flag weak evidence without hiding it.</div>
+              <div><b>Money</b><br>Total dollars, average, median, pledges, dollars/minute, exclude non-specific pledges.</div>
+              <div><b>Scheduling</b><br>Daypart, weekday/weekend, live break only, non-live only, first airing, repeat airing.</div>
+              <div><b>Inspection</b><br>Show contributing broadcasts, source fundraiser, import source, copy/export rows.</div>
             </div>
-          </button>`;
-        }).join('');
-        els.stack.querySelectorAll('[data-question]').forEach((button) => {
-          button.addEventListener('click', () => {
-            state.question = button.dataset.question;
-            render();
-          });
-        });
-      }
+          </details>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
 
-      function renderDetail({ config, rows }) {
-        els.detailTitle.textContent = config.title;
-        els.detailSummary.textContent = config.summary;
-        els.chartTitle.textContent = config.chartTitle;
-        els.tableTitle.textContent = config.tableTitle;
-        els.explain.innerHTML = config.explain(rows);
-        els.chartNote.textContent = state.question === 'history'
-          ? 'This deliberately compares fundraiser-to-fundraiser history, not repeat airings inside a single drive.'
-          : 'This graph follows the selected question and current filters.';
-        renderStats(rows);
-        renderBarChart(rows);
-        renderTable(rows, config.columns);
-      }
+<div id="trend-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trend-title">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">Fundraiser trend</div>
+        <h2 id="trend-title">Program trend</h2>
+        <p id="trend-subtitle">Totals by fundraiser season.</p>
+      </div>
+      <button type="button" id="trend-close" class="ghost">Close</button>
+    </div>
+    <div id="trend-body" class="modal-body"></div>
+  </div>
+</div>
 
-      function renderStats(rows) {
-        const totalDollars = rows.reduce((sum, row) => sum + Number(row.dollars || row.last?.total || 0), 0);
-        const broadcasts = rows.reduce((sum, row) => sum + Number(row.broadcasts || 0), 0);
-        const weak = rows.filter((row) => row.weak).length;
-        els.miniStats.innerHTML = [
-          ['Rows in this view', count(rows.length)],
-          ['Broadcasts behind view', count(broadcasts)],
-          ['Dollars represented', money(totalDollars)],
-          ['Weak-evidence rows', count(weak)],
-          ['Filter', `${state.season === 'all' ? 'All seasons' : state.season} · ${state.year === 'all' ? 'All years' : state.year}`],
-          ['Evidence mode', els.evidence.options[els.evidence.selectedIndex]?.textContent || 'Show all']
-        ].map(([caption, value]) => `<div class="mini-stat"><div class="value">${escapeHtml(value)}</div><div class="caption">${escapeHtml(caption)}</div></div>`).join('');
-      }
+<script>
+(() => {
+  const AIRINGS_TABLE = 'pledge_program_airings_v2';
+  const LIBRARY_VIEW = 'pledge_program_library_summary_v2';
+  const BASE_TABLE = 'pledge_programs_v2';
+  const SCHEDULES_TABLE = 'pledge_fundraiser_schedules';
+  const SEASONS = ['March', 'June', 'August', 'December'];
+  const SEASON_CODE = { March: 'M', June: 'J', August: 'A', December: 'D' };
+  const WEAK_BROADCASTS = 3;
+  const WEAK_SEASONS = 2;
+  const LONG_PAUSE_YEARS = 2;
+  const HOLIDAY_RE = /christmas|holiday|holidays|xmas|thanksgiving|new year|hanukkah|kwanzaa/i;
 
-      function chartValue(row) {
-        if (state.question === 'history') return Math.abs(Math.min(row.currentVsPeak, 0));
-        if (state.question === 'comeback') return row.last?.total || 0;
-        if (state.question === 'seasonal') return Math.abs(row.bestLift || 0);
-        if (state.question === 'topics' || state.question === 'live') return row.avg || 0;
-        return row.dollars || 0;
-      }
+  const state = {
+    client: null,
+    session: null,
+    isAdmin: false,
+    email: '',
+    records: [],
+    filtered: [],
+    schedules: [],
+    question: 'programs',
+    season: 'all',
+    year: 'all',
+    search: '',
+    evidence: 'flag',
+    trendRows: new Map()
+  };
 
-      function chartLabel(row) {
-        if (state.question === 'history') return pct(row.currentVsPeak);
-        if (state.question === 'seasonal') return `${row.bestSeason} ${pct(row.bestLift)}`;
-        if (state.question === 'topics' || state.question === 'live') return money(row.avg || 0);
-        if (state.question === 'comeback') return money(row.last?.total || 0);
-        return money(row.dollars || 0);
-      }
+  const el = (id) => document.getElementById(id);
+  const dom = {
+    notice: el('notice'), lab: el('lab'), signIn: el('sign-in'), signOut: el('sign-out'),
+    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), reload: el('reload'), scopeNote: el('scope-note'),
+    cards: el('cards'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
+    chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
+    trendModal: el('trend-modal'), trendTitle: el('trend-title'), trendSubtitle: el('trend-subtitle'), trendBody: el('trend-body'), trendClose: el('trend-close')
+  };
 
-      function renderBarChart(rows) {
-        const chartRows = rows.slice(0, 12);
-        if (!chartRows.length) {
-          els.chart.innerHTML = '<div class="empty">No graphable rows for the current filter.</div>';
-          return;
-        }
-        const max = Math.max(...chartRows.map(chartValue), 1);
-        els.chart.innerHTML = chartRows.map((row) => {
-          const value = chartValue(row);
-          const width = Math.max(2, (value / max) * 100);
-          return `<div class="bar-row">
-            <div class="bar-label" title="${escapeHtml(row.title)}">${escapeHtml(row.title)}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
-            <div class="bar-value">${escapeHtml(chartLabel(row))}</div>
-          </div>`;
-        }).join('');
-      }
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
-      function renderTable(rows, columns) {
-        if (!rows.length) {
-          els.table.innerHTML = '<div class="empty">No table rows for the current filter.</div>';
-          return;
-        }
-        els.table.innerHTML = `<table><thead><tr>${columns.map(([label, _fn, cls]) => `<th class="${cls || ''}">${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map(([_label, fn, cls]) => `<td class="${cls || ''}">${fn(row)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-      }
+  function text(value) { return String(value ?? '').trim(); }
+  function lookupKey(value) { return text(value).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function nolaKey(value) { return text(value).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+  function firstNonEmpty(...values) {
+    for (const value of values) {
+      if (value === 0 || value === false) return value;
+      if (text(value)) return value;
+    }
+    return null;
+  }
+  function formatMoney(value) { return Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }); }
+  function formatNumber(value) { return Number(value || 0).toLocaleString(); }
+  function formatPercent(value) { return Number.isFinite(value) ? `${value > 0 ? '+' : ''}${Math.round(value)}%` : '—'; }
+  function note(message, type = '') { dom.notice.textContent = message; dom.notice.className = `notice ${type}`.trim(); }
+  function isMissingTopic(value) {
+    const key = lookupKey(value);
+    return !key || ['uncategorized', 'unassigned', 'unknown', 'unspecified', 'n a', 'na'].includes(key);
+  }
 
-      function bindEvents() {
-        els.signIn.addEventListener('click', async () => {
-          if (!state.client) state.client = makeClient();
-          await state.client.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: signInRedirectUrl() } });
-        });
-        els.signOut.addEventListener('click', async () => {
-          if (state.client) await state.client.auth.signOut();
-          window.location.reload();
-        });
-        els.reload.addEventListener('click', () => loadData().catch((error) => setNotice(error.message || 'Could not reload data.', 'bad')));
-        els.season.addEventListener('change', () => { state.season = els.season.value; applyFilters(); });
-        els.year.addEventListener('change', () => { state.year = els.year.value; applyFilters(); });
-        els.search.addEventListener('input', () => { state.search = els.search.value; applyFilters(); });
-        els.evidence.addEventListener('change', () => { state.evidence = els.evidence.value; applyFilters(); });
-      }
+  function parseLocalDate(value) {
+    const raw = text(value);
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [year, month, day] = raw.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
 
-      async function boot() {
-        bindEvents();
-        try {
-          const ok = await initAuth();
-          if (ok) await loadData();
-        } catch (error) {
-          console.error(error);
-          setNotice(error?.message || 'Performance Lab failed to load.', 'bad');
-        }
-      }
+  function parseMinutes(value) {
+    const raw = text(value);
+    if (!raw) return null;
+    const ampm = raw.match(/\b(am|pm)\b/i)?.[1]?.toLowerCase() || '';
+    const match = raw.match(/(\d{1,2})(?::?(\d{2}))?/);
+    if (!match) return null;
+    let hour = Number(match[1] || 0);
+    const minute = Number(match[2] || 0);
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    return (hour * 60) + minute;
+  }
 
-      window.addEventListener('DOMContentLoaded', boot);
-    })();
-  </script>
+  function parseAiringDate(row) {
+    const explicitDate = text(firstNonEmpty(row?.air_date, row?.aired_date, row?.drive_date, ''));
+    const explicitTime = text(firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, ''));
+    if (explicitDate) {
+      const date = parseLocalDate(explicitDate);
+      if (!date) return { date: null, dateKey: '', startMinutes: null };
+      const minutes = parseMinutes(explicitTime);
+      if (Number.isFinite(minutes)) date.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+      return { date, dateKey: localDateKey(date), startMinutes: minutes };
+    }
+    const date = parseLocalDate(firstNonEmpty(row?.aired_at, row?.air_datetime, row?.broadcast_at, row?.scheduled_at, ''));
+    if (!date) return { date: null, dateKey: '', startMinutes: null };
+    return { date, dateKey: localDateKey(date), startMinutes: (date.getHours() * 60) + date.getMinutes() };
+  }
+
+  function localDateKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function pledgeSeason(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const month = date.getMonth() + 1;
+    if (month === 2 || month === 3) return 'March';
+    if (month === 5 || month === 6) return 'June';
+    if (month === 8 || month === 9) return 'August';
+    if (month === 11 || month === 12) return 'December';
+    return '';
+  }
+
+  function seasonYearSortKey(label) {
+    const match = String(label || '').match(/(March|June|August|December)\s+(\d{4})/);
+    return match ? (Number(match[2]) * 10) + SEASONS.indexOf(match[1]) + 1 : 0;
+  }
+
+  function normalizeSchedule(row = {}) {
+    const data = row.schedule_data && typeof row.schedule_data === 'object' ? row.schedule_data : {};
+    return {
+      id: row.id || '',
+      title: row.title || '',
+      startDate: row.start_date || data.startDate || '',
+      endDate: row.end_date || data.endDate || '',
+      placements: Array.isArray(data.placements) ? data.placements : []
+    };
+  }
+
+  function parseBooleanish(value) {
+    if (typeof value === 'boolean') return value;
+    const raw = text(value).toLowerCase();
+    if (!raw) return null;
+    if (['true', 'yes', 'y', '1', 'live', 'has live breaks', 'flagged'].includes(raw)) return true;
+    if (['false', 'no', 'n', '0', 'none', 'no live breaks', 'no live-breaks', 'no live break', 'not live'].includes(raw)) return false;
+    return null;
+  }
+
+  function placementLive(placement = {}) {
+    const parsed = parseBooleanish(firstNonEmpty(placement.liveBreakFlag, placement.live_break_flag, placement.liveBreaks, placement.live_breaks, null));
+    if (parsed === true) return true;
+    if (parsed === false) return false;
+    return Boolean(text(firstNonEmpty(placement.liveBreakNotes, placement.live_break_notes, placement.liveBreakNote, '')));
+  }
+
+  function importedLive(row = {}) {
+    const parsed = parseBooleanish(firstNonEmpty(row.live_break_flag, row.liveBreakFlag, row.live_breaks, row.liveBreaks, null));
+    if (parsed === true) return true;
+    if (parsed === false) return false;
+    const count = Number(firstNonEmpty(row.live_break_count, row.liveBreakCount, row.local_break_count, row.localBreakCount, null));
+    if (Number.isFinite(count) && count > 0) return true;
+    if (Number.isFinite(count) && count === 0) return false;
+    return null;
+  }
+
+  function buildLibraryIndexes(rows = []) {
+    const byId = new Map();
+    const byNola = new Map();
+    const byTitle = new Map();
+    rows.forEach((row) => {
+      if (text(row.id)) byId.set(text(row.id), row);
+      if (text(row.program_id)) byId.set(text(row.program_id), row);
+      if (nolaKey(row.nola_code)) byNola.set(nolaKey(row.nola_code), row);
+      if (lookupKey(row.title)) byTitle.set(lookupKey(row.title), row);
+    });
+    return { byId, byNola, byTitle };
+  }
+
+  function resolveLibraryRow(row, indexes) {
+    const id = text(firstNonEmpty(row.pledge_program_id, row.program_id, row.programId, ''));
+    const nola = nolaKey(firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''));
+    const title = lookupKey(firstNonEmpty(row.matched_library_title, row.program_title, row.title, row.imported_program_title, ''));
+    return indexes.byId.get(id) || indexes.byNola.get(nola) || indexes.byTitle.get(title) || null;
+  }
+
+  function buildScheduleIndex(schedules = [], indexes) {
+    const maps = { exact: new Map(), dateProgram: new Map(), dateNola: new Map(), dateTitle: new Map() };
+    const push = (map, key, value) => {
+      if (!key) return;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(value);
+    };
+    schedules.forEach((schedule) => {
+      (schedule.placements || []).forEach((placement) => {
+        const lib = indexes.byId.get(text(placement.programId || placement.program_id || '')) || null;
+        const dateKey = text(placement.dateKey || placement.date_key || '');
+        const start = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? 0);
+        const end = Number(placement.endMinutes ?? placement.end_minutes ?? start);
+        const pid = text(firstNonEmpty(placement.programId, placement.program_id, lib?.id, lib?.program_id, ''));
+        const nola = nolaKey(firstNonEmpty(lib?.nola_code, placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
+        const title = lookupKey(firstNonEmpty(lib?.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
+        const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, live: placementLive(placement), placement };
+        push(maps.dateProgram, `${dateKey}|${pid}`, entry);
+        push(maps.dateNola, `${dateKey}|${nola}`, entry);
+        push(maps.dateTitle, `${dateKey}|${title}`, entry);
+        push(maps.exact, `${dateKey}|${pid}|${start}`, entry);
+        push(maps.exact, `${dateKey}|${nola}|${start}`, entry);
+        push(maps.exact, `${dateKey}|${title}|${start}`, entry);
+      });
+    });
+    return maps;
+  }
+
+  function findScheduleMatch(record, scheduleIndex) {
+    const keys = [record.programId, record.nola ? nolaKey(record.nola) : '', lookupKey(record.title)].filter(Boolean);
+    const candidates = [];
+    keys.forEach((key) => {
+      if (Number.isFinite(record.startMinutes)) candidates.push(...(scheduleIndex.exact.get(`${record.dateKey}|${key}|${record.startMinutes}`) || []));
+      candidates.push(...(scheduleIndex.dateProgram.get(`${record.dateKey}|${key}`) || []));
+      candidates.push(...(scheduleIndex.dateNola.get(`${record.dateKey}|${key}`) || []));
+      candidates.push(...(scheduleIndex.dateTitle.get(`${record.dateKey}|${key}`) || []));
+    });
+    const unique = [];
+    const seen = new Set();
+    candidates.forEach((item) => {
+      const id = `${item.scheduleId}|${item.dateKey}|${item.start}|${item.title}|${item.nola}|${item.pid}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+      unique.push(item);
+    });
+    if (!unique.length) return null;
+    if (Number.isFinite(record.startMinutes)) {
+      const overlapping = unique.filter((item) => record.startMinutes >= Number(item.start || 0) && record.startMinutes < Number(item.end || item.start || 0));
+      if (overlapping.length) return overlapping.some((item) => item.live) ? overlapping.find((item) => item.live) : overlapping[0];
+    }
+    return unique.some((item) => item.live) ? unique.find((item) => item.live) : unique[0];
+  }
+
+  function buildRecords(airings, libraryRows, schedules) {
+    const indexes = buildLibraryIndexes(libraryRows);
+    const scheduleIndex = buildScheduleIndex(schedules, indexes);
+    return airings.map((row) => {
+      const temporal = parseAiringDate(row);
+      const date = temporal.date;
+      const season = pledgeSeason(date);
+      const year = date ? date.getFullYear() : '';
+      const lib = resolveLibraryRow(row, indexes) || {};
+      const importedTitle = text(firstNonEmpty(row.matched_library_title, row.program_title, row.title, row.imported_program_title, 'Untitled'));
+      const rawTopic = text(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''));
+      const topicMissing = isMissingTopic(rawTopic);
+      const importedLiveState = importedLive(row);
+      const record = {
+        id: row.id || '',
+        row,
+        programId: text(firstNonEmpty(row.pledge_program_id, row.program_id, lib.id, '')),
+        title: text(lib.title) || importedTitle || 'Untitled',
+        importedTitle,
+        nola: text(firstNonEmpty(lib.nola_code, row.nola_code, row.nola, '')),
+        topic: topicMissing ? 'Uncategorized' : rawTopic,
+        topicMissing,
+        distributor: text(lib.distributor || row.distributor || ''),
+        date,
+        dateKey: temporal.dateKey,
+        startMinutes: temporal.startMinutes,
+        season,
+        year,
+        seasonYear: season && year ? `${season} ${year}` : 'Unseasoned',
+        fundraiser: text(row.fundraiser_label) || (season && year ? `${season} ${year}` : ''),
+        dollars: Number(firstNonEmpty(row.dollars, row.contribution_amount, 0) || 0),
+        pledges: Number(row.pledge_count || 0),
+        live: importedLiveState === true,
+        liveState: importedLiveState === true ? 'live' : (importedLiveState === false ? 'nonlive' : 'unknown'),
+        liveSource: importedLiveState === null ? 'none' : 'imported row',
+        scheduleMatched: false
+      };
+      const scheduleMatch = findScheduleMatch(record, scheduleIndex);
+      if (scheduleMatch) {
+        record.scheduleMatched = true;
+        record.live = Boolean(scheduleMatch.live);
+        record.liveState = scheduleMatch.live ? 'live' : 'nonlive';
+        record.liveSource = 'schedule';
+        record.scheduleTitle = scheduleMatch.scheduleTitle || '';
+      }
+      return record;
+    }).filter((record) => record.date && record.dollars > 0 && record.season);
+  }
+
+  function groupBy(rows, fn) {
+    const map = new Map();
+    rows.forEach((row) => {
+      const key = fn(row) || 'Unknown';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    });
+    return map;
+  }
+
+  function seasonMix(records = []) {
+    const counts = Object.fromEntries(SEASONS.map((season) => [season, 0]));
+    records.forEach((record) => { if (counts[record.season] != null) counts[record.season] += 1; });
+    const label = `[${SEASONS.map((season) => `${SEASON_CODE[season]}-${counts[season]}`).join(', ')}]`;
+    const allFour = SEASONS.every((season) => counts[season] > 0);
+    return { counts, label, allFour };
+  }
+
+  function summarizeGroup(title, records) {
+    const seasons = new Set(records.map((record) => record.seasonYear));
+    const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
+    const pledges = records.reduce((sum, record) => sum + record.pledges, 0);
+    const mix = seasonMix(records);
+    return {
+      title,
+      dollars,
+      pledges,
+      broadcasts: records.length,
+      seasons: seasons.size,
+      avg: records.length ? dollars / records.length : 0,
+      weak: records.length < WEAK_BROADCASTS || seasons.size < WEAK_SEASONS,
+      mix: mix.label,
+      allFour: mix.allFour,
+      records
+    };
+  }
+
+  function applyEvidence(rows) {
+    return state.evidence === 'hide' ? rows.filter((row) => !row.weak) : rows;
+  }
+
+  function supportsCurrentFilter(filterName) {
+    const question = QUESTIONS[state.question] || QUESTIONS.programs;
+    if (filterName === 'season') return question.useSeason !== false;
+    if (filterName === 'year') return question.useYear !== false;
+    return true;
+  }
+
+  function filteredRecordsFor(questionId = state.question) {
+    const question = QUESTIONS[questionId] || QUESTIONS.programs;
+    const searchKey = lookupKey(state.search);
+    return state.records.filter((record) => {
+      if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.topic} ${record.nola}`).includes(searchKey)) return false;
+      if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
+      if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;
+      return true;
+    });
+  }
+
+  function rowsPrograms() {
+    return applyEvidence([...groupBy(filteredRecordsFor('programs'), (record) => record.title)]
+      .map(([title, records]) => summarizeGroup(title, records))
+      .sort((a, b) => b.dollars - a.dollars));
+  }
+
+  function rowsTopics() {
+    return applyEvidence([...groupBy(filteredRecordsFor('topics'), (record) => record.topic)]
+      .map(([title, records]) => summarizeGroup(title, records))
+      .sort((a, b) => b.avg - a.avg));
+  }
+
+  function rowsUncategorized() {
+    return [...groupBy(filteredRecordsFor('uncategorized').filter((record) => record.topicMissing), (record) => record.title)]
+      .map(([title, records]) => {
+        const row = summarizeGroup(title, records);
+        row.nola = records.map((record) => record.nola).find(Boolean) || '';
+        row.importedTitles = [...new Set(records.map((record) => record.importedTitle).filter(Boolean))].slice(0, 4).join('; ');
+        row.lastSeen = records.map((record) => record.seasonYear).sort((a, b) => seasonYearSortKey(b) - seasonYearSortKey(a))[0] || '';
+        return row;
+      })
+      .sort((a, b) => b.broadcasts - a.broadcasts || a.title.localeCompare(b.title));
+  }
+
+  function historyRowsBase() {
+    const rows = filteredRecordsFor('history');
+    const out = [];
+    groupBy(rows, (record) => record.title).forEach((records, title) => {
+      const drives = [...groupBy(records, (record) => record.seasonYear)]
+        .map(([seasonYear, driveRecords]) => ({
+          seasonYear,
+          sortKey: seasonYearSortKey(seasonYear),
+          date: driveRecords.map((record) => record.date).sort((a, b) => a - b)[0],
+          total: driveRecords.reduce((sum, record) => sum + record.dollars, 0),
+          broadcasts: driveRecords.length,
+          records: driveRecords
+        }))
+        .filter((drive) => drive.seasonYear !== 'Unseasoned')
+        .sort((a, b) => a.sortKey - b.sortKey);
+      if (drives.length < 2) return;
+      const first = drives[0];
+      const last = drives[drives.length - 1];
+      const previous = drives.length > 1 ? drives[drives.length - 2] : null;
+      const peak = drives.reduce((best, drive) => drive.total > best.total ? drive : best, drives[0]);
+      const yearsTracked = (last.date - first.date) / (365.25 * 24 * 60 * 60 * 1000);
+      const pauseYears = previous ? (last.date - previous.date) / (365.25 * 24 * 60 * 60 * 1000) : 0;
+      const firstChange = first.total ? ((last.total - first.total) / first.total) * 100 : 0;
+      const peakChange = peak.total ? ((last.total - peak.total) / peak.total) * 100 : 0;
+      out.push({
+        title,
+        first,
+        last,
+        previous,
+        peak,
+        drives,
+        driveCount: drives.length,
+        broadcasts: records.length,
+        seasons: new Set(records.map((record) => record.season)).size,
+        yearsTracked,
+        pauseYears,
+        firstChange,
+        peakChange,
+        dollars: last.total,
+        weak: drives.length < 3 || records.length < WEAK_BROADCASTS,
+        records
+      });
+    });
+    return out;
+  }
+
+  function rowsHistory() {
+    return applyEvidence(historyRowsBase().sort((a, b) => a.firstChange - b.firstChange));
+  }
+
+  function rowsComeback() {
+    return applyEvidence(historyRowsBase()
+      .filter((row) => row.pauseYears >= LONG_PAUSE_YEARS)
+      .sort((a, b) => b.pauseYears - a.pauseYears || b.last.total - a.last.total));
+  }
+
+  function rowsLive() {
+    const make = (title, records, weakOverride = false) => {
+      const row = summarizeGroup(title, records);
+      row.weak = weakOverride || row.weak;
+      return row;
+    };
+    return applyEvidence([
+      make('Live break', filteredRecordsFor('live').filter((record) => record.liveState === 'live')),
+      make('No live break', filteredRecordsFor('live').filter((record) => record.liveState === 'nonlive')),
+      make('Unknown / not matched', filteredRecordsFor('live').filter((record) => record.liveState === 'unknown'), true)
+    ]);
+  }
+
+  function rowsSeasonal() {
+    const rows = filteredRecordsFor('seasonal').filter((record) => !HOLIDAY_RE.test(`${record.title} ${record.topic}`));
+    const out = [];
+    groupBy(rows, (record) => record.topic).forEach((records, title) => {
+      const bySeason = SEASONS.map((season) => {
+        const matches = records.filter((record) => record.season === season);
+        const dollars = matches.reduce((sum, record) => sum + record.dollars, 0);
+        return { season, broadcasts: matches.length, avg: matches.length ? dollars / matches.length : null };
+      });
+      const real = bySeason.filter((item) => item.broadcasts > 0 && Number.isFinite(item.avg));
+      if (!real.length) return;
+      const baseline = real.reduce((sum, item) => sum + item.avg, 0) / real.length;
+      const best = real.reduce((winner, item) => item.avg > winner.avg ? item : winner, real[0]);
+      const worst = real.reduce((winner, item) => item.avg < winner.avg ? item : winner, real[0]);
+      const summary = summarizeGroup(title, records);
+      out.push({
+        ...summary,
+        seasons: real.length,
+        avg: baseline,
+        bestSeason: best.season,
+        bestLift: baseline ? ((best.avg - baseline) / baseline) * 100 : 0,
+        worstSeason: worst.season,
+        worstLift: baseline ? ((worst.avg - baseline) / baseline) * 100 : 0,
+        weak: records.length < WEAK_BROADCASTS || real.length < WEAK_SEASONS
+      });
+    });
+    return applyEvidence(out.sort((a, b) => Math.abs(b.bestLift) - Math.abs(a.bestLift)));
+  }
+
+  function evidenceLabel(row) {
+    if (!row.weak) return '<span class="ok">Strong enough</span>';
+    if (state.evidence === 'all') return '<span>Weak evidence</span>';
+    return '<span class="risk">Weak evidence</span>';
+  }
+
+  function trendId(row) {
+    const id = `trend-${state.trendRows.size + 1}`;
+    state.trendRows.set(id, row);
+    return id;
+  }
+
+  function sparkline(drives = []) {
+    if (!Array.isArray(drives) || drives.length < 2) return '—';
+    const values = drives.map((drive) => Number(drive.total || 0));
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const width = 150;
+    const height = 32;
+    const pad = 3;
+    const points = values.map((value, index) => {
+      const x = drives.length === 1 ? width / 2 : pad + ((width - pad * 2) * index) / (drives.length - 1);
+      const y = max === min ? height / 2 : pad + (height - pad * 2) * (1 - ((value - min) / (max - min)));
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<svg class="mini-spark" viewBox="0 0 ${width} ${height}" aria-hidden="true"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="${points.split(' ')[0].split(',')[0]}" cy="${points.split(' ')[0].split(',')[1]}" r="2"/><circle cx="${points.split(' ').at(-1).split(',')[0]}" cy="${points.split(' ').at(-1).split(',')[1]}" r="2"/></svg>`;
+  }
+
+  function trendCell(row) {
+    const id = trendId(row);
+    return `${sparkline(row.drives)} <button type="button" class="trend-button" data-trend-id="${escapeHtml(id)}">Open</button>`;
+  }
+
+  const QUESTIONS = {
+    programs: {
+      title: 'What programs raise the most?',
+      summary: 'Best current earners for the selected season/year.',
+      graphTitle: 'Top programs by total dollars',
+      tableTitle: 'Program ranking',
+      tableNote: 'Graph shows the top 12. Table shows every matching program row.',
+      rows: rowsPrograms,
+      metric: (rows) => rows[0] ? formatMoney(rows[0].dollars) : '—',
+      tag: 'program lens',
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> is the top earner in this filter at ${formatMoney(rows[0].dollars)}. The season-count badge shows whether this is broad evidence or one-drive weirdness.` : 'No program records match.',
+      columns: [
+        ['Program', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`],
+        ['Total $', (row) => formatMoney(row.dollars), 'money'],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money'],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
+        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`],
+        ['Evidence', evidenceLabel]
+      ]
+    },
+    topics: {
+      title: 'What topics work best?',
+      summary: 'Topic strength by average dollars per airing, with four-season coverage shown.',
+      graphTitle: 'Topics by average dollars per airing',
+      tableTitle: 'Topic ranking',
+      tableNote: 'Season mix uses M/J/A/D counts, for example [M-3, J-1, A-0, D-5].',
+      rows: rowsTopics,
+      metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
+      tag: 'topic lens',
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> has the strongest average in this filter at ${formatMoney(rows[0].avg)} per airing. Check the M/J/A/D badge before trusting it too hard.` : 'No topic records match.',
+      columns: [
+        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money'],
+        ['Total $', (row) => formatMoney(row.dollars), 'money'],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
+        ['Season mix', (row) => `${escapeHtml(row.mix)} ${row.allFour ? '<span class="ok">all four</span>' : '<span class="risk">not all four</span>'}`],
+        ['Evidence', evidenceLabel]
+      ]
+    },
+    uncategorized: {
+      title: 'Which titles need topics?',
+      summary: 'Audit titles whose matched library topic is blank, unassigned, or not recognized.',
+      graphTitle: 'Uncategorized titles by broadcast count',
+      tableTitle: 'Uncategorized title audit',
+      tableNote: 'These should be fixed in the library or investigated as match failures.',
+      rows: rowsUncategorized,
+      metric: (rows) => `${formatNumber(rows.length)} titles`,
+      tag: 'cleanup list',
+      read: (rows) => rows.length ? `${formatNumber(rows.length)} title(s) are showing without a useful topic. If you expected these to have topics, this is probably a matching or library-field issue worth fixing before trusting topic analytics.` : 'No uncategorized pledge records match this filter.',
+      columns: [
+        ['Title', (row) => escapeHtml(row.title)],
+        ['NOLA', (row) => escapeHtml(row.nola || '—')],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
+        ['Last seen', (row) => escapeHtml(row.lastSeen || '—')],
+        ['Season mix', (row) => escapeHtml(row.mix)],
+        ['Imported title sample', (row) => escapeHtml(row.importedTitles || '—')]
+      ]
+    },
+    seasonal: {
+      title: 'When do topics work best?',
+      summary: 'Four pledge seasons, topic-level seasonal lift. The season selector is disabled here on purpose.',
+      graphTitle: 'Largest topic-season swings',
+      tableTitle: 'Topic seasonal lift',
+      tableNote: 'Holiday-related titles are excluded here so December Christmas programming does not distort the read.',
+      useSeason: false,
+      rows: rowsSeasonal,
+      metric: (rows) => rows[0] ? `${rows[0].bestSeason} ${formatPercent(rows[0].bestLift)}` : '—',
+      tag: 'season lift',
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> is strongest in <b>${escapeHtml(rows[0].bestSeason)}</b>. One-season topics are weak evidence, not proof.` : 'No seasonal topic records match.',
+      columns: [
+        ['Topic', (row) => `${escapeHtml(row.title)} <span class="mix">${escapeHtml(row.mix)}</span>`],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
+        ['Seasons', (row) => formatNumber(row.seasons), 'num'],
+        ['Best season', (row) => escapeHtml(row.bestSeason)],
+        ['Best lift', (row) => formatPercent(row.bestLift), 'num'],
+        ['Worst season', (row) => escapeHtml(row.worstSeason)],
+        ['Worst lift', (row) => formatPercent(row.worstLift), 'num'],
+        ['Evidence', evidenceLabel]
+      ]
+    },
+    history: {
+      title: 'Is an old favorite fading?',
+      summary: 'Compares first fundraiser total to latest fundraiser total; not repeats inside the same drive.',
+      graphTitle: 'Biggest drop from first fundraiser to latest fundraiser',
+      tableTitle: 'Historical program durability',
+      tableNote: 'Season/year filters are disabled here because this question needs the full history. Use search to inspect a title.',
+      useSeason: false,
+      useYear: false,
+      rows: rowsHistory,
+      metric: (rows) => rows[0] ? `${formatMoney(rows[0].first.total)} → ${formatMoney(rows[0].last.total)}` : '—',
+      tag: 'full-history trend',
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> went from ${formatMoney(rows[0].first.total)} in ${escapeHtml(rows[0].first.seasonYear)} to ${formatMoney(rows[0].last.total)} in ${escapeHtml(rows[0].last.seasonYear)}. The percentage is now context, not the whole damn story.` : 'No historical rows match.',
+      chartValue: (row) => Math.abs(Math.min(row.firstChange, 0)),
+      chartLabel: (row) => `${formatMoney(row.first.total)} → ${formatMoney(row.last.total)}`,
+      columns: [
+        ['Program', (row) => escapeHtml(row.title)],
+        ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`],
+        ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`],
+        ['Change first → latest', (row) => formatPercent(row.firstChange), 'num'],
+        ['Peak fundraiser', (row) => `${escapeHtml(row.peak.seasonYear)}<br>${formatMoney(row.peak.total)}`],
+        ['Trend', trendCell],
+        ['Evidence', evidenceLabel]
+      ]
+    },
+    comeback: {
+      title: 'What happens after a long pause?',
+      summary: `Programs returning after a gap of ${LONG_PAUSE_YEARS}+ years.`,
+      graphTitle: `Programs returning after a ${LONG_PAUSE_YEARS}+ year pause`,
+      tableTitle: 'Long-pause return performance',
+      tableNote: 'Season/year filters are disabled here because pause detection needs the full history. Table shows every title that fits.',
+      useSeason: false,
+      useYear: false,
+      rows: rowsComeback,
+      metric: (rows) => `${formatNumber(rows.length)} titles`,
+      tag: `${LONG_PAUSE_YEARS}+ year gap`,
+      read: (rows) => rows[0] ? `<b>${escapeHtml(rows[0].title)}</b> returned after about ${rows[0].pauseYears.toFixed(1)} years and raised ${formatMoney(rows[0].last.total)}. This is the “does absence make the phones ring?” view.` : `No title has a ${LONG_PAUSE_YEARS}+ year pause in the matching data.`,
+      chartValue: (row) => row.last.total,
+      chartLabel: (row) => `${row.pauseYears.toFixed(1)} yrs · ${formatMoney(row.last.total)}`,
+      columns: [
+        ['Program', (row) => escapeHtml(row.title)],
+        ['Previous fundraiser', (row) => row.previous ? `${escapeHtml(row.previous.seasonYear)}<br>${formatMoney(row.previous.total)}` : '—'],
+        ['Latest fundraiser', (row) => `${escapeHtml(row.last.seasonYear)}<br>${formatMoney(row.last.total)}`],
+        ['Gap', (row) => `${row.pauseYears.toFixed(1)} yrs`, 'num'],
+        ['First fundraiser', (row) => `${escapeHtml(row.first.seasonYear)}<br>${formatMoney(row.first.total)}`],
+        ['Trend', trendCell],
+        ['Evidence', evidenceLabel]
+      ]
+    },
+    live: {
+      title: 'Are live breaks helping?',
+      summary: 'Uses saved Scheduling live-break flags first, then imported live-break/local-break fields as fallback.',
+      graphTitle: 'Live-break average comparison',
+      tableTitle: 'Live break split',
+      tableNote: 'Unknown rows were not matched to a schedule and did not carry an imported live-break flag.',
+      rows: rowsLive,
+      metric: (rows) => rows.find((row) => row.title === 'Live break') ? formatMoney(rows.find((row) => row.title === 'Live break').avg) : '—',
+      tag: 'schedule flags first',
+      read: (rows) => {
+        const live = rows.find((row) => row.title === 'Live break');
+        const nonlive = rows.find((row) => row.title === 'No live break');
+        const unknown = rows.find((row) => row.title === 'Unknown / not matched');
+        return live && nonlive
+          ? `Live-break records average <b>${formatMoney(live.avg)}</b>; non-live records average <b>${formatMoney(nonlive.avg)}</b>. Unknown/unmatched records: <b>${formatNumber(unknown?.broadcasts || 0)}</b>.`
+          : 'Live-break evidence is incomplete in this filter.';
+      },
+      columns: [
+        ['Break type', (row) => escapeHtml(row.title)],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money'],
+        ['Total $', (row) => formatMoney(row.dollars), 'money'],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num'],
+        ['Season mix', (row) => escapeHtml(row.mix)],
+        ['Evidence', evidenceLabel]
+      ]
+    }
+  };
+
+  async function waitForConfig() {
+    for (let index = 0; index < 80; index += 1) {
+      if (window.PLEDGE_MANAGER_CONFIG) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  function createClient() {
+    const cfg = window.PLEDGE_MANAGER_CONFIG || {};
+    const url = text(cfg.SUPABASE_URL);
+    const anonKey = text(cfg.SUPABASE_ANON_KEY);
+    return url && anonKey && window.supabase?.createClient ? window.supabase.createClient(url, anonKey) : null;
+  }
+
+  function adminFromSession(session) {
+    const cfg = window.PLEDGE_MANAGER_CONFIG || {};
+    const email = text(session?.user?.email).toLowerCase();
+    const admins = Array.isArray(cfg.ADMIN_EMAILS) ? cfg.ADMIN_EMAILS.map((item) => text(item).toLowerCase()).filter(Boolean) : [];
+    if (!session) return { ok: false, email: '' };
+    return { ok: !admins.length || admins.includes(email), email };
+  }
+
+  async function fetchAll(table, select, orderField = '') {
+    const pageSize = 1000;
+    let from = 0;
+    const rows = [];
+    while (true) {
+      let query = state.client.from(table).select(select).range(from, from + pageSize - 1);
+      if (orderField) query = query.order(orderField, { ascending: true });
+      const { data, error } = await query;
+      if (error) throw error;
+      const chunk = Array.isArray(data) ? data : [];
+      rows.push(...chunk);
+      if (chunk.length < pageSize) break;
+      from += pageSize;
+    }
+    return rows;
+  }
+
+  async function init() {
+    await waitForConfig();
+    state.client = createClient();
+    if (!state.client) {
+      note('Missing config.js or Supabase client. This page needs the same config as the main app.', 'bad');
+      return false;
+    }
+    const { data, error } = await state.client.auth.getSession();
+    if (error) throw error;
+    state.session = data?.session || null;
+    const admin = adminFromSession(state.session);
+    state.isAdmin = admin.ok;
+    state.email = admin.email;
+    dom.signIn.classList.toggle('hidden', Boolean(state.session));
+    dom.signOut.classList.toggle('hidden', !state.session);
+    if (!state.session) {
+      note('Sign in as admin to use the Performance Lab.', 'warn');
+      return false;
+    }
+    if (!state.isAdmin) {
+      note(`Signed in as ${state.email || 'viewer'}, but this lab is admin-only.`, 'bad');
+      return false;
+    }
+    dom.lab.classList.remove('hidden');
+    note(`Admin mode · ${state.email || 'signed in'} · loading live pledge records…`);
+    return true;
+  }
+
+  async function load() {
+    note('Loading live pledge performance records…');
+    const [airings, scheduleRows] = await Promise.all([
+      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,live_break_flag,live_break_count,local_break_count', 'air_date'),
+      fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,schedule_data', 'start_date')
+    ]);
+    let libraryRows = [];
+    try {
+      libraryRows = await fetchAll(LIBRARY_VIEW, 'id,program_id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+    } catch (_error) {
+      libraryRows = await fetchAll(BASE_TABLE, 'id,program_id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+    }
+    state.schedules = scheduleRows.map(normalizeSchedule);
+    state.records = buildRecords(airings, libraryRows, state.schedules);
+    rebuildFilterOptions();
+    render();
+    const liveCount = state.records.filter((record) => record.liveState === 'live').length;
+    const scheduleLiveCount = state.records.filter((record) => record.liveState === 'live' && record.liveSource === 'schedule').length;
+    note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Live-break rows found: ${formatNumber(liveCount)} (${formatNumber(scheduleLiveCount)} from saved schedules).`);
+  }
+
+  function rebuildFilterOptions() {
+    const years = [...new Set(state.records.map((record) => record.year).filter(Boolean))].sort((a, b) => b - a);
+    dom.season.innerHTML = '<option value="all">All pledge seasons</option>' + SEASONS.map((season) => `<option>${escapeHtml(season)}</option>`).join('');
+    dom.year.innerHTML = '<option value="all">All years</option>' + years.map((year) => `<option>${escapeHtml(year)}</option>`).join('');
+    dom.season.value = state.season;
+    dom.year.value = state.year;
+  }
+
+  function updateFilterState() {
+    const question = QUESTIONS[state.question] || QUESTIONS.programs;
+    dom.season.disabled = question.useSeason === false;
+    dom.year.disabled = question.useYear === false;
+    const disabled = [];
+    if (question.useSeason === false) disabled.push('season');
+    if (question.useYear === false) disabled.push('year');
+    dom.scopeNote.textContent = disabled.length
+      ? `Disabled for this question: ${disabled.join(' and ')}. This view needs the broader history, so those filters would produce misleading gobbledygook.`
+      : 'Filters are active for this question.';
+  }
+
+  function render() {
+    state.trendRows.clear();
+    updateFilterState();
+    const entries = Object.entries(QUESTIONS).map(([id, question]) => ({ id, question, rows: question.rows() }));
+    dom.cards.innerHTML = entries.map(({ id, question, rows }) => {
+      const weak = rows.filter((row) => row.weak).length;
+      return `<button type="button" class="qcard ${id === state.question ? 'active' : ''}" data-question="${escapeHtml(id)}">
+        <div class="qtitle">${escapeHtml(question.title)}</div>
+        <div class="qsum">${escapeHtml(question.summary)}</div>
+        <div class="qmetric">${escapeHtml(question.metric(rows))}</div>
+        <span class="badge">${escapeHtml(question.tag)} · ${formatNumber(rows.length)} rows${weak ? ` · ${formatNumber(weak)} weak` : ''}</span>
+      </button>`;
+    }).join('');
+    dom.cards.querySelectorAll('[data-question]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.question = button.dataset.question || 'programs';
+        render();
+      });
+    });
+    const selected = entries.find((entry) => entry.id === state.question) || entries[0];
+    renderDetail(selected);
+  }
+
+  function chartValue(row, question) {
+    if (typeof question.chartValue === 'function') return question.chartValue(row);
+    if (state.question === 'seasonal') return Math.abs(row.bestLift || 0);
+    if (state.question === 'topics' || state.question === 'live') return row.avg || 0;
+    return row.dollars || row.broadcasts || 0;
+  }
+
+  function chartLabel(row, question) {
+    if (typeof question.chartLabel === 'function') return question.chartLabel(row);
+    if (state.question === 'seasonal') return `${row.bestSeason} ${formatPercent(row.bestLift)}`;
+    if (state.question === 'topics' || state.question === 'live') return formatMoney(row.avg || 0);
+    if (state.question === 'uncategorized') return `${formatNumber(row.broadcasts)} broadcasts`;
+    return formatMoney(row.dollars || 0);
+  }
+
+  function chartRowLabel(row) {
+    const showMix = ['programs', 'topics', 'seasonal', 'live'].includes(state.question) && row.mix;
+    return `${escapeHtml(row.title)}${showMix ? ` <span class="mix">${escapeHtml(row.mix)}</span>` : ''}`;
+  }
+
+  function renderDetail(entry) {
+    const { question, rows } = entry;
+    dom.detailTitle.textContent = question.title;
+    dom.detailSummary.textContent = question.summary;
+    dom.chartTitle.textContent = question.graphTitle;
+    dom.tableTitle.textContent = question.tableTitle;
+    dom.tableNote.textContent = question.tableNote || 'The table follows the selected question so the graph and rows tell the same story.';
+    dom.chartNote.textContent = rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.';
+    dom.read.innerHTML = question.read(rows);
+    renderStats(rows);
+    renderChart(rows, question);
+    renderTable(rows, question.columns);
+  }
+
+  function renderStats(rows) {
+    const dollars = rows.reduce((sum, row) => sum + Number(row.dollars || row.last?.total || 0), 0);
+    const broadcasts = rows.reduce((sum, row) => sum + Number(row.broadcasts || 0), 0);
+    const weak = rows.filter((row) => row.weak).length;
+    dom.stats.innerHTML = [
+      ['Rows', formatNumber(rows.length)],
+      ['Broadcasts', formatNumber(broadcasts)],
+      ['Dollars', formatMoney(dollars)],
+      ['Weak rows', formatNumber(weak)]
+    ].map(([label, value]) => `<div class="stat"><div class="v">${escapeHtml(value)}</div><div>${escapeHtml(label)}</div></div>`).join('');
+  }
+
+  function renderChart(rows, question) {
+    const chartRows = rows.slice(0, 12);
+    if (!chartRows.length) {
+      dom.chart.innerHTML = '<div class="empty">No graphable rows.</div>';
+      return;
+    }
+    const max = Math.max(...chartRows.map((row) => chartValue(row, question)), 1);
+    dom.chart.innerHTML = chartRows.map((row) => {
+      const value = chartValue(row, question);
+      const width = Math.max(2, (value / max) * 100);
+      return `<div class="bar">
+        <div class="blabel" title="${escapeHtml(row.title)}">${chartRowLabel(row)}</div>
+        <div class="track"><div class="fill" style="width:${width}%"></div></div>
+        <div class="bval">${escapeHtml(chartLabel(row, question))}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderTable(rows, columns) {
+    if (!rows.length) {
+      dom.table.innerHTML = '<div class="empty">No table rows.</div>';
+      return;
+    }
+    dom.table.innerHTML = `<table><thead><tr>${columns.map((column) => `<th class="${column[2] || ''}">${escapeHtml(column[0])}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td class="${column[2] || ''}">${column[1](row)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    dom.table.querySelectorAll('[data-trend-id]').forEach((button) => {
+      button.addEventListener('click', () => openTrend(button.dataset.trendId || ''));
+    });
+  }
+
+  function openTrend(id) {
+    const row = state.trendRows.get(id);
+    if (!row) return;
+    dom.trendTitle.textContent = row.title;
+    dom.trendSubtitle.textContent = `${row.drives.length} fundraiser appearances · first ${formatMoney(row.first.total)} · latest ${formatMoney(row.last.total)}`;
+    dom.trendBody.innerHTML = renderTrendSvg(row);
+    dom.trendModal.classList.remove('hidden');
+  }
+
+  function renderTrendSvg(row) {
+    const drives = row.drives || [];
+    if (!drives.length) return '<div class="empty">No trend data.</div>';
+    const width = 900;
+    const height = 360;
+    const padLeft = 70;
+    const padRight = 24;
+    const padTop = 24;
+    const padBottom = 80;
+    const values = drives.map((drive) => Number(drive.total || 0));
+    const min = Math.min(0, ...values);
+    const max = Math.max(...values, 1);
+    const xFor = (index) => drives.length === 1 ? (width - padRight + padLeft) / 2 : padLeft + ((width - padLeft - padRight) * index) / (drives.length - 1);
+    const yFor = (value) => padTop + (height - padTop - padBottom) * (1 - ((value - min) / (max - min || 1)));
+    const points = drives.map((drive, index) => `${xFor(index).toFixed(1)},${yFor(drive.total).toFixed(1)}`).join(' ');
+    const yTicks = [0, max / 2, max];
+    return `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Fundraiser trend for ${escapeHtml(row.title)}">
+      <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdf8"></rect>
+      ${yTicks.map((tick) => `<line x1="${padLeft}" x2="${width - padRight}" y1="${yFor(tick)}" y2="${yFor(tick)}" stroke="#eadcc8"></line><text x="10" y="${yFor(tick) + 4}" font-size="13" fill="#6d6255">${escapeHtml(formatMoney(tick))}</text>`).join('')}
+      <polyline points="${points}" fill="none" stroke="#2f5d62" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      ${drives.map((drive, index) => {
+        const x = xFor(index);
+        const y = yFor(drive.total);
+        return `<circle cx="${x}" cy="${y}" r="5" fill="#7b341e"></circle><text x="${x}" y="${Math.max(16, y - 12)}" text-anchor="middle" font-size="12" fill="#272019">${escapeHtml(formatMoney(drive.total))}</text><text x="${x}" y="${height - 44}" text-anchor="middle" font-size="12" fill="#6d6255" transform="rotate(-30 ${x} ${height - 44})">${escapeHtml(drive.seasonYear)}</text>`;
+      }).join('')}
+    </svg>`;
+  }
+
+  function bindEvents() {
+    dom.signIn.addEventListener('click', async () => {
+      if (!state.client) state.client = createClient();
+      const url = new URL(window.location.href);
+      url.hash = '';
+      await state.client.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: url.toString() } });
+    });
+    dom.signOut.addEventListener('click', async () => {
+      if (state.client) await state.client.auth.signOut();
+      window.location.reload();
+    });
+    dom.reload.addEventListener('click', () => load().catch((error) => note(error.message || 'Could not reload data.', 'bad')));
+    dom.season.addEventListener('change', () => { state.season = dom.season.value; render(); });
+    dom.year.addEventListener('change', () => { state.year = dom.year.value; render(); });
+    dom.search.addEventListener('input', () => { state.search = dom.search.value; render(); });
+    dom.evidence.addEventListener('change', () => { state.evidence = dom.evidence.value; render(); });
+    dom.trendClose.addEventListener('click', () => dom.trendModal.classList.add('hidden'));
+    dom.trendModal.addEventListener('click', (event) => { if (event.target === dom.trendModal) dom.trendModal.classList.add('hidden'); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') dom.trendModal.classList.add('hidden'); });
+  }
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    bindEvents();
+    try {
+      if (await init()) await load();
+    } catch (error) {
+      console.error(error);
+      note(error.message || 'Performance Lab failed to load.', 'bad');
+    }
+  });
+})();
+</script>
 </body>
 </html>
