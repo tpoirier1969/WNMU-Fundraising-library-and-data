@@ -840,6 +840,8 @@
         date,
         dateKey: temporal.dateKey,
         startMinutes: temporal.startMinutes,
+        endMinutes: Number.isFinite(Number(row.end_minutes)) ? Number(row.end_minutes) : null,
+        durationMinutes: Number(row.program_minutes || 0) > 0 ? Number(row.program_minutes) : null,
         daypart: daypartFromMinutes(temporal.startMinutes ?? (date ? ((date.getHours() * 60) + date.getMinutes()) : null)),
         weekpart: weekpartFromDate(date),
         season,
@@ -938,6 +940,8 @@
         const season = pledgeSeason(date);
         const year = date ? date.getFullYear() : '';
         const startMinutes = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? NaN);
+        const endMinutes = Number(placement.endMinutes ?? placement.end_minutes ?? placement.end ?? NaN);
+        const durationMinutes = Number(firstNonEmpty(placement.programMinutes, placement.program_minutes, placement.durationMinutes, placement.duration_minutes, null)) || durationFromTimes(startMinutes, endMinutes);
         if (!dateKey || !date || !season) return;
         const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
         const rawPid = text(firstNonEmpty(placement.programId, placement.program_id, ''));
@@ -1009,6 +1013,8 @@
           date,
           dateKey,
           startMinutes,
+          endMinutes,
+          durationMinutes,
           daypart: daypartFromMinutes(Number.isFinite(startMinutes) ? startMinutes : null),
           weekpart: weekpartFromDate(date),
           season,
@@ -1107,8 +1113,50 @@
     return Math.min(raw, 1440 - raw);
   }
 
+  function durationFromTimes(start, end) {
+    if (!Number.isFinite(Number(start)) || !Number.isFinite(Number(end))) return null;
+    let duration = Number(end) - Number(start);
+    if (duration < 0) duration += 1440;
+    return duration > 0 ? duration : null;
+  }
+
+  function durationFromRecord(record = {}) {
+    const explicit = Number(firstNonEmpty(record.durationMinutes, record.programMinutes, record.program_minutes, null));
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    return durationFromTimes(record.startMinutes, record.endMinutes);
+  }
+
+  function formatDuration(minutes) {
+    const value = Number(minutes);
+    if (!Number.isFinite(value) || value <= 0) return 'unknown length';
+    if (value < 75) return `${Math.round(value)} min`;
+    const hours = Math.floor(value / 60);
+    const mins = Math.round(value % 60);
+    return mins ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+
+  function durationCompatibility(live = {}, candidate = {}) {
+    const liveDuration = durationFromRecord(live);
+    const candidateDuration = durationFromRecord(candidate);
+    if (!liveDuration || !candidateDuration) {
+      return { ok: true, reason: 'duration unknown', penalty: 60, liveDuration, candidateDuration };
+    }
+    const shorter = Math.min(liveDuration, candidateDuration);
+    const longer = Math.max(liveDuration, candidateDuration);
+    const ratio = shorter / longer;
+    const delta = Math.abs(liveDuration - candidateDuration);
+    const ok = ratio >= 0.55 || delta <= 30;
+    return {
+      ok,
+      reason: ok ? `similar length (${formatDuration(liveDuration)} vs ${formatDuration(candidateDuration)})` : `length mismatch (${formatDuration(liveDuration)} vs ${formatDuration(candidateDuration)})`,
+      penalty: ok ? Math.min(180, delta * 2) : 500,
+      liveDuration,
+      candidateDuration
+    };
+  }
+
   function meaningfulTitleTokens(value = '') {
-    const generic = new Set(['a', 'an', 'and', 'at', 'by', 'for', 'from', 'great', 'in', 'of', 'on', 'pbs', 'performance', 'performances', 'special', 'the', 'to', 'with']);
+    const generic = new Set(['a', 'an', 'and', 'at', 'by', 'classic', 'classics', 'collection', 'concert', 'episode', 'favorite', 'favorites', 'for', 'forever', 'from', 'great', 'in', 'live', 'of', 'on', 'pbs', 'performance', 'performances', 'program', 'special', 'the', 'to', 'with']);
     return lookupKey(value || '').split(' ').filter((token) => token.length > 2 && !generic.has(token));
   }
 
@@ -1120,6 +1168,31 @@
     aTokens.forEach((token) => { if (bTokens.has(token)) overlap += 1; });
     const union = new Set([...aTokens, ...bTokens]).size || 1;
     return overlap / union;
+  }
+
+  function titleTokenOverlapCount(a = '', b = '') {
+    const aTokens = new Set(meaningfulTitleTokens(a));
+    const bTokens = new Set(meaningfulTitleTokens(b));
+    let overlap = 0;
+    aTokens.forEach((token) => { if (bTokens.has(token)) overlap += 1; });
+    return overlap;
+  }
+
+  function isPerformerStyleRecord(record = {}) {
+    const context = lookupKey(`${record.topic || ''} ${record.secondaryTopic || ''} ${record.title || ''} ${record.importedTitle || ''}`);
+    return /(^| )(music|concert|singer|artist|band|orchestra|performance|performances|great performances|opera|vocal|song|songs)($| )/.test(context);
+  }
+
+  function suspiciousSameDollarClone(live = {}, candidate = {}) {
+    const liveDollars = Number(live.dollars || 0);
+    const candidateDollars = Number(candidate.dollars || 0);
+    if (!(liveDollars > 0) || liveDollars !== candidateDollars) return false;
+    const sameTitle = lookupKey(live.title || '') && lookupKey(live.title || '') === lookupKey(candidate.title || '');
+    const sameIdentity = programIdentityKey(live) === programIdentityKey(candidate);
+    if (!sameTitle && !sameIdentity) return false;
+    const hashA = text(live.sourceAiringHash || '');
+    const hashB = text(candidate.sourceAiringHash || '');
+    return !hashA || !hashB || hashA === hashB;
   }
 
   function sameSourceAiring(a = {}, b = {}) {
@@ -1138,14 +1211,21 @@
     if (!candidate || candidate.liveState !== 'nonlive') return { ok: false, reason: 'not a non-live scheduled airing' };
     if (sameSourceAiring(live, candidate)) return { ok: false, reason: 'same source airing' };
     if (live.dateKey && candidate.dateKey && live.dateKey === candidate.dateKey) return { ok: false, reason: 'same calendar night' };
+    if (suspiciousSameDollarClone(live, candidate)) return { ok: false, reason: 'same-title same-dollar clone risk' };
     if (live.topic && candidate.topic && live.topic !== candidate.topic) return { ok: false, reason: 'different primary topic' };
     if (live.daypart && candidate.daypart && live.daypart !== candidate.daypart) return { ok: false, reason: 'different daypart' };
     if (live.weekpart && candidate.weekpart && live.weekpart !== candidate.weekpart) return { ok: false, reason: 'different weekpart' };
+    const duration = durationCompatibility(live, candidate);
+    if (!duration.ok) return { ok: false, reason: duration.reason, duration };
     const exactTitle = lookupKey(live.title || '') && lookupKey(live.title || '') === lookupKey(candidate.title || '');
     const sameSecondary = lookupKey(live.secondaryTopic || '') && lookupKey(live.secondaryTopic || '') === lookupKey(candidate.secondaryTopic || '');
     const similarity = titleTokenSimilarity(live.title || live.importedTitle || '', candidate.title || candidate.importedTitle || '');
-    if (!exactTitle && !sameSecondary && similarity < 0.2) return { ok: false, reason: 'different specific title' };
-    return { ok: true, reason: exactTitle ? 'same title' : (sameSecondary ? 'same secondary topic' : 'similar title'), similarity };
+    const overlap = titleTokenOverlapCount(live.title || live.importedTitle || '', candidate.title || candidate.importedTitle || '');
+    if (!exactTitle && isPerformerStyleRecord(live) && isPerformerStyleRecord(candidate) && overlap < 1) {
+      return { ok: false, reason: 'different performer/title', similarity, duration };
+    }
+    if (!exactTitle && !sameSecondary && similarity < 0.2) return { ok: false, reason: 'different specific title', similarity, duration };
+    return { ok: true, reason: exactTitle ? 'same title' : (sameSecondary ? 'same secondary topic' : 'similar title'), similarity, duration };
   }
 
   function liveMatchScore(live = {}, candidate = {}) {
@@ -1154,11 +1234,13 @@
     const eligibility = liveMatchEligibility(live, candidate);
     if (!eligibility.ok) return { score: Number.POSITIVE_INFINITY, notes: [eligibility.reason], timeDelta: null, eligible: false };
     notes.push(eligibility.reason);
+    if (eligibility.duration?.reason) notes.push(eligibility.duration.reason);
     if (live.topic && candidate.topic && live.topic === candidate.topic) notes.push('same primary topic');
     if (live.daypart && candidate.daypart && live.daypart === candidate.daypart) notes.push('same daypart');
     if (live.weekpart && candidate.weekpart && live.weekpart === candidate.weekpart) notes.push('same weekpart');
     const timeDelta = timeDistanceMinutes(live.startMinutes, candidate.startMinutes);
     score += Math.min(480, timeDelta);
+    score += Number(eligibility.duration?.penalty || 0);
     notes.push(`${Math.round(timeDelta)} min time gap`);
     if (live.season && candidate.season && live.season !== candidate.season) score += 80;
     if (Number.isFinite(Number(live.year)) && Number.isFinite(Number(candidate.year))) score += Math.min(200, Math.abs(Number(live.year) - Number(candidate.year)) * 35);
@@ -1172,17 +1254,27 @@
     const nonLiveRows = rows.filter((record) => record.liveState === 'nonlive');
     const used = new Set();
     return liveRows.map((live) => {
-      const candidates = nonLiveRows
+      const scored = nonLiveRows
         .filter((candidate) => !used.has(candidate.id || `${candidate.dateKey}|${candidate.startMinutes}|${candidate.title}`))
-        .map((candidate) => ({ candidate, match: liveMatchScore(live, candidate) }))
+        .map((candidate) => ({ candidate, match: liveMatchScore(live, candidate) }));
+      const candidates = scored
         .filter((item) => item.match.eligible && Number.isFinite(item.match.score))
         .sort((a, b) => a.match.score - b.match.score || Number(b.candidate.dollars || 0) - Number(a.candidate.dollars || 0));
+      const bestRejected = scored
+        .filter((item) => !item.match.eligible)
+        .sort((a, b) => {
+          const aSameTopic = a.candidate.topic === live.topic ? 0 : 1;
+          const bSameTopic = b.candidate.topic === live.topic ? 0 : 1;
+          const aTime = timeDistanceMinutes(live.startMinutes, a.candidate.startMinutes);
+          const bTime = timeDistanceMinutes(live.startMinutes, b.candidate.startMinutes);
+          return aSameTopic - bSameTopic || aTime - bTime;
+        })[0] || null;
       const best = candidates[0] || null;
       if (best) used.add(best.candidate.id || `${best.candidate.dateKey}|${best.candidate.startMinutes}|${best.candidate.title}`);
       const match = best?.candidate || null;
       const difference = match ? Number(live.dollars || 0) - Number(match.dollars || 0) : null;
       const percent = match && Number(match.dollars || 0) > 0 ? (difference / Number(match.dollars || 0)) * 100 : null;
-      return { live, match, difference, percent, basis: best?.match?.notes || [], score: best?.match?.score ?? null };
+      return { live, match, difference, percent, basis: best?.match?.notes || [], score: best?.match?.score ?? null, noMatchReason: bestRejected?.match?.notes?.[0] || 'no strong non-live match' };
     });
   }
 
@@ -1215,20 +1307,20 @@
       const diffClass = Number(pair.difference || 0) >= 0 ? 'ok' : 'risk';
       const pctText = Number.isFinite(pair.percent) ? ` (${formatPercent(pair.percent)})` : '';
       const matchCell = pair.match
-        ? `${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))}</div>`
+        ? `${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))} · ${escapeHtml(formatDuration(durationFromRecord(pair.match)))}</div>`
         : '<span class="muted">No comparable non-live airing</span>';
       return `<tr>
-        <td>${programTitleCell(pair.live)}<div class="match-basis">${escapeHtml(liveDate)} · ${escapeHtml(pair.live.daypart || 'unknown daypart')} · ${escapeHtml(pair.live.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.live.startMinutes))}</div></td>
+        <td>${programTitleCell(pair.live)}<div class="match-basis">${escapeHtml(liveDate)} · ${escapeHtml(pair.live.daypart || 'unknown daypart')} · ${escapeHtml(pair.live.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.live.startMinutes))} · ${escapeHtml(formatDuration(durationFromRecord(pair.live)))}</div></td>
         <td>${matchCell}</td>
         <td class="money emphasis">${formatMoney(pair.live.dollars)}</td>
         <td class="money">${pair.match ? formatMoney(pair.match.dollars) : '—'}</td>
         <td class="money ${diffClass}">${pair.match ? `${formatMoney(pair.difference)}${escapeHtml(pctText)}` : '—'}</td>
-        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : 'skipped: same night/source or title/performer too different')}</span></td>
+        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : `No strong non-live match: ${pair.noMatchReason || 'same night/source, length mismatch, or title/performer too different'}`)}</span></td>
       </tr>`;
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
       <h4>1:1 live vs non-live comparison</h4>
-      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, season, year, and title similarity. It will not compare against the same source airing or the same calendar night, and loose performer/title pairings are skipped instead of being treated as evidence.</p>
+      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, program length, season, year, and title/performer similarity. It will not compare against the same source airing or the same calendar night, and loose performer/title pairings are skipped instead of being treated as evidence.</p>
       <div class="matched-summary">
         <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
         <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
@@ -1842,7 +1934,7 @@
   async function load() {
     note('Loading live pledge performance records…');
     const [airings, scheduleRows] = await Promise.all([
-      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash', 'air_date'),
+      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash,program_minutes', 'air_date'),
       fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,created_at,updated_at,schedule_data', 'start_date')
     ]);
     let libraryRows = [];
