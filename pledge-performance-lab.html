@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.21.98</title>
+  <title>WNMU Pledge Performance Analytics v0.22.02</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -156,7 +156,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.01</div>
+        <div class="eyebrow">Admin analytics · v0.22.02</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -568,6 +568,51 @@
     return score;
   }
 
+  function mergeDuplicateScheduleBucket(items = []) {
+    const sorted = [...items].sort((a, b) => schedulePreferenceScore(b) - schedulePreferenceScore(a));
+    const primary = sorted[0] || {};
+    if (sorted.length <= 1) return primary;
+    const placementMap = new Map();
+    sorted.forEach((schedule) => {
+      (schedule.placements || []).forEach((placement) => {
+        const key = text(firstNonEmpty(
+          placement.id,
+          placement.sourceAiringHash,
+          placement.source_airing_hash,
+          `${placement.dateKey || placement.date_key || ''}|${placement.startMinutes ?? placement.start_minutes ?? placement.start ?? ''}|${lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''))}|${nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, ''))}`
+        ));
+        if (!key || !placementMap.has(key)) placementMap.set(key || `${placementMap.size}`, placement);
+        else {
+          const current = placementMap.get(key) || {};
+          placementMap.set(key, { ...placement, ...current });
+        }
+      });
+    });
+    const firstPositive = (field) => {
+      const found = sorted.find((schedule) => Number(schedule?.[field] || 0) > 0);
+      return Number(found?.[field] || 0) || 0;
+    };
+    const meta = sorted.reduce((merged, schedule) => ({ ...merged, ...(schedule.meta || {}) }), {});
+    const latestUpdate = sorted
+      .map((schedule) => Date.parse(schedule.updatedAt || schedule.createdAt || ''))
+      .filter(Number.isFinite)
+      .sort((a, b) => b - a)[0];
+    return {
+      ...primary,
+      title: text(primary.title) || sorted.map((schedule) => text(schedule.title)).find(Boolean) || '',
+      placements: [...placementMap.values()],
+      onlineDollars: firstPositive('onlineDollars'),
+      mailDollars: firstPositive('mailDollars'),
+      goalDollars: firstPositive('goalDollars'),
+      meta: {
+        ...meta,
+        duplicateScheduleIdsMerged: sorted.map((schedule) => schedule.id).filter(Boolean),
+        duplicateScheduleCountMerged: sorted.length
+      },
+      updatedAt: Number.isFinite(latestUpdate) ? new Date(latestUpdate).toISOString() : primary.updatedAt
+    };
+  }
+
   function dedupeSchedulesByDateRange(schedules = []) {
     const buckets = new Map();
     schedules.forEach((schedule) => {
@@ -580,16 +625,16 @@
       buckets.get(key).push(schedule);
     });
     const active = [];
-    let suppressed = 0;
+    let merged = 0;
     buckets.forEach((items) => {
-      const sorted = [...items].sort((a, b) => schedulePreferenceScore(b) - schedulePreferenceScore(a));
-      active.push(sorted[0]);
-      suppressed += Math.max(0, sorted.length - 1);
+      active.push(mergeDuplicateScheduleBucket(items));
+      merged += Math.max(0, items.length - 1);
     });
     state.scheduleAudit = {
       rawSchedules: schedules.length,
       activeSchedules: active.length,
-      duplicateSchedulesSuppressed: suppressed
+      duplicateSchedulesMerged: merged,
+      duplicateSchedulesSuppressed: 0
     };
     return active.sort((a, b) => `${text(a.startDate)}|${text(a.endDate)}`.localeCompare(`${text(b.startDate)}|${text(b.endDate)}`));
   }
@@ -624,6 +669,8 @@
         liveState: 'all',
         daypart: '',
         weekpart: '',
+        mode: 'drive-total',
+        sourceLabel: 'Saved fundraiser schedule total',
         records: []
       };
     }).filter((record) => record.date && record.season && record.dollars > 0);
@@ -996,16 +1043,19 @@
 
   function summarizeGroup(title, records) {
     const seasons = new Set(records.map((record) => record.seasonYear));
-    const dollars = records.reduce((sum, record) => sum + record.dollars, 0);
-    const pledges = records.reduce((sum, record) => sum + record.pledges, 0);
+    const dollars = records.reduce((sum, record) => sum + Number(record.dollars || 0), 0);
+    const pledges = records.reduce((sum, record) => sum + Number(record.pledges || 0), 0);
     const mix = seasonMix(records);
     const ids = [...new Set(records.map((record) => record.programOpenId || record.programId).filter(Boolean))];
     return {
       title,
       programOpenId: ids.length === 1 ? ids[0] : '',
       dollars,
+      broadcastDollars: records.reduce((sum, record) => sum + Number(firstNonEmpty(record.broadcastDollars, record.dollars, 0) || 0), 0),
+      onlineDollars: records.reduce((sum, record) => sum + Number(record.onlineDollars || 0), 0),
+      mailDollars: records.reduce((sum, record) => sum + Number(record.mailDollars || 0), 0),
       pledges,
-      broadcasts: records.length,
+      broadcasts: records.reduce((sum, record) => sum + Number(firstNonEmpty(record.broadcasts, 1) || 0), 0),
       seasons: seasons.size,
       avg: records.length ? dollars / records.length : 0,
       weak: records.length < WEAK_BROADCASTS || seasons.size < WEAK_SEASONS,
@@ -1013,6 +1063,18 @@
       allFour: mix.allFour,
       records
     };
+  }
+
+  function programIdentityKey(record = {}) {
+    const id = text(record.programOpenId || record.programId || '');
+    if (id) return `id:${id}`;
+    const nola = nolaKey(record.nola || '');
+    const title = lookupKey(record.title || record.importedTitle || '');
+    return nola && title ? `nola-title:${nola}|${title}` : `title:${title}`;
+  }
+
+  function groupDisplayTitle(records = [], fallback = '') {
+    return text(records.map((record) => record.title).find(Boolean)) || fallback || 'Unknown';
   }
 
   function applyEvidence(rows) {
@@ -1097,8 +1159,8 @@
   }
 
   function rowsPrograms() {
-    return applyEvidence([...groupBy(filteredRecordsFor('programs'), (record) => record.title)]
-      .map(([title, records]) => summarizeGroup(title, records))
+    return applyEvidence([...groupBy(filteredRecordsFor('programs'), (record) => programIdentityKey(record))]
+      .map(([key, records]) => summarizeGroup(groupDisplayTitle(records, key), records))
       .sort((a, b) => metricValue(b) - metricValue(a) || b.dollars - a.dollars));
   }
 
@@ -1115,9 +1177,23 @@
   }
 
   function rowsSeasonOverview() {
-    return [...groupBy(seasonOverviewRecords(), (record) => record.season)]
-      .map(([title, records]) => summarizeGroup(title, records))
-      .sort((a, b) => SEASONS.indexOf(a.title) - SEASONS.indexOf(b.title));
+    const records = seasonOverviewRecords();
+    if (seasonOverviewUsesDriveTotals()) {
+      return [...records].sort((a, b) => (Number(b.year || 0) - Number(a.year || 0)) || (SEASONS.indexOf(a.season) - SEASONS.indexOf(b.season)));
+    }
+    return [...groupBy(records, (record) => `${record.season} ${record.year}`)]
+      .map(([title, groupRecords]) => {
+        const row = summarizeGroup(title, groupRecords);
+        row.season = groupRecords[0]?.season || '';
+        row.year = groupRecords[0]?.year || '';
+        row.broadcastDollars = row.dollars;
+        row.onlineDollars = null;
+        row.mailDollars = null;
+        row.scheduleTitle = 'Content-level airing rows';
+        row.sourceLabel = 'Imported/content airing rows';
+        return row;
+      })
+      .sort((a, b) => (Number(b.year || 0) - Number(a.year || 0)) || (SEASONS.indexOf(a.season) - SEASONS.indexOf(b.season)));
   }
 
   function rowsUncategorized() {
@@ -1135,7 +1211,8 @@
   function historyRowsBase() {
     const rows = filteredRecordsFor('history');
     const out = [];
-    groupBy(rows, (record) => record.title).forEach((records, title) => {
+    groupBy(rows, (record) => programIdentityKey(record)).forEach((records, key) => {
+      const title = groupDisplayTitle(records, key);
       const drives = [...groupBy(records, (record) => record.seasonYear)]
         .map(([seasonYear, driveRecords]) => ({
           seasonYear,
@@ -1380,24 +1457,26 @@
     },
     seasonOverview: {
       title: 'Season overview',
-      summary: 'March, June, August, and December fundraiser totals over time. Season, rank-by, and evidence filters are disabled here.',
+      summary: 'Pledge-season totals across years. Full drive totals are used unless a content filter is active.',
       graphTitle: 'Pledge season totals',
-      tableTitle: 'Season overview',
-      tableNote: 'Uses full fundraiser totals unless a content filter is active; then it switches to content-level airing totals.',
+      tableTitle: 'Season / fundraiser detail',
+      tableNote: 'Full mode shows one row per saved fundraiser schedule, including Broadcast, Online, and Mail. Content-filter mode shows airing-row totals only because Online/Mail cannot be assigned to a specific title/topic.',
       useSeason: false,
       useEvidence: false,
       useMetric: false,
       rows: rowsSeasonOverview,
       chartValue: (row) => row.dollars,
       chartLabel: (row) => formatMoney(row.dollars),
-      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} pledge season(s) match. The line graph compares March, June, August, and December across the selected years; the table gives selected-range totals.` : 'No season records match.',
+      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} season/year row(s) match. The line graph compares March, June, August, and December across selected years; missing seasons are not treated as $0.` : 'No season records match.',
       columns: [
-        ['Season', (row) => escapeHtml(row.title), '', (row) => SEASONS.indexOf(row.title)],
+        ['Season', (row) => `${escapeHtml(row.season || row.title || '')}<br><span class="mix">${escapeHtml(row.year || '')}</span>`, '', (row) => (Number(row.year || 0) * 10) + SEASONS.indexOf(row.season || row.title || '')],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
+        ['Broadcast $', (row) => formatMoney(firstNonEmpty(row.broadcastDollars, row.dollars, 0)), 'money', (row) => Number(firstNonEmpty(row.broadcastDollars, row.dollars, 0) || 0)],
+        ['Online $', (row) => row.onlineDollars == null ? '<span class="muted-cell">—</span>' : formatMoney(row.onlineDollars), 'money', (row) => Number(row.onlineDollars || 0)],
+        ['Mail $', (row) => row.mailDollars == null ? '<span class="muted-cell">—</span>' : formatMoney(row.mailDollars), 'money', (row) => Number(row.mailDollars || 0)],
         ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
-        ['Topics represented', (row) => formatNumber(new Set(row.records.map((record) => record.topic)).size), 'num', (row) => new Set(row.records.map((record) => record.topic)).size]
+        ['Source', (row) => escapeHtml(row.scheduleTitle || row.sourceLabel || 'Content-level airing rows'), '', (row) => row.scheduleTitle || row.sourceLabel || '']
       ]
     },
     topics: {
@@ -1606,7 +1685,7 @@
     if ((diag.livePlacements || 0) > 0 && (diag.liveDollars || 0) <= 0) {
       note(`Live-break guardrail: ${formatNumber(diag.livePlacements || 0)} saved live-break placement(s) exist, but none matched pledge dollars. Analytics did not fall back to imported live-break guesses. Check schedule placement hashes/titles/times.`, 'bad');
     } else {
-      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Active schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)} (${formatNumber(state.scheduleAudit.duplicateSchedulesSuppressed || 0)} duplicate date-range row(s) ignored). Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Active schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)} (${formatNumber(state.scheduleAudit.duplicateSchedulesMerged || 0)} duplicate date-range row(s) merged). Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
     }
   }
 
@@ -1708,12 +1787,19 @@
     return `${titleHtml}${showMix ? `<span class="chart-season-mix">${escapeHtml(row.mix)}</span>` : ''}`;
   }
 
+  function questionSourceText(question = {}) {
+    if (state.question === 'seasonOverview') return seasonOverviewUsesDriveTotals() ? 'Using saved fundraiser totals.' : 'Using content-level airing rows because content filters are active.';
+    if (question.source === 'schedule') return 'Using saved Scheduling placements.';
+    if (state.question === 'seasonal' || state.question === 'topics' || state.question === 'topicOverview') return 'Using imported pledge airing rows joined to primary library topics.';
+    return 'Using imported pledge airing rows joined to library program identity.';
+  }
+
   function renderDetail(entry) {
     const { question, rows } = entry;
     dom.detail?.classList.toggle('seasonal-view', state.question === 'seasonal');
     dom.detailTitle.textContent = question.title;
-    dom.detailSummary.textContent = question.summary;
-    dom.chartTitle.textContent = question.graphTitle;
+    dom.detailSummary.textContent = `${question.summary} ${questionSourceText(question)}`;
+    dom.chartTitle.textContent = question.metricDriven ? `${question.graphTitle} · ranked by ${metricLabel()}` : question.graphTitle;
     dom.tableTitle.textContent = question.tableTitle;
     dom.tableNote.textContent = question.tableNote || 'The table follows the selected question so the graph and rows tell the same story.';
     dom.chartNote.textContent = state.question === 'seasonOverview'
@@ -1753,27 +1839,32 @@
       const key = `${record.season}|${record.year}`;
       totals.set(key, (totals.get(key) || 0) + Number(record.dollars || 0));
     });
-    const width = 860;
-    const height = 320;
+    const width = 900;
+    const height = 330;
     const padLeft = 72;
     const padRight = 24;
     const padTop = 24;
-    const padBottom = 64;
-    const values = [];
-    SEASONS.forEach((season) => years.forEach((year) => values.push(totals.get(`${season}|${year}`) || 0)));
+    const padBottom = 70;
+    const values = [...totals.values()].filter((value) => Number.isFinite(value) && value > 0);
     const max = Math.max(...values, 1);
     const xFor = (index) => years.length === 1 ? (padLeft + width - padRight) / 2 : padLeft + ((width - padLeft - padRight) * index) / (years.length - 1);
     const yFor = (value) => padTop + (height - padTop - padBottom) * (1 - (value / max));
     const strokes = ['#7b341e', '#2f5d62', '#8b6f35', '#5f4b8b'];
     const yTicks = [0, max / 2, max];
-    dom.chart.innerHTML = `<div class="chart-mode-note">${seasonOverviewModeText()}</div><svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Season totals over time">
+    const seasonSeries = SEASONS.map((season, seasonIndex) => {
+      const points = years
+        .map((year, index) => ({ year, index, value: totals.has(`${season}|${year}`) ? totals.get(`${season}|${year}`) : null }))
+        .filter((point) => point.value != null && Number.isFinite(point.value));
+      const pointString = points.map((point) => `${xFor(point.index).toFixed(1)},${yFor(point.value).toFixed(1)}`).join(' ');
+      const line = points.length > 1 ? `<polyline points="${pointString}" fill="none" stroke="${strokes[seasonIndex]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>` : '';
+      const circles = points.map((point) => `<circle cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="4" fill="${strokes[seasonIndex]}"><title>${escapeHtml(season)} ${escapeHtml(point.year)}: ${escapeHtml(formatMoney(point.value))}</title></circle>`).join('');
+      return `${line}${circles}`;
+    }).join('');
+    dom.chart.innerHTML = `<div class="chart-mode-note">${seasonOverviewModeText()} Missing season/year combinations are left blank, not plotted as $0.</div><svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Season totals over time">
       <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdf8"></rect>
       ${yTicks.map((tick) => `<line x1="${padLeft}" x2="${width - padRight}" y1="${yFor(tick)}" y2="${yFor(tick)}" stroke="#eadcc8"></line><text x="10" y="${yFor(tick) + 4}" font-size="12" fill="#6d6255">${escapeHtml(formatMoney(tick))}</text>`).join('')}
-      ${SEASONS.map((season, seasonIndex) => {
-        const points = years.map((year, index) => `${xFor(index).toFixed(1)},${yFor(totals.get(`${season}|${year}`) || 0).toFixed(1)}`).join(' ');
-        return `<polyline points="${points}" fill="none" stroke="${strokes[seasonIndex]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>${years.map((year, index) => `<circle cx="${xFor(index)}" cy="${yFor(totals.get(`${season}|${year}`) || 0)}" r="4" fill="${strokes[seasonIndex]}"><title>${escapeHtml(season)} ${escapeHtml(year)}: ${escapeHtml(formatMoney(totals.get(`${season}|${year}`) || 0))}</title></circle>`).join('')}`;
-      }).join('')}
-      ${years.map((year, index) => `<text x="${xFor(index)}" y="${height - 34}" text-anchor="middle" font-size="12" fill="#6d6255">${escapeHtml(year)}</text>`).join('')}
+      ${seasonSeries}
+      ${years.map((year, index) => `<text x="${xFor(index)}" y="${height - 38}" text-anchor="middle" font-size="12" fill="#6d6255">${escapeHtml(year)}</text>`).join('')}
       ${SEASONS.map((season, index) => `<circle cx="${padLeft + index * 130}" cy="${height - 12}" r="5" fill="${strokes[index]}"></circle><text x="${padLeft + 10 + index * 130}" y="${height - 8}" font-size="12" fill="#272019">${escapeHtml(season)}</text>`).join('')}
     </svg>`;
   }
