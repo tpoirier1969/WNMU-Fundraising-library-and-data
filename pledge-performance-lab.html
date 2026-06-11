@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.02</title>
+  <title>WNMU Pledge Performance Analytics v0.22.03</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -137,6 +137,13 @@
     .modal-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px; border-bottom: 1px solid var(--line); background: var(--soft); }
     .modal-body { padding: 18px; }
     .trend-svg { width: 100%; min-height: 360px; }
+    .matched-section { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .matched-section h4 { margin: 0 0 6px; font-size: 1rem; }
+    .matched-note { color: var(--muted); margin: 0 0 10px; line-height: 1.38; }
+    .matched-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+    .matched-summary .stat { background: #fff7e8; }
+    .match-basis { color: var(--muted); font-size: .84rem; line-height: 1.3; }
+    @media (max-width: 960px) { .matched-summary { grid-template-columns: 1fr; } }
     @media (max-width: 960px) {
       .layout, .split { grid-template-columns: 1fr; }
       .cards { position: static; }
@@ -156,7 +163,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.02</div>
+        <div class="eyebrow">Admin analytics · v0.22.03</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -1065,6 +1072,112 @@
     };
   }
 
+
+  function formatTimeFromMinutes(value) {
+    if (!Number.isFinite(Number(value))) return '—';
+    const total = ((Number(value) % 1440) + 1440) % 1440;
+    const hour24 = Math.floor(total / 60);
+    const minute = Math.round(total % 60);
+    const suffix = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = hour24 % 12 || 12;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+  }
+
+  function timeDistanceMinutes(a, b) {
+    if (!Number.isFinite(Number(a)) || !Number.isFinite(Number(b))) return 720;
+    const raw = Math.abs(Number(a) - Number(b));
+    return Math.min(raw, 1440 - raw);
+  }
+
+  function liveMatchScore(live = {}, candidate = {}) {
+    let score = 0;
+    const notes = [];
+    if (live.topic && candidate.topic && live.topic === candidate.topic) notes.push('same topic');
+    else { score += 900; notes.push('different topic'); }
+    if (live.daypart && candidate.daypart && live.daypart === candidate.daypart) notes.push('same daypart');
+    else { score += 260; notes.push('different daypart'); }
+    if (live.weekpart && candidate.weekpart && live.weekpart === candidate.weekpart) notes.push('same weekpart');
+    else { score += 220; notes.push('different weekpart'); }
+    const timeDelta = timeDistanceMinutes(live.startMinutes, candidate.startMinutes);
+    score += Math.min(480, timeDelta);
+    notes.push(`${Math.round(timeDelta)} min time gap`);
+    if (live.season && candidate.season && live.season !== candidate.season) score += 80;
+    if (Number.isFinite(Number(live.year)) && Number.isFinite(Number(candidate.year))) score += Math.min(200, Math.abs(Number(live.year) - Number(candidate.year)) * 35);
+    return { score, notes, timeDelta };
+  }
+
+  function buildLiveMatchedPairs() {
+    const rows = filteredRecordsFor('live').filter((record) => record.liveState === 'live' || record.liveState === 'nonlive');
+    const liveRows = rows.filter((record) => record.liveState === 'live').sort((a, b) => (a.date || 0) - (b.date || 0) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    const nonLiveRows = rows.filter((record) => record.liveState === 'nonlive');
+    const used = new Set();
+    return liveRows.map((live) => {
+      const candidates = nonLiveRows
+        .filter((candidate) => !used.has(candidate.id || `${candidate.dateKey}|${candidate.startMinutes}|${candidate.title}`))
+        .map((candidate) => ({ candidate, match: liveMatchScore(live, candidate) }))
+        .sort((a, b) => a.match.score - b.match.score || Number(b.candidate.dollars || 0) - Number(a.candidate.dollars || 0));
+      const best = candidates[0] || null;
+      if (best) used.add(best.candidate.id || `${best.candidate.dateKey}|${best.candidate.startMinutes}|${best.candidate.title}`);
+      const match = best?.candidate || null;
+      const difference = match ? Number(live.dollars || 0) - Number(match.dollars || 0) : null;
+      const percent = match && Number(match.dollars || 0) > 0 ? (difference / Number(match.dollars || 0)) * 100 : null;
+      return { live, match, difference, percent, basis: best?.match?.notes || [], score: best?.match?.score ?? null };
+    });
+  }
+
+  function liveMatchedSummary(pairs = []) {
+    const matched = pairs.filter((pair) => pair.match);
+    const liveTotal = matched.reduce((sum, pair) => sum + Number(pair.live.dollars || 0), 0);
+    const matchTotal = matched.reduce((sum, pair) => sum + Number(pair.match.dollars || 0), 0);
+    const liveAvg = matched.length ? liveTotal / matched.length : 0;
+    const matchAvg = matched.length ? matchTotal / matched.length : 0;
+    const diff = liveAvg - matchAvg;
+    const pct = matchAvg > 0 ? (diff / matchAvg) * 100 : null;
+    return { matchedCount: matched.length, liveTotal, matchTotal, liveAvg, matchAvg, diff, pct };
+  }
+
+  function renderLiveMatchedComparison() {
+    const pairs = buildLiveMatchedPairs();
+    const matched = pairs.filter((pair) => pair.match);
+    if (!pairs.length) {
+      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>Matched 1:1 comparison</h4><p class="matched-note">No saved live-break airings match the current filters, so there is nothing to pair.</p></div>');
+      return;
+    }
+    if (!matched.length) {
+      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>Matched 1:1 comparison</h4><p class="matched-note">Saved live-break airings exist, but no non-live scheduled airings match the current filters closely enough to compare. Try clearing topic/daypart/weekpart filters.</p></div>');
+      return;
+    }
+    const summary = liveMatchedSummary(pairs);
+    const rows = matched.map((pair) => {
+      const liveDate = pair.live.date ? pair.live.date.toLocaleDateString() : '—';
+      const matchDate = pair.match.date ? pair.match.date.toLocaleDateString() : '—';
+      const diffClass = Number(pair.difference || 0) >= 0 ? 'ok' : 'risk';
+      const pctText = Number.isFinite(pair.percent) ? ` (${formatPercent(pair.percent)})` : '';
+      return `<tr>
+        <td>${programTitleCell(pair.live)}<div class="match-basis">${escapeHtml(liveDate)} · ${escapeHtml(pair.live.daypart || 'unknown daypart')} · ${escapeHtml(pair.live.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.live.startMinutes))}</div></td>
+        <td>${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))}</div></td>
+        <td class="money emphasis">${formatMoney(pair.live.dollars)}</td>
+        <td class="money">${formatMoney(pair.match.dollars)}</td>
+        <td class="money ${diffClass}">${formatMoney(pair.difference)}${escapeHtml(pctText)}</td>
+        <td><span class="match-basis">${escapeHtml(pair.basis.join(' · '))}</span></td>
+      </tr>`;
+    }).join('');
+    dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
+      <h4>Matched 1:1 comparison</h4>
+      <p class="matched-note">This pairs each saved live-break airing with the closest non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, season, and year. It is a better check than raw Live vs No Live totals, but it is still observational — live nights were chosen because they looked promising.</p>
+      <div class="matched-summary">
+        <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Matched pairs</div></div>
+        <div class="stat"><div class="v">${formatMoney(summary.liveAvg)}</div><div>Live avg / airing</div></div>
+        <div class="stat"><div class="v">${formatMoney(summary.matchAvg)}</div><div>Matched non-live avg</div></div>
+        <div class="stat"><div class="v">${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</div><div>Avg difference</div></div>
+      </div>
+      <table><thead><tr><th>Live break airing</th><th>Closest non-live match</th><th class="money emphasis">Live $</th><th class="money">Matched $</th><th class="money">Difference</th><th>Match basis</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`);
+    dom.table.querySelectorAll('[data-program-detail-id]').forEach((button) => {
+      button.addEventListener('click', () => openProgramDetail(button.dataset.programDetailId || '', button.dataset.programDetailTitle || button.textContent || ''));
+    });
+  }
+
   function programIdentityKey(record = {}) {
     const id = text(record.programOpenId || record.programId || '');
     if (id) return `id:${id}`;
@@ -1387,7 +1500,12 @@
     if (!live || !nonlive) return 'No saved-schedule live-break comparison is available for this filter. This view intentionally ignores imported live-break guesses and uses saved Scheduling flags only.';
     const diff = live.avg - nonlive.avg;
     const diffText = `${diff >= 0 ? '+' : ''}${formatMoney(diff).replace('$-', '-$')}`;
-    return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>Live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.`;
+    const pairs = buildLiveMatchedPairs();
+    const summary = liveMatchedSummary(pairs);
+    const matchedText = summary.matchedCount
+      ? `<br><br>The 1:1 matched comparison pairs ${formatNumber(summary.matchedCount)} live-break airing(s) to the closest non-live scheduled airing by topic/day/time. Matched live average: <b>${formatMoney(summary.liveAvg)}</b>; matched non-live average: <b>${formatMoney(summary.matchAvg)}</b>; matched difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
+      : '<br><br>No 1:1 matched non-live comparison is available under the current filters.';
+    return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>The raw aggregate is biased: live-break nights were chosen because they were expected to do well, while most historical non-live nights were not planned the same way. Raw live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Raw difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.${matchedText}`;
   }
 
   function trendId(row) {
@@ -1569,11 +1687,11 @@
     },
     live: {
       title: 'Are live breaks helping?',
-      summary: 'Compares saved Scheduling live-break flags against scheduled non-live airings.',
+      summary: 'Compares saved Scheduling live-break flags, plus a 1:1 matched topic/day/time check.',
       graphTitle: 'Live-break average comparison',
       source: 'schedule',
       tableTitle: 'Live break split',
-      tableNote: 'Uses saved Scheduling placements only. The live-break filter above is disabled here because this comparison must include both live and non-live scheduled airings.',
+      tableNote: 'Uses saved Scheduling placements only. The raw split is shown first; the 1:1 matched comparison below pairs each live break with the closest non-live airing by topic/day/time.',
       rows: rowsLive,
       metric: (rows) => rows.find((row) => row.title === 'Live break') ? formatMoney(rows.find((row) => row.title === 'Live break').avg) : '—',
       tag: 'schedule flags only',
@@ -1809,6 +1927,7 @@
     renderStats(rows, question);
     renderChart(rows, question);
     renderTable(rows, question.columns);
+    if (state.question === 'live') renderLiveMatchedComparison();
   }
 
   function renderStats(rows, question = {}) {
