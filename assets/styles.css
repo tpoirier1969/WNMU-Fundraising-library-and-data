@@ -5578,3 +5578,31 @@ input.goal-difference-negative {
   line-height: 1.2;
   margin-top: 2px;
 }
+
+
+/* v0.22.08 - keep saved live-break flags visible on the scheduling calendar */
+.schedule-placement .schedule-live-calendar-badge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: calc(100% - 18px);
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.92);
+  color: #922433;
+  font-size: clamp(.42rem, .46vw, .56rem);
+  font-weight: 950;
+  letter-spacing: .08em;
+  line-height: 1.05;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.36);
+}
+.schedule-placement.live-break.imported-data {
+  background: linear-gradient(180deg, #c43b4d, #922433) !important;
+  color: #fff4f6 !important;
+  border: 2px solid rgba(255,255,255,.5) !important;
+}
+.schedule-placement.live-break.imported-data .schedule-live-calendar-badge {
+  background: rgba(255,255,255,.95);
+  color: #7b1d2c;
+}

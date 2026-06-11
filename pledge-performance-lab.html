@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.07</title>
+  <title>WNMU Pledge Performance Analytics v0.22.08</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -163,7 +163,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.07</div>
+        <div class="eyebrow">Admin analytics · v0.22.08</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -1139,17 +1139,24 @@
     const liveDuration = durationFromRecord(live);
     const candidateDuration = durationFromRecord(candidate);
     if (!liveDuration || !candidateDuration) {
-      return { ok: true, reason: 'duration unknown', penalty: 60, liveDuration, candidateDuration };
+      return {
+        ok: false,
+        reason: `missing program length (${formatDuration(liveDuration)} vs ${formatDuration(candidateDuration)})`,
+        penalty: 900,
+        liveDuration,
+        candidateDuration
+      };
     }
     const shorter = Math.min(liveDuration, candidateDuration);
     const longer = Math.max(liveDuration, candidateDuration);
     const ratio = shorter / longer;
     const delta = Math.abs(liveDuration - candidateDuration);
-    const ok = ratio >= 0.55 || delta <= 30;
+    const crossesLongShortBoundary = longer >= 120 && shorter <= 75;
+    const ok = !crossesLongShortBoundary && (ratio >= 0.70 || delta <= 30);
     return {
       ok,
       reason: ok ? `similar length (${formatDuration(liveDuration)} vs ${formatDuration(candidateDuration)})` : `length mismatch (${formatDuration(liveDuration)} vs ${formatDuration(candidateDuration)})`,
-      penalty: ok ? Math.min(180, delta * 2) : 500,
+      penalty: ok ? Math.min(180, delta * 2) : 900,
       liveDuration,
       candidateDuration
     };
@@ -1188,11 +1195,13 @@
     const candidateDollars = Number(candidate.dollars || 0);
     if (!(liveDollars > 0) || liveDollars !== candidateDollars) return false;
     const sameTitle = lookupKey(live.title || '') && lookupKey(live.title || '') === lookupKey(candidate.title || '');
-    const sameIdentity = programIdentityKey(live) === programIdentityKey(candidate);
+    const sameIdentity = programIdentityKey(live) && programIdentityKey(live) === programIdentityKey(candidate);
     if (!sameTitle && !sameIdentity) return false;
     const hashA = text(live.sourceAiringHash || '');
     const hashB = text(candidate.sourceAiringHash || '');
-    return !hashA || !hashB || hashA === hashB;
+    if (!hashA || !hashB || hashA === hashB) return true;
+    // Same program, same dollars, different live state is more likely a duplicated imported result than evidence.
+    return true;
   }
 
   function sameSourceAiring(a = {}, b = {}) {
@@ -1315,12 +1324,12 @@
         <td class="money emphasis">${formatMoney(pair.live.dollars)}</td>
         <td class="money">${pair.match ? formatMoney(pair.match.dollars) : '—'}</td>
         <td class="money ${diffClass}">${pair.match ? `${formatMoney(pair.difference)}${escapeHtml(pctText)}` : '—'}</td>
-        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : `No strong non-live match: ${pair.noMatchReason || 'same night/source, length mismatch, or title/performer too different'}`)}</span></td>
+        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : `No strong non-live match: ${pair.noMatchReason || 'same night/source, missing or mismatched length, same-dollar clone risk, or title/performer too different'}`)}</span></td>
       </tr>`;
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
       <h4>1:1 live vs non-live comparison</h4>
-      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, program length, season, year, and title/performer similarity. It will not compare against the same source airing or the same calendar night, and loose performer/title pairings are skipped instead of being treated as evidence.</p>
+      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, program length, season, year, and title/performer similarity. It will not compare against the same source airing or the same calendar night, requires known comparable length, and skips loose performer/title pairings instead of treating them as evidence.</p>
       <div class="matched-summary">
         <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
         <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
