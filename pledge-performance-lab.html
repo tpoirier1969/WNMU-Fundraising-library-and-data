@@ -833,6 +833,7 @@
         importedTitle,
         nola: text(firstNonEmpty(lib.nola_code, row.nola_code, row.nola, '')),
         topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
+        secondaryTopic: text(firstNonEmpty(lib.topic_secondary, row.topic_secondary, row.secondary_topic, '')),
         topicMissing,
         isNonSpecific: nonSpecific,
         distributor: text(lib.distributor || row.distributor || ''),
@@ -925,6 +926,7 @@
     const indexes = buildLibraryIndexes(libraryRows);
     const airingLookup = buildAiringRecordLookup(airingRecords);
     const out = [];
+    const usedAiringDollarMatches = new Set();
     const diagnostics = { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 };
     schedules.forEach((schedule) => {
       (schedule.placements || []).forEach((placement) => {
@@ -953,23 +955,38 @@
         const nonSpecific = isNonSpecificPledgeBucket(title, lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola);
         const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, matched?.topic, ''));
         const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
-        const dollars = Number(firstNonEmpty(
+        const matchedDollarKey = matched ? text(firstNonEmpty(
+          matched.sourceAiringHash,
+          matched.id,
+          `${matched.dateKey || dateKey}|${matched.startMinutes ?? ''}|${lookupKey(matched.title || '')}|${matched.dollars ?? ''}`
+        )) : '';
+        const explicitDollars = firstNonEmpty(
           placement.importedBroadcastDollars,
           placement.actualDollars,
           placement.broadcastDollars,
           placement.dollars,
           placement.pledgeDollars,
-          matched?.dollars,
-          0
-        ) || 0);
-        const pledges = Number(firstNonEmpty(
+          null
+        );
+        const explicitPledges = firstNonEmpty(
           placement.importedPledges,
           placement.importedBroadcastPledges,
           placement.pledges,
           placement.pledgeCount,
-          matched?.pledges,
+          null
+        );
+        const canUseMatchedDollars = matchedDollarKey ? !usedAiringDollarMatches.has(matchedDollarKey) : Boolean(matched);
+        const dollars = Number(firstNonEmpty(
+          explicitDollars,
+          canUseMatchedDollars ? matched?.dollars : null,
           0
         ) || 0);
+        const pledges = Number(firstNonEmpty(
+          explicitPledges,
+          canUseMatchedDollars ? matched?.pledges : null,
+          0
+        ) || 0);
+        if (matchedDollarKey && explicitDollars == null && dollars > 0) usedAiringDollarMatches.add(matchedDollarKey);
         if (!(dollars > 0)) return;
         if (liveFlag) {
           diagnostics.liveRows += 1;
@@ -985,6 +1002,7 @@
           importedTitle: matched?.importedTitle || title,
           nola: text(firstNonEmpty(lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola, '')),
           topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
+          secondaryTopic: text(firstNonEmpty(lib.topic_secondary, matched?.secondaryTopic, placement.topicSecondary, placement.topic_secondary, '')),
           topicMissing,
           isNonSpecific: nonSpecific,
           distributor: text(firstNonEmpty(lib.distributor, matched?.distributor, placement.distributor, '')),
@@ -1089,21 +1107,63 @@
     return Math.min(raw, 1440 - raw);
   }
 
+  function meaningfulTitleTokens(value = '') {
+    const generic = new Set(['a', 'an', 'and', 'at', 'by', 'for', 'from', 'great', 'in', 'of', 'on', 'pbs', 'performance', 'performances', 'special', 'the', 'to', 'with']);
+    return lookupKey(value || '').split(' ').filter((token) => token.length > 2 && !generic.has(token));
+  }
+
+  function titleTokenSimilarity(a = '', b = '') {
+    const aTokens = new Set(meaningfulTitleTokens(a));
+    const bTokens = new Set(meaningfulTitleTokens(b));
+    if (!aTokens.size || !bTokens.size) return 0;
+    let overlap = 0;
+    aTokens.forEach((token) => { if (bTokens.has(token)) overlap += 1; });
+    const union = new Set([...aTokens, ...bTokens]).size || 1;
+    return overlap / union;
+  }
+
+  function sameSourceAiring(a = {}, b = {}) {
+    const hashA = text(a.sourceAiringHash || '');
+    const hashB = text(b.sourceAiringHash || '');
+    if (hashA && hashB && hashA === hashB) return true;
+    const idA = text(a.id || '');
+    const idB = text(b.id || '');
+    if (idA && idB && idA === idB) return true;
+    return Boolean(a.dateKey && b.dateKey && a.dateKey === b.dateKey
+      && Number(a.startMinutes) === Number(b.startMinutes)
+      && programIdentityKey(a) === programIdentityKey(b));
+  }
+
+  function liveMatchEligibility(live = {}, candidate = {}) {
+    if (!candidate || candidate.liveState !== 'nonlive') return { ok: false, reason: 'not a non-live scheduled airing' };
+    if (sameSourceAiring(live, candidate)) return { ok: false, reason: 'same source airing' };
+    if (live.dateKey && candidate.dateKey && live.dateKey === candidate.dateKey) return { ok: false, reason: 'same calendar night' };
+    if (live.topic && candidate.topic && live.topic !== candidate.topic) return { ok: false, reason: 'different primary topic' };
+    if (live.daypart && candidate.daypart && live.daypart !== candidate.daypart) return { ok: false, reason: 'different daypart' };
+    if (live.weekpart && candidate.weekpart && live.weekpart !== candidate.weekpart) return { ok: false, reason: 'different weekpart' };
+    const exactTitle = lookupKey(live.title || '') && lookupKey(live.title || '') === lookupKey(candidate.title || '');
+    const sameSecondary = lookupKey(live.secondaryTopic || '') && lookupKey(live.secondaryTopic || '') === lookupKey(candidate.secondaryTopic || '');
+    const similarity = titleTokenSimilarity(live.title || live.importedTitle || '', candidate.title || candidate.importedTitle || '');
+    if (!exactTitle && !sameSecondary && similarity < 0.2) return { ok: false, reason: 'different specific title' };
+    return { ok: true, reason: exactTitle ? 'same title' : (sameSecondary ? 'same secondary topic' : 'similar title'), similarity };
+  }
+
   function liveMatchScore(live = {}, candidate = {}) {
     let score = 0;
     const notes = [];
-    if (live.topic && candidate.topic && live.topic === candidate.topic) notes.push('same topic');
-    else { score += 900; notes.push('different topic'); }
+    const eligibility = liveMatchEligibility(live, candidate);
+    if (!eligibility.ok) return { score: Number.POSITIVE_INFINITY, notes: [eligibility.reason], timeDelta: null, eligible: false };
+    notes.push(eligibility.reason);
+    if (live.topic && candidate.topic && live.topic === candidate.topic) notes.push('same primary topic');
     if (live.daypart && candidate.daypart && live.daypart === candidate.daypart) notes.push('same daypart');
-    else { score += 260; notes.push('different daypart'); }
     if (live.weekpart && candidate.weekpart && live.weekpart === candidate.weekpart) notes.push('same weekpart');
-    else { score += 220; notes.push('different weekpart'); }
     const timeDelta = timeDistanceMinutes(live.startMinutes, candidate.startMinutes);
     score += Math.min(480, timeDelta);
     notes.push(`${Math.round(timeDelta)} min time gap`);
     if (live.season && candidate.season && live.season !== candidate.season) score += 80;
     if (Number.isFinite(Number(live.year)) && Number.isFinite(Number(candidate.year))) score += Math.min(200, Math.abs(Number(live.year) - Number(candidate.year)) * 35);
-    return { score, notes, timeDelta };
+    if (eligibility.reason !== 'same title') score += 120;
+    return { score, notes, timeDelta, eligible: true };
   }
 
   function buildLiveMatchedPairs() {
@@ -1115,6 +1175,7 @@
       const candidates = nonLiveRows
         .filter((candidate) => !used.has(candidate.id || `${candidate.dateKey}|${candidate.startMinutes}|${candidate.title}`))
         .map((candidate) => ({ candidate, match: liveMatchScore(live, candidate) }))
+        .filter((item) => item.match.eligible && Number.isFinite(item.match.score))
         .sort((a, b) => a.match.score - b.match.score || Number(b.candidate.dollars || 0) - Number(a.candidate.dollars || 0));
       const best = candidates[0] || null;
       if (best) used.add(best.candidate.id || `${best.candidate.dateKey}|${best.candidate.startMinutes}|${best.candidate.title}`);
@@ -1133,45 +1194,49 @@
     const matchAvg = matched.length ? matchTotal / matched.length : 0;
     const diff = liveAvg - matchAvg;
     const pct = matchAvg > 0 ? (diff / matchAvg) * 100 : null;
-    return { matchedCount: matched.length, liveTotal, matchTotal, liveAvg, matchAvg, diff, pct };
+    return { matchedCount: matched.length, unmatchedCount: pairs.length - matched.length, liveTotal, matchTotal, liveAvg, matchAvg, diff, pct };
   }
 
   function renderLiveMatchedComparison() {
     const pairs = buildLiveMatchedPairs();
     const matched = pairs.filter((pair) => pair.match);
     if (!pairs.length) {
-      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>Matched 1:1 comparison</h4><p class="matched-note">No saved live-break airings match the current filters, so there is nothing to pair.</p></div>');
+      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>1:1 live vs non-live comparison</h4><p class="matched-note">No saved live-break airings fit the current filters, so there is nothing to compare.</p></div>');
       return;
     }
     if (!matched.length) {
-      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>Matched 1:1 comparison</h4><p class="matched-note">Saved live-break airings exist, but no non-live scheduled airings match the current filters closely enough to compare. Try clearing topic/daypart/weekpart filters.</p></div>');
+      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>1:1 live vs non-live comparison</h4><p class="matched-note">Saved live-break airings exist, but no comparable non-live scheduled airings fit the current filters closely enough to compare. Try clearing topic/daypart/weekpart filters.</p></div>');
       return;
     }
     const summary = liveMatchedSummary(pairs);
-    const rows = matched.map((pair) => {
+    const rows = pairs.map((pair) => {
       const liveDate = pair.live.date ? pair.live.date.toLocaleDateString() : '—';
-      const matchDate = pair.match.date ? pair.match.date.toLocaleDateString() : '—';
+      const matchDate = pair.match?.date ? pair.match.date.toLocaleDateString() : '—';
       const diffClass = Number(pair.difference || 0) >= 0 ? 'ok' : 'risk';
       const pctText = Number.isFinite(pair.percent) ? ` (${formatPercent(pair.percent)})` : '';
+      const matchCell = pair.match
+        ? `${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))}</div>`
+        : '<span class="muted">No comparable non-live airing</span>';
       return `<tr>
         <td>${programTitleCell(pair.live)}<div class="match-basis">${escapeHtml(liveDate)} · ${escapeHtml(pair.live.daypart || 'unknown daypart')} · ${escapeHtml(pair.live.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.live.startMinutes))}</div></td>
-        <td>${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))}</div></td>
+        <td>${matchCell}</td>
         <td class="money emphasis">${formatMoney(pair.live.dollars)}</td>
-        <td class="money">${formatMoney(pair.match.dollars)}</td>
-        <td class="money ${diffClass}">${formatMoney(pair.difference)}${escapeHtml(pctText)}</td>
-        <td><span class="match-basis">${escapeHtml(pair.basis.join(' · '))}</span></td>
+        <td class="money">${pair.match ? formatMoney(pair.match.dollars) : '—'}</td>
+        <td class="money ${diffClass}">${pair.match ? `${formatMoney(pair.difference)}${escapeHtml(pctText)}` : '—'}</td>
+        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : 'skipped: same night/source or title/performer too different')}</span></td>
       </tr>`;
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
-      <h4>Matched 1:1 comparison</h4>
-      <p class="matched-note">This pairs each saved live-break airing with the closest non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, season, and year. It is a better check than raw Live vs No Live totals, but it is still observational — live nights were chosen because they looked promising.</p>
+      <h4>1:1 live vs non-live comparison</h4>
+      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, season, year, and title similarity. It will not compare against the same source airing or the same calendar night, and loose performer/title pairings are skipped instead of being treated as evidence.</p>
       <div class="matched-summary">
-        <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Matched pairs</div></div>
+        <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
+        <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
         <div class="stat"><div class="v">${formatMoney(summary.liveAvg)}</div><div>Live avg / airing</div></div>
-        <div class="stat"><div class="v">${formatMoney(summary.matchAvg)}</div><div>Matched non-live avg</div></div>
+        <div class="stat"><div class="v">${formatMoney(summary.matchAvg)}</div><div>Non-live avg</div></div>
         <div class="stat"><div class="v">${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</div><div>Avg difference</div></div>
       </div>
-      <table><thead><tr><th>Live break airing</th><th>Closest non-live match</th><th class="money emphasis">Live $</th><th class="money">Matched $</th><th class="money">Difference</th><th>Match basis</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Live break airing</th><th>Closest non-live airing</th><th class="money emphasis">Live $</th><th class="money">Non-live $</th><th class="money">Difference</th><th>Comparison basis</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`);
     dom.table.querySelectorAll('[data-program-detail-id]').forEach((button) => {
       button.addEventListener('click', () => openProgramDetail(button.dataset.programDetailId || '', button.dataset.programDetailTitle || button.textContent || ''));
@@ -1503,8 +1568,8 @@
     const pairs = buildLiveMatchedPairs();
     const summary = liveMatchedSummary(pairs);
     const matchedText = summary.matchedCount
-      ? `<br><br>The 1:1 matched comparison pairs ${formatNumber(summary.matchedCount)} live-break airing(s) to the closest non-live scheduled airing by topic/day/time. Matched live average: <b>${formatMoney(summary.liveAvg)}</b>; matched non-live average: <b>${formatMoney(summary.matchAvg)}</b>; matched difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
-      : '<br><br>No 1:1 matched non-live comparison is available under the current filters.';
+      ? `<br><br>The 1:1 live vs non-live comparison pairs ${formatNumber(summary.matchedCount)} live-break airing(s) to a comparable non-live scheduled airing. It excludes same-source/same-night records and loose title-only pairings. Live average: <b>${formatMoney(summary.liveAvg)}</b>; non-live average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
+      : '<br><br>No 1:1 non-live comparison is available under the current filters.';
     return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>The raw aggregate is biased: live-break nights were chosen because they were expected to do well, while most historical non-live nights were not planned the same way. Raw live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Raw difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.${matchedText}`;
   }
 
