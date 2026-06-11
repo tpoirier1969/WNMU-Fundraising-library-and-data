@@ -71,6 +71,7 @@
     .blabel { font-weight: 850; font-size: calc(1rem - 2px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
     .chart-title-label { display: block; }
     .chart-season-mix { display: block; color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; margin-top: 2px; }
+    .chart-mode-note { margin: 0 0 10px; color: var(--muted); font-size: .88rem; line-height: 1.35; }
     .mix { color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; }
     .muted-cell { color: var(--muted); }
     .track { height: 18px; background: #f0e4d3; border-radius: 999px; overflow: hidden; }
@@ -155,7 +156,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.21.99</div>
+        <div class="eyebrow">Admin analytics · v0.22.00</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -211,7 +212,7 @@
                 <select id="adv-distributor"><option value="all">All distributors</option></select>
               </div>
               <div class="field adv-metric-field">
-                <label for="adv-metric">Money basis</label>
+                <label for="adv-metric">Rank by</label>
                 <select id="adv-metric">
                   <option value="avg">Average $ / airing</option>
                   <option value="total">Total dollars</option>
@@ -326,6 +327,7 @@
     filtered: [],
     schedules: [],
     scheduleRecords: [],
+    driveSeasonRecords: [],
     libraryRows: [],
     libraryById: new Map(),
     libraryByTitle: new Map(),
@@ -483,12 +485,93 @@
   function normalizeSchedule(row = {}) {
     const data = row.schedule_data && typeof row.schedule_data === 'object' ? row.schedule_data : {};
     return {
-      id: row.id || '',
-      title: row.title || '',
+      id: row.id || data.id || '',
+      title: row.title || data.title || '',
       startDate: row.start_date || data.startDate || '',
       endDate: row.end_date || data.endDate || '',
-      placements: Array.isArray(data.placements) ? data.placements : []
+      placements: Array.isArray(data.placements) ? data.placements : [],
+      onlineDollars: Number(firstNonEmpty(data.onlineDollars, row.online_dollars, row.onlineDollars, 0) || 0) || 0,
+      mailDollars: Number(firstNonEmpty(data.mailDollars, row.mail_dollars, row.mailDollars, 0) || 0) || 0,
+      goalDollars: Number(firstNonEmpty(data.goalDollars, row.goal_dollars, row.goalDollars, 0) || 0) || 0,
+      meta: data.meta && typeof data.meta === 'object' ? data.meta : {}
     };
+  }
+
+  function placementDollars(placement = {}) {
+    return Number(firstNonEmpty(
+      placement.importedBroadcastDollars,
+      placement.actualDollars,
+      placement.broadcastDollars,
+      placement.dollars,
+      placement.pledgeDollars,
+      0
+    ) || 0) || 0;
+  }
+
+  function scheduleBroadcastTotal(schedule = {}) {
+    const meta = schedule.meta || {};
+    const reported = Number(firstNonEmpty(
+      meta.reportedBroadcastTotalDollars,
+      meta.importedBroadcastTotalDollars,
+      meta.importedProgramSpecificBroadcastTotalDollars,
+      0
+    ) || 0) || 0;
+    if (reported > 0) return reported;
+    return (schedule.placements || []).reduce((sum, placement) => sum + placementDollars(placement), 0);
+  }
+
+  function schedulePledgeTotal(schedule = {}) {
+    const meta = schedule.meta || {};
+    const reported = Number(firstNonEmpty(meta.importedPledgesTotal, meta.pledgesTotal, 0) || 0) || 0;
+    if (reported > 0) return reported;
+    return (schedule.placements || []).reduce((sum, placement) => sum + (Number(firstNonEmpty(
+      placement.importedPledges,
+      placement.importedBroadcastPledges,
+      placement.pledges,
+      placement.pledgeCount,
+      0
+    ) || 0) || 0), 0);
+  }
+
+  function scheduleGrandTotal(schedule = {}) {
+    return scheduleBroadcastTotal(schedule)
+      + (Number(schedule.onlineDollars || 0) || 0)
+      + (Number(schedule.mailDollars || 0) || 0);
+  }
+
+  function buildDriveSeasonRecords(schedules = []) {
+    return schedules.map((schedule) => {
+      const date = parseLocalDate(schedule.startDate || schedule.endDate || '');
+      const season = pledgeSeason(date);
+      const year = date ? date.getFullYear() : '';
+      const broadcastDollars = scheduleBroadcastTotal(schedule);
+      const onlineDollars = Number(schedule.onlineDollars || 0) || 0;
+      const mailDollars = Number(schedule.mailDollars || 0) || 0;
+      const dollars = broadcastDollars + onlineDollars + mailDollars;
+      const broadcastCount = (schedule.placements || []).filter((placement) => placementDollars(placement) > 0).length;
+      return {
+        id: schedule.id || '',
+        title: season || schedule.title || 'Unknown season',
+        scheduleTitle: schedule.title || '',
+        date,
+        season,
+        year,
+        seasonYear: season && year ? `${season} ${year}` : 'Unseasoned',
+        dollars,
+        broadcastDollars,
+        onlineDollars,
+        mailDollars,
+        pledges: schedulePledgeTotal(schedule),
+        broadcasts: broadcastCount,
+        avg: broadcastCount ? broadcastDollars / broadcastCount : 0,
+        topic: 'All pledge giving',
+        distributor: '',
+        liveState: 'all',
+        daypart: '',
+        weekpart: '',
+        records: []
+      };
+    }).filter((record) => record.date && record.season && record.dollars > 0);
   }
 
   function parseBooleanish(value) {
@@ -859,6 +942,30 @@
     return state.evidence === 'hide' ? rows.filter((row) => !row.weak) : rows;
   }
 
+
+  function seasonOverviewUsesDriveTotals() {
+    return state.question === 'seasonOverview'
+      && !lookupKey(state.search)
+      && !(Array.isArray(state.topicFilters) && state.topicFilters.length)
+      && state.advancedDistributor === 'all'
+      && state.advancedLive === 'all'
+      && state.advancedDaypart === 'all'
+      && state.advancedWeekpart === 'all';
+  }
+
+  function seasonOverviewRecords() {
+    if (seasonOverviewUsesDriveTotals()) {
+      return (state.driveSeasonRecords || []).filter((record) => state.year === 'all' || String(record.year) === String(state.year));
+    }
+    return filteredRecordsFor('seasonOverview');
+  }
+
+  function seasonOverviewModeText() {
+    return seasonOverviewUsesDriveTotals()
+      ? 'This view is using full fundraiser totals from saved schedules: broadcast dollars plus Online $ and Mail $. Rank-by/evidence filters do not apply to full drive totals.'
+      : 'This view is using content-level airing rows because a program/topic/distributor/live/daypart/weekpart filter is active. Online $ and Mail $ cannot be attributed to specific content in this mode.';
+  }
+
   function supportsCurrentFilter(filterName) {
     const question = QUESTIONS[state.question] || QUESTIONS.programs;
     if (filterName === 'season') return question.useSeason !== false;
@@ -931,7 +1038,7 @@
   }
 
   function rowsSeasonOverview() {
-    return [...groupBy(filteredRecordsFor('seasonOverview'), (record) => record.season)]
+    return [...groupBy(seasonOverviewRecords(), (record) => record.season)]
       .map(([title, records]) => summarizeGroup(title, records))
       .sort((a, b) => SEASONS.indexOf(a.title) - SEASONS.indexOf(b.title));
   }
@@ -1196,15 +1303,17 @@
     },
     seasonOverview: {
       title: 'Season overview',
-      summary: 'March, June, August, and December totals for the selected year/search. Season filter is disabled here.',
+      summary: 'March, June, August, and December fundraiser totals over time. Season, rank-by, and evidence filters are disabled here.',
       graphTitle: 'Pledge season totals',
       tableTitle: 'Season overview',
-      tableNote: 'Season selector is disabled because this view compares seasons. Year, search, and advanced filters still apply.',
+      tableNote: 'Uses full fundraiser totals unless a content filter is active; then it switches to content-level airing totals.',
       useSeason: false,
+      useEvidence: false,
+      useMetric: false,
       rows: rowsSeasonOverview,
       chartValue: (row) => row.dollars,
       chartLabel: (row) => formatMoney(row.dollars),
-      read: (rows) => rows.length ? `${formatNumber(rows.length)} pledge season(s) match the current filters. The chart shows season movement over the selected years when more than one year is available; the table gives the selected-range totals.` : 'No season records match.',
+      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} pledge season(s) match. The line graph compares March, June, August, and December across the selected years; the table gives selected-range totals.` : 'No season records match.',
       columns: [
         ['Season', (row) => escapeHtml(row.title), '', (row) => SEASONS.indexOf(row.title)],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
@@ -1409,6 +1518,7 @@
     state.schedules = scheduleRows.map(normalizeSchedule);
     state.records = buildRecords(airings, libraryRows, state.schedules);
     state.scheduleRecords = buildScheduleRecords(state.schedules, libraryRows, state.records);
+    state.driveSeasonRecords = buildDriveSeasonRecords(state.schedules);
     rebuildFilterOptions();
     render();
     const scheduleLiveCount = state.scheduleRecords.filter((record) => record.liveState === 'live').length;
@@ -1458,12 +1568,24 @@
     dom.year.disabled = question.useYear === false;
     dom.advLive.disabled = liveComparison;
     dom.advLive.parentElement?.classList.toggle('disabled-by-question', liveComparison);
+    const metricDisabled = question.useMetric === false;
+    const evidenceDisabled = question.useEvidence === false || question.hideWeakStats === true;
+    dom.advMetric.disabled = metricDisabled;
+    dom.advMetric.parentElement?.classList.toggle('disabled-by-question', metricDisabled);
+    dom.evidence.disabled = evidenceDisabled;
+    dom.evidence.parentElement?.classList.toggle('disabled-by-question', evidenceDisabled);
     const disabled = [];
     if (question.useSeason === false) disabled.push('season');
     if (question.useYear === false) disabled.push('year');
     if (liveComparison) disabled.push('live-break filter');
+    if (metricDisabled) disabled.push('rank by');
+    if (evidenceDisabled) disabled.push('evidence filter');
+    if (state.question === 'seasonOverview') {
+      dom.scopeNote.textContent = `${disabled.length ? `Disabled or ignored for this question: ${disabled.join(', ')}. ` : ''}${seasonOverviewModeText()}`;
+      return;
+    }
     dom.scopeNote.textContent = disabled.length
-      ? `Disabled for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
+      ? `Disabled or ignored for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
       : 'Filters are active for this question. Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.';
   }
 
@@ -1516,7 +1638,9 @@
     dom.chartTitle.textContent = question.graphTitle;
     dom.tableTitle.textContent = question.tableTitle;
     dom.tableNote.textContent = question.tableNote || 'The table follows the selected question so the graph and rows tell the same story.';
-    dom.chartNote.textContent = question.metricDriven ? `Graph uses ${metricLabel()} from Advanced filters.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.');
+    dom.chartNote.textContent = state.question === 'seasonOverview'
+      ? 'Graph uses fundraiser total dollars from saved schedules when no content filters are active.'
+      : (question.metricDriven ? `Graph uses ${metricLabel()} from Advanced filters.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.'));
     dom.read.innerHTML = question.read(rows);
     renderStats(rows, question);
     renderChart(rows, question);
@@ -1540,7 +1664,7 @@
 
 
   function renderSeasonTrendChart(question) {
-    const records = filteredRecordsFor('seasonOverview');
+    const records = seasonOverviewRecords();
     const years = [...new Set(records.map((record) => record.year).filter(Boolean))].sort((a, b) => a - b);
     if (!years.length) {
       dom.chart.innerHTML = '<div class="empty">No graphable season records.</div>';
@@ -1564,7 +1688,7 @@
     const yFor = (value) => padTop + (height - padTop - padBottom) * (1 - (value / max));
     const strokes = ['#7b341e', '#2f5d62', '#8b6f35', '#5f4b8b'];
     const yTicks = [0, max / 2, max];
-    dom.chart.innerHTML = `<svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Season totals over time">
+    dom.chart.innerHTML = `<div class="chart-mode-note">${seasonOverviewModeText()}</div><svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Season totals over time">
       <rect x="0" y="0" width="${width}" height="${height}" fill="#fffdf8"></rect>
       ${yTicks.map((tick) => `<line x1="${padLeft}" x2="${width - padRight}" y1="${yFor(tick)}" y2="${yFor(tick)}" stroke="#eadcc8"></line><text x="10" y="${yFor(tick) + 4}" font-size="12" fill="#6d6255">${escapeHtml(formatMoney(tick))}</text>`).join('')}
       ${SEASONS.map((season, seasonIndex) => {
