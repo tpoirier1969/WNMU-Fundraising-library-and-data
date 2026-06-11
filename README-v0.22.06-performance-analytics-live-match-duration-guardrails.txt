@@ -1,4 +1,4 @@
-v0.22.06
+v0.22.07
 
 Performance Analytics live-break 1:1 comparison guardrails.
 
