@@ -85,11 +85,40 @@
 
   function normalizePlacementBoolean(value, fallback = false) {
     if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+      if (value === 1) return true;
+      if (value === 0) return false;
+    }
     const text = utils.normalizeText(value).toLowerCase();
     if (!text) return fallback;
-    if (['true', 'yes', 'y', '1', 'live', 'has live breaks', 'flagged'].includes(text)) return true;
+    if (['true', 'yes', 'y', '1', 'live', 'has live breaks', 'has live break', 'flagged', 'live break', 'live-break'].includes(text)) return true;
     if (['false', 'no', 'n', '0', 'none', 'no live breaks', 'no live-breaks', 'no live break', 'not live'].includes(text)) return false;
     return fallback;
+  }
+
+  function canonicalScheduleLiveBreakFlag(placement = {}) {
+    const direct = normalizePlacementBoolean(placement?.liveBreakFlag, null);
+    if (direct === true || direct === false) return direct;
+
+    const aliases = [
+      placement?.live_break_flag,
+      placement?.liveBreak,
+      placement?.live_break,
+      placement?.liveBreaks,
+      placement?.live_breaks,
+      placement?.hasLiveBreak,
+      placement?.has_live_break,
+      placement?.isLiveBreak,
+      placement?.is_live_break,
+      placement?.liveFlag,
+      placement?.live_flag
+    ];
+    for (const value of aliases) {
+      const parsed = normalizePlacementBoolean(value, null);
+      if (parsed === true || parsed === false) return parsed;
+    }
+
+    return Boolean(utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''));
   }
 
   function placementLooksNonSpecific(placement = {}) {
@@ -120,7 +149,8 @@
       return !(placement?.importedFromReport && placementLooksNonSpecific(placement));
     }).map((placement) => ({
       ...placement,
-      liveBreakFlag: normalizePlacementBoolean(placement?.liveBreakFlag, Boolean(utils.normalizeText(placement?.liveBreakNotes))),
+      liveBreakFlag: canonicalScheduleLiveBreakFlag(placement),
+      liveBreakNotes: utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''),
       isNonPledge: normalizePlacementBoolean(placement?.isNonPledge, Boolean(placement?.isNonPledge)),
       importedFromReport: normalizePlacementBoolean(placement?.importedFromReport, Boolean(placement?.importedFromReport)),
       transferredToStation: normalizePlacementBoolean(placement?.transferredToStation, Boolean(placement?.transferredToStation))
@@ -1538,10 +1568,7 @@
   }
 
   function hasLiveBreakFlag(placement = {}) {
-    const parsed = normalizePlacementBoolean(placement?.liveBreakFlag, null);
-    if (parsed === true) return true;
-    if (parsed === false) return false;
-    return Boolean(utils.normalizeText(placement?.liveBreakNotes));
+    return canonicalScheduleLiveBreakFlag(placement);
   }
 
   function liveBreakFlagLabel(placement = {}) {
@@ -2677,7 +2704,7 @@
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" style="${style}">${transferToggle}${liveCalendarBadge}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${hasLiveBreakFlag(placement) ? 'true' : 'false'}" style="${style}">${transferToggle}${liveCalendarBadge}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -3038,7 +3065,7 @@
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
     if (els.scheduleLiveBreakFlag) {
-      els.scheduleLiveBreakFlag.checked = Boolean(currentPlacement?.liveBreakFlag);
+      els.scheduleLiveBreakFlag.checked = hasLiveBreakFlag(currentPlacement || {});
       els.scheduleLiveBreakFlag.disabled = !editable;
     }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();

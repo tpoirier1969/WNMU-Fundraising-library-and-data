@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.08</title>
+  <title>WNMU Pledge Performance Analytics v0.22.09</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -163,7 +163,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.08</div>
+        <div class="eyebrow">Admin analytics · v0.22.09</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -694,11 +694,28 @@
 
   function placementLive(placement = {}) {
     // Canonical source for Performance Analytics live-break logic.
-    // Saved Scheduling placements use camelCase liveBreakFlag/liveBreakNotes.
-    // Do not read imported-airing live_break* fields here; those caused the old false $0 result.
-    if (placement?.liveBreakFlag === true) return true;
-    if (placement?.liveBreakFlag === false) return false;
-    return Boolean(text(placement?.liveBreakNotes || ''));
+    // This reads saved Scheduling placement fields only, then normalizes old/alias names into one answer.
+    // Do not read imported-airing live_break* columns here; those caused the old false $0 result.
+    const direct = parseBooleanish(placement?.liveBreakFlag);
+    if (direct === true || direct === false) return direct;
+    const aliases = [
+      placement?.live_break_flag,
+      placement?.liveBreak,
+      placement?.live_break,
+      placement?.liveBreaks,
+      placement?.live_breaks,
+      placement?.hasLiveBreak,
+      placement?.has_live_break,
+      placement?.isLiveBreak,
+      placement?.is_live_break,
+      placement?.liveFlag,
+      placement?.live_flag
+    ];
+    for (const value of aliases) {
+      const parsed = parseBooleanish(value);
+      if (parsed === true || parsed === false) return parsed;
+    }
+    return Boolean(text(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''));
   }
 
   function mapListPush(map, key, row) {
@@ -1190,6 +1207,39 @@
     return /(^| )(music|concert|singer|artist|band|orchestra|performance|performances|great performances|opera|vocal|song|songs)($| )/.test(context);
   }
 
+
+  function intrinsicLiveFormatReason(record = {}) {
+    const title = lookupKey(`${record.title || ''} ${record.importedTitle || ''}`);
+    if (/^ask the( |$)/.test(title) || /(^| )ask the (doctor|doctors|expert|experts|lawyer|lawyers|vet|vets|governor|mayor|candidates|candidates? forum)( |$)/.test(title)) {
+      return 'program itself is a live/call-in format';
+    }
+    return '';
+  }
+
+  function musicStyleBucket(record = {}) {
+    if (!isPerformerStyleRecord(record)) return '';
+    const value = lookupKey(`${record.title || ''} ${record.importedTitle || ''} ${record.secondaryTopic || ''}`);
+    if (/(josh groban|groban|andrea bocelli|bocelli|il volo|il divo|jackie evancho|sarah brightman|celtic woman|celtic thunder|tenors|classical crossover|crossover)/.test(value)) return 'classical-crossover-vocal';
+    if (/(roy orbison|orbison|elvis|bee gees|neil diamond|john denver|johnny mathis|frankie valli|carole king|peter paul mary|doo wop|oldies|60s|70s|my music|nostalgia)/.test(value)) return 'nostalgia-pop';
+    if (/(country|johnny cash|dolly parton|willie nelson|ken burns country|garth brooks|patsy cline)/.test(value)) return 'country';
+    if (/(rock|beatles|rolling stones|fleetwood mac|eagles|red rocks|pink floyd|grateful dead)/.test(value)) return 'rock';
+    if (/(opera|pavarotti|metropolitan opera|aria|arias)/.test(value)) return 'opera';
+    if (/(orchestra|symphony|classical|vienna|andre rieu|rieu)/.test(value)) return 'classical-orchestral';
+    return '';
+  }
+
+  function sameKnownMusicStyle(a = {}, b = {}) {
+    const aBucket = musicStyleBucket(a);
+    const bBucket = musicStyleBucket(b);
+    return Boolean(aBucket && bBucket && aBucket === bBucket);
+  }
+
+  function knownDifferentMusicStyle(a = {}, b = {}) {
+    const aBucket = musicStyleBucket(a);
+    const bBucket = musicStyleBucket(b);
+    return Boolean(aBucket && bBucket && aBucket !== bBucket);
+  }
+
   function suspiciousSameDollarClone(live = {}, candidate = {}) {
     const liveDollars = Number(live.dollars || 0);
     const candidateDollars = Number(candidate.dollars || 0);
@@ -1217,7 +1267,11 @@
   }
 
   function liveMatchEligibility(live = {}, candidate = {}) {
-    if (!candidate || candidate.liveState !== 'nonlive') return { ok: false, reason: 'not a non-live scheduled airing' };
+    if (!candidate || candidate.liveState !== 'nonlive') return { ok: false, reason: 'not a non-live airing' };
+    const liveIntrinsic = intrinsicLiveFormatReason(live);
+    if (liveIntrinsic) return { ok: false, reason: liveIntrinsic };
+    const candidateIntrinsic = intrinsicLiveFormatReason(candidate);
+    if (candidateIntrinsic) return { ok: false, reason: `comparison airing is ${candidateIntrinsic}` };
     if (sameSourceAiring(live, candidate)) return { ok: false, reason: 'same source airing' };
     if (live.dateKey && candidate.dateKey && live.dateKey === candidate.dateKey) return { ok: false, reason: 'same calendar night' };
     if (suspiciousSameDollarClone(live, candidate)) return { ok: false, reason: 'same-title same-dollar clone risk' };
@@ -1228,13 +1282,18 @@
     if (!duration.ok) return { ok: false, reason: duration.reason, duration };
     const exactTitle = lookupKey(live.title || '') && lookupKey(live.title || '') === lookupKey(candidate.title || '');
     const sameSecondary = lookupKey(live.secondaryTopic || '') && lookupKey(live.secondaryTopic || '') === lookupKey(candidate.secondaryTopic || '');
+    const sameStyle = sameKnownMusicStyle(live, candidate);
+    const differentStyle = knownDifferentMusicStyle(live, candidate);
     const similarity = titleTokenSimilarity(live.title || live.importedTitle || '', candidate.title || candidate.importedTitle || '');
     const overlap = titleTokenOverlapCount(live.title || live.importedTitle || '', candidate.title || candidate.importedTitle || '');
-    if (!exactTitle && isPerformerStyleRecord(live) && isPerformerStyleRecord(candidate) && overlap < 1) {
+    if (!exactTitle && differentStyle) {
+      return { ok: false, reason: `different music style (${musicStyleBucket(live)} vs ${musicStyleBucket(candidate)})`, similarity, duration };
+    }
+    if (!exactTitle && isPerformerStyleRecord(live) && isPerformerStyleRecord(candidate) && !(sameSecondary || sameStyle) && overlap < 1) {
       return { ok: false, reason: 'different performer/title', similarity, duration };
     }
-    if (!exactTitle && !sameSecondary && similarity < 0.2) return { ok: false, reason: 'different specific title', similarity, duration };
-    return { ok: true, reason: exactTitle ? 'same title' : (sameSecondary ? 'same secondary topic' : 'similar title'), similarity, duration };
+    if (!exactTitle && !sameSecondary && !sameStyle && similarity < 0.2) return { ok: false, reason: 'different specific title', similarity, duration };
+    return { ok: true, reason: exactTitle ? 'same title' : (sameSecondary ? 'same secondary topic' : (sameStyle ? `same music style (${musicStyleBucket(live)})` : 'similar title')), similarity, duration };
   }
 
   function liveMatchScore(live = {}, candidate = {}) {
@@ -1257,14 +1316,56 @@
     return { score, notes, timeDelta, eligible: true };
   }
 
+  function recordMatchesLiveComparisonFilters(record = {}) {
+    const searchKey = lookupKey(state.search);
+    const selectedTopics = Array.isArray(state.topicFilters) ? state.topicFilters : [];
+    if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.nola}`).includes(searchKey)) return false;
+    if (selectedTopics.length && !selectedTopics.includes(record.topic)) return false;
+    if (state.season !== 'all' && record.season !== state.season) return false;
+    if (state.year !== 'all' && String(record.year) !== String(state.year)) return false;
+    if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
+    if (state.advancedDaypart !== 'all' && record.daypart !== state.advancedDaypart) return false;
+    if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;
+    return true;
+  }
+
+  function liveComparisonCandidateKey(record = {}) {
+    return text(firstNonEmpty(record.sourceAiringHash, record.id, `${record.dateKey || ''}|${record.startMinutes ?? ''}|${programIdentityKey(record)}|${record.title || ''}|${record.dollars || 0}`));
+  }
+
+  function nonLiveCandidatesForLiveComparison(scheduleRows = []) {
+    const candidates = [];
+    scheduleRows.filter((record) => record.liveState === 'nonlive').forEach((record) => candidates.push(record));
+    (state.records || [])
+      .filter((record) => record.liveState !== 'live')
+      .filter(recordMatchesLiveComparisonFilters)
+      .forEach((record) => {
+        candidates.push({
+          ...record,
+          liveState: 'nonlive',
+          live: false,
+          liveSource: record.liveState === 'nonlive' ? (record.liveSource || 'schedule') : 'historical-not-live-flagged'
+        });
+      });
+    const unique = [];
+    const seen = new Set();
+    candidates.forEach((record) => {
+      const key = liveComparisonCandidateKey(record);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      unique.push(record);
+    });
+    return unique;
+  }
+
   function buildLiveMatchedPairs() {
     const rows = filteredRecordsFor('live').filter((record) => record.liveState === 'live' || record.liveState === 'nonlive');
     const liveRows = rows.filter((record) => record.liveState === 'live').sort((a, b) => (a.date || 0) - (b.date || 0) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
-    const nonLiveRows = rows.filter((record) => record.liveState === 'nonlive');
+    const nonLiveRows = nonLiveCandidatesForLiveComparison(rows);
     const used = new Set();
     return liveRows.map((live) => {
       const scored = nonLiveRows
-        .filter((candidate) => !used.has(candidate.id || `${candidate.dateKey}|${candidate.startMinutes}|${candidate.title}`))
+        .filter((candidate) => !used.has(liveComparisonCandidateKey(candidate)))
         .map((candidate) => ({ candidate, match: liveMatchScore(live, candidate) }));
       const candidates = scored
         .filter((item) => item.match.eligible && Number.isFinite(item.match.score))
@@ -1279,7 +1380,7 @@
           return aSameTopic - bSameTopic || aTime - bTime;
         })[0] || null;
       const best = candidates[0] || null;
-      if (best) used.add(best.candidate.id || `${best.candidate.dateKey}|${best.candidate.startMinutes}|${best.candidate.title}`);
+      if (best) used.add(liveComparisonCandidateKey(best.candidate));
       const match = best?.candidate || null;
       const difference = match ? Number(live.dollars || 0) - Number(match.dollars || 0) : null;
       const percent = match && Number(match.dollars || 0) > 0 ? (difference / Number(match.dollars || 0)) * 100 : null;
@@ -1329,7 +1430,7 @@
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
       <h4>1:1 live vs non-live comparison</h4>
-      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live scheduled airing by primary topic, daypart, weekday/weekend, start time, program length, season, year, and title/performer similarity. It will not compare against the same source airing or the same calendar night, requires known comparable length, and skips loose performer/title pairings instead of treating them as evidence.</p>
+      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live airing by primary topic, daypart, weekday/weekend, start time, program length, season, year, and title/performer similarity. Non-live candidates can come from saved schedules or historical imported pledge airings that are not flagged live. It will not compare against the same source airing or the same calendar night, requires known comparable length, and skips loose performer/title pairings instead of treating them as evidence.</p>
       <div class="matched-summary">
         <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
         <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
