@@ -156,7 +156,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.00</div>
+        <div class="eyebrow">Admin analytics · v0.22.01</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -344,7 +344,8 @@
     advancedWeekpart: 'all',
     trendRows: new Map(),
     tableSort: { question: '', index: null, direction: 'asc' },
-    liveBreakDiagnostics: { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 }
+    liveBreakDiagnostics: { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 },
+    scheduleAudit: { rawSchedules: 0, activeSchedules: 0, duplicateSchedulesSuppressed: 0 }
   };
 
   const LIVE_BREAK_ANALYTICS_SOURCE = 'saved-scheduling-placements-only';
@@ -489,6 +490,8 @@
       title: row.title || data.title || '',
       startDate: row.start_date || data.startDate || '',
       endDate: row.end_date || data.endDate || '',
+      createdAt: row.created_at || row.createdAt || data.createdAt || '',
+      updatedAt: row.updated_at || row.updatedAt || data.updatedAt || '',
       placements: Array.isArray(data.placements) ? data.placements : [],
       onlineDollars: Number(firstNonEmpty(data.onlineDollars, row.online_dollars, row.onlineDollars, 0) || 0) || 0,
       mailDollars: Number(firstNonEmpty(data.mailDollars, row.mail_dollars, row.mailDollars, 0) || 0) || 0,
@@ -537,6 +540,58 @@
     return scheduleBroadcastTotal(schedule)
       + (Number(schedule.onlineDollars || 0) || 0)
       + (Number(schedule.mailDollars || 0) || 0);
+  }
+
+  function scheduleManualMoneyTotal(schedule = {}) {
+    return (Number(schedule?.onlineDollars || 0) || 0)
+      + (Number(schedule?.mailDollars || 0) || 0)
+      + (Number(schedule?.goalDollars || 0) || 0);
+  }
+
+  function scheduleLooksAutoImported(schedule = {}) {
+    const titleKey = lookupKey(schedule?.title || '');
+    return titleKey.startsWith('imported pledge')
+      || Boolean(schedule?.meta?.importedFromReports)
+      || Boolean(text(schedule?.meta?.importedFundraiserKey || ''));
+  }
+
+  function schedulePreferenceScore(schedule = {}) {
+    let score = 0;
+    const moneyTotal = scheduleManualMoneyTotal(schedule);
+    if (moneyTotal > 0) score += 1000000 + Math.min(999999, Math.round(moneyTotal));
+    if (!scheduleLooksAutoImported(schedule)) score += 100000;
+    if ((schedule?.placements || []).some((placement) => !placement?.importedFromReport)) score += 50000;
+    if ((schedule?.placements || []).some((placement) => placement?.importedFromReport)) score += 10000;
+    if (schedule?.meta?.importedTotalsHydratedFromAirings) score += 5000;
+    const updated = Date.parse(schedule?.updatedAt || schedule?.updated_at || schedule?.createdAt || '');
+    if (Number.isFinite(updated)) score += Math.floor(updated / 1000000000);
+    return score;
+  }
+
+  function dedupeSchedulesByDateRange(schedules = []) {
+    const buckets = new Map();
+    schedules.forEach((schedule) => {
+      const key = `${text(schedule.startDate)}|${text(schedule.endDate)}`;
+      if (!text(schedule.startDate) || !text(schedule.endDate)) {
+        buckets.set(`${key}|${text(schedule.id)}`, [schedule]);
+        return;
+      }
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(schedule);
+    });
+    const active = [];
+    let suppressed = 0;
+    buckets.forEach((items) => {
+      const sorted = [...items].sort((a, b) => schedulePreferenceScore(b) - schedulePreferenceScore(a));
+      active.push(sorted[0]);
+      suppressed += Math.max(0, sorted.length - 1);
+    });
+    state.scheduleAudit = {
+      rawSchedules: schedules.length,
+      activeSchedules: active.length,
+      duplicateSchedulesSuppressed: suppressed
+    };
+    return active.sort((a, b) => `${text(a.startDate)}|${text(a.endDate)}`.localeCompare(`${text(b.startDate)}|${text(b.endDate)}`));
   }
 
   function buildDriveSeasonRecords(schedules = []) {
@@ -592,23 +647,42 @@
     return Boolean(text(placement?.liveBreakNotes || ''));
   }
 
+  function mapListPush(map, key, row) {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(row);
+  }
+
   function buildLibraryIndexes(rows = []) {
     const byId = new Map();
     const byNola = new Map();
     const byTitle = new Map();
     rows.forEach((row) => {
       if (text(row.id)) byId.set(text(row.id), row);
-      if (nolaKey(row.nola_code)) byNola.set(nolaKey(row.nola_code), row);
+      if (nolaKey(row.nola_code)) mapListPush(byNola, nolaKey(row.nola_code), row);
       if (lookupKey(row.title)) byTitle.set(lookupKey(row.title), row);
     });
     return { byId, byNola, byTitle };
+  }
+
+  function resolveLibraryByNola(indexes, nola = '', title = '') {
+    const matches = indexes.byNola.get(nolaKey(nola)) || [];
+    if (!matches.length) return null;
+    const titleKey = lookupKey(title || '');
+    if (titleKey) {
+      const titleMatch = matches.find((row) => lookupKey(row.title) === titleKey);
+      if (titleMatch) return titleMatch;
+    }
+    // Guardrail: many imported rows use broad series codes like NOVA/GPER.
+    // Only use NOLA by itself when it maps to exactly one library row.
+    return matches.length === 1 ? matches[0] : null;
   }
 
   function resolveLibraryRow(row, indexes) {
     const id = text(firstNonEmpty(row.pledge_program_id, row.manual_match_program_id, row.program_id, row.programId, ''));
     const nola = nolaKey(firstNonEmpty(row.nola_code, row.nola, row.program_nola, ''));
     const title = lookupKey(firstNonEmpty(row.matched_library_title, row.program_title, row.title, row.imported_program_title, ''));
-    return indexes.byId.get(id) || indexes.byNola.get(nola) || indexes.byTitle.get(title) || null;
+    return indexes.byId.get(id) || resolveLibraryByNola(indexes, nola, title) || indexes.byTitle.get(title) || null;
   }
 
   function buildScheduleIndex(schedules = [], indexes) {
@@ -620,12 +694,15 @@
     };
     schedules.forEach((schedule) => {
       (schedule.placements || []).forEach((placement) => {
-        const lib = indexes.byId.get(text(placement.programId || placement.program_id || '')) || null;
+        const rawPid = text(placement.programId || placement.program_id || '');
+        const rawNola = nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
+        const rawTitle = lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''));
+        const lib = indexes.byId.get(rawPid) || resolveLibraryByNola(indexes, rawNola, rawTitle) || indexes.byTitle.get(rawTitle) || null;
         const dateKey = text(placement.dateKey || placement.date_key || '');
         const start = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? 0);
         const end = Number(placement.endMinutes ?? placement.end_minutes ?? start);
         const pid = text(firstNonEmpty(placement.programId, placement.program_id, lib?.id, ''));
-        const nola = nolaKey(firstNonEmpty(lib?.nola_code, placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
+        const nola = nolaKey(firstNonEmpty(lib?.nola_code, rawNola, ''));
         const title = lookupKey(firstNonEmpty(lib?.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
         const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
         const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, hash, live: placementLive(placement), placement };
@@ -810,14 +887,14 @@
         const rawPid = text(firstNonEmpty(placement.programId, placement.program_id, ''));
         const rawNola = nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
         const rawTitle = lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''));
-        const initialLib = indexes.byId.get(rawPid) || indexes.byNola.get(rawNola) || indexes.byTitle.get(rawTitle) || {};
+        const initialLib = indexes.byId.get(rawPid) || resolveLibraryByNola(indexes, rawNola, rawTitle) || indexes.byTitle.get(rawTitle) || {};
         const initialPid = text(firstNonEmpty(rawPid, initialLib.id, ''));
         const initialNola = nolaKey(firstNonEmpty(initialLib.nola_code, rawNola, ''));
         const initialTitle = lookupKey(firstNonEmpty(initialLib.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
         const matched = findAiringForSchedulePlacement({ placement, dateKey, startMinutes, pid: initialPid, nola: initialNola, title: initialTitle, airingLookup });
         if (liveFlag && !matched) diagnostics.unmatchedLivePlacements += 1;
         const pid = text(firstNonEmpty(placement.programId, placement.program_id, matched?.programOpenId, matched?.programId, initialLib.id, ''));
-        const lib = indexes.byId.get(pid) || (matched?.nola ? indexes.byNola.get(nolaKey(matched.nola)) : null) || indexes.byNola.get(initialNola) || indexes.byTitle.get(lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, matched?.title, ''))) || initialLib || {};
+        const lib = indexes.byId.get(pid) || (matched?.nola ? resolveLibraryByNola(indexes, nolaKey(matched.nola), lookupKey(firstNonEmpty(matched?.title, matched?.importedTitle, ''))) : null) || resolveLibraryByNola(indexes, initialNola, initialTitle) || indexes.byTitle.get(lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, matched?.title, ''))) || initialLib || {};
         const title = text(firstNonEmpty(lib.title, matched?.title, placement.programTitle, placement.program_title, placement.title, placement.name, 'Untitled'));
         const nonSpecific = isNonSpecificPledgeBucket(title, lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola);
         const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, matched?.topic, ''));
@@ -1504,7 +1581,7 @@
     note('Loading live pledge performance records…');
     const [airings, scheduleRows] = await Promise.all([
       fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash', 'air_date'),
-      fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,schedule_data', 'start_date')
+      fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,created_at,updated_at,schedule_data', 'start_date')
     ]);
     let libraryRows = [];
     try {
@@ -1515,7 +1592,8 @@
     state.libraryRows = libraryRows;
     state.libraryById = new Map(libraryRows.map((row) => [text(row.id), row]).filter(([id]) => id));
     state.libraryByTitle = new Map(libraryRows.map((row) => [lookupKey(row.title), row]).filter(([title]) => title));
-    state.schedules = scheduleRows.map(normalizeSchedule);
+    const normalizedSchedules = scheduleRows.map(normalizeSchedule);
+    state.schedules = dedupeSchedulesByDateRange(normalizedSchedules);
     state.records = buildRecords(airings, libraryRows, state.schedules);
     state.scheduleRecords = buildScheduleRecords(state.schedules, libraryRows, state.records);
     state.driveSeasonRecords = buildDriveSeasonRecords(state.schedules);
@@ -1528,12 +1606,12 @@
     if ((diag.livePlacements || 0) > 0 && (diag.liveDollars || 0) <= 0) {
       note(`Live-break guardrail: ${formatNumber(diag.livePlacements || 0)} saved live-break placement(s) exist, but none matched pledge dollars. Analytics did not fall back to imported live-break guesses. Check schedule placement hashes/titles/times.`, 'bad');
     } else {
-      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Active schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)} (${formatNumber(state.scheduleAudit.duplicateSchedulesSuppressed || 0)} duplicate date-range row(s) ignored). Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
     }
   }
 
   function rebuildFilterOptions() {
-    const years = [...new Set(state.records.map((record) => record.year).filter(Boolean))].sort((a, b) => b - a);
+    const years = [...new Set([...(state.records || []), ...(state.driveSeasonRecords || [])].map((record) => record.year).filter(Boolean))].sort((a, b) => b - a);
     dom.season.innerHTML = '<option value="all">All pledge seasons</option>' + SEASONS.map((season) => `<option>${escapeHtml(season)}</option>`).join('');
     dom.year.innerHTML = '<option value="all">All years</option>' + years.map((year) => `<option>${escapeHtml(year)}</option>`).join('');
     dom.season.value = state.season;
