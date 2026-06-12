@@ -649,6 +649,123 @@
     ].join('|').toLowerCase();
   }
 
+  function liveBreakPreserveKeys(placement = {}, importedKey = '') {
+    const dateKey = utils.normalizeText(placement?.dateKey || '');
+    const startMinutes = String(Number(placement?.startMinutes || 0) || 0);
+    const programId = utils.normalizeText(placement?.programId || '');
+    const titleKey = utils.normalizeLookupKey(placement?.programTitle || '');
+    const sourceHash = utils.normalizeText(placement?.sourceAiringHash || '');
+    const keys = [];
+    if (sourceHash) keys.push(`hash:${sourceHash}`);
+    const signature = placementSignature(placement, importedKey);
+    if (signature) keys.push(`sig:${signature}`);
+    if (dateKey && startMinutes && programId) keys.push(`slot-id:${dateKey}|${startMinutes}|${programId}`.toLowerCase());
+    if (dateKey && startMinutes && titleKey) keys.push(`slot-title:${dateKey}|${startMinutes}|${titleKey}`.toLowerCase());
+    if (dateKey && titleKey) keys.push(`date-title:${dateKey}|${titleKey}`.toLowerCase());
+    return [...new Set(keys.filter(Boolean))];
+  }
+
+  function collectLiveBreakPreserveMap(schedule = {}, importedKey = '') {
+    const map = new Map();
+    (Array.isArray(schedule?.placements) ? schedule.placements : []).forEach((placement) => {
+      if (!hasLiveBreakFlag(placement)) return;
+      const value = {
+        liveBreakFlag: true,
+        liveBreakNotes: utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '')
+      };
+      liveBreakPreserveKeys(placement, importedKey).forEach((key) => map.set(key, value));
+    });
+    return map;
+  }
+
+  function applyPreservedLiveBreakFlag(placement = {}, preserveMap = new Map(), importedKey = '') {
+    if (!placement || !preserveMap?.size) return placement;
+    const match = liveBreakPreserveKeys(placement, importedKey).map((key) => preserveMap.get(key)).find(Boolean);
+    if (!match) return placement;
+    placement.liveBreakFlag = true;
+    placement.liveBreakNotes = match.liveBreakNotes || placement.liveBreakNotes || '';
+    return placement;
+  }
+
+
+  function scheduleLiveBreakLookupTokens(placement = {}) {
+    const dateKey = utils.normalizeText(placement?.dateKey || '');
+    const startMinutes = String(Number(placement?.startMinutes || 0) || 0);
+    const id = utils.normalizeText(placement?.id || '');
+    const programId = utils.normalizeText(placement?.programId || '');
+    const titleKey = utils.normalizeLookupKey(placement?.programTitle || '');
+    const hash = utils.normalizeText(placement?.sourceAiringHash || '');
+    return new Set([
+      id,
+      hash,
+      programId && dateKey && startMinutes ? `${dateKey}|${startMinutes}|${programId}` : '',
+      titleKey && dateKey && startMinutes ? `${dateKey}|${startMinutes}|${titleKey}` : '',
+      dateKey && startMinutes ? `${dateKey}|${startMinutes}` : '',
+      titleKey && dateKey ? `${dateKey}|${titleKey}` : ''
+    ].map((item) => utils.normalizeLookupKey(item || '')).filter(Boolean));
+  }
+
+  function scheduleLevelLiveBreakFlag(schedule = {}, placement = {}) {
+    const tokens = scheduleLiveBreakLookupTokens(placement);
+    if (!tokens.size) return false;
+    const candidateKeys = [
+      'liveBreakPlacements',
+      'liveBreakPlacementIds',
+      'liveBreakSlots',
+      'liveBreakSlotKeys',
+      'liveBreakFlags',
+      'liveBreakMap',
+      'liveBreakSchedule',
+      'liveBreaks',
+      'live_breaks',
+      'live_break_flags'
+    ];
+    const candidateContainers = [];
+    candidateKeys.forEach((key) => {
+      const value = schedule?.[key] || schedule?.meta?.[key] || schedule?.scheduleData?.[key] || schedule?.schedule_data?.[key];
+      if (value != null) candidateContainers.push(value);
+    });
+    const valueMatchesPlacement = (value) => {
+      if (value == null) return false;
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        const normalized = utils.normalizeLookupKey(value);
+        return Boolean(normalized && tokens.has(normalized));
+      }
+      if (typeof value !== 'object') return false;
+      const objectTokens = scheduleLiveBreakLookupTokens({
+        id: value.id || value.placementId || value.placement_id || value.schedulePlacementId || value.schedule_placement_id,
+        sourceAiringHash: value.sourceAiringHash || value.row_hash || value.airingHash || value.airing_hash,
+        programId: value.programId || value.program_id,
+        programTitle: value.programTitle || value.title || value.program_title,
+        dateKey: value.dateKey || value.date_key || value.air_date,
+        startMinutes: value.startMinutes || value.start_minutes || value.minutes
+      });
+      return [...objectTokens].some((token) => tokens.has(token));
+    };
+    for (const container of candidateContainers) {
+      if (Array.isArray(container)) {
+        if (container.some((entry) => {
+          if (!valueMatchesPlacement(entry)) return false;
+          if (entry && typeof entry === 'object') return canonicalScheduleLiveBreakFlag(entry) || normalizePlacementBoolean(entry.live, true) === true;
+          return true;
+        })) return true;
+      } else if (container && typeof container === 'object') {
+        for (const [key, value] of Object.entries(container)) {
+          const keyToken = utils.normalizeLookupKey(key);
+          if (keyToken && tokens.has(keyToken) && normalizePlacementBoolean(value, true) === true) return true;
+          if (valueMatchesPlacement(value) && (canonicalScheduleLiveBreakFlag(value) || normalizePlacementBoolean(value?.live, true) === true)) return true;
+        }
+      } else if (valueMatchesPlacement(container)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function calendarPlacementIsLive(schedule = {}, placement = {}) {
+    return hasLiveBreakFlag(placement) || scheduleLevelLiveBreakFlag(schedule, placement);
+  }
+
   async function ensureScheduleBroadcastTotal(schedule) {
     if (!schedule?.id) return;
     const alreadyHasImported = scheduleImportedAiringTotal(schedule) > 0;
@@ -1381,11 +1498,15 @@
           return [...groupFileKeys].some((key) => itemFileKeys.has(key));
         }) || null;
       }
+      let createdThisSchedule = false;
       if (!schedule) {
         schedule = createScheduleRecord({ title: group.title, startDate: group.startDate, endDate: group.endDate, dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES });
         state.schedules.unshift(schedule);
         createdSchedules += 1;
-      } else {
+        createdThisSchedule = true;
+      }
+      const preservedLiveBreaks = collectLiveBreakPreserveMap(schedule, group.key);
+      if (!createdThisSchedule) {
         updatedSchedules += 1;
         if (rebuild) {
           schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
@@ -1420,7 +1541,7 @@
       const existingKeys = new Set((schedule.placements || []).map((placement) => placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`));
       const existingSignatureMap = new Map((schedule.placements || []).filter((placement) => placement?.importedFromReport).map((placement, index) => [placementSignature(placement, group.key), index]));
       scheduleableRows.forEach((prepared) => {
-        const placement = buildPlacementFromImportedAiring(prepared);
+        const placement = applyPreservedLiveBreakFlag(buildPlacementFromImportedAiring(prepared), preservedLiveBreaks, group.key);
         if (!placement) return;
         const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
         const signature = placementSignature(placement, group.key);
@@ -1429,17 +1550,18 @@
           const existingIndex = existingSignatureMap.get(signature);
           const existingPlacement = schedule.placements[existingIndex];
           if (existingPlacement) {
-            schedule.placements[existingIndex] = {
+            const mergedPlacement = {
               ...existingPlacement,
               ...placement,
               id: existingPlacement.id || placement.id,
-              liveBreakFlag: hasLiveBreakFlag(existingPlacement),
-              liveBreakNotes: existingPlacement.liveBreakNotes || '',
+              liveBreakFlag: hasLiveBreakFlag(existingPlacement) || hasLiveBreakFlag(placement),
+              liveBreakNotes: existingPlacement.liveBreakNotes || placement.liveBreakNotes || '',
               isNonPledge: Boolean(existingPlacement.isNonPledge),
               transferredToStation: Boolean(existingPlacement.transferredToStation),
               importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
               sourceAiringHash: placement.sourceAiringHash || existingPlacement.sourceAiringHash || ''
             };
+            schedule.placements[existingIndex] = applyPreservedLiveBreakFlag(mergedPlacement, preservedLiveBreaks, group.key);
             if (placement.sourceAiringHash) existingKeys.add(placement.sourceAiringHash);
             skippedPlacements += 1;
             return;
@@ -2162,10 +2284,10 @@
     const existingSlotPlacement = findPlacementForSlot(schedule, slot.key);
     const existingHashPlacement = scheduleImportedPlacementByHash(schedule, rowHash);
     schedule.placements = (schedule.placements || []).filter((item) => item.id !== existingSlotPlacement?.id && item.id !== existingHashPlacement?.id);
-    if (existingHashPlacement?.transferredToStation) placement.transferredToStation = true;
-    if (existingHashPlacement?.liveBreakFlag) {
+    if (existingHashPlacement?.transferredToStation || existingSlotPlacement?.transferredToStation) placement.transferredToStation = true;
+    if (hasLiveBreakFlag(existingHashPlacement) || hasLiveBreakFlag(existingSlotPlacement)) {
       placement.liveBreakFlag = true;
-      placement.liveBreakNotes = existingHashPlacement.liveBreakNotes || '';
+      placement.liveBreakNotes = existingHashPlacement?.liveBreakNotes || existingSlotPlacement?.liveBreakNotes || '';
     }
     schedule.placements.push({
       ...placement,
@@ -2732,14 +2854,14 @@
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', hasLiveBreakFlag(placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : ''].filter(Boolean).join(' ');
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', calendarPlacementIsLive(schedule, placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : ''].filter(Boolean).join(' ');
         const expectationBadge = isStart ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const breakWarning = isStart ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const subtitleBits = [];
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
           if (placement.isNonPledge) subtitleBits.push('non-pledge');
-          if (hasLiveBreakFlag(placement)) subtitleBits.push('live break');
+          if (calendarPlacementIsLive(schedule, placement)) subtitleBits.push('live break');
         }
         const transferToggle = isStart && editable
           ? `<label class="schedule-placement-transfer-toggle" data-placement-transfer-toggle title="Mark this title as entered in traffic/scheduling software">
@@ -2747,12 +2869,12 @@
               <span class="schedule-placement-transfer-check" aria-hidden="true"></span>
             </label>`
           : '';
-        const liveCalendarBadge = isStart && hasLiveBreakFlag(placement)
+        const liveCalendarBadge = isStart && calendarPlacementIsLive(schedule, placement)
           ? '<span class="schedule-live-calendar-badge" title="Live break flagged">LIVE</span>'
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${hasLiveBreakFlag(placement) ? 'true' : 'false'}" style="${style}">${transferToggle}${liveCalendarBadge}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${calendarPlacementIsLive(schedule, placement) ? 'true' : 'false'}" style="${style}">${transferToggle}${liveCalendarBadge}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
