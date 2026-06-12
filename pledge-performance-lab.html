@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.09</title>
+  <title>WNMU Pledge Performance Analytics v0.22.11</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -163,7 +163,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.09</div>
+        <div class="eyebrow">Admin analytics · v0.22.11</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -694,11 +694,11 @@
 
   function placementLive(placement = {}) {
     // Canonical source for Performance Analytics live-break logic.
-    // This reads saved Scheduling placement fields only, then normalizes old/alias names into one answer.
+    // Saved Scheduling placement truth wins. A stale false alias must never suppress live notes.
     // Do not read imported-airing live_break* columns here; those caused the old false $0 result.
-    const direct = parseBooleanish(placement?.liveBreakFlag);
-    if (direct === true || direct === false) return direct;
-    const aliases = [
+    const notes = text(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '');
+    const values = [
+      placement?.liveBreakFlag,
       placement?.live_break_flag,
       placement?.liveBreak,
       placement?.live_break,
@@ -711,11 +711,14 @@
       placement?.liveFlag,
       placement?.live_flag
     ];
-    for (const value of aliases) {
-      const parsed = parseBooleanish(value);
-      if (parsed === true || parsed === false) return parsed;
+    for (const value of values) {
+      if (parseBooleanish(value) === true) return true;
     }
-    return Boolean(text(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''));
+    if (notes) return true;
+    for (const value of values) {
+      if (parseBooleanish(value) === false) return false;
+    }
+    return false;
   }
 
   function mapListPush(map, key, row) {
@@ -1313,6 +1316,7 @@
     if (live.season && candidate.season && live.season !== candidate.season) score += 80;
     if (Number.isFinite(Number(live.year)) && Number.isFinite(Number(candidate.year))) score += Math.min(200, Math.abs(Number(live.year) - Number(candidate.year)) * 35);
     if (eligibility.reason !== 'same title') score += 120;
+    if (candidate.comparisonSourceLabel) notes.push(candidate.comparisonSourceLabel);
     return { score, notes, timeDelta, eligible: true };
   }
 
@@ -1334,27 +1338,29 @@
   }
 
   function nonLiveCandidatesForLiveComparison(scheduleRows = []) {
-    const candidates = [];
-    scheduleRows.filter((record) => record.liveState === 'nonlive').forEach((record) => candidates.push(record));
-    (state.records || [])
-      .filter((record) => record.liveState !== 'live')
-      .filter(recordMatchesLiveComparisonFilters)
-      .forEach((record) => {
-        candidates.push({
-          ...record,
-          liveState: 'nonlive',
-          live: false,
-          liveSource: record.liveState === 'nonlive' ? (record.liveSource || 'schedule') : 'historical-not-live-flagged'
-        });
-      });
+    // Saved non-live schedule placements are the cleanest comparison source.
+    // If that pool is too small, include historical imported airing rows that have no saved live flag.
+    // These are labeled as historical candidates and still have to pass the strict same-topic/daypart/weekpart/length/title checks.
     const unique = [];
     const seen = new Set();
-    candidates.forEach((record) => {
+    const addCandidate = (record, sourceLabel = '') => {
+      if (!record || !(Number(record.dollars || 0) > 0)) return;
       const key = liveComparisonCandidateKey(record);
       if (!key || seen.has(key)) return;
       seen.add(key);
-      unique.push(record);
-    });
+      unique.push(sourceLabel ? { ...record, liveState: 'nonlive', liveSource: sourceLabel, comparisonSourceLabel: sourceLabel } : record);
+    };
+
+    scheduleRows
+      .filter((record) => record.liveState === 'nonlive')
+      .forEach((record) => addCandidate(record));
+
+    (state.records || [])
+      .filter((record) => record.liveState !== 'live')
+      .filter((record) => !record.isNonSpecific)
+      .filter((record) => recordMatchesLiveComparisonFilters(record))
+      .forEach((record) => addCandidate(record, record.scheduleMatched ? 'saved non-live schedule' : 'historical non-live airing'));
+
     return unique;
   }
 
@@ -1411,26 +1417,25 @@
       return;
     }
     const summary = liveMatchedSummary(pairs);
-    const rows = pairs.map((pair) => {
+    const rows = matched.map((pair) => {
       const liveDate = pair.live.date ? pair.live.date.toLocaleDateString() : '—';
       const matchDate = pair.match?.date ? pair.match.date.toLocaleDateString() : '—';
       const diffClass = Number(pair.difference || 0) >= 0 ? 'ok' : 'risk';
       const pctText = Number.isFinite(pair.percent) ? ` (${formatPercent(pair.percent)})` : '';
-      const matchCell = pair.match
-        ? `${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))} · ${escapeHtml(formatDuration(durationFromRecord(pair.match)))}</div>`
-        : '<span class="muted">No comparable non-live airing</span>';
+      const sourceLabel = pair.match?.comparisonSourceLabel || pair.match?.liveSource || '';
+      const matchCell = `${programTitleCell(pair.match)}<div class="match-basis">${escapeHtml(matchDate)} · ${escapeHtml(pair.match.daypart || 'unknown daypart')} · ${escapeHtml(pair.match.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.match.startMinutes))} · ${escapeHtml(formatDuration(durationFromRecord(pair.match)))}${sourceLabel ? ` · ${escapeHtml(sourceLabel)}` : ''}</div>`;
       return `<tr>
         <td>${programTitleCell(pair.live)}<div class="match-basis">${escapeHtml(liveDate)} · ${escapeHtml(pair.live.daypart || 'unknown daypart')} · ${escapeHtml(pair.live.topic || 'unknown topic')} · ${escapeHtml(formatTimeFromMinutes(pair.live.startMinutes))} · ${escapeHtml(formatDuration(durationFromRecord(pair.live)))}</div></td>
         <td>${matchCell}</td>
         <td class="money emphasis">${formatMoney(pair.live.dollars)}</td>
-        <td class="money">${pair.match ? formatMoney(pair.match.dollars) : '—'}</td>
-        <td class="money ${diffClass}">${pair.match ? `${formatMoney(pair.difference)}${escapeHtml(pctText)}` : '—'}</td>
-        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : `No strong non-live match: ${pair.noMatchReason || 'same night/source, missing or mismatched length, same-dollar clone risk, or title/performer too different'}`)}</span></td>
+        <td class="money">${formatMoney(pair.match.dollars)}</td>
+        <td class="money ${diffClass}">${formatMoney(pair.difference)}${escapeHtml(pctText)}</td>
+        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : 'Comparable non-live airing')}</span></td>
       </tr>`;
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
       <h4>1:1 live vs non-live comparison</h4>
-      <p class="matched-note">This pairs each saved live-break airing with the closest comparable non-live airing by primary topic, daypart, weekday/weekend, start time, program length, season, year, and title/performer similarity. Non-live candidates can come from saved schedules or historical imported pledge airings that are not flagged live. It will not compare against the same source airing or the same calendar night, requires known comparable length, and skips loose performer/title pairings instead of treating them as evidence.</p>
+      <p class="matched-note">This lists only live-break airings that have a strong comparable non-live airing. Saved non-live schedule placements are preferred; if none fit, historical imported airings with no saved live flag may be used, but they still must pass primary topic, daypart, weekday/weekend, start time, program length, season/year, and title/performer checks. Live airings with no good comparison are counted above but not listed as fake pairs.</p>
       <div class="matched-summary">
         <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
         <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
@@ -1770,7 +1775,7 @@
     const pairs = buildLiveMatchedPairs();
     const summary = liveMatchedSummary(pairs);
     const matchedText = summary.matchedCount
-      ? `<br><br>The 1:1 live vs non-live comparison pairs ${formatNumber(summary.matchedCount)} live-break airing(s) to a comparable non-live scheduled airing. It excludes same-source/same-night records and loose title-only pairings. Live average: <b>${formatMoney(summary.liveAvg)}</b>; non-live average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
+      ? `<br><br>The 1:1 live vs non-live comparison pairs ${formatNumber(summary.matchedCount)} saved live-break airing(s) to comparable saved non-live scheduled airing(s). It excludes same-source/same-night records, import-only historical rows, and loose title-only pairings. Live average: <b>${formatMoney(summary.liveAvg)}</b>; non-live average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
       : '<br><br>No 1:1 non-live comparison is available under the current filters.';
     return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>The raw aggregate is biased: live-break nights were chosen because they were expected to do well, while most historical non-live nights were not planned the same way. Raw live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Raw difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.${matchedText}`;
   }

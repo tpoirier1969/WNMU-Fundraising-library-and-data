@@ -97,10 +97,9 @@
   }
 
   function canonicalScheduleLiveBreakFlag(placement = {}) {
-    const direct = normalizePlacementBoolean(placement?.liveBreakFlag, null);
-    if (direct === true || direct === false) return direct;
-
-    const aliases = [
+    const notes = utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '');
+    const values = [
+      placement?.liveBreakFlag,
       placement?.live_break_flag,
       placement?.liveBreak,
       placement?.live_break,
@@ -113,12 +112,16 @@
       placement?.liveFlag,
       placement?.live_flag
     ];
-    for (const value of aliases) {
-      const parsed = normalizePlacementBoolean(value, null);
-      if (parsed === true || parsed === false) return parsed;
-    }
 
-    return Boolean(utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''));
+    // Truthy saved fields and notes win. A stale false alias must not hide a saved live note/badge.
+    for (const value of values) {
+      if (normalizePlacementBoolean(value, null) === true) return true;
+    }
+    if (notes) return true;
+    for (const value of values) {
+      if (normalizePlacementBoolean(value, null) === false) return false;
+    }
+    return false;
   }
 
   function placementLooksNonSpecific(placement = {}) {
