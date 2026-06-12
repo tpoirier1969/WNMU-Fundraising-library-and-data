@@ -96,28 +96,69 @@
     return fallback;
   }
 
+  function liveBreakSourceObjects(placement = {}) {
+    const sources = [placement];
+    const nestedKeys = ['__sourcePlacement', 'meta', 'flags', 'scheduleFlags', 'liveBreakMeta', 'liveBreak'];
+    nestedKeys.forEach((key) => {
+      const value = placement?.[key];
+      if (value && typeof value === 'object' && !sources.includes(value)) sources.push(value);
+    });
+    return sources.filter(Boolean);
+  }
+
   function canonicalScheduleLiveBreakFlag(placement = {}) {
-    const notes = utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '');
-    const values = [
-      placement?.liveBreakFlag,
-      placement?.live_break_flag,
-      placement?.liveBreak,
-      placement?.live_break,
-      placement?.liveBreaks,
-      placement?.live_breaks,
-      placement?.hasLiveBreak,
-      placement?.has_live_break,
-      placement?.isLiveBreak,
-      placement?.is_live_break,
-      placement?.liveFlag,
-      placement?.live_flag
+    const sources = liveBreakSourceObjects(placement);
+    const noteKeys = [
+      'liveBreakNotes',
+      'live_break_notes',
+      'liveBreakNote',
+      'live_break_note',
+      'liveNotes',
+      'live_notes',
+      'liveEventNotes',
+      'live_event_notes'
+    ];
+    const flagKeys = [
+      'liveBreakFlag',
+      'scheduleLiveBreakFlag',
+      'hasLiveBreakFlag',
+      'isLiveBreakFlag',
+      'live_break_flag',
+      'schedule_live_break_flag',
+      'has_live_break_flag',
+      'is_live_break_flag',
+      'liveBreak',
+      'live_break',
+      'liveBreaks',
+      'live_breaks',
+      'hasLiveBreak',
+      'has_live_break',
+      'isLiveBreak',
+      'is_live_break',
+      'liveFlag',
+      'live_flag',
+      'liveEvent',
+      'live_event',
+      'isLiveEvent',
+      'is_live_event',
+      'livePledgeFlag',
+      'live_pledge_flag'
     ];
 
-    // Truthy saved fields and notes win. A stale false alias must not hide a saved live note/badge.
+    const values = [];
+    let hasNotes = false;
+    sources.forEach((source) => {
+      noteKeys.forEach((key) => {
+        if (utils.normalizeText(source?.[key] || '')) hasNotes = true;
+      });
+      flagKeys.forEach((key) => values.push(source?.[key]));
+    });
+
+    // Truthy saved fields and notes win. A stale false alias must not hide a saved LIVE badge.
     for (const value of values) {
       if (normalizePlacementBoolean(value, null) === true) return true;
     }
-    if (notes) return true;
+    if (hasNotes) return true;
     for (const value of values) {
       if (normalizePlacementBoolean(value, null) === false) return false;
     }
@@ -2667,8 +2708,12 @@
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
     const header = ['<div class="schedule-corner sticky"></div>'];
+    const footer = ['<div class="schedule-corner schedule-foot-corner"></div>'];
     dayKeys.forEach((dateKey) => {
-      header.push(`<div class="schedule-day-head sticky ${isWeekendDateKey(dateKey) ? 'weekend' : ''}"><span>${utils.escapeHtml(formatScheduleDay(dateKey))}</span></div>`);
+      const label = utils.escapeHtml(formatScheduleDay(dateKey));
+      const weekendClass = isWeekendDateKey(dateKey) ? 'weekend' : '';
+      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span>${label}</span></div>`);
+      footer.push(`<div class="schedule-day-head schedule-day-foot ${weekendClass}"><span>${label}</span></div>`);
     });
 
     const guideMinutes = new Set([420, 1200, 1440]);
@@ -2721,6 +2766,7 @@
     els.scheduleGrid.innerHTML = `
       <div class="schedule-grid-head" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${header.join('')}</div>
       <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}${guideOverlays}</div>
+      <div class="schedule-grid-foot" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${footer.join('')}</div>
     `;
     const slotFitCacheDirty = (schedule.placements || []).some((item) => item?.__slotFitCacheDirty);
     if (slotFitCacheDirty) {

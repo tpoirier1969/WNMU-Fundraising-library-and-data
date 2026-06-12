@@ -935,7 +935,8 @@ button:disabled {
   max-width: 100%;
 }
 .schedule-grid-head,
-.schedule-grid-body {
+.schedule-grid-body,
+.schedule-grid-foot {
   display: grid;
   grid-template-columns: var(--schedule-time-width) repeat(auto-fit, var(--schedule-day-width));
   width: max-content;
@@ -946,6 +947,29 @@ button:disabled {
   top: 0;
   z-index: 7;
   background: #f8fbfd;
+}
+
+.schedule-grid-foot {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  background: #f8fbfd;
+  border-top: 2px solid #cfe0ec;
+}
+.schedule-grid-foot .schedule-day-head,
+.schedule-grid-foot .schedule-corner {
+  min-height: 42px;
+  background: linear-gradient(180deg, #eef5fb, #e4eef8);
+}
+.schedule-grid-foot .schedule-day-head {
+  padding: 9px 10px;
+  font-weight: 800;
+  color: var(--pbs-blue-dark);
+}
+.schedule-foot-corner {
+  position: sticky;
+  left: 0;
+  z-index: 9;
 }
 .schedule-corner,
 .schedule-day-head,
@@ -1077,7 +1101,8 @@ button.primary {
   background: #f7fbff;
 }
 .schedule-grid-head,
-.schedule-grid-body { align-items: stretch; }
+.schedule-grid-body,
+.schedule-grid-foot { align-items: stretch; }
 .schedule-grid-head { position: sticky; top: 0; z-index: 4; }
 .schedule-corner, .schedule-day-head { background: linear-gradient(180deg, #eef5fb, #e4eef8); }
 .schedule-time-label {
@@ -5637,4 +5662,34 @@ input.goal-difference-negative {
 .schedule-placement.live-break.imported-data .schedule-live-calendar-badge {
   background: #c1122f;
   color: #fff;
+}
+
+
+/* v0.22.13 - stronger saved live-break calendar marker and mirrored bottom dates */
+.schedule-placement.live-break,
+.schedule-placement[data-live-break="true"] {
+  border-color: #b00020 !important;
+  outline: 3px solid rgba(176,0,32,.38) !important;
+  outline-offset: -3px !important;
+}
+.schedule-placement.live-break::before,
+.schedule-placement[data-live-break="true"]::before {
+  content: "LIVE";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 10;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #b00020;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.9);
+  box-shadow: 0 1px 4px rgba(0,0,0,.24);
+  font-size: clamp(.52rem, .54vw, .64rem);
+  font-weight: 950;
+  letter-spacing: .08em;
+  line-height: 1.05;
+}
+.schedule-placement .schedule-live-calendar-badge {
+  display: none !important;
 }
