@@ -875,13 +875,54 @@
       return Boolean(utils.normalizeText(placement.programTitle || '') || placement.programId);
     });
     const total = counted.length;
-    const loaded = Boolean(state.scheduleAiringHistoryLoaded) || counted.some((placement) => placement?.importedFromReport || placement?.sourceAiringHash || Number(placement?.importedBroadcastDollars || 0) > 0);
+    // Do not mark the schedule as checked just because a placement has imported metadata.
+    // The green imported state must come from a confirmed imported airing row, not from date/range hydration.
+    const loaded = Boolean(state.scheduleAiringHistoryLoaded);
     if (!total) return { total: 0, updated: 0, loading: false, label: '0 of 0 broadcasts updated' };
     if (!loaded) return { total, updated: 0, loading: true, label: 'checking broadcast updates…' };
     const updated = counted.reduce((sum, placement) => {
       return sum + (placementHasImportedAiring(placement, placement.dateKey, placement.startMinutes) ? 1 : 0);
     }, 0);
     return { total, updated, loading: false, label: `${utils.formatCount(updated)} of ${utils.formatCount(total)} broadcasts updated` };
+  }
+
+  function dedupeSchedulesForSummary(schedules = []) {
+    const byRange = new Map();
+    (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
+      const start = utils.normalizeText(schedule?.startDate || schedule?.start_date || '');
+      const end = utils.normalizeText(schedule?.endDate || schedule?.end_date || '');
+      if (!(start && end)) return;
+      const key = `${start}|${end}`;
+      const current = byRange.get(key);
+      if (!current || scheduleSameRangePreferenceScore(schedule) > scheduleSameRangePreferenceScore(current)) byRange.set(key, schedule);
+    });
+    return [...byRange.values()];
+  }
+
+  function scheduleOverlapsYearToDate(schedule = {}, year = '', todayKey = '') {
+    const start = utils.normalizeText(schedule?.startDate || '');
+    const end = utils.normalizeText(schedule?.endDate || start || '');
+    if (!(start && end && year && todayKey)) return false;
+    const yearStart = `${year}-01-01`;
+    return end >= yearStart && start <= todayKey;
+  }
+
+  function yearToDateScheduleSummary() {
+    const todayKey = localTodayKey();
+    const year = todayKey.slice(0, 4);
+    const schedules = dedupeSchedulesForSummary(state.schedules || [])
+      .filter((schedule) => scheduleOverlapsYearToDate(schedule, year, todayKey));
+    return schedules.reduce((summary, schedule) => {
+      summary.count += 1;
+      summary.broadcast += scheduleBroadcastTotal(schedule);
+      summary.pledges += scheduleImportedPledgesTotal(schedule);
+      summary.online += Number(schedule?.onlineDollars || 0) || 0;
+      summary.mail += Number(schedule?.mailDollars || 0) || 0;
+      summary.nonSpecific += scheduleImportedNonSpecificTotal(schedule);
+      summary.total += scheduleGrandTotal(schedule);
+      summary.goal += scheduleGoalTotal(schedule);
+      return summary;
+    }, { year, count: 0, broadcast: 0, pledges: 0, online: 0, mail: 0, nonSpecific: 0, total: 0, goal: 0 });
   }
 
   function renderHomeDriveSummary() {
@@ -907,6 +948,16 @@
       { label: 'Goal', value: utils.formatMoney(scheduleGoalTotal(schedule)) },
       { label: 'Difference', value: utils.formatMoney(goalDifference), tone: goalDifferenceTone(goalDifference) }
     ];
+    const ytd = yearToDateScheduleSummary();
+    const ytdGoalDifference = ytd.total - ytd.goal;
+    const ytdValues = [
+      { label: 'YTD Total $', value: utils.formatMoney(ytd.total) },
+      { label: 'YTD Broadcast $', value: utils.formatMoney(ytd.broadcast) },
+      { label: 'YTD Pledges', value: utils.formatCount(ytd.pledges) },
+      { label: 'YTD Online $', value: utils.formatMoney(ytd.online) },
+      { label: 'YTD Mail $', value: utils.formatMoney(ytd.mail) },
+      { label: 'YTD Goal Diff', value: utils.formatMoney(ytdGoalDifference), tone: goalDifferenceTone(ytdGoalDifference) }
+    ];
     box.innerHTML = `
       <div class="home-drive-summary-head">
         <div class="home-drive-summary-title-wrap">
@@ -920,6 +971,18 @@
       <div class="home-drive-summary-grid">
         ${values.map((item) => `
           <div class="home-drive-summary-card ${item.tone ? `goal-difference-card goal-difference-${item.tone}` : ''}">
+            <div class="home-drive-summary-label">${utils.escapeHtml(item.label)}</div>
+            <div class="home-drive-summary-value ${item.tone ? `goal-difference-value goal-difference-${item.tone}` : ''}">${utils.escapeHtml(item.value)}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="home-drive-summary-section-head">
+        <span>Year to date — ${utils.escapeHtml(ytd.year)}</span>
+        <span>${utils.escapeHtml(utils.formatCount(ytd.count))} fundraiser${ytd.count === 1 ? '' : 's'}</span>
+      </div>
+      <div class="home-drive-summary-grid home-drive-summary-ytd-grid">
+        ${ytdValues.map((item) => `
+          <div class="home-drive-summary-card home-drive-summary-ytd-card ${item.tone ? `goal-difference-card goal-difference-${item.tone}` : ''}">
             <div class="home-drive-summary-label">${utils.escapeHtml(item.label)}</div>
             <div class="home-drive-summary-value ${item.tone ? `goal-difference-value goal-difference-${item.tone}` : ''}">${utils.escapeHtml(item.value)}</div>
           </div>
@@ -1962,14 +2025,32 @@
     return map;
   }
 
+  function buildScheduleImportedHashSet(rows = []) {
+    const set = new Set();
+    (rows || []).forEach((row) => {
+      const hash = utils.normalizeText(row?.row_hash || row?.sourceAiringHash || '');
+      if (hash) set.add(hash);
+    });
+    return set;
+  }
+
+
   function placementHasImportedAiring(placement = {}, dateKey = '', startMinutes = null) {
     if (!placement || placement.isNonPledge) return false;
-    if (placement.importedFromReport || Number(placement.importedBroadcastDollars || 0) > 0 || placement.sourceAiringHash) return true;
+
+    // v0.22.15: green/imported status is ONLY for exact imported airing evidence.
+    // Do not use importedFromReport by itself; that can mean the schedule was touched by an import,
+    // not that this exact broadcast row has pledge data imported.
+    const hashSet = state.scheduleImportedHashSet;
+    const placementHash = utils.normalizeText(placement?.sourceAiringHash || '');
+    if (placementHash && hashSet instanceof Set && hashSet.has(placementHash)) return true;
+
     const map = state.scheduleImportedSlotMap;
     if (!(map instanceof Set) || !map.size) return false;
     const row = getProgramRowById(placement.programId) || {};
     const date = utils.normalizeText(dateKey || placement.dateKey);
     const minutes = Number.isFinite(Number(startMinutes)) ? Number(startMinutes) : Number(placement.startMinutes || 0);
+    if (!date || !Number.isFinite(minutes)) return false;
     const candidates = [
       ['id', placement.programId || derive.programId(row)],
       ['nola', placement.nolaCode || placement.nola || derive.nola(row)],
@@ -1988,11 +2069,13 @@
       const rows = await App.data.fetchImportedAirings();
       state.scheduleAiringHistoryMap = buildScheduleAiringHistoryMap(rows || []);
       state.scheduleImportedSlotMap = buildScheduleImportedSlotMap(rows || []);
+      state.scheduleImportedHashSet = buildScheduleImportedHashSet(rows || []);
       state.scheduleAiringHistoryLoaded = true;
     } catch (error) {
       console.warn('Could not load scheduler airing history.', error);
       state.scheduleAiringHistoryMap = {};
       state.scheduleImportedSlotMap = new Set();
+      state.scheduleImportedHashSet = new Set();
       state.scheduleAiringHistoryLoaded = true;
     } finally {
       state.scheduleAiringHistoryLoading = false;

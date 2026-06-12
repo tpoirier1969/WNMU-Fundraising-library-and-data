@@ -5693,3 +5693,26 @@ input.goal-difference-negative {
 .schedule-placement .schedule-live-calendar-badge {
   display: none !important;
 }
+
+
+/* v0.22.15 - YTD drive snapshot and exact imported-airing status guardrail */
+.home-drive-summary-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin: 10px 2px 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(141, 162, 179, .28);
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.home-drive-summary-ytd-card {
+  background: #f9fbfd;
+}
+@media (max-width: 760px) {
+  .home-drive-summary-section-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+}
