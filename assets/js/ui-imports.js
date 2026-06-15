@@ -1771,7 +1771,9 @@
         const createdPlacements = Number(scheduleSummary.placementsCreated || 0) || 0;
         const skippedRows = Number(scheduleSummary.skippedRows || 0) || 0;
         const fundraiserCount = Number(scheduleSummary.fundraiserCount || 0) || 0;
+        const mergedSchedules = Number(scheduleSummary.mergedDuplicateSchedules || 0) || 0;
         success += ` Fundraiser dropdown updated: ${utils.formatCount(createdSchedules)} calendar${createdSchedules === 1 ? '' : 's'} created, ${utils.formatCount(updatedSchedules)} updated, ${utils.formatCount(createdPlacements)} placement${createdPlacements === 1 ? '' : 's'} added across ${utils.formatCount(fundraiserCount)} fundraiser${fundraiserCount === 1 ? '' : 's'}.`;
+        if (mergedSchedules > 0) success += ` ${utils.formatCount(mergedSchedules)} duplicate imported fundraiser calendar${mergedSchedules === 1 ? '' : 's'} merged.`;
         if (skippedRows > 0) {
           success += ` ${utils.formatCount(skippedRows)} imported row${skippedRows === 1 ? '' : 's'} were analytics-only because they could not be placed on the calendar.`;
         }

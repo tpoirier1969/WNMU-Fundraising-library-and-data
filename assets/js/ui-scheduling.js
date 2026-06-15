@@ -355,11 +355,12 @@
       if (!Array.isArray(rows) || !rows.length) return;
       const dirtySchedules = [];
       const summary = mergeImportedRowsIntoSchedules(rows, { rebuild: false, activateFirst: false, dirtySchedules });
-      if ((summary.placementsCreated || summary.restoredPlacements || summary.reboundPlacements) && dirtySchedules.length) {
+      if ((summary.placementsCreated || summary.restoredPlacements || summary.reboundPlacements || summary.mergedDuplicateSchedules) && dirtySchedules.length) {
         for (const schedule of dirtySchedules) {
           await persistSchedules(schedule);
         }
       }
+      if (summary.removedScheduleIds?.length) await deleteMergedImportedScheduleRecords(summary.removedScheduleIds);
     } catch (error) {
       console.warn('Imported schedule auto-heal failed.', error);
     }
@@ -1182,10 +1183,18 @@
     return group;
   }
 
+  function importedClusterSeedForPreparedRow(prepared = {}) {
+    const label = utils.normalizeText(prepared?.row?.fundraiser_label || '');
+    if (labelIsSpecificFundraiser(label)) return ['label', utils.normalizeLookupKey(label)].join('|').toLowerCase();
+    // Imported pledge labels and source filenames are not fundraiser identities.
+    // They are clues. Actual airing date continuity determines the fundraiser period.
+    return 'auto|imported-airing-date-cluster';
+  }
+
   function buildImportedFundraiserGroups(preparedRows = []) {
     const seeded = new Map();
-    preparedRows.forEach((prepared) => {
-      const seedKey = chooseImportedGroupSeed(prepared.row);
+    (Array.isArray(preparedRows) ? preparedRows : []).forEach((prepared) => {
+      const seedKey = importedClusterSeedForPreparedRow(prepared);
       if (!seeded.has(seedKey)) seeded.set(seedKey, []);
       seeded.get(seedKey).push(prepared);
     });
@@ -1198,13 +1207,6 @@
         return (Number(a.startMinutes) || 0) - (Number(b.startMinutes) || 0);
       });
       if (!sorted.length) return;
-      const spanDays = daysBetweenDateKeys(sorted[0].dateKey, sorted[sorted.length - 1].dateKey);
-      const shouldCluster = !sorted.some((entry) => labelIsSpecificFundraiser(entry.row?.fundraiser_label))
-        || (Number.isFinite(spanDays) && spanDays > IMPORTED_RANGE_SUSPICIOUS_SPAN_DAYS);
-      if (!shouldCluster) {
-        groups.push(finalizeImportedCluster(seedKey, sorted));
-        return;
-      }
       let cluster = [sorted[0]];
       for (let index = 1; index < sorted.length; index += 1) {
         const current = sorted[index];
@@ -1248,6 +1250,46 @@
     return new Set((group?.rows || [])
       .map((entry) => utils.normalizeLookupKey(entry?.row?.source_file_name || ''))
       .filter(Boolean));
+  }
+
+  function scheduleHasManualOrUserContent(schedule = {}) {
+    if (scheduleManualMoneyTotal(schedule) > 0) return true;
+    return (Array.isArray(schedule?.placements) ? schedule.placements : []).some((placement) => {
+      if (placement?.importedFromReport) return false;
+      // Non-pledge/internal markers are user-authored schedule content; do not auto-delete a calendar holding them.
+      return true;
+    });
+  }
+
+  function scheduleCanAutoMergeIntoImportedGroup(schedule = {}, group = {}, groupFileKeys = new Set(), targetId = '') {
+    const scheduleId = utils.normalizeText(schedule?.id || '');
+    if (targetId && scheduleId === utils.normalizeText(targetId)) return false;
+    if (!scheduleLooksAutoImported(schedule)) return false;
+    if (scheduleHasManualOrUserContent(schedule)) return false;
+    const start = utils.normalizeText(schedule?.startDate || '');
+    const end = utils.normalizeText(schedule?.endDate || '');
+    if (!datesOverlap(start, end, group.startDate, group.endDate)) return false;
+    const itemFileKeys = scheduleImportedFileKeys(schedule);
+    if (itemFileKeys.size && groupFileKeys.size && [...itemFileKeys].some((key) => groupFileKeys.has(key))) return true;
+    const titleKey = utils.normalizeLookupKey(schedule?.title || '');
+    if (titleKey.startsWith('imported pledge')) return true;
+    return Boolean(schedule?.meta?.importedFromReports || utils.normalizeText(schedule?.meta?.importedFundraiserKey || ''));
+  }
+
+  function findMergeableDuplicateSchedulesForImportedGroup(targetSchedule = {}, group = {}, groupFileKeys = new Set()) {
+    return (state.schedules || []).filter((item) => scheduleCanAutoMergeIntoImportedGroup(item, group, groupFileKeys, targetSchedule?.id));
+  }
+
+  function mergeImportedSchedulePlacements(targetSchedule = {}, duplicateSchedule = {}, groupKey = '') {
+    const placements = Array.isArray(duplicateSchedule?.placements) ? duplicateSchedule.placements : [];
+    placements.forEach((placement) => {
+      if (!placement?.importedFromReport) return;
+      targetSchedule.placements = Array.isArray(targetSchedule.placements) ? targetSchedule.placements : [];
+      targetSchedule.placements.push({
+        ...placement,
+        importedFundraiserKey: utils.normalizeText(groupKey || placement.importedFundraiserKey || '')
+      });
+    });
   }
 
   function datesOverlap(startA = '', endA = '', startB = '', endB = '') {
@@ -1529,6 +1571,8 @@
     let restoredPlacements = 0;
     let reboundPlacements = 0;
     let unresolvedCollisions = 0;
+    let mergedDuplicateSchedules = 0;
+    const removedScheduleIds = [];
     let firstScheduleId = '';
 
     groups.forEach((group) => {
@@ -1568,6 +1612,21 @@
         createdSchedules += 1;
         createdThisSchedule = true;
       }
+      const duplicateSchedules = findMergeableDuplicateSchedulesForImportedGroup(schedule, group, groupFileKeys);
+      duplicateSchedules.forEach((duplicate) => {
+        mergeImportedSchedulePlacements(schedule, duplicate, group.key);
+        removedScheduleIds.push(duplicate.id);
+      });
+      if (duplicateSchedules.length) {
+        mergedDuplicateSchedules += duplicateSchedules.length;
+        state.schedules = (state.schedules || []).filter((item) => !removedScheduleIds.includes(item.id));
+        if (removedScheduleIds.includes(state.activeScheduleId)) state.activeScheduleId = schedule.id;
+      }
+      if (scheduleLooksAutoImported(schedule)) {
+        schedule.title = group.title || schedule.title;
+        schedule.startDate = group.startDate || schedule.startDate;
+        schedule.endDate = group.endDate || schedule.endDate;
+      }
       const preservedLiveBreaks = collectLiveBreakPreserveMap(schedule, group.key);
       if (!createdThisSchedule) {
         updatedSchedules += 1;
@@ -1606,6 +1665,7 @@
       scheduleableRows.forEach((prepared) => {
         const placement = applyPreservedLiveBreakFlag(buildPlacementFromImportedAiring(prepared), preservedLiveBreaks, group.key);
         if (!placement) return;
+        placement.importedFundraiserKey = group.key;
         const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
         const signature = placementSignature(placement, group.key);
         if (existingKeys.has(dedupeKey)) { skippedPlacements += 1; return; }
@@ -1659,9 +1719,32 @@
       restoredPlacements,
       reboundPlacements,
       unresolvedCollisions,
+      mergedDuplicateSchedules,
+      removedScheduleIds: [...new Set(removedScheduleIds.filter(Boolean))],
       fundraiserCount: groups.length,
       diagnostics
     };
+  }
+
+  async function deleteMergedImportedScheduleRecords(scheduleIds = []) {
+    const wanted = [...new Set((Array.isArray(scheduleIds) ? scheduleIds : []).map((id) => utils.normalizeText(id)).filter(Boolean))];
+    if (!wanted.length) return 0;
+    let removed = 0;
+    if (state.scheduleStoreMode === 'remote' && state.client) {
+      for (const scheduleId of wanted) {
+        try {
+          await App.data.deleteScheduleRemote(scheduleId);
+          removed += 1;
+        } catch (error) {
+          console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);
+          state.scheduleStoreMode = 'local';
+          state.scheduleSyncMessage = `Remote duplicate cleanup failed. Using this browser only. ${error.message || ''}`.trim();
+          break;
+        }
+      }
+    }
+    utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
+    return removed || wanted.length;
   }
 
   async function buildSchedulesFromImportedReports(options = {}) {
@@ -1671,6 +1754,9 @@
     const summary = mergeImportedRowsIntoSchedules(rows, { rebuild: Boolean(options.rebuild), activateFirst: options.activateFirst !== false, dirtySchedules });
     for (const schedule of dirtySchedules) {
       await persistSchedules(schedule);
+    }
+    if (summary.removedScheduleIds?.length) {
+      summary.removedScheduleRecords = await deleteMergedImportedScheduleRecords(summary.removedScheduleIds);
     }
     renderAll();
     const noteBits = [
@@ -1687,6 +1773,7 @@
       if (reasonBits.length) noteBits.push(`Breakdown: ${reasonBits.join(', ')}.`);
     }
     if (diag.clusteredFundraisers) noteBits.push(`${utils.formatCount(diag.clusteredFundraisers)} fundraiser clusters were identified from actual airing dates.`);
+    if (summary.mergedDuplicateSchedules) noteBits.push(`${utils.formatCount(summary.mergedDuplicateSchedules)} duplicate imported fundraiser calendar${summary.mergedDuplicateSchedules === 1 ? '' : 's'} were merged.`);
     if (diag.collapsedDuplicateImports) noteBits.push(`${utils.formatCount(diag.collapsedDuplicateImports)} older imported duplicate row${diag.collapsedDuplicateImports === 1 ? '' : 's'} were collapsed before schedule build.`);
     if (summary.correctedDurations) noteBits.push(`${utils.formatCount(summary.correctedDurations)} durations were corrected from library runtimes.`);
     noteBits.push(state.scheduleSyncMessage);

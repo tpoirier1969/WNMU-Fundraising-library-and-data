@@ -1,0 +1,5 @@
+Install v0.22.24 changed files by copying them over the existing app root while preserving folder paths.
+
+After installing, use Pledge Scheduling > Build from imported reports to merge duplicate imported fundraiser dropdown entries from existing imported rows. You should not need to reload or re-import the spreadsheet for this cleanup.
+
+This package does not include config.js. Keep your existing local config.js in place.
