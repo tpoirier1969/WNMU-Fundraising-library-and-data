@@ -1,0 +1,13 @@
+WNMU Pledge Program Library v0.22.17 changed-files patch
+
+Copy these files over the existing app root, preserving folder paths.
+
+Included files:
+- index.html
+- version.json
+- pledge-performance-lab.html
+- assets/js/core.js
+- assets/js/ui-imports.js
+- README-v0.22.17-historical-break-summary-import-fix.txt
+
+This ZIP intentionally does not include config.js.

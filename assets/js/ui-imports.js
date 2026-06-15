@@ -349,17 +349,70 @@
     return Boolean(hasTrailerShape && legacyTrailerMoneyTotal(cells) > 0 && !looksLikeLegacyBreakDataRow(cells));
   }
 
-  function parseLegacyBreakReport(rows = []) {
+  function looksLikeLegacySummaryHeaderRow(cells = []) {
+    const keys = cells.map((value) => keyify(value));
+    const joined = keys.join(' ');
+    const hasIdentity = (joined.includes('call_letters') || joined.includes('station'))
+      && (joined.includes('date') || joined.includes('air_date'))
+      && (joined.includes('program_time') || joined.includes('air_time') || joined.includes('break_time'))
+      && (joined.includes('program_name') || joined.includes('program_title'));
+    const hasSummaryMetrics = /(^|_)breaks?($|_)|number_of_breaks|of_breaks/.test(joined)
+      && (joined.includes('break_minutes') || joined.includes('duration') || joined.includes('minutes'))
+      && joined.includes('pledges')
+      && joined.includes('dollars');
+    return Boolean(hasIdentity && hasSummaryMetrics);
+  }
+
+  function looksLikeLegacySummaryBreakDataRow(cells = []) {
+    if (!looksLikeLegacyBreakDataRow(cells) || cells.length < 10) return false;
+    const breakCount = parseInteger(cells[5]);
+    const durationMinutes = parseDurationMinutes(cells[6]);
+    const pledges = parseInteger(cells[7]);
+    const dollars = parseMoney(cells[8]);
+    const finalCount = parseInteger(cells[9]);
+    const finalHasValue = !utils.isBlank(cells[9]);
+    const breakCountLooksRight = Number.isFinite(breakCount) && breakCount >= 0 && breakCount <= 40;
+    const durationLooksRight = Number.isFinite(durationMinutes) && durationMinutes >= 0 && durationMinutes <= 600;
+    const pledgesLooksRight = Number.isFinite(pledges) && pledges >= 0;
+    const dollarsLooksRight = Number.isFinite(dollars) && dollars >= 0;
+    const finalCountLooksRight = !finalHasValue || (Number.isFinite(finalCount) && finalCount >= 0);
+    return Boolean(breakCountLooksRight && durationLooksRight && pledgesLooksRight && dollarsLooksRight && finalCountLooksRight);
+  }
+
+  function legacyHeadersForRows(rows = []) {
+    const legacyDataRows = rows.filter((cells) => looksLikeLegacyBreakDataRow(cells));
+    const summaryRows = legacyDataRows.filter((cells) => looksLikeLegacySummaryBreakDataRow(cells));
+    const summaryHeaderSeen = rows.some((cells) => looksLikeLegacySummaryHeaderRow(cells));
     const headerLikeRows = rows.filter((cells) => looksLikeHeaderRow(cells));
     const headerMentionsSecondary = headerLikeRows.some((cells) => cells.map((value) => keyify(value)).join(' ').includes('secondary_dollars'));
-    const dataRowLengths = rows.filter((cells) => !looksLikeHeaderRow(cells) && cells.some((value) => utils.normalizeText(value))).map((cells) => cells.length);
-    const maxDataColumns = dataRowLengths.length ? Math.max(...dataRowLengths) : 0;
-    const headers = (headerMentionsSecondary || maxDataColumns >= 10)
-      ? ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Secondary Dollars', 'Pledges', 'Program Minutes', 'Sustainers']
-      : ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Pledges', 'Program Minutes', 'Sustainers'];
+    const likelySummaryLayout = Boolean(summaryHeaderSeen || (summaryRows.length && summaryRows.length >= Math.ceil(Math.max(1, legacyDataRows.length) * 0.5)));
+
+    if (likelySummaryLayout) {
+      return {
+        headers: ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Break Count', 'Program Minutes', 'Pledges', 'Dollars', 'Sustainers'],
+        layout: 'legacy_pledge_break_summary_shifted'
+      };
+    }
+
+    if (headerMentionsSecondary) {
+      return {
+        headers: ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Secondary Dollars', 'Pledges', 'Program Minutes', 'Sustainers'],
+        layout: 'legacy_pbs_break_report_secondary_dollars'
+      };
+    }
+
+    return {
+      headers: ['Station', 'Air Date', 'Air Time', 'NOLA', 'Program Title', 'Dollars', 'Pledges', 'Program Minutes', 'Sustainers'],
+      layout: 'legacy_pbs_break_report'
+    };
+  }
+
+  function parseLegacyBreakReport(rows = []) {
+    const headerInfo = legacyHeadersForRows(rows);
+    const headers = headerInfo.headers;
     const records = [];
     const diagnostics = {
-      detectedFormat: 'legacy_pbs_break_report',
+      detectedFormat: headerInfo.layout,
       embeddedHeaderRows: 0,
       totalRowsSkipped: 0,
       trailerRowsSkipped: 0,
@@ -370,7 +423,7 @@
     rows.forEach((cells) => {
       const normalized = cells.map((value) => utils.normalizeText(value));
       if (!normalized.some(Boolean)) return;
-      if (looksLikeHeaderRow(cells)) {
+      if (looksLikeHeaderRow(cells) || looksLikeLegacySummaryHeaderRow(cells)) {
         diagnostics.embeddedHeaderRows += 1;
         return;
       }
@@ -422,7 +475,13 @@
     const secondRow = rows[1] || [];
     const fileLooksLegacy = !looksLikeHeaderRow(rows[0]) && looksLikeLegacyBreakDataRow(rows[0]);
     const hasEmbeddedHeader = rows.some((cells, index) => index > 0 && looksLikeHeaderRow(cells));
-    const shouldUseLegacy = fileLooksLegacy || (hasEmbeddedHeader && looksLikeLegacyBreakDataRow(secondRow));
+    const hasSummaryHeader = rows.some((cells) => looksLikeLegacySummaryHeaderRow(cells));
+    const hasLegacyDataRows = rows.some((cells) => looksLikeLegacyBreakDataRow(cells));
+    const hasShiftedSummaryRows = rows.some((cells) => looksLikeLegacySummaryBreakDataRow(cells));
+    const shouldUseLegacy = fileLooksLegacy
+      || (hasEmbeddedHeader && looksLikeLegacyBreakDataRow(secondRow))
+      || (hasSummaryHeader && hasLegacyDataRows)
+      || hasShiftedSummaryRows;
     if (shouldUseLegacy) return parseLegacyBreakReport(rows);
 
     const headers = firstRow;
@@ -526,7 +585,7 @@
     let primaryDollars = parseMoney(firstMatching(mapped, ['dollars', 'contribution_total', 'total_contributions', 'revenue'], /(^dollars$|contribution|revenue|gross|amount)/i));
     let secondaryDollars = parseMoney(firstMatching(mapped, ['secondary_dollars', 'secondary_amount'], /(^secondary_dollars$|^secondary_amount$|secondary.*dollars|secondary.*amount)/i));
     let pledges = parseInteger(firstMatching(mapped, ['pledges', 'pledge_count'], /(^pledges$|^pledge_count$)/i));
-    let programMinutes = parseInteger(firstMatching(mapped, ['program_minutes', 'minutes'], /(^program_minutes$|^minutes$)/i));
+    let programMinutes = parseDurationMinutes(firstMatching(mapped, ['program_minutes', 'minutes'], /(^program_minutes$|^minutes$)/i));
     let sustainers = parseInteger(firstMatching(mapped, ['sustainers'], /(^sustainers$)/i));
 
     const looksShiftedLegacyWithoutSecondary = Object.prototype.hasOwnProperty.call(mapped, 'secondary_dollars')
