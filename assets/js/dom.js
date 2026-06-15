@@ -169,6 +169,7 @@
     importDriveBody: document.getElementById('import-drive-body'),
     importUnmatchedPill: document.getElementById('import-unmatched-pill'),
     importUnmatchedBody: document.getElementById('import-unmatched-body'),
+    importRefreshLibraryButton: document.getElementById('import-refresh-library-button'),
     importApplyAllButton: document.getElementById('import-apply-all-button'),
     importExistingUnlinkedPill: document.getElementById('import-existing-unlinked-pill'),
     importExistingUnlinkedBody: document.getElementById('import-existing-unlinked-body'),

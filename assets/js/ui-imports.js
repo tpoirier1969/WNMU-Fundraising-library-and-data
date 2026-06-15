@@ -2138,6 +2138,96 @@
 
 
 
+  function autoLinkImportRowToProgram(row, targetRow, matchMethod = 'manual_library', matchReason = '') {
+    if (!row || !targetRow) return false;
+    const targetId = derive.programId(targetRow) || null;
+    if (!targetId) return false;
+    row.program_id = targetId;
+    row.pledge_program_id = targetId;
+    row.matched_library_title = derive.title(targetRow) || '';
+    row.manual_match_program_id = targetId;
+    row.manual_match_label = derive.title(targetRow) || '';
+    row.pending_manual_match_program_id = '';
+    row.pending_manual_match_label = '';
+    row.title = row.matched_library_title || row.imported_program_title || row.title;
+    row.program_title = row.title;
+    row.match_method = matchMethod || 'manual_library';
+    row.match_reason = matchReason || 'Matched after refreshing pledge-library titles.';
+    row.pending_persist_match_rule = Boolean(row.pending_persist_match_rule);
+    row.row_hash = computeImportRowHash(row);
+    return true;
+  }
+
+  function refreshUnmatchedRowsAgainstCurrentLibrary() {
+    if (!imp().airingsRows.length) return { autoMatched: 0, suggested: 0, stillUnmatched: 0 };
+    const lookup = buildLibraryLookup();
+    let autoMatched = 0;
+    let suggested = 0;
+    imp().airingsRows.forEach((row) => {
+      if (!row || isImportMatched(row) || isNonSpecificRow(row) || row.match_method === 'ignored') return;
+      const importedTitle = row.imported_program_title || row.program_title || row.title || '';
+      const nola = row.nola_code || row.nola || row.program_nola || '';
+      const match = findProgramForImport({ importedTitle, nola, station: row.station || '' }, lookup);
+      if (match.program) {
+        if (autoLinkImportRowToProgram(row, match.program, match.matchMethod, match.matchReason)) autoMatched += 1;
+        return;
+      }
+      if (match.suggestedProgram) {
+        row.pending_manual_match_program_id = String(derive.programId(match.suggestedProgram) || '').trim();
+        row.pending_manual_match_label = derive.title(match.suggestedProgram) || '';
+        row.match_method = 'suggested_title';
+        row.match_reason = match.matchReason || 'Suggested after refreshing pledge-library titles.';
+        row.fuzzy_score = match.fuzzyScore || row.fuzzy_score || null;
+        suggested += 1;
+        return;
+      }
+      if (match.matchReason) row.match_reason = match.matchReason;
+    });
+    imp().driveRows = deriveRollups(imp().airingsRows);
+    imp().rawAccountingSummaries = buildAccountingSummaryRows();
+    return { autoMatched, suggested, stillUnmatched: getUnmatchedRows().length };
+  }
+
+  async function refreshLibraryTitlesForImport(options = {}) {
+    if (!state.client) {
+      setNotice('Supabase is not connected, so pledge titles cannot be refreshed.', 'warn');
+      return null;
+    }
+    try {
+      const previousCount = state.rawRows?.length || 0;
+      setStatus('Refreshing pledge-library titles from Supabase without clearing the current import batch…');
+      if (els.importRefreshLibraryButton) els.importRefreshLibraryButton.disabled = true;
+      await App.data.refreshRawRows();
+      App.listUi?.buildFilterOptions?.();
+      const nextCount = state.rawRows?.length || 0;
+      const result = refreshUnmatchedRowsAgainstCurrentLibrary();
+      await refreshExistingUnlinkedRows({ silent: true });
+      await refreshSuspectRows({ silent: true });
+      renderAll();
+      const bits = [
+        `Pledge titles refreshed: ${utils.formatCount(nextCount)} title${nextCount === 1 ? '' : 's'} loaded${previousCount && previousCount !== nextCount ? `, changed from ${utils.formatCount(previousCount)}` : ''}.`,
+        result.autoMatched ? `${utils.formatCount(result.autoMatched)} current import row${result.autoMatched === 1 ? '' : 's'} auto-matched after the refresh.` : '',
+        result.suggested ? `${utils.formatCount(result.suggested)} row${result.suggested === 1 ? '' : 's'} now has a suggested match staged.` : '',
+        result.stillUnmatched ? `${utils.formatCount(result.stillUnmatched)} row${result.stillUnmatched === 1 ? '' : 's'} still need review.` : 'No unmatched rows remain in the current batch.'
+      ].filter(Boolean);
+      const message = bits.join(' ');
+      setStatus(message);
+      setResultBanner(message, result.stillUnmatched ? '' : 'success');
+      if (!options.silent) setNotice(message, result.stillUnmatched ? '' : 'success');
+      return result;
+    } catch (error) {
+      const message = `Could not refresh pledge-library titles. ${error?.message || error}`;
+      setStatus(message, 'warn');
+      setResultBanner(message, 'warn');
+      setNotice(message, 'warn');
+      return null;
+    } finally {
+      if (els.importRefreshLibraryButton) els.importRefreshLibraryButton.disabled = false;
+    }
+  }
+
+
+
   function selectedProgramRow(programId) {
     return (state.rawRows || []).find((row) => String(derive.programId(row) || '') === String(programId || '')) || null;
   }
@@ -2621,6 +2711,7 @@
     });
     els.importSupabaseButton?.addEventListener('click', () => { void importToSupabase(); });
     els.importBuildScheduleButton?.addEventListener('click', () => { void buildSchedulerFromCurrentBatch(); });
+    els.importRefreshLibraryButton?.addEventListener('click', () => { void refreshLibraryTitlesForImport(); });
     els.importApplyAllButton?.addEventListener('click', () => { applyAllPendingMatches(); });
     document.querySelectorAll('.import-supabase-trigger').forEach((button) => button.addEventListener('click', () => { void importToSupabase(); }));
     document.querySelectorAll('.import-apply-all-trigger').forEach((button) => button.addEventListener('click', () => { applyAllPendingMatches(); }));
@@ -2768,6 +2859,7 @@
     ensureReady,
     bindEvents,
     renderAll,
-    refreshTableStatus
+    refreshTableStatus,
+    refreshLibraryTitlesForImport
   };
 })();
