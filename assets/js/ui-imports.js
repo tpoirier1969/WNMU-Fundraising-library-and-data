@@ -1085,7 +1085,7 @@
       match_method: isNonSpecific ? 'non_specific' : (matchedProgram ? matchMethod : (suggestedProgram ? 'suggested_title' : 'unmatched_nola')),
       match_reason: isNonSpecific ? 'Non-specific broadcast row' : (matchedProgram ? matchReason : matchReason || `No pledge-library match found for ${nola || importedTitle || 'that row'}.`),
       title_mismatch_flag: titleMismatch || false,
-      pending_persist_match_rule: !isNonSpecific && !matchedProgram,
+      pending_persist_match_rule: false,
       manual_match_program_id: null,
       manual_match_label: '',
       pending_manual_match_program_id: suggestedProgram ? String(derive.programId(suggestedProgram) || '').trim() : '',
@@ -2145,7 +2145,6 @@
         ? (state.rawRows || []).find((candidate) => String(derive.programId(candidate) || '') === targetId)
         : null;
       row.pending_manual_match_label = targetRow ? (derive.title(targetRow) || '') : '';
-      if (targetId && row.pending_persist_match_rule !== false) row.pending_persist_match_rule = true;
     });
   }
 
@@ -2169,7 +2168,7 @@
     }
     const rows = rowsForUnmatchedTitleGroup(rowHash);
     if (!rows.length) return 0;
-    const shouldPersist = options.persistRule ?? rows.some((row) => row.pending_persist_match_rule !== false);
+    const shouldPersist = options.persistRule ?? rows.some((row) => row.pending_persist_match_rule === true);
     rows.forEach((airing) => {
       airing.program_id = derive.programId(targetRow) || null;
       airing.pledge_program_id = airing.program_id;
@@ -2209,7 +2208,7 @@
       const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
       if (!groupKey || seen.has(groupKey)) return;
       seen.add(groupKey);
-      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: row.pending_persist_match_rule !== false });
+      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: row.pending_persist_match_rule === true });
     });
     if (updated) {
       setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'}.`);
@@ -2237,7 +2236,7 @@
     row.program_title = row.title;
     row.match_method = matchMethod || 'manual_library';
     row.match_reason = matchReason || 'Matched after refreshing pledge-library titles.';
-    row.pending_persist_match_rule = row.pending_persist_match_rule !== false;
+    row.pending_persist_match_rule = row.pending_persist_match_rule === true;
     row.row_hash = computeImportRowHash(row);
     return true;
   }
@@ -2480,7 +2479,7 @@
       App.listUi?.buildFilterOptions?.();
       const createdId = derive.programId(response.data || {});
       syncPendingManualMatch(rowHash, createdId);
-      const linkedCount = applyManualMatchToGroup(rowHash, createdId, { persistRule: rowsForUnmatchedTitleGroup(rowHash).some((row) => row.pending_persist_match_rule !== false) });
+      const linkedCount = applyManualMatchToGroup(rowHash, createdId, { persistRule: rowsForUnmatchedTitleGroup(rowHash).some((row) => row.pending_persist_match_rule === true) });
       setNotice(`Created ${title} and linked ${utils.formatCount(linkedCount)} row${linkedCount === 1 ? '' : 's'} from that unmatched title group.`);
     } catch (error) {
       setNotice(`Could not create a new pledge title from that unmatched row. ${error?.message || error}`, 'warn');
@@ -2521,7 +2520,7 @@
             <div class="import-match-card-controls">
               <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
               <label class="import-rule-check">
-                <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule !== false ? 'checked' : ''}>
+                <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule === true ? 'checked' : ''}>
                 <span>Remember this match</span>
               </label>
               <div class="import-match-actions">
@@ -2666,32 +2665,55 @@
     renderExistingUnlinkedRows();
   }
 
+  function getPendingManualMatchRows() {
+    return getUnmatchedRows().filter((row) => String(row.pending_manual_match_program_id || '').trim());
+  }
+
   function renderActions() {
     const canEdit = App.auth.canEdit();
     const allRowCount = Array.isArray(imp().airingsRows) ? imp().airingsRows.length : 0;
     const matchedCount = getMatchedRows().length;
+    const importableCount = getImportableRows().length;
+    const pendingMatchCount = getPendingManualMatchRows().length;
     const unreconciledFiles = filesWithReconciliationDifferences();
     const hasDiffs = unreconciledFiles.length > 0;
-    const canImport = Boolean(canEdit && allRowCount);
+    // Keep the write button clickable once a report has rows. The actual write path still
+    // blocks non-admin sessions, unreconciled files, and zero importable rows with a clear
+    // message. Disabling the button hid those messages and made the import flow look dead.
+    const canTryImport = Boolean(allRowCount);
     const canBuild = Boolean(canEdit && matchedCount);
+    const importTitle = !allRowCount
+      ? 'Load imported airings first.'
+      : (!canEdit
+        ? 'Admin sign-in is required. Click for the sign-in/admin warning.'
+        : (hasDiffs
+          ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
+          : (importableCount
+            ? `${utils.formatCount(importableCount)} matched/non-specific row${importableCount === 1 ? '' : 's'} ready to import. ${pendingMatchCount ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} still need Apply/Apply All before import.` : ''}`
+            : (pendingMatchCount
+              ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} found. Click Apply or Apply All before importing.`
+              : 'No matched/importable rows yet. Link rows or mark rows non-specific first.'))));
     document.querySelectorAll('.import-supabase-trigger').forEach((button) => {
-      button.disabled = !canImport;
-      button.title = !canEdit ? 'Admin sign-in required for direct Supabase writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (allRowCount ? '' : 'Load imported airings first.'));
+      button.disabled = !canTryImport;
+      button.title = importTitle;
     });
     if (els.importSupabaseButton) {
-      els.importSupabaseButton.disabled = !canImport;
-      els.importSupabaseButton.title = !canEdit ? 'Admin sign-in required for direct Supabase writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (allRowCount ? '' : 'Load imported airings first.'));
+      els.importSupabaseButton.disabled = !canTryImport;
+      els.importSupabaseButton.title = importTitle;
     }
     if (els.importBuildScheduleButton) {
       els.importBuildScheduleButton.disabled = !canBuild;
       els.importBuildScheduleButton.title = !canEdit ? 'Admin sign-in required for scheduler writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (matchedCount ? '' : 'Load matched imported airings first, then sign in as admin.'));
     }
-    document.querySelectorAll('.import-apply-all-trigger').forEach((button) => { button.disabled = !getUnmatchedRows().length; });
+    document.querySelectorAll('.import-apply-all-trigger').forEach((button) => {
+      button.disabled = !pendingMatchCount;
+      button.title = pendingMatchCount ? `Apply ${utils.formatCount(pendingMatchCount)} staged manual match${pendingMatchCount === 1 ? '' : 'es'}.` : 'Choose one or more pledge-library titles before using Apply All.';
+    });
     if (hasDiffs) {
       setStatusPill(`Reconcile raw CSV totals · ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}`, true);
       return;
     }
-    setStatusPill(canEdit ? 'Raw totals reconciled' : 'Preview / export mode', !canEdit);
+    setStatusPill(canEdit ? (importableCount ? `${utils.formatCount(importableCount)} row${importableCount === 1 ? '' : 's'} ready to import` : 'Raw totals reconciled') : 'Preview / export mode', !canEdit);
   }
 
   function renderAll() {
@@ -2822,6 +2844,7 @@
         const rowHash = ruleToggle.getAttribute('data-row-hash') || '';
         syncPersistMatchRule(rowHash, Boolean(ruleToggle.checked));
         renderUnmatchedRows();
+        renderActions();
         return;
       }
       const select = event.target.closest('.import-manual-match-select');
@@ -2829,6 +2852,7 @@
       const rowHash = select.getAttribute('data-row-hash') || '';
       syncPendingManualMatch(rowHash, select.value || '');
       renderUnmatchedRows();
+      renderActions();
     });
     els.importUnmatchedBody?.addEventListener('click', (event) => {
       const applyButton = event.target.closest('.import-apply-match-button');

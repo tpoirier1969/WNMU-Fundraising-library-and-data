@@ -1,0 +1,3 @@
+Install v0.22.21 changed files by copying this ZIP over the existing app root, preserving folders.
+Do not replace or expose your real config.js. This ZIP does not include config.js.
+After copying, refresh the browser page so cache-busted v0.22.21 files load.
