@@ -1,0 +1,15 @@
+WNMU Pledge Program Library v0.22.23 changed-files install
+
+Copy these files over the existing installed app root, preserving folder paths.
+Do not replace your real config.js.
+
+Included:
+- index.html
+- version.json
+- pledge-performance-lab.html
+- assets/js/core.js
+- assets/js/data.js
+- README-v0.22.23-auth-session-persistence.txt
+
+Fix:
+- Explicitly hardens Supabase auth session persistence across page refresh.

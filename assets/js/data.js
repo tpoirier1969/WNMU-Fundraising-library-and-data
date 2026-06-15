@@ -8,8 +8,17 @@
       throw new Error('Supabase client library did not load.');
     }
     const noStoreFetch = (input, init = {}) => fetch(input, { ...init, cache: 'no-store' });
+    const authOptions = {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      authOptions.storage = window.localStorage;
+    }
     state.client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-      global: { fetch: noStoreFetch }
+      global: { fetch: noStoreFetch },
+      auth: authOptions
     });
     return state.client;
   }
