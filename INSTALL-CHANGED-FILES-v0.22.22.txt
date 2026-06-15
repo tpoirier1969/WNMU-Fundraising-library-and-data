@@ -1,0 +1,13 @@
+Install v0.22.22 changed files
+
+Copy these files into the installed app root, preserving folder paths.
+
+Changed files:
+- index.html
+- version.json
+- pledge-performance-lab.html
+- assets/js/core.js
+- assets/js/ui-imports.js
+- README-v0.22.22-auto-scheduler-update-after-import.txt
+
+No config.js is included.

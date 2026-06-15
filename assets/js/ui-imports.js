@@ -1746,6 +1746,16 @@
       } catch (verifyError) {
         console.warn('Import verification query failed:', verifyError);
       }
+      let scheduleSummary = null;
+      let scheduleError = null;
+      try {
+        if (summary.airings.written > 0 && App.schedulingUi?.buildSchedulesFromImportedReports) {
+          scheduleSummary = await App.schedulingUi.buildSchedulesFromImportedReports({ rows: importableRows, rebuild: false, activateFirst: true });
+        }
+      } catch (error) {
+        scheduleError = error;
+        console.warn('Automatic scheduler/dropdown update after import failed:', error);
+      }
       const updatedDuplicateCount = Number(summary.airings.updatedDuplicates || 0) || 0;
       let success = `Imported/updated ${utils.formatCount(summary.airings.written)} matched/non-specific airing row${summary.airings.written === 1 ? '' : 's'} in Supabase. ${utils.formatCount(updatedDuplicateCount)} existing row${updatedDuplicateCount === 1 ? '' : 's'} matched a prior report and were updated instead of duplicated. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} unchanged duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}.`;
       if (verification && summary.airings.written > 0) {
@@ -1755,9 +1765,25 @@
           success += ` WARNING: ${utils.formatCount(verification.missingDateCount)} imported row${verification.missingDateCount === 1 ? '' : 's'} still lack an air date; check the report parser before using these totals.`;
         }
       }
+      if (scheduleSummary) {
+        const createdSchedules = Number(scheduleSummary.schedulesCreated || 0) || 0;
+        const updatedSchedules = Number(scheduleSummary.schedulesUpdated || 0) || 0;
+        const createdPlacements = Number(scheduleSummary.placementsCreated || 0) || 0;
+        const skippedRows = Number(scheduleSummary.skippedRows || 0) || 0;
+        const fundraiserCount = Number(scheduleSummary.fundraiserCount || 0) || 0;
+        success += ` Fundraiser dropdown updated: ${utils.formatCount(createdSchedules)} calendar${createdSchedules === 1 ? '' : 's'} created, ${utils.formatCount(updatedSchedules)} updated, ${utils.formatCount(createdPlacements)} placement${createdPlacements === 1 ? '' : 's'} added across ${utils.formatCount(fundraiserCount)} fundraiser${fundraiserCount === 1 ? '' : 's'}.`;
+        if (skippedRows > 0) {
+          success += ` ${utils.formatCount(skippedRows)} imported row${skippedRows === 1 ? '' : 's'} were analytics-only because they could not be placed on the calendar.`;
+        }
+      } else if (scheduleError) {
+        success += ` WARNING: rows imported, but the fundraiser dropdown/scheduler update failed: ${scheduleError?.message || scheduleError}.`;
+      } else if (summary.airings.written > 0) {
+        success += ' WARNING: rows imported, but no fundraiser calendar/dropdown update was attempted.';
+      }
+      const finalTone = (verification?.missingDateCount || scheduleError) ? 'warn' : 'success';
       setStatus(success);
-      setResultBanner(success, verification?.missingDateCount ? 'warn' : 'success');
-      setNotice(success, verification?.missingDateCount ? 'warn' : 'success');
+      setResultBanner(success, finalTone);
+      setNotice(success, finalTone);
       await App.schedulingUi?.refreshImportedAiringMarkers?.();
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
