@@ -1,0 +1,12 @@
+WNMU Pledge Program Library v0.22.19 changed-files install
+
+Copy these files into the existing app folder, preserving paths:
+
+- index.html
+- version.json
+- pledge-performance-lab.html
+- assets/js/core.js
+- assets/js/ui-imports.js
+- README-v0.22.19-import-manual-match-memory.txt
+
+This patch does not include config.js.

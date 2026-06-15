@@ -1085,7 +1085,7 @@
       match_method: isNonSpecific ? 'non_specific' : (matchedProgram ? matchMethod : (suggestedProgram ? 'suggested_title' : 'unmatched_nola')),
       match_reason: isNonSpecific ? 'Non-specific broadcast row' : (matchedProgram ? matchReason : matchReason || `No pledge-library match found for ${nola || importedTitle || 'that row'}.`),
       title_mismatch_flag: titleMismatch || false,
-      pending_persist_match_rule: false,
+      pending_persist_match_rule: !isNonSpecific && !matchedProgram,
       manual_match_program_id: null,
       manual_match_label: '',
       pending_manual_match_program_id: suggestedProgram ? String(derive.programId(suggestedProgram) || '').trim() : '',
@@ -2145,6 +2145,7 @@
         ? (state.rawRows || []).find((candidate) => String(derive.programId(candidate) || '') === targetId)
         : null;
       row.pending_manual_match_label = targetRow ? (derive.title(targetRow) || '') : '';
+      if (targetId && row.pending_persist_match_rule !== false) row.pending_persist_match_rule = true;
     });
   }
 
@@ -2168,7 +2169,7 @@
     }
     const rows = rowsForUnmatchedTitleGroup(rowHash);
     if (!rows.length) return 0;
-    const shouldPersist = options.persistRule ?? rows.some((row) => Boolean(row.pending_persist_match_rule));
+    const shouldPersist = options.persistRule ?? rows.some((row) => row.pending_persist_match_rule !== false);
     rows.forEach((airing) => {
       airing.program_id = derive.programId(targetRow) || null;
       airing.pledge_program_id = airing.program_id;
@@ -2208,7 +2209,7 @@
       const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
       if (!groupKey || seen.has(groupKey)) return;
       seen.add(groupKey);
-      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: Boolean(row.pending_persist_match_rule) });
+      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: row.pending_persist_match_rule !== false });
     });
     if (updated) {
       setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'}.`);
@@ -2236,7 +2237,7 @@
     row.program_title = row.title;
     row.match_method = matchMethod || 'manual_library';
     row.match_reason = matchReason || 'Matched after refreshing pledge-library titles.';
-    row.pending_persist_match_rule = Boolean(row.pending_persist_match_rule);
+    row.pending_persist_match_rule = row.pending_persist_match_rule !== false;
     row.row_hash = computeImportRowHash(row);
     return true;
   }
@@ -2479,7 +2480,7 @@
       App.listUi?.buildFilterOptions?.();
       const createdId = derive.programId(response.data || {});
       syncPendingManualMatch(rowHash, createdId);
-      const linkedCount = applyManualMatchToGroup(rowHash, createdId, { persistRule: rowsForUnmatchedTitleGroup(rowHash).some((row) => Boolean(row.pending_persist_match_rule)) });
+      const linkedCount = applyManualMatchToGroup(rowHash, createdId, { persistRule: rowsForUnmatchedTitleGroup(rowHash).some((row) => row.pending_persist_match_rule !== false) });
       setNotice(`Created ${title} and linked ${utils.formatCount(linkedCount)} row${linkedCount === 1 ? '' : 's'} from that unmatched title group.`);
     } catch (error) {
       setNotice(`Could not create a new pledge title from that unmatched row. ${error?.message || error}`, 'warn');
@@ -2520,8 +2521,8 @@
             <div class="import-match-card-controls">
               <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
               <label class="import-rule-check">
-                <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule ? 'checked' : ''}>
-                <span>Always equals this</span>
+                <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule !== false ? 'checked' : ''}>
+                <span>Remember this match</span>
               </label>
               <div class="import-match-actions">
                 <button type="button" class="ghost import-apply-match-button" data-row-hash="${escape(row.row_hash)}">Apply</button>
