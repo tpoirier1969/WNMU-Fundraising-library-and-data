@@ -62,6 +62,18 @@
     return sumRowDollars(getUnmatchedRows());
   }
 
+  function getImportableRows() {
+    return (imp().airingsRows || []).filter((row) => isImportMatched(row));
+  }
+
+  function getQuarantinedRows() {
+    return (imp().airingsRows || []).filter((row) => !isImportMatched(row));
+  }
+
+  function getQuarantinedDollarTotal() {
+    return sumRowDollars(getQuarantinedRows());
+  }
+
   function getStoredAliasRules() {
     return Array.isArray(imp().aliasRules) ? imp().aliasRules : [];
   }
@@ -1495,11 +1507,11 @@
 
       const matchedCount = getMatchedRows().length;
       const unmatchedCount = getUnmatchedRows().length;
-      const importableRows = imp().airingsRows.length;
+      const importableRows = matchedCount;
       const missingReportTotals = 0;
       const unreconciledFiles = filesWithReconciliationDifferences();
       if (imp().airingsRows.length) {
-        imp().warnings.unshift(`The importer has ${utils.formatCount(importableRows)} raw row${importableRows === 1 ? '' : 's'} ready for import, ${utils.formatCount(matchedCount)} matched row${matchedCount === 1 ? '' : 's'} ready for scheduling, and ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} still needing review.`);
+        imp().warnings.unshift(`The importer found ${utils.formatCount(imp().airingsRows.length)} parsed row${imp().airingsRows.length === 1 ? '' : 's'}: ${utils.formatCount(importableRows)} importable matched/non-specific row${importableRows === 1 ? '' : 's'} and ${utils.formatCount(unmatchedCount)} quarantined row${unmatchedCount === 1 ? '' : 's'} that will NOT be written until linked or explicitly marked non-specific.`);
       }
       renderAll();
       const legacyFiles = imp().fileSummaries.filter((item) => item.detectedFormat === 'legacy_pbs_break_report').length;
@@ -1507,8 +1519,8 @@
       const totalsNote = unreconciledFiles.length
         ? ` Raw CSV totals still show differences for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}.`
         : ' Raw CSV totals reconcile exactly.';
-      setStatus(`Preview ready: ${utils.formatCount(importableRows)} raw rows can be imported. ${utils.formatCount(matchedCount)} matched rows are schedulable and ${utils.formatCount(unmatchedCount)} rows still need review.${legacyNote}${totalsNote}`);
-      setResultBanner(`Preview ready: ${utils.formatCount(importableRows)} raw airing rows can be imported. ${utils.formatCount(matchedCount)} matched rows are schedulable and ${utils.formatCount(unmatchedCount)} unmatched rows still need review.${legacyNote}${totalsNote}`);
+      setStatus(`Preview ready: ${utils.formatCount(importableRows)} matched/non-specific row${importableRows === 1 ? '' : 's'} can be imported. ${utils.formatCount(unmatchedCount)} quarantined row${unmatchedCount === 1 ? '' : 's'} will not be written.${legacyNote}${totalsNote}`);
+      setResultBanner(`Preview ready: ${utils.formatCount(importableRows)} matched/non-specific row${importableRows === 1 ? '' : 's'} can be imported. ${utils.formatCount(unmatchedCount)} quarantined row${unmatchedCount === 1 ? '' : 's'} will not be written until linked or explicitly marked non-specific.${legacyNote}${totalsNote}`);
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Report analysis failed.';
@@ -1639,19 +1651,24 @@
       return;
     }
     const allRows = Array.isArray(imp().airingsRows) ? imp().airingsRows.slice() : [];
-    const matchedRows = getMatchedRows();
-    const unmatchedDollarTotal = getUnmatchedDollarTotal();
+    const matchedRows = getImportableRows();
+    const quarantinedCount = allRows.length - matchedRows.length;
     if (!allRows.length) {
       setResultBanner('No imported airings are available for scheduler creation yet.', 'warn');
       return;
     }
-    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: allRows, rebuild: Boolean(options.rebuild) });
+    if (!matchedRows.length) {
+      setResultBanner(`No matched/importable airings are available for scheduler creation. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} must be linked or marked non-specific first.`, 'warn');
+      return;
+    }
+    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: matchedRows, rebuild: Boolean(options.rebuild) });
     if (summary) {
       const diag = summary.diagnostics || {};
       const extra = summary.skippedRows
-        ? ` ${utils.formatCount(summary.skippedRows)} rows could not be placed${(diag.noLibraryMatch || diag.badDate || diag.badTime) ? ` (${utils.formatCount(diag.noLibraryMatch || 0)} no library match, ${utils.formatCount(diag.badDate || 0)} bad date, ${utils.formatCount(diag.badTime || 0)} bad time)` : ''}, but their dollars still remain in fundraiser totals${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`
+        ? ` ${utils.formatCount(summary.skippedRows)} matched row${summary.skippedRows === 1 ? '' : 's'} could not be placed${(diag.noLibraryMatch || diag.badDate || diag.badTime) ? ` (${utils.formatCount(diag.noLibraryMatch || 0)} no library match, ${utils.formatCount(diag.badDate || 0)} bad date, ${utils.formatCount(diag.badTime || 0)} bad time)` : ''}.`
         : '';
-      setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.${extra}`);
+      const quarantineNote = quarantinedCount ? ` ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not used for scheduler creation.` : '';
+      setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.${extra}${quarantineNote}`);
     }
   }
 
@@ -1694,9 +1711,9 @@
       return;
     }
     const allRows = Array.isArray(imp().airingsRows) ? imp().airingsRows.slice() : [];
-    const matchedRows = getMatchedRows();
-    const unmatchedCount = allRows.length - matchedRows.length;
-    const unmatchedDollarTotal = getUnmatchedDollarTotal();
+    const importableRows = getImportableRows();
+    const quarantinedCount = allRows.length - importableRows.length;
+    const quarantinedDollarTotal = getQuarantinedDollarTotal();
     if (!allRows.length) {
       const message = 'No imported rows are available for direct import yet. Load a PBS Break Report Excel or CSV file first.';
       setStatus(message, 'warn');
@@ -1704,14 +1721,21 @@
       setResultBanner(message, 'warn');
       return;
     }
-    setStatus(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows to Supabase…`);
-    setResultBanner(`Importing or reimporting ${utils.formatCount(allRows.length)} airing rows. ${utils.formatCount(unmatchedCount)} unmatched rows will be imported without a library link so their dollars still count toward fundraiser totals${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
+    if (!importableRows.length) {
+      const message = `No matched/importable rows are available for direct import. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} must be linked or explicitly marked non-specific before writing to Supabase.`;
+      setStatus(message, 'warn');
+      setNotice(message, 'warn');
+      setResultBanner(message, 'warn');
+      return;
+    }
+    setStatus(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows to Supabase…`);
+    setResultBanner(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} will NOT be written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
     try {
       const summary = await App.data.importNormalizedRows({
-        airingsRows: allRows,
+        airingsRows: importableRows,
         driveRows: []
       });
-      imp().lastImportResult = { ...summary, skippedUnmatched: 0, unmatchedImported: unmatchedCount };
+      imp().lastImportResult = { ...summary, skippedUnmatched: quarantinedCount, unmatchedImported: 0 };
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
       await refreshExistingUnlinkedRows({ silent: true });
@@ -1723,9 +1747,9 @@
         console.warn('Import verification query failed:', verifyError);
       }
       const updatedDuplicateCount = Number(summary.airings.updatedDuplicates || 0) || 0;
-      let success = `Imported/updated ${utils.formatCount(summary.airings.written)} airing row${summary.airings.written === 1 ? '' : 's'} in Supabase. ${utils.formatCount(updatedDuplicateCount)} existing row${updatedDuplicateCount === 1 ? '' : 's'} matched a prior report and were updated instead of duplicated. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} unchanged duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically. ${utils.formatCount(unmatchedCount)} unmatched row${unmatchedCount === 1 ? '' : 's'} were included without a library link so their dollars still count${unmatchedDollarTotal > 0 ? ` (${utils.formatMoney(unmatchedDollarTotal)})` : ''}.`;
+      let success = `Imported/updated ${utils.formatCount(summary.airings.written)} matched/non-specific airing row${summary.airings.written === 1 ? '' : 's'} in Supabase. ${utils.formatCount(updatedDuplicateCount)} existing row${updatedDuplicateCount === 1 ? '' : 's'} matched a prior report and were updated instead of duplicated. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} unchanged duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}.`;
       if (verification && summary.airings.written > 0) {
-        const verificationText = ` Verified in Supabase: ${utils.formatCount(verification.count)} row${verification.count === 1 ? '' : 's'}, ${utils.formatMoney(verification.totalDollars)}, ${utils.formatCount(verification.totalPledges)} pledge${verification.totalPledges === 1 ? '' : 's'}.`;
+        const verificationText = ` Verified in Supabase for this batch: ${utils.formatCount(verification.count)} row${verification.count === 1 ? '' : 's'}, ${utils.formatMoney(verification.totalDollars)}, ${utils.formatCount(verification.totalPledges)} pledge${verification.totalPledges === 1 ? '' : 's'}.`;
         success += verificationText;
         if (verification.missingDateCount > 0) {
           success += ` WARNING: ${utils.formatCount(verification.missingDateCount)} imported row${verification.missingDateCount === 1 ? '' : 's'} still lack an air date; check the report parser before using these totals.`;
@@ -1779,7 +1803,7 @@
     if (!els.importWarningList) return;
     const warnings = [...new Set(imp().warnings.filter(Boolean))];
     if (imp().lastImportResult) {
-      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} airings rows, skipped ${utils.formatCount(imp().lastImportResult.airings.skippedDuplicates || 0)} duplicates, and imported ${utils.formatCount(imp().lastImportResult.unmatchedImported || 0)} unmatched rows without a library link so their dollars still count. Fundraiser rollups remain derived only.`);
+      warnings.unshift(`Last import wrote ${utils.formatCount(imp().lastImportResult.airings.written)} matched/non-specific airings rows, skipped ${utils.formatCount(imp().lastImportResult.airings.skippedDuplicates || 0)} duplicates, and held ${utils.formatCount(imp().lastImportResult.skippedUnmatched || 0)} quarantined row${(imp().lastImportResult.skippedUnmatched || 0) === 1 ? '' : 's'} out of Supabase. Fundraiser rollups remain derived only from written rows.`);
     }
     if (!warnings.length) {
       els.importWarningList.innerHTML = '';

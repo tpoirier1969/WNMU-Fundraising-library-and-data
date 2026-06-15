@@ -1,0 +1,16 @@
+Install v0.22.18 changed-files patch
+
+1. Back up your current installed app folder.
+2. Extract this ZIP into the app root.
+3. Allow files to overwrite existing files.
+4. Confirm the app footer/title shows v0.22.18.
+5. Re-analyze the 2015 report before importing.
+6. Confirm the import preview says quarantined rows will NOT be written.
+
+Changed files:
+- index.html
+- version.json
+- pledge-performance-lab.html
+- assets/js/core.js
+- assets/js/ui-imports.js
+- README-v0.22.18-import-quarantine-write-gate.txt
