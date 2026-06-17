@@ -22,6 +22,7 @@
     els.lengthFilter.addEventListener('change', (event) => { state.lengthFilter = event.target.value || ''; App.listUi.applyLibraryView(); });
     els.distributorFilter.addEventListener('change', (event) => { state.distributorFilter = event.target.value || ''; App.listUi.applyLibraryView(); });
     els.statusFilter.addEventListener('change', (event) => { state.statusFilter = event.target.value || 'active'; App.listUi.applyLibraryView(); });
+    els.airingFilter?.addEventListener('change', (event) => { state.airingFilter = event.target.value || 'all'; App.listUi.applyLibraryView(); });
     els.sortFieldSelect?.addEventListener('change', (event) => { state.sortField = event.target.value || 'topic'; App.listUi.applyLibraryView(); });
     els.sortDirectionButton?.addEventListener('click', () => {
       state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';

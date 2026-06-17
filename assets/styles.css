@@ -632,13 +632,16 @@ button:disabled {
 .detail-form-actions { justify-content: flex-end; margin-top: 8px; }
 @media (max-width: 820px) { .detail-form-grid { grid-template-columns: 1fr; } .detail-form-span-2 { grid-column: span 1; } .auth-actions-row { justify-content: stretch; } }
 
-.col-length, .col-rights, .col-airing { white-space: nowrap; }
+.col-length, .col-rights { white-space: nowrap; }
+.col-airing { white-space: normal; }
 .col-length { width: 82px; }
 .col-rights { width: 104px; }
-.col-airing { width: 118px; }
+.col-airing { width: 210px; }
 .col-topic, .col-distributor { width: 140px; }
 .col-premiums { width: 180px; }
 .title-cell { width: 34%; }
+.air-dates-cell { vertical-align: top; }
+.air-dates-list { white-space: normal; line-height: 1.35; font-size: 0.84rem; min-width: 180px; word-break: break-word; }
 .filter-row .filter-field.search-grow { min-width: 220px; }
 .topbar-actions button { padding: 8px 10px; }
 
@@ -3492,6 +3495,9 @@ button.primary {
 }
 .detail-graph-point-label {
   fill: #344454;
+  font-size: 10px;
+}
+.detail-graph-axis-rotated {
   font-size: 10px;
 }
 .detail-graph-point-note {

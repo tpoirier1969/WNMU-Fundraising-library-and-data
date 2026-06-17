@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.22.25',
+    APP_VERSION: 'v0.22.27',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -49,7 +49,7 @@ window.PledgeLib = window.PledgeLib || {};
       topic: 'Topic',
       rights_begin: 'Rights Begin',
       rights_end: 'Rights End',
-      last_aired: 'Last Aired',
+      last_aired: 'Air Dates',
       avg_per_fundraiser: 'Average $ / fundraiser'
     },
     WORKSPACES: [
@@ -105,6 +105,7 @@ window.PledgeLib = window.PledgeLib || {};
     searchText: '',
     searchField: '',
     statusFilter: 'active',
+    airingFilter: 'all',
     topicFilter: '',
     secondaryTopicFilter: '',
     lengthFilter: '',
@@ -890,6 +891,25 @@ window.PledgeLib = window.PledgeLib || {};
       return explicitLocal instanceof Date && !Number.isNaN(explicitLocal.getTime())
         ? utils.formatDate(explicitLocal, '—')
         : utils.formatDate(utils.firstNonEmpty(row?.last_aired_at, row?.last_aired, row?.aired_at, row?.last_aired_date, row?.air_date), '—');
+    },
+
+    latestAiredValue(row) {
+      return utils.firstNonEmpty(
+        row?.all_air_dates_latest,
+        row?.latest_air_date,
+        row?.last_air_date,
+        row?.last_aired_at,
+        row?.last_aired,
+        row?.aired_at,
+        row?.last_aired_date,
+        row?.air_date
+      ) || '';
+    },
+
+    allAirDatesDisplay(row) {
+      const direct = utils.normalizeText(utils.firstNonEmpty(row?.all_air_dates_display, row?.__all_air_dates_display));
+      if (direct) return direct;
+      return derive.lastAiredDisplay(row);
     },
 
     hasExplicitArchiveState(row) {

@@ -31,6 +31,7 @@
     lengthFilter: document.getElementById('length-filter'),
     distributorFilter: document.getElementById('distributor-filter'),
     statusFilter: document.getElementById('status-filter'),
+    airingFilter: document.getElementById('airing-filter'),
     sortFieldSelect: document.getElementById('sort-field-select'),
     sortDirectionButton: document.getElementById('sort-direction-button'),
     sortHeaderButtons: [...document.querySelectorAll('[data-sort-field]')],

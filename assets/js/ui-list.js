@@ -43,12 +43,19 @@
     return filters.sameLookupValue(a, b);
   }
 
+  function rowMatchesAiringFilter(row) {
+    if (state.airingFilter === 'never') return !hasAired(row);
+    if (state.airingFilter === 'aired') return hasAired(row);
+    return true;
+  }
+
   function rowMatchesFiltersExcept(row, except = '') {
     if (!rowMatchesStatus(row)) return false;
     if (except !== 'topic' && state.topicFilter && !sameLookupValue(derive.topicPrimary(row), state.topicFilter)) return false;
     if (except !== 'secondary' && state.secondaryTopicFilter && !sameLookupValue(derive.topicSecondary(row), state.secondaryTopicFilter)) return false;
     if (except !== 'distributor' && state.distributorFilter && !sameLookupValue(derive.distributor(row), state.distributorFilter)) return false;
     if (except !== 'length' && state.lengthFilter && derive.lengthLabel(row) !== state.lengthFilter) return false;
+    if (!rowMatchesAiringFilter(row)) return false;
     return rowMatchesSearch(row);
   }
 
@@ -67,7 +74,7 @@
       case 'rights_end':
         return utils.compareDate(derive.rightsEnd(a), derive.rightsEnd(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'last_aired':
-        return utils.compareDate(utils.firstNonEmpty(a?.last_aired_at, a?.last_aired, a?.aired_at), utils.firstNonEmpty(b?.last_aired_at, b?.last_aired, b?.aired_at)) || utils.compareText(derive.title(a), derive.title(b));
+        return utils.compareDate(derive.latestAiredValue(a), derive.latestAiredValue(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'avg_per_fundraiser':
         return utils.compareNumber(derive.avgPerFundraiser(a), derive.avgPerFundraiser(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'topic':
@@ -95,6 +102,14 @@
 
   function premiumSummaryHtml(value) {
     return `<div class="premium-lines">${premiumLines(value).map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
+  }
+
+  function airDatesHtml(row) {
+    const value = utils.normalizeText(derive.allAirDatesDisplay(row));
+    if (!value) return '—';
+    const parts = value.split(/\s+·\s+/).filter(Boolean);
+    const label = parts.length ? parts.join(' · ') : value;
+    return `<div class="air-dates-list" title="${utils.escapeHtml(label)}">${utils.escapeHtml(label)}</div>`;
   }
 
 
@@ -258,7 +273,7 @@
           <td class="premiums-cell">${premiumSummaryHtml(derive.premiumSummary(row))}</td>
           <td>${utils.escapeHtml(utils.formatDate(derive.rightsBegin(row)))}</td>
           <td class="rights-end-heat-cell" style="${utils.escapeHtml(rightsEndStyle)}" title="${utils.escapeHtml(rightsEndTitle)}">${utils.escapeHtml(utils.formatDate(rightsEnd))}</td>
-          <td>${utils.escapeHtml(derive.lastAiredDisplay(row))}</td>
+          <td class="air-dates-cell">${airDatesHtml(row)}</td>
         </tr>
       `;
     }).join('');
@@ -271,6 +286,9 @@
     if (state.lengthFilter) filters.push(`length: ${state.lengthFilter}`);
     if (state.distributorFilter) filters.push(`distributor: ${state.distributorFilter}`);
     filters.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
+    if (state.airingFilter === 'never') filters.push('never aired');
+    else if (state.airingFilter === 'aired') filters.push('aired at least once');
+    else filters.push('all airing history');
     filters.push(`sorted by ${utils.sortLabel(state.sortField)} ${state.sortDirection === 'desc' ? 'descending' : 'ascending'}`);
     const sourceName = state.librarySource ? `source: ${state.librarySource.name}` : 'source: unknown';
     const sourceBit = sourceRowCount && sourceRowCount !== state.totalRows
@@ -317,6 +335,7 @@
     state.searchText = '';
     state.searchField = '';
     state.statusFilter = 'active';
+    state.airingFilter = 'all';
     state.topicFilter = '';
     state.secondaryTopicFilter = '';
     state.lengthFilter = '';
@@ -326,6 +345,7 @@
     els.searchInput.value = '';
     els.searchFieldSelect.value = '';
     els.statusFilter.value = 'active';
+    if (els.airingFilter) els.airingFilter.value = 'all';
     buildFilterOptions();
   }
 

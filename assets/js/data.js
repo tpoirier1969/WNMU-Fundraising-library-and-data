@@ -242,6 +242,90 @@
     });
   }
 
+  function normalizedAiringDateKey(row) {
+    return utils.normalizeText(
+      row?.air_date
+      || row?.drive_date
+      || row?.drive_start_date
+      || utils.dateKeyFromDate?.(row?.aired_at)
+      || ''
+    );
+  }
+
+  function buildAiringHistoryIndex(airingsRows = []) {
+    const byId = new Map();
+    const byLookup = new Map();
+    const byTitle = new Map();
+
+    const addDate = (map, key, dateKey) => {
+      const normalizedKey = utils.normalizeLookupKey(key);
+      if (!normalizedKey || !dateKey) return;
+      const existing = map.get(normalizedKey) || new Set();
+      existing.add(dateKey);
+      map.set(normalizedKey, existing);
+    };
+
+    (airingsRows || []).forEach((row) => {
+      const dateKey = normalizedAiringDateKey(row);
+      if (!dateKey) return;
+
+      const idCandidates = [row?.program_id, row?.pledge_program_id, row?.id];
+      idCandidates.forEach((value) => addDate(byId, value, dateKey));
+
+      const titleCandidates = [row?.matched_library_title, row?.imported_program_title, row?.program_title, row?.title, row?.name]
+        .map((value) => utils.normalizeText(value))
+        .filter(Boolean);
+      const nolaCandidates = [row?.nola_code, row?.nola, row?.program_nola]
+        .map((value) => utils.normalizeText(value))
+        .filter(Boolean);
+
+      titleCandidates.forEach((title) => addDate(byTitle, title, dateKey));
+      nolaCandidates.forEach((nola) => {
+        titleCandidates.forEach((title) => {
+          const lookupKey = utils.nolaIdentityKey(nola, title);
+          if (lookupKey) addDate(byLookup, lookupKey, dateKey);
+        });
+      });
+    });
+
+    return { byId, byLookup, byTitle };
+  }
+
+  function sortedAiringDateKeys(dateSet) {
+    return [...(dateSet || [])]
+      .filter(Boolean)
+      .sort((a, b) => String(b).localeCompare(String(a)));
+  }
+
+  function resolveAiringDateKeysForRow(row, historyIndex) {
+    if (!row || !historyIndex) return [];
+    const idKey = utils.normalizeLookupKey(derive.programId(row));
+    if (idKey && historyIndex.byId.has(idKey)) return sortedAiringDateKeys(historyIndex.byId.get(idKey));
+
+    const lookupKey = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
+    if (lookupKey && historyIndex.byLookup.has(lookupKey)) return sortedAiringDateKeys(historyIndex.byLookup.get(lookupKey));
+
+    const titleKey = utils.normalizeLookupKey(derive.title(row));
+    if (titleKey && historyIndex.byTitle.has(titleKey)) return sortedAiringDateKeys(historyIndex.byTitle.get(titleKey));
+
+    return [];
+  }
+
+  function attachAiringHistory(rows = [], historyIndex = null) {
+    return (rows || []).map((row) => {
+      const dateKeys = resolveAiringDateKeysForRow(row, historyIndex);
+      const display = dateKeys.length
+        ? dateKeys.map((value) => utils.formatDate(value, value)).join(' · ')
+        : '';
+      return {
+        ...row,
+        all_air_dates_display: display || utils.normalizeText(row?.all_air_dates_display || ''),
+        all_air_dates_latest: dateKeys[0] || utils.firstNonEmpty(row?.all_air_dates_latest, row?.last_air_date, row?.last_aired_at, row?.last_aired, row?.aired_at, row?.air_date) || '',
+        all_air_dates_count: dateKeys.length
+      };
+    });
+  }
+
   async function refreshRawRows() {
     const source = await chooseLibrarySource();
     let baseRows = [];
@@ -262,12 +346,24 @@
       }
     }
 
+    let mergedRows = [];
     if (!baseRows.length && source.name === constants.LIBRARY_VIEW && summaryRows.length) {
       state.baseRows = [];
-      state.rawRows = mergeLibraryRows([], summaryRows);
+      mergedRows = mergeLibraryRows([], summaryRows);
+      state.rawRows = mergedRows;
     } else {
       state.baseRows = baseRows;
-      state.rawRows = mergeLibraryRows(baseRows, summaryRows);
+      mergedRows = mergeLibraryRows(baseRows, summaryRows);
+      state.rawRows = mergedRows;
+    }
+
+    try {
+      const airingsRows = await fetchAllRows(constants.AIRINGS_TABLE);
+      const historyIndex = buildAiringHistoryIndex(airingsRows);
+      state.baseRows = attachAiringHistory(state.baseRows, historyIndex);
+      state.rawRows = attachAiringHistory(mergedRows, historyIndex);
+    } catch (error) {
+      console.warn('Air-date history enrichment failed.', error);
     }
     state.fieldAudit = buildFieldAudit(state.rawRows);
     resetDetailCaches();

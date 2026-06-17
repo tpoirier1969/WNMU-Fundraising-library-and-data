@@ -657,9 +657,9 @@
       return;
     }
     els.detailGraphPill.textContent = `${series.length} point${series.length === 1 ? '' : 's'}`;
-    const width = 760;
-    const height = 252;
-    const margin = { top: 18, right: 22, bottom: 64, left: 58 };
+    const width = 820;
+    const height = 320;
+    const margin = { top: 18, right: 22, bottom: 110, left: 58 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
     const expectedValues = insightRows
@@ -729,14 +729,10 @@
       const tickClass = airedSlotIndices.has(index) ? 'detail-graph-axis-tick detail-graph-axis-tick-aired' : 'detail-graph-axis-tick';
       return `<g><line x1="${x}" y1="${baselineY}" x2="${x}" y2="${baselineY + 7}" class="${tickClass}"></line><title>${utils.escapeHtml(slot.hoverLabel || slot.axisLabel || 'Fundraiser')}</title></g>`;
     }).join('');
-    const labelEvery = Math.max(1, Math.ceil(axisSlots.length / 6));
     const xLabels = axisSlots.map((slot, index) => {
-      const shouldShow = index === 0 || index === axisSlots.length - 1 || airedSlotIndices.has(index) || index % labelEvery === 0;
-      if (!shouldShow) return '';
       const x = axisSlots.length > 1 ? margin.left + (xStep * index) : margin.left + (innerW / 2);
-      const anchor = index === 0 ? 'start' : index === axisSlots.length - 1 ? 'end' : 'middle';
-      const xShift = index === 0 ? 4 : index === axisSlots.length - 1 ? -4 : 0;
-      return `<text x="${x + xShift}" y="${height - 16}" text-anchor="${anchor}" class="detail-graph-axis">${utils.escapeHtml(slot.axisLabel || 'Fundraiser')}</text>`;
+      const y = baselineY + 14;
+      return `<text x="${x}" y="${y}" text-anchor="start" class="detail-graph-axis detail-graph-axis-rotated" transform="rotate(90 ${x} ${y})">${utils.escapeHtml(slot.axisLabel || 'Fundraiser')}</text>`;
     }).join('');
     const expectedDots = points.map((pt) => {
       if (!Number.isFinite(pt.expectedY)) return '';
@@ -758,21 +754,29 @@
       ].filter(Boolean).join('\n');
       return `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
     }).join('');
+    const crowdedPointIndexes = points.map((pt, index) => {
+      const prev = points[index - 1];
+      const next = points[index + 1];
+      return Boolean((prev && Math.abs(prev.x - pt.x) < 44) || (next && Math.abs(next.x - pt.x) < 44));
+    });
     const pointLabels = points.map((pt, index) => {
       const fullDay = utils.escapeHtml(pt.dayLabel || 'Unknown day');
       const timeText = utils.escapeHtml(pt.timeLabel || 'Unknown time');
       const slotLine = `${timeText}`;
       const noteLine = fullDay;
       const anchor = index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle';
-      const labelX = index === 0 ? pt.x + 8 : index === points.length - 1 ? pt.x - 8 : pt.x;
+      const labelX = index === 0 ? pt.x + 10 : index === points.length - 1 ? pt.x - 10 : pt.x;
       const labelAbove = (index % 2 === 0 && pt.y > (margin.top + 30)) || pt.y > (margin.top + innerH * 0.72);
-      const baseY = labelAbove ? pt.y - 12 : pt.y + 18;
-      const connectorY = labelAbove ? pt.y - 4 : pt.y + 4;
+      const crowdOffset = crowdedPointIndexes[index] ? 12 : 0;
+      const slotOffset = Number(pt.slotCount || 0) > 1 ? 10 : 0;
+      const extraOffset = crowdOffset + slotOffset;
+      const baseY = labelAbove ? pt.y - (22 + extraOffset) : pt.y + (28 + extraOffset);
+      const connectorY = labelAbove ? pt.y - 5 : pt.y + 5;
       return `<g>
-        <line x1="${pt.x}" y1="${connectorY}" x2="${labelX}" y2="${labelAbove ? baseY - 3 : baseY - 11}" class="detail-graph-label-line"></line>
+        <line x1="${pt.x}" y1="${connectorY}" x2="${labelX}" y2="${labelAbove ? baseY - 4 : baseY - 12}" class="detail-graph-label-line"></line>
         <text x="${labelX}" y="${baseY}" text-anchor="${anchor}" class="detail-graph-point-label">
           <tspan x="${labelX}" dy="0">${slotLine}</tspan>
-          <tspan x="${labelX}" dy="11" class="detail-graph-point-note">${noteLine}</tspan>
+          <tspan x="${labelX}" dy="12" class="detail-graph-point-note">${noteLine}</tspan>
         </text>
       </g>`;
     }).join('');
