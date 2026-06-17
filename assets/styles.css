@@ -552,7 +552,7 @@ button:disabled {
 
 .filter-row {
   display: grid;
-  grid-template-columns: 120px minmax(240px, 1.8fr) minmax(130px, 1fr) minmax(150px, 1fr) 110px minmax(150px, 1fr) 120px auto;
+  grid-template-columns: 120px minmax(260px, 1.7fr) 100px minmax(150px, 1fr) minmax(125px, .85fr) 110px minmax(135px, .9fr) 120px 130px;
   gap: 6px;
   align-items: end;
 }
@@ -608,7 +608,7 @@ button:disabled {
 
 @media (max-width: 1500px) {
   .filter-row {
-    grid-template-columns: repeat(4, minmax(160px, 1fr));
+    grid-template-columns: 120px minmax(230px, 1.5fr) 96px minmax(135px, .9fr) minmax(120px, .8fr) 100px minmax(120px, .85fr) 110px 120px;
   }
 
   .filter-actions {
