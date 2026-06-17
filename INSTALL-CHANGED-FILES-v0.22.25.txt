@@ -1,0 +1,7 @@
+Install v0.22.25 changed files
+
+1. Back up the currently installed app folder.
+2. Extract this ZIP into the installed app root.
+3. Let it overwrite matching files and preserve folder paths.
+4. Keep your existing config.js. This ZIP does not include config.js.
+5. Hard-refresh the browser after copying the files.

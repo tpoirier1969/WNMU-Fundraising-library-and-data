@@ -1528,8 +1528,40 @@
     });
   }
 
+  function setDetailDirty(value = true) {
+    state.detailDirty = Boolean(value);
+  }
+
+  function clearDetailEditorFields() {
+    const form = els.detailEditForm;
+    if (!form) return;
+    [...form.elements].forEach((field) => {
+      if (!field || !('value' in field)) return;
+      if (field.type === 'checkbox' || field.type === 'radio') field.checked = false;
+      else if (field.tagName === 'SELECT') field.value = '';
+      else field.value = '';
+    });
+    if (els.detailTimingEditor) els.detailTimingEditor.innerHTML = '';
+    if (els.detailExtraFieldsEditor) els.detailExtraFieldsEditor.innerHTML = '';
+    state.detailExtraFieldDraft = {};
+  }
+
+  function currentDetailFormId() {
+    return utils.normalizeText(els.detailEditForm?.dataset?.detailProgramId || '');
+  }
+
+  function hasUnsavedDetailChanges() {
+    return Boolean(state.detailDirty && state.detailEditMode && !state.detailSaveInProgress);
+  }
+
+  function confirmDiscardDetailChanges() {
+    if (!hasUnsavedDetailChanges()) return true;
+    return window.confirm('You have unsaved changes in this program detail form. Discard them and open another program?');
+  }
+
   function setFormFieldsFromSource(source = {}) {
     const form = els.detailEditForm;
+    if (form) form.dataset.detailProgramId = utils.normalizeText(state.selectedProgramId || derive.programId(source) || '');
     form.elements.title.value = derive.title(source) === 'Untitled program' ? '' : derive.title(source);
     form.elements.nola_code.value = derive.nola(source);
     form.elements.distributor.value = derive.distributor(source);
@@ -1616,6 +1648,7 @@
   }
 
   function handleEditorInput() {
+    if (state.detailEditMode && !state.detailHydratingForm) setDetailDirty(true);
     if (!state.detailEditMode) {
       if (els.detailTimingEditor) els.detailTimingEditor.innerHTML = '';
       if (els.detailExtraFieldsEditor) els.detailExtraFieldsEditor.innerHTML = '';
@@ -1649,11 +1682,17 @@
     if (!state.detailEditMode) return;
 
     const source = state.currentDetailProgram || blankProgram();
-    setFormFieldsFromSource(source);
-    bindCompactDateInputs();
-    const timingSource = (state.detailTimingDraftRows && state.detailTimingDraftRows.length) ? state.detailTimingDraftRows : (state.currentDetailTimings || []);
-    renderTimingEditor(timingSource);
-    handleEditorInput();
+    state.detailHydratingForm = true;
+    try {
+      setFormFieldsFromSource(source);
+      bindCompactDateInputs();
+      const timingSource = (state.detailTimingDraftRows && state.detailTimingDraftRows.length) ? state.detailTimingDraftRows : (state.currentDetailTimings || []);
+      renderTimingEditor(timingSource);
+      handleEditorInput();
+    } finally {
+      state.detailHydratingForm = false;
+    }
+    setDetailDirty(false);
   }
 
   function openDetailModal() {
@@ -1670,6 +1709,9 @@
     state.detailCreateMode = false;
     state.detailLoadToken = null;
     state.detailTimingDraftRows = [];
+    setDetailDirty(false);
+    state.detailActiveProgramId = '';
+    if (els.detailEditForm) delete els.detailEditForm.dataset.detailProgramId;
     els.detailModal.classList.remove('create-mode');
     setDetailNotice('');
   }
@@ -1684,6 +1726,9 @@
     state.currentDetailDriveResults = [];
     state.currentDetailAirings = [];
     state.detailTimingDraftRows = [];
+    setDetailDirty(false);
+    state.detailActiveProgramId = '';
+    if (els.detailEditForm) els.detailEditForm.dataset.detailProgramId = '';
     openDetailModal();
     els.detailTitle.textContent = 'Add Program';
     els.detailSubtitle.textContent = 'Create the library record now. NOLA is required because reports match by NOLA, not title.';
@@ -1698,7 +1743,9 @@
 
   async function loadProgramDetail(programId, options = {}) {
     const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
+    if (!options.force && utils.normalizeText(resolvedProgramId) !== utils.normalizeText(state.selectedProgramId || '') && !confirmDiscardDetailChanges()) return false;
     state.selectedProgramId = resolvedProgramId;
+    state.detailActiveProgramId = resolvedProgramId;
     programId = resolvedProgramId;
     state.currentDetailProgram = blankProgram();
     state.currentDetailTimings = [];
@@ -1706,6 +1753,9 @@
     state.currentDetailAirings = [];
     state.detailTimingDraftRows = [];
     state.detailCreateMode = false;
+    setDetailDirty(false);
+    clearDetailEditorFields();
+    if (els.detailEditForm) els.detailEditForm.dataset.detailProgramId = utils.normalizeText(programId || '');
 
     const preserveMode = Object.prototype.hasOwnProperty.call(options, 'preserveMode')
       ? Boolean(options.preserveMode)
@@ -1733,8 +1783,8 @@
     }
 
     try {
-      const detail = await App.data.fetchProgramDetail(programId);
-      if (state.detailLoadToken !== loadToken) return;
+      const detail = await App.data.fetchProgramDetail(programId, { useCache: false });
+      if (state.detailLoadToken !== loadToken || utils.normalizeText(state.selectedProgramId || '') !== utils.normalizeText(programId || '')) return false;
       if (!detail.program) {
         showDetailFailure('No readable detail data came back for this title.');
         return;
@@ -1749,8 +1799,10 @@
       renderDetail(detail.program, detail.timings, detail.driveResults, detail.airings);
       if (preserveMode && canEdit()) setDetailMode('edit');
       else els.detailCloseButton.focus();
+      setDetailDirty(false);
+      return true;
     } catch (error) {
-      if (state.detailLoadToken !== loadToken) return;
+      if (state.detailLoadToken !== loadToken || utils.normalizeText(state.selectedProgramId || '') !== utils.normalizeText(programId || '')) return false;
       console.error('Detail render failed.', error);
       setDetailNotice(`Detail render warning: ${error.message || error}`, 'bad');
       const fallbackProgram = App.data.resolveProgramSnapshot?.(programId)
@@ -1855,23 +1907,33 @@
         } else {
           closeDetailModal();
         }
+        setDetailDirty(false);
         App.dom.setNotice(`Added ${payload.title}.`);
         return;
       }
 
-      const programId = state.selectedProgramId;
+      const formProgramId = currentDetailFormId();
+      const programId = formProgramId || state.selectedProgramId;
       const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
       if (!resolvedProgramId) return;
-      const { error } = await App.data.updateProgram(resolvedProgramId, payload);
-      if (error) throw error;
+      if (formProgramId && utils.normalizeText(formProgramId) !== utils.normalizeText(state.selectedProgramId || '')) {
+        throw new Error('The detail form and selected program got out of sync. I stopped instead of saving to the wrong title. Reopen this program and save again.');
+      }
+      const updateResponse = await App.data.updateProgram(resolvedProgramId, payload);
+      if (updateResponse.error) throw updateResponse.error;
+      if (!Array.isArray(updateResponse.data) || updateResponse.data.length < 1) {
+        throw new Error('Save did not update any program row. Refresh the library and try again; I stopped instead of pretending that saved.');
+      }
+      App.data.resetDetailCaches?.();
       syncTimingDraftFromDom();
       const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
       if (timingResponse?.error) throw new Error(friendlyTimingSaveError(timingResponse.error));
       applyCalculatedRuntimeLocally(resolvedProgramId, calculatedRuntimeSeconds);
       App.schedulingUi?.invalidateScheduleDetail?.(resolvedProgramId);
       state.selectedProgramId = resolvedProgramId;
-      await App.app.refreshAll({ preserveDetail: true, workspace: state.activeWorkspace });
-      await loadProgramDetail(resolvedProgramId, { preserveMode: false });
+      await App.app.refreshAll({ workspace: state.activeWorkspace });
+      await loadProgramDetail(resolvedProgramId, { preserveMode: false, force: true });
+      setDetailDirty(false);
       setDetailNotice('Changes saved.');
       App.dom.setNotice('Program updated.');
       setDetailMode('view');

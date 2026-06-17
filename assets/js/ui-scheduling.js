@@ -1307,6 +1307,125 @@
   }
 
 
+  function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupImportedFileKeys(group)) {
+    const identity = `imported|${group.key}`.toLowerCase();
+    let schedule = state.schedules.find((item) => scheduleIdentityKey(item) === identity) || null;
+    if (!schedule) {
+      schedule = state.schedules.find((item) => {
+        const importedPlacement = (item.placements || []).find((placement) => placement?.importedFromReport && utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key));
+        return Boolean(importedPlacement);
+      }) || null;
+    }
+    if (!schedule) schedule = findBestSameRangeScheduleForImportedGroup(group);
+    if (!schedule) {
+      schedule = state.schedules.find((item) => {
+        const sameRange = utils.normalizeText(item.startDate) === group.startDate && utils.normalizeText(item.endDate) === group.endDate;
+        const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
+        return sameRange && hasImportedPlacements;
+      }) || null;
+    }
+    if (!schedule) {
+      schedule = state.schedules.find((item) => {
+        const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
+        if (!hasImportedPlacements) return false;
+        if (!datesOverlap(utils.normalizeText(item.startDate), utils.normalizeText(item.endDate), group.startDate, group.endDate)) return false;
+        const itemFileKeys = scheduleImportedFileKeys(item);
+        if (!itemFileKeys.size || !groupFileKeys.size) return false;
+        return [...groupFileKeys].some((key) => itemFileKeys.has(key));
+      }) || null;
+    }
+    return schedule;
+  }
+
+  function prepareImportedScheduleRows(rows = []) {
+    const deduped = dedupeImportedRows(Array.isArray(rows) ? rows : []);
+    const sourceRows = deduped.rows;
+    const diagnostics = {
+      inputRows: Array.isArray(rows) ? rows.length : 0,
+      collapsedDuplicateImports: deduped.collapsed,
+      eligibleRows: 0,
+      noLibraryMatch: 0,
+      badDate: 0,
+      badTime: 0,
+      droppedRows: []
+    };
+    const groupedRows = sourceRows.map((row) => ({
+      row,
+      sourceRow: importedRowIsNonSpecific(row) ? null : findProgramRowForImportedAiring(row),
+      dateKey: importedRowDateKey(row) || utils.normalizeText(row.drive_start_date || row.drive_end_date || ''),
+      startMinutes: Number.isFinite(importedRowStartMinutes(row)) ? importedRowStartMinutes(row) : 0,
+      isNonSpecific: importedRowIsNonSpecific(row)
+    })).filter((entry) => entry.dateKey);
+    groupedRows.forEach((entry) => {
+      if (entry.isNonSpecific) return;
+      const reasons = [];
+      if (!canBuildImportedPlacement(entry)) reasons.push('no_library_match');
+      if (!entry.dateKey) reasons.push('bad_date');
+      if (!Number.isFinite(importedRowStartMinutes(entry.row))) reasons.push('bad_time');
+      if (reasons.length) {
+        if (reasons.includes('no_library_match')) diagnostics.noLibraryMatch += 1;
+        if (reasons.includes('bad_date')) diagnostics.badDate += 1;
+        if (reasons.includes('bad_time')) diagnostics.badTime += 1;
+        if (diagnostics.droppedRows.length < 12) diagnostics.droppedRows.push({
+          title: utils.normalizeText(entry.row.program_title || entry.row.title || 'Unknown title') || 'Unknown title',
+          sourceFile: utils.normalizeText(entry.row.source_file_name || ''),
+          airDate: utils.normalizeText(entry.row.air_date || entry.row.drive_start_date || ''),
+          airTime: utils.normalizeText(entry.row.air_time || ''),
+          reasons
+        });
+        return;
+      }
+      diagnostics.eligibleRows += 1;
+    });
+    const preparedRows = groupedRows.filter((entry) => !entry.isNonSpecific && canBuildImportedPlacement(entry) && entry.dateKey && Number.isFinite(importedRowStartMinutes(entry.row))).map((entry) => ({
+      ...entry,
+      startMinutes: importedRowStartMinutes(entry.row)
+    }));
+    const skippedRows = Math.max(0, sourceRows.length - preparedRows.length - groupedRows.filter((entry) => entry.isNonSpecific).length);
+    const groups = buildImportedFundraiserGroups(groupedRows);
+    diagnostics.clusteredFundraisers = groups.length;
+    return { sourceRows, groupedRows, preparedRows, skippedRows, groups, diagnostics };
+  }
+
+  function analyzeImportedScheduleRepairs(rows = []) {
+    const prepared = prepareImportedScheduleRows(rows);
+    let mergeableSchedules = 0;
+    let missingSchedules = 0;
+    let existingImportedSchedules = 0;
+    let renameCandidates = 0;
+    const groupSummaries = [];
+    (prepared.groups || []).forEach((group) => {
+      const groupFileKeys = groupImportedFileKeys(group);
+      const schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);
+      const duplicates = schedule ? findMergeableDuplicateSchedulesForImportedGroup(schedule, group, groupFileKeys) : [];
+      mergeableSchedules += duplicates.length;
+      if (!schedule) missingSchedules += 1;
+      if (schedule) existingImportedSchedules += 1;
+      if (schedule && scheduleLooksAutoImported(schedule) && utils.normalizeText(schedule.title) !== utils.normalizeText(group.title)) renameCandidates += 1;
+      groupSummaries.push({
+        key: group.key,
+        title: group.title,
+        startDate: group.startDate,
+        endDate: group.endDate,
+        rowCount: group.rows?.length || 0,
+        scheduleId: schedule?.id || '',
+        scheduleTitle: schedule?.title || '',
+        duplicateIds: duplicates.map((item) => item.id).filter(Boolean)
+      });
+    });
+    return {
+      ...prepared,
+      groupSummaries,
+      mergeableSchedules,
+      missingSchedules,
+      existingImportedSchedules,
+      renameCandidates,
+      refreshableGroups: prepared.groups.length,
+      rebuildableGroups: prepared.groups.length
+    };
+  }
+
+
   function getProgramLookupCache() {
     const rawRows = Array.isArray(state.rawRows) ? state.rawRows : [];
     const baseRows = Array.isArray(state.baseRows) ? state.baseRows : [];
@@ -1516,52 +1635,9 @@
     return { restoredPlacements, reboundPlacements, unresolvedCollisions };
   }
 
-  function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [] } = {}) {
-    const deduped = dedupeImportedRows(Array.isArray(rows) ? rows : []);
-    const sourceRows = deduped.rows;
-    const diagnostics = {
-      inputRows: Array.isArray(rows) ? rows.length : 0,
-      collapsedDuplicateImports: deduped.collapsed,
-      eligibleRows: 0,
-      noLibraryMatch: 0,
-      badDate: 0,
-      badTime: 0,
-      droppedRows: []
-    };
-    const groupedRows = sourceRows.map((row) => ({
-      row,
-      sourceRow: importedRowIsNonSpecific(row) ? null : findProgramRowForImportedAiring(row),
-      dateKey: importedRowDateKey(row) || utils.normalizeText(row.drive_start_date || row.drive_end_date || ''),
-      startMinutes: Number.isFinite(importedRowStartMinutes(row)) ? importedRowStartMinutes(row) : 0,
-      isNonSpecific: importedRowIsNonSpecific(row)
-    })).filter((entry) => entry.dateKey);
-    groupedRows.forEach((entry) => {
-      if (entry.isNonSpecific) return;
-      const reasons = [];
-      if (!canBuildImportedPlacement(entry)) reasons.push('no_library_match');
-      if (!entry.dateKey) reasons.push('bad_date');
-      if (!Number.isFinite(importedRowStartMinutes(entry.row))) reasons.push('bad_time');
-      if (reasons.length) {
-        if (reasons.includes('no_library_match')) diagnostics.noLibraryMatch += 1;
-        if (reasons.includes('bad_date')) diagnostics.badDate += 1;
-        if (reasons.includes('bad_time')) diagnostics.badTime += 1;
-        if (diagnostics.droppedRows.length < 12) diagnostics.droppedRows.push({
-          title: utils.normalizeText(entry.row.program_title || entry.row.title || 'Unknown title') || 'Unknown title',
-          sourceFile: utils.normalizeText(entry.row.source_file_name || ''),
-          airDate: utils.normalizeText(entry.row.air_date || entry.row.drive_start_date || ''),
-          airTime: utils.normalizeText(entry.row.air_time || ''),
-          reasons
-        });
-        return;
-      }
-      diagnostics.eligibleRows += 1;
-    });
-    const preparedRows = groupedRows.filter((entry) => !entry.isNonSpecific && canBuildImportedPlacement(entry) && entry.dateKey && Number.isFinite(importedRowStartMinutes(entry.row))).map((entry) => ({
-      ...entry,
-      startMinutes: importedRowStartMinutes(entry.row)
-    }));
-    const skippedRows = Math.max(0, sourceRows.length - preparedRows.length - groupedRows.filter((entry) => entry.isNonSpecific).length);
-    const groups = buildImportedFundraiserGroups(groupedRows);
+  function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [], allowDuplicateMerges = true, allowCreateMissing = true, allowRefreshPlacements = true, allowTitleUpdates = false } = {}) {
+    const prepared = prepareImportedScheduleRows(rows);
+    const { sourceRows, groupedRows, skippedRows, groups, diagnostics } = prepared;
 
     let createdSchedules = 0;
     let updatedSchedules = 0;
@@ -1576,43 +1652,17 @@
     let firstScheduleId = '';
 
     groups.forEach((group) => {
-      const identity = `imported|${group.key}`.toLowerCase();
       const groupFileKeys = groupImportedFileKeys(group);
-      let schedule = state.schedules.find((item) => scheduleIdentityKey(item) === identity) || null;
-      if (!schedule) {
-        schedule = state.schedules.find((item) => {
-          const importedPlacement = (item.placements || []).find((placement) => placement?.importedFromReport && utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key));
-          return Boolean(importedPlacement);
-        }) || null;
-      }
-      if (!schedule) {
-        schedule = findBestSameRangeScheduleForImportedGroup(group);
-      }
-      if (!schedule) {
-        schedule = state.schedules.find((item) => {
-          const sameRange = utils.normalizeText(item.startDate) === group.startDate && utils.normalizeText(item.endDate) === group.endDate;
-          const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
-          return sameRange && hasImportedPlacements;
-        }) || null;
-      }
-      if (!schedule) {
-        schedule = state.schedules.find((item) => {
-          const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
-          if (!hasImportedPlacements) return false;
-          if (!datesOverlap(utils.normalizeText(item.startDate), utils.normalizeText(item.endDate), group.startDate, group.endDate)) return false;
-          const itemFileKeys = scheduleImportedFileKeys(item);
-          if (!itemFileKeys.size || !groupFileKeys.size) return false;
-          return [...groupFileKeys].some((key) => itemFileKeys.has(key));
-        }) || null;
-      }
+      let schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);
       let createdThisSchedule = false;
       if (!schedule) {
+        if (!allowCreateMissing) return;
         schedule = createScheduleRecord({ title: group.title, startDate: group.startDate, endDate: group.endDate, dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES });
         state.schedules.unshift(schedule);
         createdSchedules += 1;
         createdThisSchedule = true;
       }
-      const duplicateSchedules = findMergeableDuplicateSchedulesForImportedGroup(schedule, group, groupFileKeys);
+      const duplicateSchedules = allowDuplicateMerges ? findMergeableDuplicateSchedulesForImportedGroup(schedule, group, groupFileKeys) : [];
       duplicateSchedules.forEach((duplicate) => {
         mergeImportedSchedulePlacements(schedule, duplicate, group.key);
         removedScheduleIds.push(duplicate.id);
@@ -1623,16 +1673,17 @@
         if (removedScheduleIds.includes(state.activeScheduleId)) state.activeScheduleId = schedule.id;
       }
       if (scheduleLooksAutoImported(schedule)) {
-        schedule.title = group.title || schedule.title;
+        if (createdThisSchedule || allowTitleUpdates) schedule.title = group.title || schedule.title;
         schedule.startDate = group.startDate || schedule.startDate;
         schedule.endDate = group.endDate || schedule.endDate;
       }
       const preservedLiveBreaks = collectLiveBreakPreserveMap(schedule, group.key);
+      const shouldRefreshPlacements = Boolean(allowRefreshPlacements || createdThisSchedule || duplicateSchedules.length || rebuild);
       if (!createdThisSchedule) {
         updatedSchedules += 1;
-        if (rebuild) {
+        if (shouldRefreshPlacements && rebuild) {
           schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
-        } else {
+        } else if (shouldRefreshPlacements) {
           schedule.placements = (schedule.placements || []).filter((placement) => {
             if (!placement?.importedFromReport) return true;
             const sameImportedKey = utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key);
@@ -1662,7 +1713,7 @@
       if (!dirtySchedules.includes(schedule)) dirtySchedules.push(schedule);
       const existingKeys = new Set((schedule.placements || []).map((placement) => placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`));
       const existingSignatureMap = new Map((schedule.placements || []).filter((placement) => placement?.importedFromReport).map((placement, index) => [placementSignature(placement, group.key), index]));
-      scheduleableRows.forEach((prepared) => {
+      if (shouldRefreshPlacements) scheduleableRows.forEach((prepared) => {
         const placement = applyPreservedLiveBreakFlag(buildPlacementFromImportedAiring(prepared), preservedLiveBreaks, group.key);
         if (!placement) return;
         placement.importedFundraiserKey = group.key;
@@ -1696,7 +1747,7 @@
         createdPlacements += 1;
         if (placement.durationCorrectedFromLibrary) correctedDurations += 1;
       });
-      const coverage = reconcileImportedScheduleCoverage(schedule, scheduleableRows, group.key);
+      const coverage = shouldRefreshPlacements ? reconcileImportedScheduleCoverage(schedule, scheduleableRows, group.key) : null;
       restoredPlacements += Number(coverage?.restoredPlacements || 0) || 0;
       reboundPlacements += Number(coverage?.reboundPlacements || 0) || 0;
       unresolvedCollisions += Number(coverage?.unresolvedCollisions || 0) || 0;
@@ -1747,11 +1798,116 @@
     return removed || wanted.length;
   }
 
+
+  function closeScheduleRepairOptionsPanel() {
+    document.getElementById('schedule-repair-options-panel')?.remove();
+  }
+
+  function repairOptionRow({ key, label, detail, checked = false, disabled = false, danger = false }) {
+    return `
+      <label style="display:block;margin:.65rem 0;padding:.65rem .75rem;border:1px solid #d8e0eb;border-radius:10px;background:${danger ? '#fff8f2' : '#fff'};">
+        <span style="display:flex;gap:.55rem;align-items:flex-start;">
+          <input type="checkbox" data-repair-option="${utils.escapeHtml(key)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} style="margin-top:.2rem;">
+          <span><strong>${utils.escapeHtml(label)}</strong><br><span class="muted">${utils.escapeHtml(detail)}</span></span>
+        </span>
+      </label>`;
+  }
+
+  function repairGroupPreviewRows(analysis = {}) {
+    const rows = (analysis.groupSummaries || []).filter((group) => group.duplicateIds?.length || !group.scheduleId).slice(0, 8);
+    if (!rows.length) return '<div class="muted">No duplicate or missing imported fundraiser schedule records were found.</div>';
+    return `<div style="max-height:180px;overflow:auto;border:1px solid #e1e7ef;border-radius:10px;background:#fbfdff;">
+      ${rows.map((group) => `<div style="padding:.55rem .7rem;border-bottom:1px solid #edf1f6;">
+        <strong>${utils.escapeHtml(group.title || `${group.startDate} – ${group.endDate}`)}</strong><br>
+        <span class="muted">${utils.escapeHtml(group.startDate || '')}${group.endDate && group.endDate !== group.startDate ? ` – ${utils.escapeHtml(group.endDate)}` : ''} · ${utils.formatCount(group.rowCount || 0)} imported row${group.rowCount === 1 ? '' : 's'}${group.duplicateIds?.length ? ` · would merge ${utils.formatCount(group.duplicateIds.length)} duplicate schedule${group.duplicateIds.length === 1 ? '' : 's'}` : ''}${!group.scheduleId ? ' · would create schedule' : ''}</span>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  async function openScheduleRepairOptions(defaultOptions = {}) {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to review imported schedule repairs.', 'warn'); return; }
+    setNotice('Scanning imported airings for schedule repair options…');
+    let rows = [];
+    try {
+      rows = Array.isArray(defaultOptions.rows) ? defaultOptions.rows : await App.data.fetchImportedAirings();
+    } catch (error) {
+      console.error(error);
+      setNotice(error.message || 'Could not read imported airings for schedule repair options.', 'warn');
+      return;
+    }
+    const analysis = analyzeImportedScheduleRepairs(rows);
+    closeScheduleRepairOptionsPanel();
+    const panel = document.createElement('div');
+    panel.id = 'schedule-repair-options-panel';
+    panel.innerHTML = `
+      <div style="position:fixed;inset:0;background:rgba(15,25,39,.46);z-index:2500;display:flex;align-items:flex-start;justify-content:center;padding:5vh 1rem;overflow:auto;">
+        <section role="dialog" aria-modal="true" aria-label="Schedule Repair Options" style="width:min(760px,96vw);background:#fff;border-radius:16px;box-shadow:0 20px 70px rgba(0,0,0,.35);padding:1.1rem 1.2rem;">
+          <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;">
+            <div>
+              <h3 style="margin:.1rem 0 .25rem;">Schedule Repair Options</h3>
+              <p class="muted" style="margin:.2rem 0 .7rem;">Preview only. Nothing changes until you choose repairs and click Apply Selected Repairs.</p>
+            </div>
+            <button type="button" class="ghost" data-repair-close>Close</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem;margin:.75rem 0;">
+            <div class="stat-card"><strong>${utils.formatCount(analysis.groups.length)}</strong><br><span class="muted">fundraiser clusters</span></div>
+            <div class="stat-card"><strong>${utils.formatCount(analysis.mergeableSchedules)}</strong><br><span class="muted">duplicates to merge</span></div>
+            <div class="stat-card"><strong>${utils.formatCount(analysis.missingSchedules)}</strong><br><span class="muted">missing schedules</span></div>
+            <div class="stat-card"><strong>${utils.formatCount(analysis.renameCandidates)}</strong><br><span class="muted">possible title changes</span></div>
+          </div>
+          ${repairGroupPreviewRows(analysis)}
+          <h4 style="margin:1rem 0 .35rem;">Recommended Repairs</h4>
+          ${repairOptionRow({ key: 'merge', label: 'Merge overlapping imported fundraiser schedules', detail: `${utils.formatCount(analysis.mergeableSchedules)} duplicate imported-only schedule${analysis.mergeableSchedules === 1 ? '' : 's'} found. This is the narrow repair for duplicate June-style entries.`, checked: analysis.mergeableSchedules > 0, disabled: analysis.mergeableSchedules <= 0 })}
+          ${repairOptionRow({ key: 'create', label: 'Create missing schedules from imported rows', detail: `${utils.formatCount(analysis.missingSchedules)} fundraiser cluster${analysis.missingSchedules === 1 ? '' : 's'} have imported rows but no schedule/dropdown record.`, checked: analysis.missingSchedules > 0, disabled: analysis.missingSchedules <= 0 })}
+          ${repairOptionRow({ key: 'refresh', label: 'Refresh imported placements and pledge totals', detail: `Rebuild imported placements/totals from existing imported airing rows. Does not rename existing schedules unless that option is selected.`, checked: false })}
+          <h4 style="margin:1rem 0 .35rem;">Optional Cleanup</h4>
+          ${repairOptionRow({ key: 'rebuild', label: 'Rebuild imported placements', detail: 'More aggressive: removes imported placements in affected schedules and rebuilds them from imported airings. Manual/non-imported placements are kept.', checked: false, danger: true })}
+          ${repairOptionRow({ key: 'titles', label: 'Rename imported schedules', detail: `Optional only. ${utils.formatCount(analysis.renameCandidates)} existing imported schedule title${analysis.renameCandidates === 1 ? '' : 's'} differ from the generated Imported pledge date-range title. Leave this unchecked to preserve your fundraiser names.`, checked: false, disabled: analysis.renameCandidates <= 0 })}
+          <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap;">
+            <button type="button" class="ghost" data-repair-close>Cancel</button>
+            <button type="button" class="primary" data-repair-apply>Apply Selected Repairs</button>
+          </div>
+        </section>
+      </div>`;
+    document.body.appendChild(panel);
+    panel.querySelectorAll('[data-repair-close]').forEach((button) => button.addEventListener('click', closeScheduleRepairOptionsPanel));
+    panel.querySelector('[data-repair-apply]')?.addEventListener('click', async () => {
+      const selected = new Set([...panel.querySelectorAll('[data-repair-option]:checked')].map((input) => input.getAttribute('data-repair-option')));
+      if (!selected.size) {
+        setNotice('No schedule repairs selected. Nothing was changed.', 'warn');
+        return;
+      }
+      closeScheduleRepairOptionsPanel();
+      const summary = await buildSchedulesFromImportedReports({
+        rows,
+        activateFirst: true,
+        allowDuplicateMerges: selected.has('merge'),
+        allowCreateMissing: selected.has('create'),
+        allowRefreshPlacements: selected.has('refresh') || selected.has('rebuild'),
+        rebuild: selected.has('rebuild'),
+        allowTitleUpdates: selected.has('titles')
+      });
+      if (summary) {
+        const selectedLabels = [...selected].join(', ');
+        setNotice(`Applied selected schedule repairs (${selectedLabels}). ${utils.formatCount(summary.mergedDuplicateSchedules || 0)} duplicates merged, ${utils.formatCount(summary.schedulesCreated || 0)} schedules created, ${utils.formatCount(summary.placementsCreated || 0)} placements added. Existing titles were ${selected.has('titles') ? 'allowed to update' : 'preserved'}.`);
+      }
+    });
+    setNotice(`Schedule Repair Options found ${utils.formatCount(analysis.mergeableSchedules)} duplicate schedule${analysis.mergeableSchedules === 1 ? '' : 's'} and ${utils.formatCount(analysis.missingSchedules)} missing schedule${analysis.missingSchedules === 1 ? '' : 's'}.`);
+  }
+
   async function buildSchedulesFromImportedReports(options = {}) {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to build fundraiser calendars from imported reports.', 'warn'); return null; }
     const rows = Array.isArray(options.rows) ? options.rows : await App.data.fetchImportedAirings();
     const dirtySchedules = [];
-    const summary = mergeImportedRowsIntoSchedules(rows, { rebuild: Boolean(options.rebuild), activateFirst: options.activateFirst !== false, dirtySchedules });
+    const summary = mergeImportedRowsIntoSchedules(rows, {
+      rebuild: Boolean(options.rebuild),
+      activateFirst: options.activateFirst !== false,
+      dirtySchedules,
+      allowDuplicateMerges: options.allowDuplicateMerges !== false,
+      allowCreateMissing: options.allowCreateMissing !== false,
+      allowRefreshPlacements: options.allowRefreshPlacements !== false,
+      allowTitleUpdates: Boolean(options.allowTitleUpdates)
+    });
     for (const schedule of dirtySchedules) {
       await persistSchedules(schedule);
     }
@@ -4579,8 +4735,8 @@
     els.scheduleDesktopSelect?.addEventListener('click', reopenSelectedSchedule);
     els.scheduleMobileSelect?.addEventListener('click', reopenSelectedSchedule);
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });
-    els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: false, activateFirst: true }); });
-    els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void buildSchedulesFromImportedReports({ rebuild: true, activateFirst: true }); });
+    els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions({ rebuildDefault: false }); });
+    els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions({ rebuildDefault: true }); });
     const saveScheduleDraft = () => { void saveActiveScheduleDraft(); };
     els.fundraiserTitleInput?.addEventListener('change', saveScheduleDraft);
     els.fundraiserTitleInput?.addEventListener('blur', saveScheduleDraft);

@@ -186,6 +186,8 @@
       }
     });
     els.detailCancelEditButton?.addEventListener('click', () => {
+      if (state.detailDirty && !window.confirm('Discard unsaved changes in this detail form?')) return;
+      state.detailDirty = false;
       setDetailNotice('');
       if (state.detailCreateMode) App.detailUi.closeDetailModal();
       else App.detailUi.setDetailMode('view');
