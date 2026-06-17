@@ -43,8 +43,42 @@
     return filters.sameLookupValue(a, b);
   }
 
+  function rowScheduledLookupKeys(row = {}) {
+    const keys = [];
+    const id = String(derive.programId(row) || '').trim();
+    if (id) keys.push(`id:${id}`);
+    const lookup = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
+    if (lookup) keys.push(lookup);
+    const title = utils.normalizeLookupKey(derive.title(row));
+    if (title) keys.push(`title:${title}`);
+    return keys.filter(Boolean);
+  }
+
+  function scheduledPlacementKeys() {
+    const keys = new Set();
+    (state.schedules || []).forEach((schedule) => {
+      (schedule?.placements || []).forEach((placement) => {
+        if (!placement || placement.isNonPledge) return;
+        const id = String(placement.programId || '').trim();
+        if (id) keys.add(`id:${id}`);
+        const lookup = utils.nolaIdentityKey(placement.nolaCode || placement.nola || '', placement.programTitle || '');
+        if (lookup) keys.add(lookup);
+        const title = utils.normalizeLookupKey(placement.programTitle || '');
+        if (title) keys.add(`title:${title}`);
+      });
+    });
+    return keys;
+  }
+
+  function rowIsScheduled(row = {}) {
+    const rowKeys = rowScheduledLookupKeys(row);
+    if (!rowKeys.length) return false;
+    const scheduled = scheduledPlacementKeys();
+    return rowKeys.some((key) => scheduled.has(key));
+  }
+
   function rowMatchesAiringFilter(row) {
-    if (state.airingFilter === 'never') return !hasAired(row);
+    if (state.airingFilter === 'never') return !hasAired(row) && !rowIsScheduled(row);
     if (state.airingFilter === 'aired') return hasAired(row);
     return true;
   }
@@ -286,7 +320,7 @@
     if (state.lengthFilter) filters.push(`length: ${state.lengthFilter}`);
     if (state.distributorFilter) filters.push(`distributor: ${state.distributorFilter}`);
     filters.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
-    if (state.airingFilter === 'never') filters.push('never aired');
+    if (state.airingFilter === 'never') filters.push('never aired / not already scheduled');
     else if (state.airingFilter === 'aired') filters.push('aired at least once');
     else filters.push('all airing history');
     filters.push(`sorted by ${utils.sortLabel(state.sortField)} ${state.sortDirection === 'desc' ? 'descending' : 'ascending'}`);

@@ -5722,3 +5722,25 @@ input.goal-difference-negative {
 @media (max-width: 760px) {
   .home-drive-summary-section-head { flex-direction: column; align-items: flex-start; gap: 2px; }
 }
+
+.fundraiser-graph-line {
+  stroke: #1576b9;
+  stroke-width: 2.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.fundraiser-graph-dot {
+  fill: #1576b9;
+  stroke: #fff;
+  stroke-width: 2;
+}
+.fundraiser-graph-table-wrap {
+  display: grid;
+  gap: 14px;
+}
+.fundraiser-graph-program-wrap {
+  margin-top: 12px;
+}
+.fundraiser-graph-chart .drive-comparison-legend-item span {
+  background: #1576b9;
+}

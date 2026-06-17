@@ -48,6 +48,9 @@
 
   function rowHasAired(row = {}) {
     const airedDate = utils.firstNonEmpty(
+      row?.all_air_dates_latest,
+      row?.all_air_dates_display,
+      row?.__all_air_dates_display,
       row?.last_aired_at,
       row?.last_aired,
       row?.aired_at,
@@ -68,7 +71,8 @@
       row?.aired_count,
       row?.times_aired,
       row?.total_airings,
-      row?.total_airings_count
+      row?.total_airings_count,
+      row?.all_air_dates_count
     ].map((value) => Number(value)).filter((value) => Number.isFinite(value));
     if (counts.some((value) => value > 0)) return true;
 

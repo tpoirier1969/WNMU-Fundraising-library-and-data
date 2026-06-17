@@ -4669,6 +4669,199 @@
     if (els.driveComparisonSummary) els.driveComparisonSummary.textContent = `${comparisonLabel}: ${utils.formatCount(totalFundraisers)} fundraiser period${totalFundraisers === 1 ? '' : 's'} included.`;
   }
 
+  function fundraiserGraphDateLabel(dateKey = '') {
+    if (!dateKey) return 'Unknown date';
+    const parsed = new Date(`${dateKey}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return dateKey;
+    return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function fundraiserGraphBuildDailyRows(schedule = {}, importedRows = []) {
+    const rows = importedRowsForSchedule(schedule, importedRows || []);
+    const byDate = new Map();
+    rows.forEach((row) => {
+      const dateKey = importedRowDateKey(row);
+      if (!dateKey) return;
+      if (!byDate.has(dateKey)) {
+        byDate.set(dateKey, {
+          dateKey,
+          label: fundraiserGraphDateLabel(dateKey),
+          broadcast: 0,
+          programSpecific: 0,
+          nonSpecific: 0,
+          pledges: 0,
+          rows: 0
+        });
+      }
+      const entry = byDate.get(dateKey);
+      const dollars = Number(row?.dollars || 0) || 0;
+      entry.broadcast += dollars;
+      entry.pledges += Number(row?.pledge_count || row?.pledges || 0) || 0;
+      entry.rows += 1;
+      if (importedRowIsNonSpecific(row)) entry.nonSpecific += dollars;
+      else entry.programSpecific += dollars;
+    });
+    return [...byDate.values()].sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  }
+
+  function fundraiserGraphTopPrograms(schedule = {}, importedRows = []) {
+    const rows = importedRowsForSchedule(schedule, importedRows || []);
+    const byProgram = new Map();
+    rows.forEach((row) => {
+      const title = utils.normalizeText(row?.matched_library_title || row?.program_title || row?.title || row?.imported_program_title || 'Unknown');
+      const key = importedRowIsNonSpecific(row) ? '.non-specific' : (utils.normalizeLookupKey(title) || title);
+      if (!byProgram.has(key)) byProgram.set(key, { title, dollars: 0, pledges: 0, airings: 0 });
+      const entry = byProgram.get(key);
+      entry.dollars += Number(row?.dollars || 0) || 0;
+      entry.pledges += Number(row?.pledge_count || row?.pledges || 0) || 0;
+      entry.airings += 1;
+    });
+    return [...byProgram.values()]
+      .filter((entry) => entry.dollars > 0 || entry.pledges > 0 || entry.airings > 0)
+      .sort((a, b) => b.dollars - a.dollars || b.pledges - a.pledges || a.title.localeCompare(b.title));
+  }
+
+  function fundraiserGraphRenderChart(schedule = {}, dailyRows = [], importedRows = []) {
+    if (!els.fundraiserGraphChart || !els.fundraiserGraphTable || !els.fundraiserGraphSummary) return;
+    const title = schedule?.title || 'Selected fundraiser';
+    const startEnd = [utils.formatDate(schedule?.startDate, ''), utils.formatDate(schedule?.endDate, '')].filter(Boolean).join(' – ');
+    const view = els.fundraiserGraphChartView?.value === 'pledges' ? 'pledges' : 'dollars';
+    const totals = dailyRows.reduce((acc, row) => {
+      acc.broadcast += Number(row.broadcast || 0) || 0;
+      acc.programSpecific += Number(row.programSpecific || 0) || 0;
+      acc.nonSpecific += Number(row.nonSpecific || 0) || 0;
+      acc.pledges += Number(row.pledges || 0) || 0;
+      acc.rows += Number(row.rows || 0) || 0;
+      return acc;
+    }, { broadcast: 0, programSpecific: 0, nonSpecific: 0, pledges: 0, rows: 0 });
+
+    els.fundraiserGraphSummary.textContent = `${title}${startEnd ? ` · ${startEnd}` : ''} · ${utils.formatMoney(totals.broadcast)} broadcast dollars · ${utils.formatCount(totals.pledges)} pledge${totals.pledges === 1 ? '' : 's'}.`;
+
+    if (!dailyRows.length) {
+      els.fundraiserGraphChart.innerHTML = '<div class="drive-comparison-empty">No imported pledge results are attached to this fundraiser yet.</div>';
+      els.fundraiserGraphTable.innerHTML = '';
+      return;
+    }
+
+    const width = 840;
+    const height = 310;
+    const pad = { left: 64, right: 28, top: 30, bottom: 64 };
+    const innerW = width - pad.left - pad.right;
+    const innerH = height - pad.top - pad.bottom;
+    const valueKey = view === 'pledges' ? 'pledges' : 'broadcast';
+    const maxValue = Math.max(1, ...dailyRows.map((row) => Number(row[valueKey] || 0) || 0));
+    const xFor = (index) => dailyRows.length === 1 ? pad.left + (innerW / 2) : pad.left + (innerW * index / (dailyRows.length - 1));
+    const yFor = (value) => pad.top + innerH - ((Number(value || 0) || 0) / maxValue * innerH);
+    const formatValue = view === 'pledges'
+      ? (value) => utils.formatCount(Math.round(Number(value || 0) || 0))
+      : (value) => driveComparisonFormatCompactMoney(value);
+    const fullFormatValue = view === 'pledges'
+      ? (value) => utils.formatCount(Math.round(Number(value || 0) || 0))
+      : (value) => utils.formatMoney(value);
+    const axisTitle = view === 'pledges' ? 'Pledges' : 'Broadcast dollars';
+    const points = dailyRows.map((row, index) => ({ row, x: xFor(index), y: yFor(row[valueKey]), value: row[valueKey] }));
+    const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+      const y = pad.top + innerH - (ratio * innerH);
+      const value = maxValue * ratio;
+      return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="drive-comparison-grid-line"></line><text x="${pad.left - 10}" y="${y + 4}" text-anchor="end" class="drive-comparison-axis-label">${utils.escapeHtml(formatValue(value))}</text>`;
+    }).join('');
+    const path = driveComparisonPointPath(points);
+    const pointDots = points.map((point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.8" class="fundraiser-graph-dot"><title>${utils.escapeHtml(`${point.row.label}: ${fullFormatValue(point.value)} · ${utils.formatCount(point.row.pledges)} pledges`)}</title></circle>`).join('');
+    const xLabels = dailyRows.map((row, index) => {
+      const x = xFor(index);
+      return `<text x="${x}" y="${height - 34}" text-anchor="middle" class="drive-comparison-x-label">${utils.escapeHtml(row.label)}</text>`;
+    }).join('');
+    const note = view === 'pledges'
+      ? 'Showing pledge count by day for the selected fundraiser only.'
+      : 'Showing broadcast dollars by day for the selected fundraiser only.';
+
+    els.fundraiserGraphChart.innerHTML = `
+      <div class="drive-comparison-legend-row">
+        <div class="drive-comparison-legend"><span class="drive-comparison-legend-item"><span></span>${utils.escapeHtml(axisTitle)}</span></div>
+        <div class="drive-comparison-view-note">${utils.escapeHtml(note)}</div>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Fundraiser ${view === 'pledges' ? 'pledges' : 'dollars'} by day chart">
+        <rect x="0" y="0" width="${width}" height="${height}" class="drive-comparison-chart-bg"></rect>
+        ${grid}
+        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${pad.top + innerH}" class="drive-comparison-axis-line"></line>
+        <line x1="${pad.left}" y1="${pad.top + innerH}" x2="${width - pad.right}" y2="${pad.top + innerH}" class="drive-comparison-axis-line"></line>
+        <text x="${pad.left}" y="18" class="drive-comparison-axis-title">${utils.escapeHtml(axisTitle)}</text>
+        ${dailyRows.length > 1 ? `<path d="${path}" fill="none" class="fundraiser-graph-line"></path>` : ''}
+        ${pointDots}
+        ${xLabels}
+      </svg>`;
+
+    const programRows = fundraiserGraphTopPrograms(schedule, importedRows).slice(0, 30);
+    const dayRows = dailyRows.map((row) => `
+      <tr>
+        <td>${utils.escapeHtml(row.label)}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.broadcast))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.programSpecific))}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.nonSpecific))}</td>
+        <td>${utils.escapeHtml(utils.formatCount(row.pledges))}</td>
+        <td>${utils.escapeHtml(utils.formatCount(row.rows))}</td>
+      </tr>`).join('');
+    const programTableRows = programRows.map((row) => `
+      <tr>
+        <td>${utils.escapeHtml(row.title)}</td>
+        <td>${utils.escapeHtml(utils.formatMoney(row.dollars))}</td>
+        <td>${utils.escapeHtml(utils.formatCount(row.pledges))}</td>
+        <td>${utils.escapeHtml(utils.formatCount(row.airings))}</td>
+      </tr>`).join('');
+    els.fundraiserGraphTable.innerHTML = `
+      <div class="table-wrap drive-comparison-results-wrap">
+        <table class="programs-table drive-comparison-results-table">
+          <thead><tr><th>Day</th><th>Broadcast $</th><th>Program $</th><th>Non-specific $</th><th>Pledges</th><th>Rows</th></tr></thead>
+          <tbody>${dayRows}</tbody>
+        </table>
+      </div>
+      <div class="table-wrap drive-comparison-results-wrap fundraiser-graph-program-wrap">
+        <table class="programs-table drive-comparison-results-table">
+          <thead><tr><th>Program / bucket</th><th>Dollars</th><th>Pledges</th><th>Rows</th></tr></thead>
+          <tbody>${programTableRows || '<tr><td colspan="4" class="placeholder-row">No program-level pledge rows yet.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+  }
+
+  async function renderFundraiserGraph() {
+    const schedule = getActiveSchedule();
+    if (!els.fundraiserGraphChart || !els.fundraiserGraphSummary) return;
+    if (!schedule) {
+      els.fundraiserGraphSummary.textContent = 'Select a fundraiser first.';
+      els.fundraiserGraphChart.innerHTML = '<div class="drive-comparison-empty">Select a fundraiser from the Open fundraiser dropdown before opening this graph.</div>';
+      if (els.fundraiserGraphTable) els.fundraiserGraphTable.innerHTML = '';
+      return;
+    }
+    els.fundraiserGraphChart.innerHTML = '<div class="drive-comparison-empty">Loading fundraiser graph…</div>';
+    try {
+      const rows = await ensureScheduleImportedAiringsLoaded();
+      const dailyRows = fundraiserGraphBuildDailyRows(schedule, rows);
+      fundraiserGraphRenderChart(schedule, dailyRows, rows);
+    } catch (error) {
+      console.error(error);
+      els.fundraiserGraphChart.innerHTML = `<div class="drive-comparison-empty error">${utils.escapeHtml(error?.message || 'Could not load fundraiser graph data.')}</div>`;
+      els.fundraiserGraphSummary.textContent = 'Fundraiser graph failed to load.';
+    }
+  }
+
+  async function openFundraiserGraph() {
+    const schedule = getActiveSchedule();
+    if (!schedule) {
+      setNotice('Select a fundraiser before opening its graph.', 'warn');
+      return;
+    }
+    els.fundraiserGraphBackdrop?.classList.remove('hidden');
+    els.fundraiserGraphModal?.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    await renderFundraiserGraph();
+  }
+
+  function closeFundraiserGraph() {
+    els.fundraiserGraphBackdrop?.classList.add('hidden');
+    els.fundraiserGraphModal?.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+
   async function renderDriveComparison() {
     if (!els.driveComparisonChart) return;
     els.driveComparisonChart.innerHTML = '<div class="drive-comparison-empty">Loading fundraiser comparison…</div>';
@@ -4737,6 +4930,11 @@
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });
     els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions({ rebuildDefault: false }); });
     els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions({ rebuildDefault: true }); });
+    els.scheduleFundraiserGraphButton?.addEventListener('click', () => { void openFundraiserGraph(); });
+    els.fundraiserGraphCloseButton?.addEventListener('click', closeFundraiserGraph);
+    els.fundraiserGraphBackdrop?.addEventListener('click', closeFundraiserGraph);
+    els.fundraiserGraphRefreshButton?.addEventListener('click', () => { void renderFundraiserGraph(); });
+    els.fundraiserGraphChartView?.addEventListener('change', () => { void renderFundraiserGraph(); });
     const saveScheduleDraft = () => { void saveActiveScheduleDraft(); };
     els.fundraiserTitleInput?.addEventListener('change', saveScheduleDraft);
     els.fundraiserTitleInput?.addEventListener('blur', saveScheduleDraft);
@@ -4923,6 +5121,7 @@
         hideScheduleContextMenu();
         if (!els.scheduleProgramModal?.classList.contains('hidden')) closeScheduleModal();
         if (!els.driveComparisonModal?.classList.contains('hidden')) closeDriveComparison();
+        if (!els.fundraiserGraphModal?.classList.contains('hidden')) closeFundraiserGraph();
       }
       if (els.scheduleProgramModal?.classList.contains('hidden')) return;
       const mod = event.metaKey || event.ctrlKey;
