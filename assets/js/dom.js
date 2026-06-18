@@ -203,6 +203,7 @@
     performanceIncludeExpired: document.getElementById('performance-include-expired'),
     performanceMonthSelect: document.getElementById('performance-month-select'),
     performanceTopicSelect: document.getElementById('performance-topic-select'),
+    performanceSecondaryTopicSelect: document.getElementById('performance-secondary-topic-select'),
     performanceQuickFilterPill: document.getElementById('performance-quick-filter-pill'),
     performanceRefreshButton: document.getElementById('performance-refresh-button'),
     performanceExportButton: document.getElementById('performance-export-button'),

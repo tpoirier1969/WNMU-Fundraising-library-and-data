@@ -3856,7 +3856,7 @@ button.primary {
 .split-line-legend-item .swatch-1 { background: #2a7a45; }
 .split-line-legend-item .swatch-2 { background: #8a3f0f; }
 .performance-toolbar-grid.expanded {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
 }
 @media (max-width: 1320px) {
   .performance-toolbar-grid.expanded {

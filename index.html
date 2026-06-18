@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.22.29</title>
+  <title>WNMU Pledge Program Library v0.22.30</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.22.29">
+  <link rel="stylesheet" href="assets/styles.css?v=0.22.30">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.22.29"></script>
-  <script defer src="assets/js/program-filters.js?v=0.22.29"></script>
-  <script defer src="assets/js/dom.js?v=0.22.29"></script>
-  <script defer src="assets/js/data.js?v=0.22.29"></script>
-  <script defer src="assets/js/ui-list.js?v=0.22.29"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.22.29"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.22.29"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.22.29"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.22.29"></script>
-  <script defer src="assets/js/auth.js?v=0.22.29"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.22.29"></script>
-  <script defer src="assets/js/program-open.js?v=0.22.29"></script>
-  <script defer src="assets/js/library-load.js?v=0.22.29"></script>
-  <script defer src="assets/js/app.js?v=0.22.29"></script>
-  <script defer src="assets/js/app-init.js?v=0.22.29"></script>
+  <script defer src="assets/js/core.js?v=0.22.30"></script>
+  <script defer src="assets/js/program-filters.js?v=0.22.30"></script>
+  <script defer src="assets/js/dom.js?v=0.22.30"></script>
+  <script defer src="assets/js/data.js?v=0.22.30"></script>
+  <script defer src="assets/js/ui-list.js?v=0.22.30"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.22.30"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.22.30"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.22.30"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.22.30"></script>
+  <script defer src="assets/js/auth.js?v=0.22.30"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.22.30"></script>
+  <script defer src="assets/js/program-open.js?v=0.22.30"></script>
+  <script defer src="assets/js/library-load.js?v=0.22.30"></script>
+  <script defer src="assets/js/app.js?v=0.22.30"></script>
+  <script defer src="assets/js/app-init.js?v=0.22.30"></script>
   </head>
 <body>
 
@@ -56,7 +56,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.22.29</span>
+            <span class="version-pill" id="version-flag">v0.22.30</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -820,6 +820,7 @@
                 <div class="performance-quick-filter-label">Topic level</div>
                 <div class="performance-quick-filter-row">
                   <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_winners">Top Topics</button>
+                  <button type="button" class="quick-filter-btn" data-performance-quick-filter="secondary_topic_winners">Secondary topic winners</button>
                   <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_time_performance">Topic Time Performance</button>
                   <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_slot_winners">Topic winners by slot</button>
                   <button type="button" class="quick-filter-btn" data-performance-quick-filter="topic_week_split">Topic week split</button>
@@ -854,6 +855,10 @@
               <label class="filter-field narrow">
                 <span class="filter-label">Main topic</span>
                 <select id="performance-topic-select"></select>
+              </label>
+              <label class="filter-field narrow">
+                <span class="filter-label">Secondary topic</span>
+                <select id="performance-secondary-topic-select"></select>
               </label>
             <label class="filter-field narrow">
               <span class="filter-label">Fundraiser month</span>
@@ -894,7 +899,8 @@
                 <option value="time">Time</option>
                 <option value="topic_time">Topic time slot</option>
                 <option value="topic_dayset">Topic week split</option>
-                <option value="topic" selected>Topic</option>
+                <option value="topic" selected>Main topic</option>
+                <option value="secondary_topic">Secondary topic</option>
                 <option value="local_breaks">Local cut-ins</option>
                 <option value="live_breaks">Live breaks</option>
                 <option value="premiums">Premium metadata</option>
@@ -1170,7 +1176,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.22.29</div>
+      <div id="footer-version">v0.22.30</div>
     </footer>
   </div>
 </body>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.29</title>
+  <title>WNMU Pledge Performance Analytics v0.22.30</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -120,7 +120,7 @@
     details { border: 1px solid var(--line); background: #fffdf8; border-radius: 16px; padding: 11px 13px; }
     summary { cursor: pointer; font-weight: 950; color: var(--accent); }
     .advanced-strip { border: 1px solid var(--line); border-width: 0 0 1px; background: #fffdf8; border-radius: 22px 22px 0 0; padding: 10px 12px; }
-    .adv { display: grid; grid-template-columns: minmax(118px, 1fr) minmax(128px, 1fr) minmax(138px, 1fr) minmax(90px, .8fr) minmax(74px, .65fr); gap: 6px; align-items: end; color: var(--muted); }
+    .adv { display: grid; grid-template-columns: minmax(118px, 1fr) minmax(128px, 1fr) minmax(128px, 1fr) minmax(138px, 1fr) minmax(90px, .8fr) minmax(74px, .65fr); gap: 6px; align-items: end; color: var(--muted); }
     .adv .field { min-width: 0; }
     .adv select { width: 100%; }
     .adv-help { grid-column: 1 / -1; color: var(--muted); font-size: .86rem; }
@@ -163,7 +163,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.29</div>
+        <div class="eyebrow">Admin analytics · v0.22.30</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -197,6 +197,10 @@
           <summary id="topic-summary">All topics</summary>
           <div id="topic-options" class="topic-options"></div>
         </details>
+      </div>
+      <div class="field">
+        <label for="secondary-topic">Secondary topic</label>
+        <select id="secondary-topic"><option value="all">All secondary topics</option></select>
       </div>
       <div class="field">
         <label for="evidence">Evidence filter</label>
@@ -345,6 +349,7 @@
     evidence: 'all',
     metric: 'avg',
     topicFilters: [],
+    secondaryTopicFilter: 'all',
     advancedDistributor: 'all',
     advancedLive: 'all',
     advancedDaypart: 'all',
@@ -360,7 +365,7 @@
   const el = (id) => document.getElementById(id);
   const dom = {
     notice: el('notice'), lab: el('lab'), signIn: el('sign-in'), signOut: el('sign-out'),
-    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), reload: el('reload'), scopeNote: el('scope-note'),
+    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), reload: el('reload'), scopeNote: el('scope-note'),
     advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),
     cards: el('cards'), detail: document.querySelector('.detail'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
     chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
@@ -1471,6 +1476,7 @@
     return state.question === 'seasonOverview'
       && !lookupKey(state.search)
       && !(Array.isArray(state.topicFilters) && state.topicFilters.length)
+      && state.secondaryTopicFilter === 'all'
       && state.advancedDistributor === 'all'
       && state.advancedLive === 'all'
       && state.advancedDaypart === 'all'
@@ -1501,10 +1507,12 @@
     const question = QUESTIONS[questionId] || QUESTIONS.programs;
     const searchKey = lookupKey(state.search);
     const selectedTopics = Array.isArray(state.topicFilters) ? state.topicFilters : [];
+    const selectedSecondaryTopic = state.secondaryTopicFilter || 'all';
     const sourceRecords = question.source === 'schedule' ? state.scheduleRecords : state.records;
     return sourceRecords.filter((record) => {
       if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.nola}`).includes(searchKey)) return false;
       if (selectedTopics.length && !selectedTopics.includes(record.topic)) return false;
+      if (selectedSecondaryTopic !== 'all' && (record.secondaryTopic || '') !== selectedSecondaryTopic) return false;
       if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
       if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;
       if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
@@ -1553,6 +1561,13 @@
     return applyEvidence([...groupBy(filteredRecordsFor('topics'), (record) => record.topic)]
       .map(([title, records]) => summarizeGroup(title, records))
       .sort((a, b) => metricValue(b) - metricValue(a) || b.avg - a.avg));
+  }
+
+  function rowsSecondaryTopics() {
+    return applyEvidence([...groupBy(filteredRecordsFor('secondaryTopics'), (record) => record.secondaryTopic || 'Unassigned secondary topic')]
+      .map(([title, records]) => summarizeGroup(title, records))
+      .filter((row) => row.title && row.title !== 'Unassigned secondary topic')
+      .sort((a, b) => metricValue(b) - metricValue(a) || b.avg - a.avg || b.dollars - a.dollars));
   }
 
   function rowsTopicOverview() {
@@ -1749,7 +1764,15 @@
     const top = rows[0];
     const total = rows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
     const fourSeason = rows.filter((row) => row.allFour).length;
-    return `${formatNumber(rows.length)} primary topic(s) match the current filters. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>Combined dollars in these topic rows: <b>${formatMoney(total)}</b>. ${formatNumber(fourSeason)} topic(s) have airings in all four pledge seasons. Only <b>primary topic</b> is used here; secondary topics are ignored for topic filters and grouping.`;
+    return `${formatNumber(rows.length)} primary topic(s) match the current filters. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>Combined dollars in these topic rows: <b>${formatMoney(total)}</b>. ${formatNumber(fourSeason)} topic(s) have airings in all four pledge seasons.`;
+  }
+
+  function secondaryTopicRead(rows) {
+    if (!rows.length) return 'No secondary-topic records match the current filters.';
+    const top = rows[0];
+    const total = rows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+    const topicText = Array.isArray(state.topicFilters) && state.topicFilters.length === 1 ? ` inside <b>${escapeHtml(state.topicFilters[0])}</b>` : '';
+    return `${formatNumber(rows.length)} secondary topic(s) match the current filters${topicText}. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>Combined dollars in these secondary-topic rows: <b>${formatMoney(total)}</b>. For Music, choose Primary topic = Music and leave Secondary topic on All to compare the subtopics against each other.`;
   }
 
   function seasonalRead(rows) {
@@ -1882,6 +1905,25 @@
       read: topicRead,
       columns: [
         ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
+      ]
+    },
+    secondaryTopics: {
+      title: 'What secondary topics work best?',
+      summary: 'Subtopic strength inside the selected filters. Use Primary topic = Music for Music styles.',
+      graphTitle: 'Secondary topics by average dollars per airing',
+      tableTitle: 'Secondary topic ranking',
+      tableNote: 'Choose Primary topic = Music and leave Secondary topic = All to compare Music subtopics against each other.',
+      rows: rowsSecondaryTopics,
+      metricDriven: true,
+      metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
+      tag: 'subtopic lens',
+      read: secondaryTopicRead,
+      columns: [
+        ['Secondary topic', (row) => labelWithMixCell(row), '', (row) => row.title],
         ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
@@ -2086,11 +2128,16 @@
     dom.season.value = state.season;
     dom.year.value = state.year;
     const topics = [...new Set(state.records.map((record) => record.topic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const selectedTopicFilter = Array.isArray(state.topicFilters) ? state.topicFilters : [];
+    const secondaryTopicRows = selectedTopicFilter.length ? state.records.filter((record) => selectedTopicFilter.includes(record.topic)) : state.records;
+    const secondaryTopics = [...new Set(secondaryTopicRows.map((record) => record.secondaryTopic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     const distributors = [...new Set(state.records.map((record) => record.distributor || 'Unknown').filter(Boolean))].sort((a, b) => a.localeCompare(b));
     state.topicFilters = (state.topicFilters || []).filter((topic) => topics.includes(topic));
     dom.topicOptions.innerHTML = '<label class="topic-option"><input type="checkbox" value="__all__"> All topics</label>' + topics.map((topic) => `<label class="topic-option"><input type="checkbox" value="${escapeHtml(topic)}" ${state.topicFilters.includes(topic) ? 'checked' : ''}> ${escapeHtml(topic)}</label>`).join('');
     dom.topicOptions.querySelector('input[value="__all__"]').checked = !state.topicFilters.length;
     updateTopicSummary();
+    dom.secondaryTopic.innerHTML = '<option value="all">All secondary topics</option>' + secondaryTopics.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
+    if (secondaryTopics.includes(state.secondaryTopicFilter)) dom.secondaryTopic.value = state.secondaryTopicFilter; else { state.secondaryTopicFilter = 'all'; dom.secondaryTopic.value = 'all'; }
     dom.advDistributor.innerHTML = '<option value="all">All distributors</option>' + distributors.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
     if (distributors.includes(state.advancedDistributor)) dom.advDistributor.value = state.advancedDistributor; else { state.advancedDistributor = 'all'; dom.advDistributor.value = 'all'; }
     dom.advMetric.value = state.metric;
@@ -2172,7 +2219,7 @@
   }
 
   function chartRowLabel(row) {
-    const showMix = ['programs', 'topicOverview', 'topics', 'seasonal', 'live'].includes(state.question) && row.mix;
+    const showMix = ['programs', 'topicOverview', 'topics', 'secondaryTopics', 'seasonal', 'live'].includes(state.question) && row.mix;
     const titleHtml = `<span class="chart-title-label">${escapeHtml(row.title)}</span>`;
     return `${titleHtml}${showMix ? `<span class="chart-season-mix">${escapeHtml(row.mix)}</span>` : ''}`;
   }
@@ -2181,6 +2228,7 @@
     if (state.question === 'seasonOverview') return seasonOverviewUsesDriveTotals() ? 'Using saved fundraiser totals.' : 'Using content-level airing rows because content filters are active.';
     if (question.source === 'schedule') return 'Using saved Scheduling placements.';
     if (state.question === 'seasonal' || state.question === 'topics' || state.question === 'topicOverview') return 'Using imported pledge airing rows joined to primary library topics.';
+    if (state.question === 'secondaryTopics') return 'Using imported pledge airing rows joined to secondary library topics.';
     return 'Using imported pledge airing rows joined to library program identity.';
   }
 
@@ -2486,6 +2534,7 @@
     dom.year.addEventListener('change', () => { state.year = dom.year.value; render(); });
     dom.search.addEventListener('input', () => { state.search = dom.search.value; render(); });
     dom.evidence.addEventListener('change', () => { state.evidence = dom.evidence.value; render(); });
+    dom.secondaryTopic.addEventListener('change', () => { state.secondaryTopicFilter = dom.secondaryTopic.value || 'all'; render(); });
     dom.topicOptions.addEventListener('change', (event) => {
       const input = event.target.closest('input[type="checkbox"]');
       if (!input) return;
