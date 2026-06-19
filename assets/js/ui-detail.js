@@ -1505,17 +1505,44 @@
     return canonical;
   }
 
+  function optionValues(entries = []) {
+    return (entries || [])
+      .map((entry) => utils.normalizeText(entry?.value ?? entry?.label ?? entry))
+      .filter(Boolean);
+  }
+
+  function uniqueTopicSourceRows() {
+    const seen = new Set();
+    const rows = [];
+    [state.rawRows, state.baseRows, state.rows].forEach((source) => {
+      (source || []).forEach((row) => {
+        if (!row) return;
+        const key = String(derive.programId(row) || row?.id || row?.program_id || row?.title || JSON.stringify(row)).trim();
+        if (key && seen.has(key)) return;
+        if (key) seen.add(key);
+        rows.push(row);
+      });
+    });
+    return rows;
+  }
+
   function collectPrimaryTopicOptions(currentValue = '') {
-    const values = (state.rawRows || []).map((row) => derive.topicPrimary(row)).filter(Boolean);
+    const values = [
+      ...uniqueTopicSourceRows().map((row) => derive.topicPrimary(row)).filter(Boolean),
+      ...optionValues(state.topicOptions)
+    ];
     return topicOptionEntries(values, currentValue);
   }
 
   function collectSecondaryTopicOptions(primaryValue = '', currentValue = '') {
     const primaryKey = utils.normalizeLookupKey(primaryValue);
-    const sourceRows = primaryKey
-      ? (state.rawRows || []).filter((row) => sameTopicValue(derive.topicPrimary(row), primaryValue))
-      : (state.rawRows || []);
-    const values = sourceRows.map((row) => derive.topicSecondary(row)).filter(Boolean);
+    const sourceRows = uniqueTopicSourceRows();
+    const topicRowsAvailable = sourceRows.some((row) => derive.topicPrimary(row) || derive.topicSecondary(row));
+    const filteredRows = primaryKey && topicRowsAvailable
+      ? sourceRows.filter((row) => sameTopicValue(derive.topicPrimary(row), primaryValue))
+      : sourceRows;
+    const values = filteredRows.map((row) => derive.topicSecondary(row)).filter(Boolean);
+    if (!primaryKey || !topicRowsAvailable) values.push(...optionValues(state.secondaryTopicOptions));
     return topicOptionEntries(values, currentValue);
   }
 

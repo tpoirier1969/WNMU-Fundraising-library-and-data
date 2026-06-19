@@ -1,0 +1,12 @@
+Install v0.22.33 changed files
+
+Copy these files into the live app, preserving folders:
+
+- index.html
+- version.json
+- assets/styles.css
+- assets/js/app.js
+- assets/js/core.js
+- assets/js/ui-detail.js
+
+No config.js is included.

@@ -200,12 +200,6 @@
       }
       App.detailUi.handleEditorInput?.();
     });
-    els.detailEditForm?.addEventListener('change', (event) => {
-      if (event.target?.matches?.('select[name="topic_primary"], select[name="topic_secondary"]')) {
-        App.detailUi.handleTopicSelectChange?.(event);
-      }
-      App.detailUi.handleEditorInput?.();
-    });
     els.detailTimingEditor?.addEventListener('input', () => App.detailUi.syncTimingDraftFromDom?.());
     els.detailTimingEditor?.addEventListener('keydown', (event) => {
       const notesInput = event.target.closest('.detail-timing-input[data-timing-key="notes"]');

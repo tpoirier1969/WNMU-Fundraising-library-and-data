@@ -5899,3 +5899,9 @@ input.goal-difference-negative {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.22.33 import match approval viewport: show roughly seven title cards before scrolling. */
+.import-unmatched-card .import-unmatched-wrap {
+  max-height: min(82vh, 760px);
+}
