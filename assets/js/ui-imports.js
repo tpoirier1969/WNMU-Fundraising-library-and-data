@@ -7,9 +7,19 @@
   const IMPORT_MATCH_RULES_STORAGE_KEY = App.constants.IMPORT_MATCH_RULES_STORAGE_KEY || 'wnmuPledgeImportMatchRulesV1';
   const IMPORT_REPORT_TOTALS_STORAGE_KEY = App.constants.IMPORT_REPORT_TOTALS_STORAGE_KEY || 'wnmuPledgeImportReportTotalsV1';
   const IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS = 14;
+  let libraryProgramOptionsCacheSource = null;
+  let libraryProgramOptionsCacheSignature = '';
+  let libraryProgramOptionsBaseCache = null;
+  const libraryProgramOptionsByNeedle = new Map();
+  let deferredImportRenderTimer = null;
+  let deferredImportIdleHandle = null;
 
   function imp() { return state.imports; }
   function escape(value) { return utils.escapeHtml(utils.toDisplayText(value)); }
+  function cssEscape(value = '') {
+    if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(String(value || ''));
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
 
   function fileKeyForMeta(file, explicitIndex = 0) {
     const raw = `${utils.normalizeText(file?.name || '')}|${Number(file?.size || 0)}|${Number(file?.lastModified || 0)}|${explicitIndex}`;
@@ -218,9 +228,24 @@
     return { score: 99, tie: entry.sortLabel || entry.label || '' };
   }
 
-  function buildLibraryProgramOptions(unmatchedNeedle = '') {
+  function clearLibraryProgramOptionsCache() {
+    libraryProgramOptionsCacheSource = null;
+    libraryProgramOptionsCacheSignature = '';
+    libraryProgramOptionsBaseCache = null;
+    libraryProgramOptionsByNeedle.clear();
+  }
+
+  function getLibraryProgramOptionsBase() {
+    const sourceRows = state.rawRows || [];
+    const signature = `${sourceRows.length}|${sourceRows.map((row) => derive.programId(row) || '').join(',')}`;
+    if (libraryProgramOptionsBaseCache && libraryProgramOptionsCacheSource === sourceRows && libraryProgramOptionsCacheSignature === signature) {
+      return libraryProgramOptionsBaseCache;
+    }
     const seen = new Set();
-    const options = (state.rawRows || []).map((row) => {
+    libraryProgramOptionsCacheSource = sourceRows;
+    libraryProgramOptionsCacheSignature = signature;
+    libraryProgramOptionsByNeedle.clear();
+    libraryProgramOptionsBaseCache = sourceRows.map((row) => {
       const value = String(derive.programId(row) || '');
       if (!value || seen.has(value)) return null;
       seen.add(value);
@@ -234,12 +259,21 @@
         nolaKey: importNolaCodeKey(nola)
       };
     }).filter(Boolean);
+    return libraryProgramOptionsBaseCache;
+  }
+
+  function buildLibraryProgramOptions(unmatchedNeedle = '') {
+    const needleKey = utils.normalizeLookupKey(unmatchedNeedle || '');
+    const cacheKey = needleKey || '*';
+    if (libraryProgramOptionsByNeedle.has(cacheKey)) return libraryProgramOptionsByNeedle.get(cacheKey);
+    const options = getLibraryProgramOptionsBase().slice();
     options.sort((a, b) => {
-      const ar = optionRankForNeed(a, unmatchedNeedle);
-      const br = optionRankForNeed(b, unmatchedNeedle);
+      const ar = optionRankForNeed(a, needleKey);
+      const br = optionRankForNeed(b, needleKey);
       if (ar.score != br.score) return ar.score - br.score;
       return ar.tie.localeCompare(br.tie);
     });
+    libraryProgramOptionsByNeedle.set(cacheKey, options);
     return options;
   }
 
@@ -1637,7 +1671,7 @@
     setResultBanner(message, Math.abs(diff) >= 0.01 ? 'warn' : '');
   }
 
-  function clearBatch(options = {}) {
+  function clearBatch() {
     imp().rawFiles = [];
     imp().fileSummaries = [];
     imp().airingsRows = [];
@@ -1651,44 +1685,7 @@
     setResultBanner('');
     if (els.importFileInput) els.importFileInput.value = '';
     renderAll();
-    setStatus(options.status || 'Batch cleared.');
-  }
-
-  function importWriteButtons() {
-    return [...document.querySelectorAll('#import-supabase-button, .import-supabase-trigger')];
-  }
-
-  function syncImportWorkingButtons() {
-    const working = Boolean(imp().importing);
-    importWriteButtons().forEach((button) => {
-      if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent || 'Import / reimport matched rows to Supabase';
-      button.classList.toggle('is-working', working);
-      if (working) {
-        button.textContent = 'Importing…';
-        button.disabled = true;
-        button.setAttribute('aria-busy', 'true');
-        return;
-      }
-      button.textContent = button.dataset.idleLabel;
-      button.removeAttribute('aria-busy');
-    });
-  }
-
-  function confirmClearBatchAfterImport() {
-    const dialog = document.getElementById('import-clear-confirm-dialog');
-    if (!dialog || typeof dialog.showModal !== 'function') {
-      return Promise.resolve(window.confirm('Import/reimport finished. Clear this import batch from the screen now?'));
-    }
-    return new Promise((resolve) => {
-      const yesButton = dialog.querySelector('button[value="yes"]');
-      const onClose = () => {
-        dialog.removeEventListener('close', onClose);
-        resolve(dialog.returnValue === 'yes');
-      };
-      dialog.addEventListener('close', onClose);
-      if (!dialog.open) dialog.showModal();
-      window.setTimeout(() => yesButton?.focus?.(), 0);
-    });
+    setStatus('Batch cleared.');
   }
 
   function rowsToCsv(rows = []) {
@@ -1787,10 +1784,6 @@
   }
 
   async function importToSupabase() {
-    if (imp().importing) {
-      setStatus('Import/reimport is already running…');
-      return;
-    }
     if (!App.auth.canEdit()) {
       setNotice('Direct import is admin-only. Export the normalized CSV if you need a handoff first.', 'warn');
       setStatus('Direct import is admin-only.', 'warn');
@@ -1828,10 +1821,6 @@
       setResultBanner(message, 'warn');
       return;
     }
-    let shouldOfferClearBatch = false;
-    imp().importing = true;
-    syncImportWorkingButtons();
-    renderActions();
     setStatus(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows to Supabase…`);
     setResultBanner(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} will NOT be written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
     try {
@@ -1893,24 +1882,12 @@
       await App.schedulingUi?.refreshImportedAiringMarkers?.();
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
-      shouldOfferClearBatch = true;
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Supabase import failed.';
       setStatus(message, 'warn');
       setNotice(message, 'warn');
       setResultBanner(`Import failed. No rows were written. ${message}`, 'warn');
-    } finally {
-      imp().importing = false;
-      syncImportWorkingButtons();
-      renderActions();
-    }
-    if (shouldOfferClearBatch) {
-      const clearNow = await confirmClearBatchAfterImport();
-      if (clearNow) {
-        clearBatch({ status: 'Import/reimport finished and batch cleared.' });
-        setResultBanner('Import/reimport finished and batch cleared.', 'success');
-      }
     }
   }
 
@@ -2280,6 +2257,56 @@
     return imp().airingsRows.filter((row) => unmatchedTitleGroupKey(row) === groupKey);
   }
 
+  function syncVisibleManualMatchControls(rowHash, programId = '') {
+    const bodyEl = els.importUnmatchedBody;
+    if (!bodyEl) return;
+    rowsForUnmatchedTitleGroup(rowHash).forEach((row) => {
+      const select = bodyEl.querySelector(`.import-manual-match-select[data-row-hash="${cssEscape(row.row_hash || '')}"]`);
+      if (select && select.value !== String(programId || '')) select.value = String(programId || '');
+    });
+  }
+
+  function syncVisiblePersistMatchControls(rowHash, shouldPersist = false) {
+    const bodyEl = els.importUnmatchedBody;
+    if (!bodyEl) return;
+    rowsForUnmatchedTitleGroup(rowHash).forEach((row) => {
+      const checkbox = bodyEl.querySelector(`.import-persist-match-check[data-row-hash="${cssEscape(row.row_hash || '')}"]`);
+      if (checkbox) checkbox.checked = Boolean(shouldPersist);
+    });
+  }
+
+  function recomputeImportManualMatchDerivedData() {
+    imp().driveRows = deriveRollups(imp().airingsRows);
+    imp().rawAccountingSummaries = buildAccountingSummaryRows();
+  }
+
+  function queueDeferredImportRender() {
+    if (deferredImportRenderTimer) window.clearTimeout(deferredImportRenderTimer);
+    if (deferredImportIdleHandle && window.cancelIdleCallback) window.cancelIdleCallback(deferredImportIdleHandle);
+    deferredImportIdleHandle = null;
+    deferredImportRenderTimer = window.setTimeout(() => {
+      deferredImportRenderTimer = null;
+      const run = () => {
+        deferredImportIdleHandle = null;
+        renderAll();
+      };
+      if (window.requestIdleCallback) {
+        deferredImportIdleHandle = window.requestIdleCallback(run, { timeout: 1600 });
+      } else {
+        window.setTimeout(run, 250);
+      }
+    }, 180);
+  }
+
+  function renderAfterManualMatch(options = {}) {
+    recomputeImportManualMatchDerivedData();
+    renderSummary();
+    renderAccountingLedger();
+    renderUnmatchedRows();
+    renderActions();
+    if (options.deferFullRender !== false) queueDeferredImportRender();
+  }
+
   function syncPendingManualMatch(rowHash, programId) {
     const targetId = String(programId || '').trim();
     const rows = rowsForUnmatchedTitleGroup(rowHash);
@@ -2329,14 +2356,14 @@
       airing.row_hash = computeImportRowHash(airing);
     });
     if (shouldPersist) storeAliasRule({ station: rows[0]?.station || '', importedTitle: rows[0]?.imported_program_title || rows[0]?.title || '', importedNola: rows[0]?.nola_code || '', targetProgram: targetRow });
-    imp().driveRows = deriveRollups(imp().airingsRows);
-    imp().rawAccountingSummaries = buildAccountingSummaryRows();
-    renderAll();
+    if (options.render !== false) renderAfterManualMatch({ deferFullRender: true });
     const label = utils.toDisplayText(rows[0]?.imported_program_title || rows[0]?.nola_code || 'row');
     const count = rows.length;
     const persistNote = shouldPersist ? ' Future imports will auto-match this title.' : '';
-    setStatus(`Manual match applied for ${label}. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated.${persistNote}`);
-    setResultBanner(`Manual match applied. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated in that title group.${persistNote} Existing duplicates will be skipped automatically.`);
+    if (options.status !== false) {
+      setStatus(`Manual match applied for ${label}. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated.${persistNote}`);
+      setResultBanner(`Manual match applied. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated in that title group.${persistNote} Existing duplicates will be skipped automatically.`);
+    }
     return count;
   }
 
@@ -2352,9 +2379,10 @@
       const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
       if (!groupKey || seen.has(groupKey)) return;
       seen.add(groupKey);
-      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: row.pending_persist_match_rule === true });
+      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: row.pending_persist_match_rule === true, render: false, status: false });
     });
     if (updated) {
+      renderAfterManualMatch({ deferFullRender: true });
       setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'}.`);
     }
   }
@@ -2425,6 +2453,7 @@
       setStatus('Refreshing pledge-library titles from Supabase without clearing the current import batch…');
       if (els.importRefreshLibraryButton) els.importRefreshLibraryButton.disabled = true;
       await App.data.refreshRawRows();
+      clearLibraryProgramOptionsCache();
       App.listUi?.buildFilterOptions?.();
       const nextCount = state.rawRows?.length || 0;
       const result = refreshUnmatchedRowsAgainstCurrentLibrary();
@@ -2821,25 +2850,22 @@
     const pendingMatchCount = getPendingManualMatchRows().length;
     const unreconciledFiles = filesWithReconciliationDifferences();
     const hasDiffs = unreconciledFiles.length > 0;
-    const isImporting = Boolean(imp().importing);
     // Keep the write button clickable once a report has rows. The actual write path still
     // blocks non-admin sessions, unreconciled files, and zero importable rows with a clear
     // message. Disabling the button hid those messages and made the import flow look dead.
-    const canTryImport = Boolean(allRowCount && !isImporting);
-    const canBuild = Boolean(canEdit && matchedCount && !isImporting);
-    const importTitle = isImporting
-      ? 'Import/reimport is running right now.'
-      : (!allRowCount
-        ? 'Load imported airings first.'
-        : (!canEdit
-          ? 'Admin sign-in is required. Click for the sign-in/admin warning.'
-          : (hasDiffs
-            ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
-            : (importableCount
-              ? `${utils.formatCount(importableCount)} matched/non-specific row${importableCount === 1 ? '' : 's'} ready to import. ${pendingMatchCount ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} still need Apply/Apply All before import.` : ''}`
-              : (pendingMatchCount
-                ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} found. Click Apply or Apply All before importing.`
-                : 'No matched/importable rows yet. Link rows or mark rows non-specific first.')))));
+    const canTryImport = Boolean(allRowCount);
+    const canBuild = Boolean(canEdit && matchedCount);
+    const importTitle = !allRowCount
+      ? 'Load imported airings first.'
+      : (!canEdit
+        ? 'Admin sign-in is required. Click for the sign-in/admin warning.'
+        : (hasDiffs
+          ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
+          : (importableCount
+            ? `${utils.formatCount(importableCount)} matched/non-specific row${importableCount === 1 ? '' : 's'} ready to import. ${pendingMatchCount ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} still need Apply/Apply All before import.` : ''}`
+            : (pendingMatchCount
+              ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} found. Click Apply or Apply All before importing.`
+              : 'No matched/importable rows yet. Link rows or mark rows non-specific first.'))));
     document.querySelectorAll('.import-supabase-trigger').forEach((button) => {
       button.disabled = !canTryImport;
       button.title = importTitle;
@@ -2856,11 +2882,6 @@
       button.disabled = !pendingMatchCount;
       button.title = pendingMatchCount ? `Apply ${utils.formatCount(pendingMatchCount)} staged manual match${pendingMatchCount === 1 ? '' : 'es'}.` : 'Choose one or more pledge-library titles before using Apply All.';
     });
-    syncImportWorkingButtons();
-    if (isImporting) {
-      setStatusPill('Importing…', false);
-      return;
-    }
     if (hasDiffs) {
       setStatusPill(`Reconcile raw CSV totals · ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}`, true);
       return;
@@ -2994,8 +3015,9 @@
       const ruleToggle = event.target.closest('.import-persist-match-check');
       if (ruleToggle) {
         const rowHash = ruleToggle.getAttribute('data-row-hash') || '';
-        syncPersistMatchRule(rowHash, Boolean(ruleToggle.checked));
-        renderUnmatchedRows();
+        const shouldPersist = Boolean(ruleToggle.checked);
+        syncPersistMatchRule(rowHash, shouldPersist);
+        syncVisiblePersistMatchControls(rowHash, shouldPersist);
         renderActions();
         return;
       }
@@ -3003,14 +3025,14 @@
       if (!select) return;
       const rowHash = select.getAttribute('data-row-hash') || '';
       syncPendingManualMatch(rowHash, select.value || '');
-      renderUnmatchedRows();
+      syncVisibleManualMatchControls(rowHash, select.value || '');
       renderActions();
     });
     els.importUnmatchedBody?.addEventListener('click', (event) => {
       const applyButton = event.target.closest('.import-apply-match-button');
       if (applyButton) {
         const rowHash = applyButton.getAttribute('data-row-hash') || '';
-        const select = els.importUnmatchedBody.querySelector(`.import-manual-match-select[data-row-hash="${rowHash}"]`);
+        const select = els.importUnmatchedBody.querySelector(`.import-manual-match-select[data-row-hash="${cssEscape(rowHash)}"]`);
         const selectedProgramId = select?.value || '';
         syncPendingManualMatch(rowHash, selectedProgramId);
         applyManualMatch(rowHash, selectedProgramId);
