@@ -88,6 +88,10 @@
     return utils.normalizeText(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
+  function escapeRegExp(value = '') {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   function broadImportedTitle(title = '') {
     const key = importTitleKey(title);
     if (!key) return true;
@@ -104,41 +108,78 @@
     return `${importStationKey(station)}|${importTitleKey(importedTitle)}|`;
   }
 
+  function compactAliasRuleKey(station = '', importedTitle = '', importedNola = '') {
+    return `${importStationKey(station)}|${compactImportTitleKey(importedTitle, importedNola)}|`;
+  }
+
+  function ruleMatchesStation(rule = {}, station = '') {
+    const wanted = importStationKey(station);
+    const stored = importStationKey(rule.station || '');
+    return stored === wanted || stored === '*';
+  }
+
   function findAliasRuleForRow(row = {}) {
     const importedTitle = row.imported_program_title || row.program_title || row.title;
     const importedNola = row.nola_code || row.nola || row.program_nola || '';
+    const rules = getStoredAliasRules().filter((rule) => rule && rule.active !== false && ruleMatchesStation(rule, row.station || ''));
     const exactKey = aliasRuleKey(row.station, importedTitle, importedNola);
-    const rules = getStoredAliasRules();
-    const exact = rules.find((rule) => aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola || rule.nola_code || '') === exactKey && rule.active !== false);
+    const exact = rules.find((rule) => aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola || rule.nola_code || '') === exactKey);
     if (exact) return exact;
-    if (importedNola && broadImportedTitle(importedTitle)) return null;
-    const legacyKey = legacyAliasRuleKey(row.station, importedTitle);
-    return rules.find((rule) => legacyAliasRuleKey(rule.station, rule.importedTitle) === legacyKey && !importNolaCodeKey(rule.importedNola || rule.nola_code || '') && rule.active !== false) || null;
+
+    const importedTitleOnlyKey = importTitleKey(importedTitle);
+    const titleOnly = rules.find((rule) => importTitleKey(rule.importedTitle) === importedTitleOnlyKey);
+    if (titleOnly) return titleOnly;
+
+    const importedCompactKey = compactImportTitleKey(importedTitle, importedNola);
+    return rules.find((rule) => {
+      const storedCompact = rule.importedCompactTitleKey || compactImportTitleKey(rule.importedTitle, rule.importedNola || rule.nola_code || '');
+      return storedCompact && storedCompact === importedCompactKey;
+    }) || null;
+  }
+
+  function upsertAliasRule(rules, rule) {
+    const nextKey = aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola || '');
+    const existingIndex = rules.findIndex((item) => aliasRuleKey(item.station, item.importedTitle, item.importedNola || item.nola_code || '') === nextKey);
+    if (existingIndex >= 0) rule.id = rules[existingIndex].id || rule.id;
+    if (existingIndex >= 0) rules.splice(existingIndex, 1, rule);
+    else rules.push(rule);
+    return rule;
   }
 
   function storeAliasRule({ station = '', importedTitle = '', importedNola = '', targetProgram = null }) {
     if (!targetProgram || !importedTitle) return null;
     const rules = getStoredAliasRules().slice();
-    const nextRule = {
-      id: utils.makeId('importrule'),
+    const updatedAt = new Date().toISOString();
+    const baseRule = {
       station,
       importedTitle,
-      importedNola: utils.normalizeText(importedNola || ''),
       importedTitleKey: importTitleKey(importedTitle),
-      importedNolaKey: importNolaCodeKey(importedNola || ''),
+      importedCompactTitleKey: compactImportTitleKey(importedTitle, importedNola),
       targetProgramId: String(derive.programId(targetProgram) || '').trim(),
       targetProgramTitle: derive.title(targetProgram) || importedTitle,
       targetProgramNola: derive.nola(targetProgram) || '',
       active: true,
-      updatedAt: new Date().toISOString()
+      updatedAt
     };
-    const nextKey = aliasRuleKey(station, importedTitle, importedNola);
-    const existingIndex = rules.findIndex((rule) => aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola || rule.nola_code || '') === nextKey);
-    if (existingIndex >= 0) nextRule.id = rules[existingIndex].id || nextRule.id;
-    if (existingIndex >= 0) rules.splice(existingIndex, 1, nextRule);
-    else rules.push(nextRule);
+    const stored = [];
+    if (utils.normalizeText(importedNola || '')) {
+      stored.push(upsertAliasRule(rules, {
+        ...baseRule,
+        id: utils.makeId('importrule'),
+        matchScope: 'title_nola',
+        importedNola: utils.normalizeText(importedNola || ''),
+        importedNolaKey: importNolaCodeKey(importedNola || '')
+      }));
+    }
+    stored.push(upsertAliasRule(rules, {
+      ...baseRule,
+      id: utils.makeId('importrule'),
+      matchScope: 'title',
+      importedNola: '',
+      importedNolaKey: ''
+    }));
     saveStoredAliasRules(rules);
-    return nextRule;
+    return stored[stored.length - 1] || null;
   }
 
   function storedReportTotals() {
@@ -155,6 +196,7 @@
     if (row.match_method === 'manual_library') return 'Matched manually in import review';
     if (row.match_method === 'saved_title_rule') return 'Matched from a saved “always equals this” rule';
     if (row.match_method === 'title_exact') return 'Matched by exact imported title';
+    if (row.match_method === 'title_clean_exact') return 'Matched by cleaned imported title';
     if (row.match_method === 'title_fuzzy') return row.match_reason || 'Auto-matched by strong title similarity';
     if (row.match_method === 'suggested_title') return row.match_reason || 'Suggested title match needs review';
     if (row.match_method === 'non_specific') return 'Non-specific broadcast row';
@@ -832,6 +874,7 @@
     const rows = state.rawRows || [];
     const byNola = new Map();
     const titleBuckets = new Map();
+    const compactTitleBuckets = new Map();
     const titleCandidates = [];
     const seenCandidateIds = new Set();
     rows.forEach((row) => {
@@ -839,9 +882,14 @@
       if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, row);
       const title = derive.title(row);
       const titleKey = utils.normalizeLookupKey(title);
+      const compactTitleKey = compactImportTitleKey(title);
       if (!titleKey) return;
       if (!titleBuckets.has(titleKey)) titleBuckets.set(titleKey, []);
       titleBuckets.get(titleKey).push(row);
+      if (compactTitleKey) {
+        if (!compactTitleBuckets.has(compactTitleKey)) compactTitleBuckets.set(compactTitleKey, []);
+        compactTitleBuckets.get(compactTitleKey).push(row);
+      }
       const id = String(derive.programId(row) || '').trim() || `${titleKey}|${titleCandidates.length}`;
       if (seenCandidateIds.has(id)) return;
       seenCandidateIds.add(id);
@@ -850,7 +898,7 @@
         id,
         title,
         titleKey,
-        compactTitleKey: compactImportTitleKey(title),
+        compactTitleKey,
         tokens: titleTokens(title)
       });
     });
@@ -858,18 +906,24 @@
     titleBuckets.forEach((items, key) => {
       if (items.length === 1) byUniqueTitle.set(key, items[0]);
     });
-    return { byNola, byUniqueTitle, titleCandidates };
+    const byUniqueCompactTitle = new Map();
+    compactTitleBuckets.forEach((items, key) => {
+      if (items.length === 1) byUniqueCompactTitle.set(key, items[0]);
+    });
+    return { byNola, byUniqueTitle, byUniqueCompactTitle, titleCandidates };
   }
 
 
-  function compactImportTitleKey(title = '') {
-    return utils.normalizeLookupKey(title)
+  function compactImportTitleKey(title = '', nola = '') {
+    let key = utils.normalizeLookupKey(title)
       .replace(/\b(wnmu|pbs|tv|hd)\b/g, ' ')
       .replace(/\b(the|a|an)\b/g, ' ')
       .replace(/\bseason\s+\d+\b/g, ' ')
-      .replace(/\bepisode\s+\d+\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+      .replace(/\bepisode\s+\d+\b/g, ' ');
+    const nolaKey = importNolaCodeKey(nola);
+    if (nolaKey) key = key.replace(new RegExp(`\\b${escapeRegExp(nolaKey)}\\b$`, 'i'), ' ');
+    key = key.replace(/\b\d{3,6}\b$/g, ' ');
+    return key.replace(/\s+/g, ' ').trim();
   }
 
   function titleTokens(title = '') {
@@ -986,20 +1040,25 @@
     if (aliasRule) {
       const target = (state.rawRows || []).find((row) => String(derive.programId(row) || '').trim() === String(aliasRule.targetProgramId || '').trim()) || null;
       if (target) {
-        return { program: target, matchMethod: 'saved_title_rule', matchReason: 'Matched from a saved import-title/NOLA rule.' };
+        const scopeLabel = aliasRule.matchScope === 'title' ? 'saved import-title rule' : 'saved import-title/NOLA rule';
+        return { program: target, matchMethod: 'saved_title_rule', matchReason: `Matched from a ${scopeLabel}.` };
       }
     }
     const nolaKey = importNolaCodeKey(nola);
     if (nolaKey && libraryLookup.byNola.has(nolaKey)) {
       return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: `Matched by NOLA ${nola}.` };
     }
-    const specificNola = /\d{3,}/.test(nolaKey);
-    if (specificNola && broadImportedTitle(importedTitle)) {
-      return { program: null, matchMethod: 'unmatched', matchReason: `NOLA ${nola} did not match a pledge-library NOLA after normalization. The imported title “${importedTitle}” is too broad for safe automatic title matching.` };
-    }
     const titleKey = importTitleKey(importedTitle);
     if (titleKey && libraryLookup.byUniqueTitle.has(titleKey)) {
       return { program: libraryLookup.byUniqueTitle.get(titleKey), matchMethod: 'title_exact', matchReason: 'Matched by exact imported title.' };
+    }
+    const compactTitleKey = compactImportTitleKey(importedTitle, nola);
+    if (compactTitleKey && libraryLookup.byUniqueCompactTitle?.has(compactTitleKey)) {
+      return { program: libraryLookup.byUniqueCompactTitle.get(compactTitleKey), matchMethod: 'title_clean_exact', matchReason: 'Matched by cleaned imported title after stripping report-only code/noise.' };
+    }
+    const specificNola = /\d{3,}/.test(nolaKey);
+    if (specificNola && broadImportedTitle(importedTitle)) {
+      return { program: null, matchMethod: 'unmatched', matchReason: `NOLA ${nola} did not match a pledge-library NOLA after normalization. The imported title “${importedTitle}” is too broad for safe fuzzy title matching.` };
     }
     const fuzzy = findFuzzyTitleMatch(importedTitle, libraryLookup);
     if (fuzzy?.mode === 'auto' && fuzzy.row) {

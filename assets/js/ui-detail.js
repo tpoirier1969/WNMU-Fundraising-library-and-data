@@ -16,6 +16,7 @@
   ]);
   const NON_EDITABLE_FIELD_PATTERN = /^(?:id|program_id|source_row_number|created_at|updated_at|created_by|updated_by|row_hash)$/i;
   const READ_ONLY_DETAIL_FIELD_PATTERN = /^(?:__.*|total_contributions|avg_contribution_per_drive|avg_per_fundraiser|total_raised|last_aired(?:_at)?|fundraiser_count|drive_count|fundraiser_total|matched_library_title|match_method|match_reason|approved_unlinked|review_status)$/i;
+  const NEW_TOPIC_OPTION_VALUE = '__add_new_topic__';
 
   function canEdit() {
     return App.auth.canEdit();
@@ -1487,6 +1488,119 @@
     els.detailEmpty.textContent = message || 'Something went sideways while loading this title.';
   }
 
+  function sameTopicValue(left = '', right = '') {
+    return utils.normalizeLookupKey(left) === utils.normalizeLookupKey(right);
+  }
+
+  function topicOptionEntries(values = [], currentValue = '') {
+    const canonical = App.programFilters?.canonicalOptionEntries
+      ? App.programFilters.canonicalOptionEntries(values)
+      : Array.from(new Set((values || []).map((value) => utils.normalizeText(value)).filter(Boolean)))
+          .sort(utils.compareText)
+          .map((value) => ({ value, label: value }));
+    const current = utils.normalizeText(currentValue);
+    if (current && !canonical.some((entry) => sameTopicValue(entry.value, current))) {
+      return [{ value: current, label: current }, ...canonical];
+    }
+    return canonical;
+  }
+
+  function collectPrimaryTopicOptions(currentValue = '') {
+    const values = (state.rawRows || []).map((row) => derive.topicPrimary(row)).filter(Boolean);
+    return topicOptionEntries(values, currentValue);
+  }
+
+  function collectSecondaryTopicOptions(primaryValue = '', currentValue = '') {
+    const primaryKey = utils.normalizeLookupKey(primaryValue);
+    const sourceRows = primaryKey
+      ? (state.rawRows || []).filter((row) => sameTopicValue(derive.topicPrimary(row), primaryValue))
+      : (state.rawRows || []);
+    const values = sourceRows.map((row) => derive.topicSecondary(row)).filter(Boolean);
+    return topicOptionEntries(values, currentValue);
+  }
+
+  function renderTopicSelectOptions(select, entries = [], currentValue = '', placeholder = '', addLabel = '') {
+    if (!select) return;
+    const current = utils.normalizeText(currentValue);
+    const options = [`<option value="">${utils.escapeHtml(placeholder)}</option>`];
+    (entries || []).forEach((entry) => {
+      const value = utils.normalizeText(entry?.value ?? entry);
+      const label = utils.normalizeText(entry?.label ?? entry?.value ?? entry);
+      if (!value) return;
+      const selected = current && sameTopicValue(value, current) ? ' selected' : '';
+      options.push(`<option value="${utils.escapeHtml(value)}"${selected}>${utils.escapeHtml(label)}</option>`);
+    });
+    options.push(`<option value="${NEW_TOPIC_OPTION_VALUE}">${utils.escapeHtml(addLabel)}</option>`);
+    select.innerHTML = options.join('');
+    const matchingOption = current ? [...select.options].find((option) => sameTopicValue(option.value, current)) : null;
+    if (matchingOption) select.value = matchingOption.value;
+    else if (!current) select.value = '';
+  }
+
+  function selectedTopicValue(select, newInput) {
+    if (!select) return '';
+    if (select.value === NEW_TOPIC_OPTION_VALUE) return utils.normalizeText(newInput?.value || '');
+    return utils.normalizeText(select.value || '');
+  }
+
+  function syncTopicNewInput(select, input) {
+    if (!select || !input) return;
+    const isNew = select.value === NEW_TOPIC_OPTION_VALUE;
+    input.classList.toggle('hidden', !isNew);
+    input.disabled = !isNew;
+    if (!isNew) input.value = '';
+  }
+
+  function renderSecondaryTopicSelector({ secondaryValue = '', preserveSecondary = true } = {}) {
+    const form = els.detailEditForm;
+    if (!form) return;
+    const primarySelect = form.elements.topic_primary;
+    const primaryNew = form.elements.topic_primary_new;
+    const secondarySelect = form.elements.topic_secondary;
+    const secondaryNew = form.elements.topic_secondary_new;
+    if (!primarySelect || !secondarySelect) return;
+
+    const selectedPrimary = selectedTopicValue(primarySelect, primaryNew);
+    const activePrimary = primarySelect.value === NEW_TOPIC_OPTION_VALUE && !selectedPrimary ? '__new_primary_topic__' : selectedPrimary;
+    const existingSecondary = selectedTopicValue(secondarySelect, secondaryNew);
+    let desiredSecondary = preserveSecondary ? utils.normalizeText(secondaryValue || existingSecondary || '') : '';
+    const filteredSecondary = collectSecondaryTopicOptions(activePrimary, desiredSecondary);
+    if (!preserveSecondary && desiredSecondary && !filteredSecondary.some((entry) => sameTopicValue(entry.value, desiredSecondary))) desiredSecondary = '';
+    renderTopicSelectOptions(secondarySelect, filteredSecondary, desiredSecondary, selectedPrimary ? `Choose ${selectedPrimary} subtopic…` : 'Choose secondary topic…', 'Add new secondary topic…');
+    syncTopicNewInput(secondarySelect, secondaryNew);
+  }
+
+  function renderDetailTopicSelectors({ primaryValue = '', secondaryValue = '', preserveSecondary = true } = {}) {
+    const form = els.detailEditForm;
+    if (!form) return;
+    const primarySelect = form.elements.topic_primary;
+    const primaryNew = form.elements.topic_primary_new;
+    const secondarySelect = form.elements.topic_secondary;
+    if (!primarySelect || !secondarySelect) return;
+
+    const existingPrimary = selectedTopicValue(primarySelect, primaryNew);
+    const desiredPrimary = utils.normalizeText(primaryValue || existingPrimary || '');
+    renderTopicSelectOptions(primarySelect, collectPrimaryTopicOptions(desiredPrimary), desiredPrimary, 'Choose primary topic…', 'Add new primary topic…');
+    syncTopicNewInput(primarySelect, primaryNew);
+    renderSecondaryTopicSelector({ secondaryValue, preserveSecondary });
+  }
+
+  function handleTopicSelectChange(event) {
+    const target = event?.target;
+    if (!target || !els.detailEditForm?.contains(target)) return;
+    if (target.name === 'topic_primary') {
+      const primaryNew = els.detailEditForm.elements.topic_primary_new;
+      syncTopicNewInput(target, primaryNew);
+      renderSecondaryTopicSelector({ preserveSecondary: false });
+      if (target.value === NEW_TOPIC_OPTION_VALUE) window.setTimeout(() => primaryNew?.focus(), 0);
+      return;
+    }
+    if (target.name === 'topic_secondary') {
+      syncTopicNewInput(target, els.detailEditForm.elements.topic_secondary_new);
+      if (target.value === NEW_TOPIC_OPTION_VALUE) window.setTimeout(() => els.detailEditForm.elements.topic_secondary_new?.focus(), 0);
+    }
+  }
+
   function ensureSelectOption(select, value) {
     if (!select) return;
     const normalized = utils.normalizeText(value);
@@ -1571,8 +1685,7 @@
     form.elements.distributor.value = derive.distributor(source);
     form.elements.length_bucket_minutes.value = derive.lengthBucket(source) || '';
     form.elements.actual_runtime_input.value = derive.actualRuntimeLabel(source) === '—' ? '' : derive.actualRuntimeLabel(source);
-    form.elements.topic_primary.value = derive.topicPrimary(source);
-    form.elements.topic_secondary.value = derive.topicSecondary(source);
+    renderDetailTopicSelectors({ primaryValue: derive.topicPrimary(source), secondaryValue: derive.topicSecondary(source), preserveSecondary: true });
     form.elements.rights_start.value = utils.formatCompactDateInput(derive.rightsBegin(source));
     form.elements.rights_end.value = utils.formatCompactDateInput(derive.rightsEnd(source));
     form.elements.package_type.value = utils.normalizeText(source.package_type);
@@ -1830,8 +1943,8 @@
       distributor: utils.normalizeText(form.elements.distributor.value) || null,
       length_bucket_minutes: form.elements.length_bucket_minutes.value ? Number(form.elements.length_bucket_minutes.value) : null,
       actual_runtime_seconds: utils.parseRuntimeInput(form.elements.actual_runtime_input.value),
-      topic_primary: utils.normalizeText(form.elements.topic_primary.value) || null,
-      topic_secondary: utils.normalizeText(form.elements.topic_secondary.value) || null,
+      topic_primary: selectedTopicValue(form.elements.topic_primary, form.elements.topic_primary_new) || null,
+      topic_secondary: selectedTopicValue(form.elements.topic_secondary, form.elements.topic_secondary_new) || null,
       rights_start: null,
       rights_end: null,
       package_type: utils.normalizeText(form.elements.package_type.value) || null,
@@ -1906,11 +2019,10 @@
         }
         await App.app.refreshAll({ workspace: state.activeWorkspace });
         if (createdId) {
-          state.detailCreateMode = false;
-          await loadProgramDetail(createdId, { preserveMode: false });
-        } else {
-          closeDetailModal();
+          state.selectedProgramId = createdId;
+          App.listUi?.syncSelectedRows?.();
         }
+        closeDetailModal();
         setDetailDirty(false);
         App.dom.setNotice(`Added ${payload.title}.`);
         return;
@@ -2020,6 +2132,8 @@
     saveDetailEdit,
     deleteCurrentProgram,
     handleEditorInput,
+    handleTopicSelectChange,
+    renderDetailTopicSelectors,
     showDetailFailure,
     addTimingDraftRow,
     removeTimingDraftRow,

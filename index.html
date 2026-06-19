@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.22.30</title>
+  <title>WNMU Pledge Program Library v0.22.31</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/pledge-icon-192.png">
   <link rel="shortcut icon" href="assets/pledge-icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/pledge-icon-192.png">
-  <link rel="stylesheet" href="assets/styles.css?v=0.22.30">
+  <link rel="stylesheet" href="assets/styles.css?v=0.22.31">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/core.js?v=0.22.30"></script>
-  <script defer src="assets/js/program-filters.js?v=0.22.30"></script>
-  <script defer src="assets/js/dom.js?v=0.22.30"></script>
-  <script defer src="assets/js/data.js?v=0.22.30"></script>
-  <script defer src="assets/js/ui-list.js?v=0.22.30"></script>
-  <script defer src="assets/js/ui-workspace.js?v=0.22.30"></script>
-  <script defer src="assets/js/ui-scheduling.js?v=0.22.30"></script>
-  <script defer src="assets/js/ui-performance.js?v=0.22.30"></script>
-  <script defer src="assets/js/ui-imports.js?v=0.22.30"></script>
-  <script defer src="assets/js/auth.js?v=0.22.30"></script>
-  <script defer src="assets/js/ui-detail.js?v=0.22.30"></script>
-  <script defer src="assets/js/program-open.js?v=0.22.30"></script>
-  <script defer src="assets/js/library-load.js?v=0.22.30"></script>
-  <script defer src="assets/js/app.js?v=0.22.30"></script>
-  <script defer src="assets/js/app-init.js?v=0.22.30"></script>
+  <script defer src="assets/js/core.js?v=0.22.31"></script>
+  <script defer src="assets/js/program-filters.js?v=0.22.31"></script>
+  <script defer src="assets/js/dom.js?v=0.22.31"></script>
+  <script defer src="assets/js/data.js?v=0.22.31"></script>
+  <script defer src="assets/js/ui-list.js?v=0.22.31"></script>
+  <script defer src="assets/js/ui-workspace.js?v=0.22.31"></script>
+  <script defer src="assets/js/ui-scheduling.js?v=0.22.31"></script>
+  <script defer src="assets/js/ui-performance.js?v=0.22.31"></script>
+  <script defer src="assets/js/ui-imports.js?v=0.22.31"></script>
+  <script defer src="assets/js/auth.js?v=0.22.31"></script>
+  <script defer src="assets/js/ui-detail.js?v=0.22.31"></script>
+  <script defer src="assets/js/program-open.js?v=0.22.31"></script>
+  <script defer src="assets/js/library-load.js?v=0.22.31"></script>
+  <script defer src="assets/js/app.js?v=0.22.31"></script>
+  <script defer src="assets/js/app-init.js?v=0.22.31"></script>
   </head>
 <body>
 
@@ -56,7 +56,7 @@
           <div class="brand-name">WNMU-TV PBS</div>
           <div class="title-row">
             <h1 id="app-title">Pledge Program Library</h1>
-            <span class="version-pill" id="version-flag">v0.22.30</span>
+            <span class="version-pill" id="version-flag">v0.22.31</span>
           </div>
           <div class="status-line" id="config-status">Checking configuration…</div>
           <div class="build-meta hidden" id="build-meta"></div>
@@ -544,233 +544,241 @@
               <button type="button" class="ghost" id="import-clear-button">Clear batch</button>
             </div>
           </div>
-          <details class="import-advanced-tools">
-            <summary>Advanced / fallback tools</summary>
-            <div class="filter-actions filter-actions-inline import-actions-inline import-actions-advanced">
-              <button type="button" class="ghost" id="import-refresh-button">Check table access</button>
-              <button type="button" class="ghost" id="import-export-airings-button">Export matched airings CSV</button>
-              <button type="button" class="ghost" id="import-export-drive-button">Export derived rollups CSV</button>
+          <details class="import-advanced-tools performance-disclosure import-disclosure-card import-toolbar-disclosure">
+            <summary><span>Advanced / fallback tools</span><span class="performance-disclosure-hint">Access check and exports</span></summary>
+            <div class="performance-disclosure-body">
+              <div class="filter-actions filter-actions-inline import-actions-inline import-actions-advanced">
+                <button type="button" class="ghost" id="import-refresh-button">Check table access</button>
+                <button type="button" class="ghost" id="import-export-airings-button">Export matched airings CSV</button>
+                <button type="button" class="ghost" id="import-export-drive-button">Export derived rollups CSV</button>
+              </div>
             </div>
-          </section>
+          </details>
         </section>
 
-        <section class="import-summary-grid" id="import-summary-grid">
-          <article class="import-stat-card"><div class="performance-stat-label">Files loaded</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Parsed rows</div><div class="performance-stat-value">0</div></article>
-          <article class="import-stat-card"><div class="performance-stat-label">Airings rows</div><div class="performance-stat-value">0</div></article>
-        </section>
-
-        <section class="performance-card import-table-status-card">
-          <div class="performance-card-head">
-            <h3>Table readiness</h3>
-            <span class="mini-chip" id="import-table-pill">Pending probe</span>
-          </div>
-          <div id="import-table-status" class="import-table-status"></div>
-          <div id="import-warning-list" class="import-warning-list"></div>
-        </section>
-
-        <section class="performance-card import-compact-card import-file-audit-card">
-          <div class="performance-card-head">
-            <h3>Batch file audit</h3>
-            <span class="mini-chip" id="import-file-pill">No files</span>
-          </div>
-          <div class="table-wrap import-file-table-wrap">
-            <table class="programs-table import-file-table import-file-audit-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Details</th>
-                  <th>Rows</th>
-                  <th>Airings</th>
-                  <th>Fundraiser dates</th>
-                  <th>Issues</th>
-                  <th>Report total</th>
-                </tr>
-              </thead>
-              <tbody id="import-file-body">
-                <tr><td colspan="7" class="placeholder-row">No reports analyzed yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
-            <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
-          </div>
-
-        </section>
-
-        <section class="performance-card import-compact-card import-accounting-section">
-          <div class="performance-card-head">
-            <h3>Money accounting ledger</h3>
-            <span class="mini-chip" id="import-accounting-pill">No rows</span>
-          </div>
-          <div class="muted import-review-note">Diagnostic view. This shows where the importer says each dollar-bearing row went: raw total, non-specific, matched, unmatched, or skipped.</div>
-          <div class="table-wrap import-file-table-wrap">
-            <table class="programs-table import-file-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Raw $</th>
-                  <th>Normalized $</th>
-                  <th>Matched $</th>
-                  <th>Unmatched $</th>
-                  <th>Non-specific $</th>
-                  <th>Raw − normalized</th>
-                  <th>Raw − matched</th>
-                </tr>
-              </thead>
-              <tbody id="import-accounting-summary-body">
-                <tr><td colspan="8" class="placeholder-row">No accounting ledger yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-wrap import-preview-wrap import-accounting-wrap">
-            <table class="programs-table import-preview-table import-accounting-table">
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Row</th>
-                  <th>Date</th>
-                  <th>Time</th>
-                  <th>Title</th>
-                  <th>NOLA</th>
-                  <th>Dollars</th>
-                  <th>Pledges</th>
-                  <th>Bucket</th>
-                  <th>Normalized</th>
-                  <th>Match</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
-              <tbody id="import-accounting-body">
-                <tr><td colspan="12" class="placeholder-row">No accounting ledger yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="import-preview-grid">
-          <article class="performance-card">
-            <div class="performance-card-head">
-              <h3>Parsed airings preview</h3>
-              <span class="mini-chip" id="import-airings-pill">0 rows</span>
+        <details class="performance-card performance-disclosure import-disclosure-card import-compact-card import-unmatched-card">
+          <summary><span>Rows needing match approval</span><span class="mini-chip" id="import-unmatched-pill">0 rows</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <div class="performance-card-head import-unmatched-head import-disclosure-inner-head">
+              <div>
+                <h3>Rows needing match approval</h3>
+                <p class="muted">Review suggested and unmatched report rows, approve the correct pledge title, then import or reimport.</p>
+              </div>
+              <div class="import-unmatched-head-actions">
+                <button type="button" class="ghost" id="import-refresh-library-button">Refresh pledge titles</button>
+                <button type="button" class="ghost" id="import-apply-all-button">Apply all staged matches</button>
+              </div>
             </div>
-            <div class="table-wrap import-preview-wrap">
-              <table class="programs-table import-preview-table import-airings-table">
+            <div class="table-wrap import-preview-wrap import-unmatched-wrap">
+              <table class="programs-table import-preview-table import-unmatched-table import-match-review-table">
                 <thead>
-                  <tr>
-                    <th><span>Imported<br>title</span></th>
-                    <th><span>Library<br>match</span></th>
-                    <th>NOLA</th>
-                    <th>Aired at</th>
-                    <th>Dollars</th>
-                    <th>Pledges</th>
-                    <th><span>Program<br>minutes</span></th>
-                    <th><span>Match<br>status</span></th>
-                  </tr>
+                  <tr><th>Rows needing match approval</th></tr>
                 </thead>
-                <tbody id="import-airings-body">
-                  <tr><td colspan="8" class="placeholder-row">No parsed airings rows yet.</td></tr>
+                <tbody id="import-unmatched-body">
+                  <tr><td colspan="9" class="placeholder-row">No unmatched rows right now.</td></tr>
                 </tbody>
               </table>
             </div>
-          </article>
+            <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
+              <button type="button" class="ghost import-apply-all-trigger">Apply all staged matches</button>
+              <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="performance-card performance-disclosure import-disclosure-card import-summary-card">
+          <summary><span>Import summary</span><span class="performance-disclosure-hint">Files, rows, and parsed airings</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <section class="import-summary-grid" id="import-summary-grid">
+              <article class="import-stat-card"><div class="performance-stat-label">Files loaded</div><div class="performance-stat-value">0</div></article>
+              <article class="import-stat-card"><div class="performance-stat-label">Parsed rows</div><div class="performance-stat-value">0</div></article>
+              <article class="import-stat-card"><div class="performance-stat-label">Airings rows</div><div class="performance-stat-value">0</div></article>
+            </section>
+          </div>
+        </details>
+
+        <details class="performance-card performance-disclosure import-disclosure-card import-table-status-card">
+          <summary><span>Table readiness</span><span class="mini-chip" id="import-table-pill">Pending probe</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <div id="import-table-status" class="import-table-status"></div>
+            <div id="import-warning-list" class="import-warning-list"></div>
+          </div>
+        </details>
+
+        <details class="performance-card performance-disclosure import-disclosure-card import-compact-card import-file-audit-card">
+          <summary><span>Batch file audit</span><span class="mini-chip" id="import-file-pill">No files</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <div class="table-wrap import-file-table-wrap">
+              <table class="programs-table import-file-table import-file-audit-table">
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Details</th>
+                    <th>Rows</th>
+                    <th>Airings</th>
+                    <th>Fundraiser dates</th>
+                    <th>Issues</th>
+                    <th>Report total</th>
+                  </tr>
+                </thead>
+                <tbody id="import-file-body">
+                  <tr><td colspan="7" class="placeholder-row">No reports analyzed yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
+              <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="performance-card performance-disclosure import-disclosure-card import-compact-card import-accounting-section">
+          <summary><span>Money accounting ledger</span><span class="mini-chip" id="import-accounting-pill">No rows</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <div class="muted import-review-note">Diagnostic view. This shows where the importer says each dollar-bearing row went: raw total, non-specific, matched, unmatched, or skipped.</div>
+            <div class="table-wrap import-file-table-wrap">
+              <table class="programs-table import-file-table">
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Raw $</th>
+                    <th>Normalized $</th>
+                    <th>Matched $</th>
+                    <th>Unmatched $</th>
+                    <th>Non-specific $</th>
+                    <th>Raw − normalized</th>
+                    <th>Raw − matched</th>
+                  </tr>
+                </thead>
+                <tbody id="import-accounting-summary-body">
+                  <tr><td colspan="8" class="placeholder-row">No accounting ledger yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="table-wrap import-preview-wrap import-accounting-wrap">
+              <table class="programs-table import-preview-table import-accounting-table">
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Row</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Title</th>
+                    <th>NOLA</th>
+                    <th>Dollars</th>
+                    <th>Pledges</th>
+                    <th>Bucket</th>
+                    <th>Normalized</th>
+                    <th>Match</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody id="import-accounting-body">
+                  <tr><td colspan="12" class="placeholder-row">No accounting ledger yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <section class="import-preview-grid">
+          <details class="performance-card performance-disclosure import-disclosure-card">
+            <summary><span>Parsed airings preview</span><span class="mini-chip" id="import-airings-pill">0 rows</span></summary>
+            <div class="performance-disclosure-body import-disclosure-body">
+              <div class="table-wrap import-preview-wrap">
+                <table class="programs-table import-preview-table import-airings-table">
+                  <thead>
+                    <tr>
+                      <th><span>Imported<br>title</span></th>
+                      <th><span>Library<br>match</span></th>
+                      <th>NOLA</th>
+                      <th>Aired at</th>
+                      <th>Dollars</th>
+                      <th>Pledges</th>
+                      <th><span>Program<br>minutes</span></th>
+                      <th><span>Match<br>status</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="import-airings-body">
+                    <tr><td colspan="8" class="placeholder-row">No parsed airings rows yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
         </section>
 
-        <section class="performance-card import-compact-card import-unmatched-card">
-          <div class="performance-card-head import-unmatched-head">
-            <div>
-              <h3>Rows needing match approval</h3>
-              <p class="muted">Review suggested and unmatched report rows, approve the correct pledge title, then import or reimport.</p>
+        <details class="performance-card performance-disclosure import-disclosure-card">
+          <summary><span>Quarantined / unlinked imported rows</span><span class="mini-chip" id="import-existing-unlinked-pill">0 rows</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <div class="performance-card-head import-unmatched-head import-disclosure-inner-head">
+              <div>
+                <h3>Quarantined / unlinked imported rows</h3>
+                <p class="muted">These rows already exist in imported airings but still have no library link. You can link them, approve them to stay unlinked, or delete them.</p>
+              </div>
+              <div class="import-unmatched-head-actions">
+                <input type="search" id="import-quarantine-filter" class="import-quarantine-filter" placeholder="Filter quarantined rows by title, NOLA, date, file, or reason">
+                <button type="button" class="ghost" id="import-refresh-quarantine-button">Refresh</button>
+              </div>
             </div>
-            <div class="import-unmatched-head-actions">
-              <button type="button" class="ghost" id="import-refresh-library-button">Refresh pledge titles</button>
-              <button type="button" class="ghost" id="import-apply-all-button">Apply all staged matches</button>
-              <span class="mini-chip" id="import-unmatched-pill">0 rows</span>
+            <div class="table-wrap import-preview-wrap import-unmatched-wrap">
+              <table class="programs-table import-preview-table import-unmatched-table">
+                <thead>
+                  <tr>
+                    <th>Imported title</th>
+                    <th>NOLA</th>
+                    <th>Air date</th>
+                    <th>Air time</th>
+                    <th>Dollars</th>
+                    <th>Why quarantined</th>
+                    <th>Match to library title</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="import-existing-unlinked-body">
+                  <tr><td colspan="8" class="placeholder-row">No quarantined rows right now.</td></tr>
+                </tbody>
+              </table>
             </div>
+            <div id="import-quarantine-preview" class="import-quarantine-preview">Choose a quarantined row to inspect the imported fields and review why it is still unlinked.</div>
           </div>
-          <div class="table-wrap import-preview-wrap import-unmatched-wrap">
-            <table class="programs-table import-preview-table import-unmatched-table import-match-review-table">
-              <thead>
-                <tr><th>Rows needing match approval</th></tr>
-              </thead>
-              <tbody id="import-unmatched-body">
-                <tr><td colspan="9" class="placeholder-row">No unmatched rows right now.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="filter-actions filter-actions-inline import-actions-inline import-actions-bottom">
-            <button type="button" class="ghost import-apply-all-trigger">Apply all staged matches</button>
-            <button type="button" class="primary import-supabase-trigger">Import / reimport matched rows to Supabase</button>
-          </div>
-        </section>
+        </details>
 
-        <section class="performance-card">
-          <div class="performance-card-head import-unmatched-head">
-            <div>
-              <h3>Quarantined / unlinked imported rows</h3>
-              <p class="muted">These rows already exist in imported airings but still have no library link. You can link them, approve them to stay unlinked, or delete them.</p>
+        <details class="performance-card performance-disclosure import-disclosure-card">
+          <summary><span>Excluded suspect rows</span><span class="mini-chip" id="import-suspect-pill">0 rows</span></summary>
+          <div class="performance-disclosure-body import-disclosure-body">
+            <div class="performance-card-head import-unmatched-head import-disclosure-inner-head">
+              <div>
+                <h3>Excluded suspect rows</h3>
+                <p class="muted">These are imported airing events that analytics excluded under the current analysis criteria. Review the reason, then link, approve, or delete the underlying imported rows here instead of letting them vanish offstage.</p>
+              </div>
+              <div class="import-unmatched-head-actions">
+                <input type="search" id="import-suspect-filter" class="import-quarantine-filter" placeholder="Filter suspect rows by title, NOLA, date, file, or reason">
+                <button type="button" class="ghost" id="import-refresh-suspect-button">Refresh</button>
+              </div>
             </div>
-            <div class="import-unmatched-head-actions">
-              <input type="search" id="import-quarantine-filter" class="import-quarantine-filter" placeholder="Filter quarantined rows by title, NOLA, date, file, or reason">
-              <button type="button" class="ghost" id="import-refresh-quarantine-button">Refresh</button>
-              <span class="mini-chip" id="import-existing-unlinked-pill">0 rows</span>
+            <div class="table-wrap import-preview-wrap import-unmatched-wrap">
+              <table class="programs-table import-preview-table import-unmatched-table import-suspect-table">
+                <thead>
+                  <tr>
+                    <th>Imported title</th>
+                    <th>NOLA</th>
+                    <th>Air date</th>
+                    <th>Air time</th>
+                    <th>Dollars</th>
+                    <th>Why excluded</th>
+                    <th>Match to library title</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="import-suspect-body">
+                  <tr><td colspan="8" class="placeholder-row">Refresh to load suspect rows from the current analytics criteria.</td></tr>
+                </tbody>
+              </table>
             </div>
+            <div id="import-suspect-preview" class="import-quarantine-preview">Choose a suspect row to inspect the imported fields and review exactly why analytics excluded it.</div>
           </div>
-          <div class="table-wrap import-preview-wrap import-unmatched-wrap">
-            <table class="programs-table import-preview-table import-unmatched-table">
-              <thead>
-                <tr>
-                  <th>Imported title</th>
-                  <th>NOLA</th>
-                  <th>Air date</th>
-                  <th>Air time</th>
-                  <th>Dollars</th>
-                  <th>Why quarantined</th>
-                  <th>Match to library title</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="import-existing-unlinked-body">
-                <tr><td colspan="8" class="placeholder-row">No quarantined rows right now.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div id="import-quarantine-preview" class="import-quarantine-preview">Choose a quarantined row to inspect the imported fields and review why it is still unlinked.</div>
-        </section>
-
-        <section class="performance-card">
-          <div class="performance-card-head import-unmatched-head">
-            <div>
-              <h3>Excluded suspect rows</h3>
-              <p class="muted">These are imported airing events that analytics excluded under the current analysis criteria. Review the reason, then link, approve, or delete the underlying imported rows here instead of letting them vanish offstage.</p>
-            </div>
-            <div class="import-unmatched-head-actions">
-              <input type="search" id="import-suspect-filter" class="import-quarantine-filter" placeholder="Filter suspect rows by title, NOLA, date, file, or reason">
-              <button type="button" class="ghost" id="import-refresh-suspect-button">Refresh</button>
-              <span class="mini-chip" id="import-suspect-pill">0 rows</span>
-            </div>
-          </div>
-          <div class="table-wrap import-preview-wrap import-unmatched-wrap">
-            <table class="programs-table import-preview-table import-unmatched-table import-suspect-table">
-              <thead>
-                <tr>
-                  <th>Imported title</th>
-                  <th>NOLA</th>
-                  <th>Air date</th>
-                  <th>Air time</th>
-                  <th>Dollars</th>
-                  <th>Why excluded</th>
-                  <th>Match to library title</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="import-suspect-body">
-                <tr><td colspan="8" class="placeholder-row">Refresh to load suspect rows from the current analytics criteria.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div id="import-suspect-preview" class="import-quarantine-preview">Choose a suspect row to inspect the imported fields and review exactly why analytics excluded it.</div>
-        </section>
+        </details>
       </section>
     </section>
 
@@ -1086,8 +1094,8 @@
                   <label class="detail-form-field"><span class="filter-label">Runtime</span><input type="text" name="actual_runtime_input" placeholder="00:56:46 or 57"></label>
                   <label class="detail-form-field"><span class="filter-label">Rights begin</span><input type="text" name="rights_start" inputmode="numeric" placeholder="MM/DD/YY"></label>
                   <label class="detail-form-field"><span class="filter-label">Rights end</span><input type="text" name="rights_end" inputmode="numeric" placeholder="MM/DD/YY"></label>
-                  <label class="detail-form-field"><span class="filter-label">Primary topic</span><input type="text" name="topic_primary"></label>
-                  <label class="detail-form-field"><span class="filter-label">Secondary topic</span><input type="text" name="topic_secondary"></label>
+                  <label class="detail-form-field detail-topic-field"><span class="filter-label">Primary topic</span><select name="topic_primary" id="detail-topic-primary-select"></select><input type="text" name="topic_primary_new" id="detail-topic-primary-new" class="detail-topic-new-input hidden" placeholder="New primary topic"></label>
+                  <label class="detail-form-field detail-topic-field"><span class="filter-label">Secondary topic</span><select name="topic_secondary" id="detail-topic-secondary-select"></select><input type="text" name="topic_secondary_new" id="detail-topic-secondary-new" class="detail-topic-new-input hidden" placeholder="New secondary topic"></label>
                   <label class="detail-form-field"><span class="filter-label">Package type</span><input type="text" name="package_type"></label>
                   <label class="detail-form-field"><span class="filter-label">Source</span><select name="source_format"><option value=""></option><option value="sIX">sIX</option><option value="FTP">FTP</option><option value="Server">Server</option><option value="Other">Other</option></select></label>
                 </div>
@@ -1176,7 +1184,7 @@
 
     <footer class="site-footer">
       <div>WNMU-TV PBS · Pledge Program Library</div>
-      <div id="footer-version">v0.22.30</div>
+      <div id="footer-version">v0.22.31</div>
     </footer>
   </div>
 </body>

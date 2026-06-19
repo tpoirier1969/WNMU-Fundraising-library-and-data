@@ -5744,3 +5744,40 @@ input.goal-difference-negative {
 .fundraiser-graph-chart .drive-comparison-legend-item span {
   background: #1576b9;
 }
+
+/* v0.22.31 import collapsibles and topic selectors */
+.import-disclosure-card.performance-disclosure {
+  margin: 0;
+}
+.import-toolbar-disclosure {
+  margin-top: 0.65rem !important;
+  border: 1px solid #dce9f6;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+.import-toolbar-disclosure > summary {
+  padding: 9px 12px;
+  font-size: 0.92rem;
+}
+.import-disclosure-body .import-summary-grid {
+  margin: 0;
+}
+.import-disclosure-inner-head {
+  padding-top: 0 !important;
+  margin-bottom: 0.55rem !important;
+}
+.import-disclosure-card > summary .mini-chip,
+.import-disclosure-card > summary .performance-disclosure-hint {
+  margin-left: auto;
+}
+.import-disclosure-card .performance-disclosure-body {
+  display: grid;
+  gap: 0.55rem;
+}
+.detail-topic-field select,
+.detail-topic-new-input {
+  width: 100%;
+}
+.detail-topic-new-input {
+  margin-top: 0.35rem;
+}

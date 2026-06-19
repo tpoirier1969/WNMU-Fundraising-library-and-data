@@ -1,0 +1,14 @@
+Install changed files for v0.22.31
+
+Copy these files over the existing site files:
+- index.html
+- version.json
+- assets/styles.css
+- assets/js/app.js
+- assets/js/core.js
+- assets/js/ui-detail.js
+- assets/js/ui-imports.js
+
+Do not overwrite config.js. This patch does not include config.js.
+
+After uploading, hard refresh the browser if the version gate/banner still reports the older app version.
