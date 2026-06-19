@@ -1136,6 +1136,33 @@
     return Math.round((db.getTime() - da.getTime()) / 86400000);
   }
 
+  function dateKeyYear(dateKey = '') {
+    const match = utils.normalizeText(dateKey || '').match(/^(\d{4})-/);
+    return match ? match[1] : '';
+  }
+
+  function dateRangeSpansCalendarYears(startDate = '', endDate = '') {
+    const startYear = dateKeyYear(startDate);
+    const endYear = dateKeyYear(endDate || startDate);
+    return Boolean(startYear && endYear && startYear !== endYear);
+  }
+
+  function dateRangeSpanDays(startDate = '', endDate = '') {
+    const span = daysBetweenDateKeys(startDate, endDate || startDate);
+    return Number.isFinite(span) ? Math.max(1, span + 1) : 1;
+  }
+
+  function scheduleAndGroupShareCalendarYear(schedule = {}, group = {}) {
+    const groupStart = utils.normalizeText(group?.startDate || '');
+    const groupEnd = utils.normalizeText(group?.endDate || groupStart);
+    const scheduleStart = utils.normalizeText(schedule?.startDate || '');
+    const scheduleEnd = utils.normalizeText(schedule?.endDate || scheduleStart);
+    if (dateRangeSpansCalendarYears(groupStart, groupEnd) || dateRangeSpansCalendarYears(scheduleStart, scheduleEnd)) return false;
+    const groupYear = dateKeyYear(groupStart) || dateKeyYear(groupEnd);
+    const scheduleYear = dateKeyYear(scheduleStart) || dateKeyYear(scheduleEnd);
+    return Boolean(groupYear && scheduleYear && groupYear === scheduleYear);
+  }
+
   function labelIsSpecificFundraiser(label = '') {
     const clean = utils.normalizeText(label);
     if (!clean) return false;
@@ -1174,11 +1201,18 @@
     });
     const startDate = validRows[0]?.dateKey || '';
     const endDate = validRows[validRows.length - 1]?.dateKey || startDate;
-    const rowsHaveSpecificLabel = validRows.some((entry) => labelIsSpecificFundraiser(entry.row?.fundraiser_label));
-    const identityKey = rowsHaveSpecificLabel
-      ? ['cluster', seedKey].join('|').toLowerCase()
-      : ['cluster', seedKey, startDate, endDate].join('|').toLowerCase();
-    const group = { rows: validRows, key: identityKey, startDate, endDate, title: '' };
+    const identityKey = ['cluster', seedKey, startDate, endDate].join('|').toLowerCase();
+    const spanDays = dateRangeSpanDays(startDate, endDate);
+    const group = {
+      rows: validRows,
+      key: identityKey,
+      startDate,
+      endDate,
+      spanDays,
+      spansCalendarYears: dateRangeSpansCalendarYears(startDate, endDate),
+      suspiciousSpan: spanDays > IMPORTED_RANGE_SUSPICIOUS_SPAN_DAYS,
+      title: ''
+    };
     group.title = formatClusterTitle(group);
     return group;
   }
@@ -1212,7 +1246,8 @@
         const current = sorted[index];
         const previous = sorted[index - 1];
         const gapDays = daysBetweenDateKeys(previous.dateKey, current.dateKey);
-        if (Number.isFinite(gapDays) && gapDays > IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS) {
+        const crossesCalendarYear = Boolean(dateKeyYear(previous.dateKey) && dateKeyYear(current.dateKey) && dateKeyYear(previous.dateKey) !== dateKeyYear(current.dateKey));
+        if (crossesCalendarYear || (Number.isFinite(gapDays) && gapDays > IMPORTED_FUNDRAISER_CLUSTER_GAP_DAYS)) {
           groups.push(finalizeImportedCluster(seedKey, cluster));
           cluster = [current];
           continue;
@@ -1269,6 +1304,7 @@
     const start = utils.normalizeText(schedule?.startDate || '');
     const end = utils.normalizeText(schedule?.endDate || '');
     if (!datesOverlap(start, end, group.startDate, group.endDate)) return false;
+    if (!scheduleAndGroupShareCalendarYear(schedule, group)) return false;
     const itemFileKeys = scheduleImportedFileKeys(schedule);
     if (itemFileKeys.size && groupFileKeys.size && [...itemFileKeys].some((key) => groupFileKeys.has(key))) return true;
     const titleKey = utils.normalizeLookupKey(schedule?.title || '');
@@ -1329,6 +1365,7 @@
         const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
         if (!hasImportedPlacements) return false;
         if (!datesOverlap(utils.normalizeText(item.startDate), utils.normalizeText(item.endDate), group.startDate, group.endDate)) return false;
+        if (!scheduleAndGroupShareCalendarYear(item, group)) return false;
         const itemFileKeys = scheduleImportedFileKeys(item);
         if (!itemFileKeys.size || !groupFileKeys.size) return false;
         return [...groupFileKeys].some((key) => itemFileKeys.has(key));
@@ -1347,6 +1384,8 @@
       noLibraryMatch: 0,
       badDate: 0,
       badTime: 0,
+      suspiciousSpanGroups: 0,
+      suspiciousSpanRows: 0,
       droppedRows: []
     };
     const groupedRows = sourceRows.map((row) => ({
@@ -1408,6 +1447,9 @@
         startDate: group.startDate,
         endDate: group.endDate,
         rowCount: group.rows?.length || 0,
+        spanDays: group.spanDays || dateRangeSpanDays(group.startDate, group.endDate),
+        suspiciousSpan: Boolean(group.suspiciousSpan),
+        spansCalendarYears: Boolean(group.spansCalendarYears),
         scheduleId: schedule?.id || '',
         scheduleTitle: schedule?.title || '',
         duplicateIds: duplicates.map((item) => item.id).filter(Boolean)
@@ -1648,10 +1690,21 @@
     let reboundPlacements = 0;
     let unresolvedCollisions = 0;
     let mergedDuplicateSchedules = 0;
+    let suspiciousSpanGroups = 0;
+    let suspiciousSpanRows = 0;
     const removedScheduleIds = [];
     let firstScheduleId = '';
 
     groups.forEach((group) => {
+      if (group?.spansCalendarYears || group?.suspiciousSpan) {
+        suspiciousSpanGroups += 1;
+        const groupRows = Array.isArray(group?.rows) ? group.rows.length : 0;
+        suspiciousSpanRows += groupRows;
+        skippedPlacements += groupRows;
+        diagnostics.suspiciousSpanGroups = (diagnostics.suspiciousSpanGroups || 0) + 1;
+        diagnostics.suspiciousSpanRows = (diagnostics.suspiciousSpanRows || 0) + groupRows;
+        return;
+      }
       const groupFileKeys = groupImportedFileKeys(group);
       let schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);
       let createdThisSchedule = false;
@@ -1765,14 +1818,16 @@
       schedulesUpdated: updatedSchedules,
       placementsCreated: createdPlacements,
       placementsSkipped: skippedPlacements,
-      skippedRows,
+      skippedRows: skippedRows + suspiciousSpanRows,
       correctedDurations,
       restoredPlacements,
       reboundPlacements,
       unresolvedCollisions,
       mergedDuplicateSchedules,
+      suspiciousSpanGroups,
+      suspiciousSpanRows,
       removedScheduleIds: [...new Set(removedScheduleIds.filter(Boolean))],
-      fundraiserCount: groups.length,
+      fundraiserCount: Math.max(0, groups.length - suspiciousSpanGroups),
       diagnostics
     };
   }

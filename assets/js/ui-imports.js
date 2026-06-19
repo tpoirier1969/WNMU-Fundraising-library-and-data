@@ -99,7 +99,7 @@
   }
 
   function escapeRegExp(value = '') {
-    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
   function broadImportedTitle(title = '') {
@@ -1671,7 +1671,7 @@
     setResultBanner(message, Math.abs(diff) >= 0.01 ? 'warn' : '');
   }
 
-  function clearBatch() {
+  function clearBatch(options = {}) {
     imp().rawFiles = [];
     imp().fileSummaries = [];
     imp().airingsRows = [];
@@ -1682,10 +1682,29 @@
     imp().error = '';
     imp().lastAnalyzedAt = '';
     imp().lastImportResult = null;
-    setResultBanner('');
+    if (!options.preserveBanner) setResultBanner('');
     if (els.importFileInput) els.importFileInput.value = '';
     renderAll();
-    setStatus('Batch cleared.');
+    if (options.resultBanner) setResultBanner(options.resultBanner, options.resultTone || '');
+    setStatus(options.statusMessage || 'Batch cleared.', options.statusTone || '');
+  }
+
+  function setImportInProgress(isWorking = false) {
+    imp().importInProgress = Boolean(isWorking);
+    renderActions();
+  }
+
+  function promptToClearBatchAfterImport(successMessage = '', tone = 'success') {
+    if (!imp().airingsRows?.length) return;
+    const shouldClear = window.confirm('Import/reimport finished. Clear the current batch now?\n\nPress Enter/OK to clear it, or Cancel to keep the batch on screen.');
+    if (!shouldClear) return;
+    clearBatch({
+      preserveBanner: true,
+      resultBanner: successMessage || 'Import/reimport finished and the current batch was cleared.',
+      resultTone: tone || 'success',
+      statusMessage: 'Import/reimport finished and the current batch was cleared.',
+      statusTone: tone || 'success'
+    });
   }
 
   function rowsToCsv(rows = []) {
@@ -1821,6 +1840,7 @@
       setResultBanner(message, 'warn');
       return;
     }
+    setImportInProgress(true);
     setStatus(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows to Supabase…`);
     setResultBanner(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} will NOT be written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
     try {
@@ -1870,6 +1890,11 @@
         if (skippedRows > 0) {
           success += ` ${utils.formatCount(skippedRows)} imported row${skippedRows === 1 ? '' : 's'} were analytics-only because they could not be placed on the calendar.`;
         }
+        const suspiciousGroups = Number(scheduleSummary.suspiciousSpanGroups || 0) || 0;
+        const suspiciousRows = Number(scheduleSummary.suspiciousSpanRows || 0) || 0;
+        if (suspiciousGroups > 0) {
+          success += ` WARNING: ${utils.formatCount(suspiciousGroups)} imported fundraiser cluster${suspiciousGroups === 1 ? '' : 's'} spanning more than 45 days ${suspiciousGroups === 1 ? 'was' : 'were'} not auto-created as ${suspiciousRows ? `${utils.formatCount(suspiciousRows)} ` : ''}schedule placement${suspiciousRows === 1 ? '' : 's'}; review those dates manually instead of creating a fake yearlong fundraiser.`;
+        }
       } else if (scheduleError) {
         success += ` WARNING: rows imported, but the fundraiser dropdown/scheduler update failed: ${scheduleError?.message || scheduleError}.`;
       } else if (summary.airings.written > 0) {
@@ -1882,12 +1907,16 @@
       await App.schedulingUi?.refreshImportedAiringMarkers?.();
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
+      setImportInProgress(false);
+      promptToClearBatchAfterImport(success, finalTone);
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Supabase import failed.';
       setStatus(message, 'warn');
       setNotice(message, 'warn');
       setResultBanner(`Import failed. No rows were written. ${message}`, 'warn');
+    } finally {
+      if (imp().importInProgress) setImportInProgress(false);
     }
   }
 
@@ -2866,14 +2895,20 @@
             : (pendingMatchCount
               ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} found. Click Apply or Apply All before importing.`
               : 'No matched/importable rows yet. Link rows or mark rows non-specific first.'))));
-    document.querySelectorAll('.import-supabase-trigger').forEach((button) => {
-      button.disabled = !canTryImport;
-      button.title = importTitle;
+    const importIsWorking = Boolean(imp().importInProgress);
+    document.querySelectorAll('#import-supabase-button, .import-supabase-trigger').forEach((button) => {
+      if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent || 'Import / reimport matched rows to Supabase';
+      button.disabled = importIsWorking || !canTryImport;
+      button.title = importIsWorking ? 'Import/reimport is running. Please wait.' : importTitle;
+      button.classList.toggle('is-working', importIsWorking);
+      if (importIsWorking) {
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = 'Importing…';
+      } else {
+        button.removeAttribute('aria-busy');
+        button.textContent = button.dataset.defaultLabel;
+      }
     });
-    if (els.importSupabaseButton) {
-      els.importSupabaseButton.disabled = !canTryImport;
-      els.importSupabaseButton.title = importTitle;
-    }
     if (els.importBuildScheduleButton) {
       els.importBuildScheduleButton.disabled = !canBuild;
       els.importBuildScheduleButton.title = !canEdit ? 'Admin sign-in required for scheduler writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (matchedCount ? '' : 'Load matched imported airings first, then sign in as admin.'));

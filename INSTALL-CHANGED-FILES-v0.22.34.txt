@@ -1,0 +1,3 @@
+Install v0.22.34 changed files by copying the files in this ZIP over the existing app files, preserving folders.
+
+Do not replace config.js.
