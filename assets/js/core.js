@@ -205,6 +205,7 @@ window.PledgeLib = window.PledgeLib || {};
     imports: {
       ready: false,
       loading: false,
+      importing: false,
       targetMode: 'auto',
       rawFiles: [],
       fileSummaries: [],

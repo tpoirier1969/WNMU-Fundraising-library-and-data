@@ -1,6 +1,7 @@
-Install changed files for v0.22.31
+WNMU Pledge Program Library v0.22.31 changed-files install
 
-Copy these files over the existing site files:
+Copy these changed files into the existing app, preserving folder paths:
+
 - index.html
 - version.json
 - assets/styles.css
@@ -8,7 +9,7 @@ Copy these files over the existing site files:
 - assets/js/core.js
 - assets/js/ui-detail.js
 - assets/js/ui-imports.js
+- README-v0.22.31-import-review-and-topic-selector-fixes.txt
+- INSTALL-CHANGED-FILES-v0.22.31.txt
 
-Do not overwrite config.js. This patch does not include config.js.
-
-After uploading, hard refresh the browser if the version gate/banner still reports the older app version.
+Do not overwrite config.js.

@@ -5781,3 +5781,121 @@ input.goal-difference-negative {
 .detail-topic-new-input {
   margin-top: 0.35rem;
 }
+
+/* v0.22.31 import layout polish, working state, and clear-batch prompt */
+.import-start-notes {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #dce9f6;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+.import-summary-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  align-items: center;
+  color: #284966;
+  font-size: 0.86rem;
+}
+.import-summary-notes > span {
+  white-space: nowrap;
+}
+.import-table-readiness-note {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.import-table-status-start {
+  display: block;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.import-table-status-compact {
+  font-size: 0.84rem;
+  line-height: 1.35;
+  color: #36566f;
+}
+.import-table-status-compact.bad {
+  color: #7b2130;
+  font-weight: 650;
+}
+.import-warning-list-compact {
+  margin-top: 0;
+}
+.import-warning-list-compact .import-warning-item {
+  padding: 0.48rem 0.65rem;
+  font-size: 0.82rem;
+}
+.import-toolbar-card .import-toolbar-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.75fr);
+  align-items: start;
+}
+.import-toolbar-grid > .import-actions-inline {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  align-self: stretch;
+}
+.import-preview-grid {
+  grid-template-columns: 1fr;
+}
+.import-actions-inline button.is-working {
+  cursor: wait;
+  border-color: rgba(21, 101, 73, 0.48);
+  background: #156549;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(21, 101, 73, 0.12);
+}
+.import-actions-inline button.is-working::after {
+  content: '';
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: 0.45em;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-top-color: #fff;
+  border-radius: 999px;
+  vertical-align: -0.12em;
+  animation: import-button-spin 0.85s linear infinite;
+}
+@keyframes import-button-spin {
+  to { transform: rotate(360deg); }
+}
+.import-clear-confirm-dialog {
+  border: 0;
+  border-radius: 18px;
+  padding: 0;
+  max-width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 24px 70px rgba(9, 31, 54, 0.32);
+}
+.import-clear-confirm-dialog::backdrop {
+  background: rgba(6, 22, 38, 0.38);
+}
+.import-clear-confirm-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.15rem;
+  color: var(--text);
+  background: #fff;
+}
+.import-clear-confirm-card h3 {
+  margin: 0;
+  color: var(--pbs-blue-dark);
+}
+.import-clear-confirm-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.import-clear-confirm-actions {
+  margin-top: 0.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  .import-toolbar-card .import-toolbar-grid {
+    grid-template-columns: 1fr;
+  }
+}

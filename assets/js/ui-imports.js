@@ -1637,7 +1637,7 @@
     setResultBanner(message, Math.abs(diff) >= 0.01 ? 'warn' : '');
   }
 
-  function clearBatch() {
+  function clearBatch(options = {}) {
     imp().rawFiles = [];
     imp().fileSummaries = [];
     imp().airingsRows = [];
@@ -1651,7 +1651,44 @@
     setResultBanner('');
     if (els.importFileInput) els.importFileInput.value = '';
     renderAll();
-    setStatus('Batch cleared.');
+    setStatus(options.status || 'Batch cleared.');
+  }
+
+  function importWriteButtons() {
+    return [...document.querySelectorAll('#import-supabase-button, .import-supabase-trigger')];
+  }
+
+  function syncImportWorkingButtons() {
+    const working = Boolean(imp().importing);
+    importWriteButtons().forEach((button) => {
+      if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent || 'Import / reimport matched rows to Supabase';
+      button.classList.toggle('is-working', working);
+      if (working) {
+        button.textContent = 'Importing…';
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        return;
+      }
+      button.textContent = button.dataset.idleLabel;
+      button.removeAttribute('aria-busy');
+    });
+  }
+
+  function confirmClearBatchAfterImport() {
+    const dialog = document.getElementById('import-clear-confirm-dialog');
+    if (!dialog || typeof dialog.showModal !== 'function') {
+      return Promise.resolve(window.confirm('Import/reimport finished. Clear this import batch from the screen now?'));
+    }
+    return new Promise((resolve) => {
+      const yesButton = dialog.querySelector('button[value="yes"]');
+      const onClose = () => {
+        dialog.removeEventListener('close', onClose);
+        resolve(dialog.returnValue === 'yes');
+      };
+      dialog.addEventListener('close', onClose);
+      if (!dialog.open) dialog.showModal();
+      window.setTimeout(() => yesButton?.focus?.(), 0);
+    });
   }
 
   function rowsToCsv(rows = []) {
@@ -1750,6 +1787,10 @@
   }
 
   async function importToSupabase() {
+    if (imp().importing) {
+      setStatus('Import/reimport is already running…');
+      return;
+    }
     if (!App.auth.canEdit()) {
       setNotice('Direct import is admin-only. Export the normalized CSV if you need a handoff first.', 'warn');
       setStatus('Direct import is admin-only.', 'warn');
@@ -1787,6 +1828,10 @@
       setResultBanner(message, 'warn');
       return;
     }
+    let shouldOfferClearBatch = false;
+    imp().importing = true;
+    syncImportWorkingButtons();
+    renderActions();
     setStatus(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows to Supabase…`);
     setResultBanner(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} will NOT be written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
     try {
@@ -1848,12 +1893,24 @@
       await App.schedulingUi?.refreshImportedAiringMarkers?.();
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
+      shouldOfferClearBatch = true;
     } catch (error) {
       console.error(error);
       const message = error?.message || 'Supabase import failed.';
       setStatus(message, 'warn');
       setNotice(message, 'warn');
       setResultBanner(`Import failed. No rows were written. ${message}`, 'warn');
+    } finally {
+      imp().importing = false;
+      syncImportWorkingButtons();
+      renderActions();
+    }
+    if (shouldOfferClearBatch) {
+      const clearNow = await confirmClearBatchAfterImport();
+      if (clearNow) {
+        clearBatch({ status: 'Import/reimport finished and batch cleared.' });
+        setResultBanner('Import/reimport finished and batch cleared.', 'success');
+      }
     }
   }
 
@@ -2764,22 +2821,25 @@
     const pendingMatchCount = getPendingManualMatchRows().length;
     const unreconciledFiles = filesWithReconciliationDifferences();
     const hasDiffs = unreconciledFiles.length > 0;
+    const isImporting = Boolean(imp().importing);
     // Keep the write button clickable once a report has rows. The actual write path still
     // blocks non-admin sessions, unreconciled files, and zero importable rows with a clear
     // message. Disabling the button hid those messages and made the import flow look dead.
-    const canTryImport = Boolean(allRowCount);
-    const canBuild = Boolean(canEdit && matchedCount);
-    const importTitle = !allRowCount
-      ? 'Load imported airings first.'
-      : (!canEdit
-        ? 'Admin sign-in is required. Click for the sign-in/admin warning.'
-        : (hasDiffs
-          ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
-          : (importableCount
-            ? `${utils.formatCount(importableCount)} matched/non-specific row${importableCount === 1 ? '' : 's'} ready to import. ${pendingMatchCount ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} still need Apply/Apply All before import.` : ''}`
-            : (pendingMatchCount
-              ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} found. Click Apply or Apply All before importing.`
-              : 'No matched/importable rows yet. Link rows or mark rows non-specific first.'))));
+    const canTryImport = Boolean(allRowCount && !isImporting);
+    const canBuild = Boolean(canEdit && matchedCount && !isImporting);
+    const importTitle = isImporting
+      ? 'Import/reimport is running right now.'
+      : (!allRowCount
+        ? 'Load imported airings first.'
+        : (!canEdit
+          ? 'Admin sign-in is required. Click for the sign-in/admin warning.'
+          : (hasDiffs
+            ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
+            : (importableCount
+              ? `${utils.formatCount(importableCount)} matched/non-specific row${importableCount === 1 ? '' : 's'} ready to import. ${pendingMatchCount ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} still need Apply/Apply All before import.` : ''}`
+              : (pendingMatchCount
+                ? `${utils.formatCount(pendingMatchCount)} staged match${pendingMatchCount === 1 ? '' : 'es'} found. Click Apply or Apply All before importing.`
+                : 'No matched/importable rows yet. Link rows or mark rows non-specific first.')))));
     document.querySelectorAll('.import-supabase-trigger').forEach((button) => {
       button.disabled = !canTryImport;
       button.title = importTitle;
@@ -2796,6 +2856,11 @@
       button.disabled = !pendingMatchCount;
       button.title = pendingMatchCount ? `Apply ${utils.formatCount(pendingMatchCount)} staged manual match${pendingMatchCount === 1 ? '' : 'es'}.` : 'Choose one or more pledge-library titles before using Apply All.';
     });
+    syncImportWorkingButtons();
+    if (isImporting) {
+      setStatusPill('Importing…', false);
+      return;
+    }
     if (hasDiffs) {
       setStatusPill(`Reconcile raw CSV totals · ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'}`, true);
       return;
