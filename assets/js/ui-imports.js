@@ -122,7 +122,7 @@
   function importedSourceCodeLabel(row = {}) {
     const code = importedSourceCodeForRow(row);
     if (!code) return 'No imported code';
-    return isReportOnlyProgramCode(code) ? `Report ID ${code}` : `Imported NOLA ${code}`;
+    return isReportOnlyProgramCode(code) ? `Report program ID ${code}` : `Imported NOLA ${code}`;
   }
 
   function libraryNolaForProgramId(programId = '') {
@@ -239,6 +239,7 @@
     if (!row) return '';
     if (row.match_method === 'manual_library') return 'Matched manually in import review';
     if (row.match_method === 'saved_title_rule') return 'Matched from a saved “always equals this” rule';
+    if (row.match_method === 'program_id') return row.match_reason || 'Matched by imported report program ID';
     if (row.match_method === 'title_exact') return 'Matched by exact imported title';
     if (row.match_method === 'title_clean_exact') return 'Matched by cleaned imported title';
     if (row.match_method === 'title_fuzzy') return row.match_reason || 'Auto-matched by strong title similarity';
@@ -941,11 +942,14 @@
   function buildLibraryLookup() {
     const rows = state.rawRows || [];
     const byNola = new Map();
+    const byProgramId = new Map();
     const titleBuckets = new Map();
     const compactTitleBuckets = new Map();
     const titleCandidates = [];
     const seenCandidateIds = new Set();
     rows.forEach((row) => {
+      const programIdKey = String(derive.programId(row) || '').trim();
+      if (programIdKey && !byProgramId.has(programIdKey)) byProgramId.set(programIdKey, row);
       const nolaKey = importNolaCodeKey(derive.nola(row));
       if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, row);
       const title = derive.title(row);
@@ -978,7 +982,7 @@
     compactTitleBuckets.forEach((items, key) => {
       if (items.length === 1) byUniqueCompactTitle.set(key, items[0]);
     });
-    return { byNola, byUniqueTitle, byUniqueCompactTitle, titleCandidates };
+    return { byNola, byProgramId, byUniqueTitle, byUniqueCompactTitle, titleCandidates };
   }
 
 
@@ -1117,6 +1121,15 @@
         return { program: target, matchMethod: 'saved_title_rule', matchReason: `Matched from a ${scopeLabel}.` };
       }
     }
+    if (reportOnlyCode && libraryLookup.byProgramId?.has(importedCode)) {
+      const idMatchedProgram = libraryLookup.byProgramId.get(importedCode);
+      const matchedNola = derive.nola(idMatchedProgram) || '';
+      return {
+        program: idMatchedProgram,
+        matchMethod: 'program_id',
+        matchReason: `Matched by imported report program ID ${importedCode}${matchedNola ? `; using library NOLA ${matchedNola}.` : '.'}`
+      };
+    }
     const nolaKey = importNolaCodeKey(importedLibraryNola);
     if (nolaKey && libraryLookup.byNola.has(nolaKey)) {
       return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: `Matched by NOLA ${importedLibraryNola}.` };
@@ -1141,7 +1154,7 @@
       return { program: null, suggestedProgram: fuzzy.row, matchMethod: 'suggested_title', matchReason: fuzzy.reason, fuzzyScore: fuzzy.score };
     }
     if (reportOnlyCode) {
-      return { program: null, matchMethod: 'unmatched', matchReason: `Report ID ${importedCode} is not a pledge-library NOLA. No safe library match was found from the imported title.` };
+      return { program: null, matchMethod: 'unmatched', matchReason: `Report ID ${importedCode} did not match a pledge-library program ID, and it is not a NOLA. No safe library match was found from the imported title.` };
     }
     return { program: null, matchMethod: 'unmatched', matchReason: importedLibraryNola ? `No pledge-library match found for NOLA ${importedLibraryNola}.` : 'No pledge-library match found for that imported title.' };
   }
@@ -2739,7 +2752,7 @@
       return;
     }
     if (!nola) {
-      const extra = rawImportedCode && isReportOnlyProgramCode(rawImportedCode) ? ` It has report ID ${rawImportedCode}, but that is not a pledge-library NOLA.` : '';
+      const extra = rawImportedCode && isReportOnlyProgramCode(rawImportedCode) ? ` It has report program ID ${rawImportedCode}, but no pledge-library NOLA was imported.` : '';
       setNotice(`This unmatched row has no usable pledge-library NOLA, so it cannot create a new pledge title yet.${extra}`, 'warn');
       return;
     }

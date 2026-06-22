@@ -1,0 +1,5 @@
+WNMU Pledge Program Library v0.22.41 changed files
+
+Copy these files over the existing site files, preserving folders.
+No SQL is required.
+Do not replace config.js.
