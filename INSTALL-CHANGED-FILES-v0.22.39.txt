@@ -1,0 +1,12 @@
+Install changed files for WNMU Pledge Program Library v0.22.39
+
+Copy these files into the matching paths in the GitHub Pages repo, replacing the existing versions:
+
+- index.html
+- pledge-performance-lab.html
+- assets/js/core.js
+- version.json
+
+Do not replace or upload config.js. This package does not include config.js.
+
+After publishing, hard refresh the app once.
