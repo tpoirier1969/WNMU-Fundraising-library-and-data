@@ -45,7 +45,7 @@
     state.scheduleExpectationLoading = true;
     App.performanceUi.refreshData({ silent: true })
       .then(() => {
-        if (getActiveSchedule()) renderScheduleEditor();
+        if (getActiveSchedule()) renderAll();
       })
       .catch(() => {})
       .finally(() => {
@@ -1201,7 +1201,10 @@
     });
     const startDate = validRows[0]?.dateKey || '';
     const endDate = validRows[validRows.length - 1]?.dateKey || startDate;
-    const identityKey = ['cluster', seedKey, startDate, endDate].join('|').toLowerCase();
+    const rowsHaveSpecificLabel = validRows.some((entry) => labelIsSpecificFundraiser(entry.row?.fundraiser_label));
+    const identityKey = rowsHaveSpecificLabel
+      ? ['cluster', seedKey].join('|').toLowerCase()
+      : ['cluster', seedKey, startDate, endDate].join('|').toLowerCase();
     const spanDays = dateRangeSpanDays(startDate, endDate);
     const group = {
       rows: validRows,
@@ -4951,7 +4954,7 @@
   function bindEvents() {
     document.addEventListener('wnmu:performance-ready', () => {
       if (!getActiveSchedule()) return;
-      window.requestAnimationFrame(() => renderScheduleEditor());
+      window.requestAnimationFrame(() => renderAll());
     });
     els.newScheduleButton?.addEventListener('click', resetToNewScheduleDraft);
     els.scheduleMobileNewButton?.addEventListener('click', resetToNewScheduleDraft);

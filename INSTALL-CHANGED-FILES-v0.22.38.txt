@@ -1,0 +1,3 @@
+Install by copying these changed files into the matching paths in the GitHub Pages project, then commit/push.
+Do not replace config.js.
+After publishing, hard-refresh the browser.

@@ -40,6 +40,7 @@
     adminButton: document.getElementById('admin-button'),
     logoutButton: document.getElementById('logout-button'),
     addProgramButton: document.getElementById('add-program-button'),
+    analyzeCurrentListButton: document.getElementById('analyze-current-list-button'),
     libraryBody: document.getElementById('library-body'),
     resultSummary: document.getElementById('result-summary'),
     detailBackdrop: document.getElementById('detail-backdrop'),

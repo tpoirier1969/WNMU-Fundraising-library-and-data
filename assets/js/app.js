@@ -33,6 +33,7 @@
       button.addEventListener('click', () => App.listUi.setSort(button.dataset.sortField));
     });
     els.resetFiltersButton.addEventListener('click', () => { App.listUi.resetFilters(); App.listUi.applyLibraryView(); });
+    els.analyzeCurrentListButton?.addEventListener('click', () => App.listUi.analyzeCurrentList?.());
     els.refreshButton.addEventListener('click', async () => { await refreshAll({ preserveDetail: true, workspace: state.activeWorkspace }); });
     els.libraryBody?.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-unarchive-id]');

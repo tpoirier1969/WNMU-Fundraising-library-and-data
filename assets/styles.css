@@ -174,7 +174,8 @@ button:disabled {
 .list-title { font-weight: 800; color: var(--pbs-blue-dark); font-size: .96rem; }
 .list-summary, .page-label { color: var(--muted); font-size: .82rem; }
 .list-sort-tools.compact-sort-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-#add-program-button { white-space: nowrap; }
+#add-program-button, #analyze-current-list-button { white-space: nowrap; }
+#analyze-current-list-button { box-shadow: 0 6px 14px rgba(20, 74, 112, 0.14); }
 .schedule-broadcast-diagnostic { display:flex; gap:10px; flex-wrap:wrap; color: var(--muted); font-size: .8rem; }
 .schedule-broadcast-diagnostic .diag-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#f3f8fb; border:1px solid var(--border); }
 .schedule-broadcast-diagnostic .diag-chip.warn { background:#fff3ea; border-color: rgba(170,80,0,.24); color:#7a3d00; }

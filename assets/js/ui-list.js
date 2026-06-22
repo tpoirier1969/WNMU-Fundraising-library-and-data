@@ -20,7 +20,7 @@
   function rowMatchesSearch(row) {
     const search = utils.normalizeText(state.searchText).toLowerCase();
     if (!search) return true;
-    const cleanedSearch = search.replace(/,/g, ' ').replace(/%/g, '').replace(/_/g, ' ');
+    const cleanedSearch = search.replace(/,/g, ' ').replace(/[%*]/g, '').replace(/_/g, ' ');
     if (constants.SEARCHABLE_FIELDS.has(state.searchField)) {
       return searchableTextForField(row, state.searchField).toLowerCase().includes(cleanedSearch);
     }
@@ -344,6 +344,12 @@
     buildFilterOptions();
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));
     state.totalRows = state.rows.length;
+    if (els.analyzeCurrentListButton) {
+      els.analyzeCurrentListButton.disabled = state.totalRows < 1;
+      els.analyzeCurrentListButton.textContent = state.totalRows > 0
+        ? `Analyze Current List (${utils.formatCount(state.totalRows)})`
+        : 'Analyze Current List';
+    }
     renderRows();
     updateSummary(sourceRows.length);
     syncSelectedRows();
@@ -363,6 +369,80 @@
       ? ` Showing ${utils.formatCount(state.totalRows)} after current filters.`
       : '';
     setNotice(`Loaded ${utils.formatCount(sourceRows.length)} ${statusLabel}titles from ${state.librarySource?.name || 'the pledge library source'}.${reductionNote}${filterNote}`);
+  }
+
+
+  function cohortRowKeys(row = {}) {
+    const id = String(App.programLinks?.resolveId?.(row) || derive.programId(row) || row?.id || '').trim();
+    const nola = utils.nolaCodeKey(derive.nola(row) || row?.nola_code || row?.nola || '');
+    const title = utils.normalizeLookupKey(derive.title(row) || row?.title || row?.program_title || '');
+    const keys = [];
+    if (id) keys.push(`id:${id}`);
+    if (nola) keys.push(`nola:${nola}`);
+    if (title) keys.push(`title:${title}`);
+    if (nola && title) keys.push(`nola-title:${nola}|${title}`);
+    return [...new Set(keys.filter(Boolean))];
+  }
+
+  function currentListFilterSummary() {
+    const parts = [];
+    const search = utils.normalizeText(state.searchText || '').replace(/^\*+|\*+$/g, '');
+    if (search) parts.push(`${state.searchField ? `${utils.sortLabel(state.searchField) || state.searchField}: ` : 'search: '}${search}`);
+    if (state.topicFilter) parts.push(`topic: ${state.topicFilter}`);
+    if (state.secondaryTopicFilter) parts.push(`secondary: ${state.secondaryTopicFilter}`);
+    if (state.lengthFilter) parts.push(`length: ${state.lengthFilter}`);
+    if (state.distributorFilter) parts.push(`distributor: ${state.distributorFilter}`);
+    parts.push(state.statusFilter === 'active' ? 'active only' : state.statusFilter === 'archived' ? 'archived only' : 'all titles');
+    if (state.airingFilter === 'never') parts.push('never aired / not scheduled');
+    else if (state.airingFilter === 'aired') parts.push('aired at least once');
+    return parts.join(' · ');
+  }
+
+  function analyzeCurrentList() {
+    const rows = Array.isArray(state.rows) ? state.rows : [];
+    const keys = [];
+    const titles = [];
+    rows.forEach((row) => {
+      cohortRowKeys(row).forEach((key) => keys.push(key));
+      const title = derive.title(row);
+      if (title) titles.push(title);
+    });
+    const uniqueKeys = [...new Set(keys.filter(Boolean))];
+    const uniqueTitles = [...new Set(titles.filter(Boolean))];
+    if (!uniqueKeys.length) {
+      setNotice('No current list titles are available to analyze.', 'warn');
+      return;
+    }
+    const payload = {
+      version: 1,
+      source: 'program-list',
+      createdAt: new Date().toISOString(),
+      count: rows.length,
+      keys: uniqueKeys,
+      ids: uniqueKeys.filter((key) => key.startsWith('id:')).map((key) => key.slice(3)),
+      titles: uniqueTitles.slice(0, 250),
+      filterSummary: currentListFilterSummary(),
+      filters: {
+        searchText: state.searchText || '',
+        searchField: state.searchField || '',
+        topicFilter: state.topicFilter || '',
+        secondaryTopicFilter: state.secondaryTopicFilter || '',
+        statusFilter: state.statusFilter || '',
+        airingFilter: state.airingFilter || '',
+        lengthFilter: state.lengthFilter || '',
+        distributorFilter: state.distributorFilter || '',
+        sortField: state.sortField || '',
+        sortDirection: state.sortDirection || ''
+      }
+    };
+    try {
+      window.sessionStorage.setItem(constants.ANALYTICS_COHORT_STORAGE_KEY, JSON.stringify(payload));
+      setNotice(`Opening analytics for ${utils.formatCount(rows.length)} current-list title${rows.length === 1 ? '' : 's'}…`);
+      window.location.href = 'pledge-performance-lab.html?cohort=current-list';
+    } catch (error) {
+      console.error(error);
+      setNotice('Could not hand this list to Analytics. Browser storage may be blocked.', 'warn');
+    }
   }
 
   function resetFilters() {
@@ -402,6 +482,7 @@
     syncSelectedRows,
     premiumLines,
     setSort,
+    analyzeCurrentList,
     syncSortHeaders
   };
 })();

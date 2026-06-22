@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.30</title>
+  <title>WNMU Pledge Performance Analytics v0.22.38</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -45,6 +45,9 @@
     label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 900; color: var(--muted); }
     input, select { border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; background: #fffdf8; }
     .scope-note { flex: 1 1 100%; color: var(--muted); font-size: .9rem; }
+    .cohort-note { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 10px; border:1px solid #d9c189; border-radius:12px; background:#fff8e7; color:#4d3b14; }
+    .cohort-note strong { color:#2e2108; }
+    .cohort-clear { padding:4px 8px; border-radius:999px; font-size:.78rem; }
     .layout { display: grid; grid-template-columns: 360px 1fr; gap: 18px; align-items: start; }
     .cards { display: grid; gap: 12px; position: sticky; top: 14px; }
     .qcard { text-align: left; border-radius: 18px; background: var(--card); border: 1px solid var(--line); padding: 16px; display: grid; gap: 7px; }
@@ -163,7 +166,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.30</div>
+        <div class="eyebrow">Admin analytics · v0.22.38</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -335,6 +338,7 @@
   const WEAK_SEASONS = 2;
   const LONG_PAUSE_YEARS = 2;
   const HOLIDAY_RE = /christmas|holiday|holidays|xmas|thanksgiving|new year|hanukkah|kwanzaa/i;
+  const ANALYTICS_COHORT_STORAGE_KEY = 'wnmuPledgeAnalyticsCohortV1';
 
   const state = {
     client: null,
@@ -365,7 +369,8 @@
     trendRows: new Map(),
     tableSort: { question: '', index: null, direction: 'asc' },
     liveBreakDiagnostics: { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 },
-    scheduleAudit: { rawSchedules: 0, activeSchedules: 0, duplicateSchedulesSuppressed: 0 }
+    scheduleAudit: { rawSchedules: 0, activeSchedules: 0, duplicateSchedulesSuppressed: 0 },
+    cohort: null
   };
 
   const LIVE_BREAK_ANALYTICS_SOURCE = 'saved-scheduling-placements-only';
@@ -400,6 +405,66 @@
     }
     return null;
   }
+
+  function readAnalyticsCohort() {
+    try {
+      const raw = window.sessionStorage.getItem(ANALYTICS_COHORT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const keys = Array.isArray(parsed?.keys) ? parsed.keys.map((key) => text(key)).filter(Boolean) : [];
+      const ids = Array.isArray(parsed?.ids) ? parsed.ids.map((id) => text(id)).filter(Boolean).map((id) => `id:${id}`) : [];
+      const allKeys = [...new Set([...keys, ...ids])];
+      if (!allKeys.length) return null;
+      return {
+        ...parsed,
+        keys: allKeys,
+        keySet: new Set(allKeys),
+        count: Number(parsed?.count || 0) || allKeys.length,
+        filterSummary: text(parsed?.filterSummary || '')
+      };
+    } catch (error) {
+      console.warn('Could not read analytics cohort.', error);
+      return null;
+    }
+  }
+
+  function clearAnalyticsCohort() {
+    try { window.sessionStorage.removeItem(ANALYTICS_COHORT_STORAGE_KEY); } catch (_error) {}
+    state.cohort = null;
+    render();
+  }
+
+  function recordCohortKeys(record = {}) {
+    const id = text(record.programOpenId || record.programId || '');
+    const nola = nolaKey(record.nola || '');
+    const title = lookupKey(record.title || record.importedTitle || '');
+    const keys = [];
+    if (id) keys.push(`id:${id}`);
+    if (nola) keys.push(`nola:${nola}`);
+    if (title) keys.push(`title:${title}`);
+    if (nola && title) keys.push(`nola-title:${nola}|${title}`);
+    return keys;
+  }
+
+  function recordInAnalyticsCohort(record = {}) {
+    if (!state.cohort?.keySet) return true;
+    return recordCohortKeys(record).some((key) => state.cohort.keySet.has(key));
+  }
+
+  function cohortScopePrefix() {
+    if (!state.cohort?.keySet) return '';
+    const count = state.cohort.count || state.cohort.keySet.size;
+    const summary = state.cohort.filterSummary ? ` · ${state.cohort.filterSummary}` : '';
+    return `<div class="cohort-note"><strong>Current-list cohort:</strong> ${escapeHtml(formatNumber(count))} title${count === 1 ? '' : 's'}${escapeHtml(summary)} <button type="button" class="ghost cohort-clear" id="clear-cohort">Clear cohort</button></div>`;
+  }
+
+  function setScopeNote(message = '') {
+    if (!dom.scopeNote) return;
+    const cohort = cohortScopePrefix();
+    dom.scopeNote.innerHTML = `${cohort}${cohort && message ? '<div style="margin-top:6px"></div>' : ''}${escapeHtml(message)}`;
+    dom.scopeNote.querySelector('#clear-cohort')?.addEventListener('click', clearAnalyticsCohort);
+  }
+
   function formatMoney(value) { return Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }); }
   function formatNumber(value) { return Number(value || 0).toLocaleString(); }
   function formatPercent(value) { return Number.isFinite(value) ? `${value > 0 ? '+' : ''}${Math.round(value)}%` : '—'; }
@@ -1553,10 +1618,10 @@
 
   function seasonOverviewUsesDriveTotals() {
     return state.question === 'seasonOverview'
+      && !state.cohort?.keySet
       && !lookupKey(state.search)
       && !(Array.isArray(state.topicFilters) && state.topicFilters.length)
       && state.secondaryTopicFilter === 'all'
-      && !currentRightsOnly()
       && state.advancedDistributor === 'all'
       && state.advancedLive === 'all'
       && state.advancedDaypart === 'all'
@@ -1590,6 +1655,7 @@
     const selectedSecondaryTopic = state.secondaryTopicFilter || 'all';
     const sourceRecords = question.source === 'schedule' ? state.scheduleRecords : state.records;
     return sourceRecords.filter((record) => {
+      if (!recordInAnalyticsCohort(record)) return false;
       if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.nola}`).includes(searchKey)) return false;
       if (selectedTopics.length && !selectedTopics.includes(record.topic)) return false;
       if (selectedSecondaryTopic !== 'all' && (record.secondaryTopic || '') !== selectedSecondaryTopic) return false;
@@ -2144,6 +2210,11 @@
   }
 
   async function init() {
+    state.cohort = readAnalyticsCohort();
+    if (state.cohort?.keySet) {
+      state.question = 'programs';
+      state.metric = 'avg';
+    }
     await waitForConfig();
     state.client = createClient();
     if (!state.client) {
@@ -2259,12 +2330,12 @@
     if (metricDisabled) disabled.push('rank by');
     if (evidenceDisabled) disabled.push('evidence filter');
     if (state.question === 'seasonOverview') {
-      dom.scopeNote.textContent = `${disabled.length ? `Disabled or ignored for this question: ${disabled.join(', ')}. ` : ''}${seasonOverviewModeText()}`;
+      setScopeNote(`${disabled.length ? `Disabled or ignored for this question: ${disabled.join(', ')}. ` : ''}${seasonOverviewModeText()}`);
       return;
     }
-    dom.scopeNote.textContent = disabled.length
+    setScopeNote(disabled.length
       ? `Disabled or ignored for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
-      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, inactive, not-yet-in-rights, and unverified titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`;
+      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, inactive, not-yet-in-rights, and unverified titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`);
   }
 
   function render() {
