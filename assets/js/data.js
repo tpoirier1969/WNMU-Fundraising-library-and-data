@@ -1472,7 +1472,10 @@
       'pending_persist_match_rule',
       'pending_manual_match_program_id',
       'pending_manual_match_label',
-      'manual_match_label'
+      'manual_match_label',
+      'imported_nola_code',
+      'source_report_code',
+      'imported_report_code'
     ]);
     return Object.fromEntries(
       Object.entries(row)

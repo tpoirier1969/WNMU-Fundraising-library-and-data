@@ -98,6 +98,40 @@
     return utils.normalizeText(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
+  function isReportOnlyProgramCode(value = '') {
+    const key = importNolaCodeKey(value);
+    return Boolean(key && /^\d{3,}$/.test(key));
+  }
+
+  function libraryNolaForImport(value = '') {
+    const text = utils.normalizeText(value || '');
+    if (!text || isReportOnlyProgramCode(text)) return '';
+    return text;
+  }
+
+  function importedSourceCodeForRow(row = {}) {
+    const explicitReportCode = utils.normalizeText(row.source_report_code || row.imported_report_code || '');
+    if (explicitReportCode) return explicitReportCode;
+    const importedNola = utils.normalizeText(row.imported_nola_code || '');
+    if (importedNola) return importedNola;
+    const nola = utils.normalizeText(row.nola_code || row.nola || row.program_nola || '');
+    if (isReportOnlyProgramCode(nola)) return nola;
+    return nola;
+  }
+
+  function importedSourceCodeLabel(row = {}) {
+    const code = importedSourceCodeForRow(row);
+    if (!code) return 'No imported code';
+    return isReportOnlyProgramCode(code) ? `Report ID ${code}` : `Imported NOLA ${code}`;
+  }
+
+  function libraryNolaForProgramId(programId = '') {
+    const id = String(programId || '').trim();
+    if (!id) return '';
+    const row = (state.rawRows || []).find((candidate) => String(derive.programId(candidate) || '') === id);
+    return row ? (derive.nola(row) || '') : '';
+  }
+
   function escapeRegExp(value = '') {
     return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
@@ -1058,6 +1092,8 @@
       station: utils.normalizeText(row.station) || '',
       imported_program_title: utils.normalizeText(row.imported_program_title || row.program_title || row.title) || '',
       nola_code: utils.normalizeText(row.nola_code) || '',
+      imported_nola_code: utils.normalizeText(row.imported_nola_code) || '',
+      source_report_code: utils.normalizeText(row.source_report_code || row.imported_report_code) || '',
       air_date: utils.normalizeText(row.air_date) || '',
       air_time: utils.normalizeText(row.air_time) || '',
       dollars: Number(row.dollars || 0) || 0,
@@ -1070,7 +1106,10 @@
   }
 
   function findProgramForImport({ importedTitle = '', nola = '', station = '' }, libraryLookup) {
-    const aliasRule = findAliasRuleForRow({ station, imported_program_title: importedTitle, nola_code: nola });
+    const importedCode = utils.normalizeText(nola || '');
+    const importedLibraryNola = libraryNolaForImport(importedCode);
+    const reportOnlyCode = Boolean(importedCode && !importedLibraryNola && isReportOnlyProgramCode(importedCode));
+    const aliasRule = findAliasRuleForRow({ station, imported_program_title: importedTitle, nola_code: importedCode });
     if (aliasRule) {
       const target = (state.rawRows || []).find((row) => String(derive.programId(row) || '').trim() === String(aliasRule.targetProgramId || '').trim()) || null;
       if (target) {
@@ -1078,21 +1117,21 @@
         return { program: target, matchMethod: 'saved_title_rule', matchReason: `Matched from a ${scopeLabel}.` };
       }
     }
-    const nolaKey = importNolaCodeKey(nola);
+    const nolaKey = importNolaCodeKey(importedLibraryNola);
     if (nolaKey && libraryLookup.byNola.has(nolaKey)) {
-      return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: `Matched by NOLA ${nola}.` };
+      return { program: libraryLookup.byNola.get(nolaKey), matchMethod: 'nola', matchReason: `Matched by NOLA ${importedLibraryNola}.` };
     }
     const titleKey = importTitleKey(importedTitle);
     if (titleKey && libraryLookup.byUniqueTitle.has(titleKey)) {
       return { program: libraryLookup.byUniqueTitle.get(titleKey), matchMethod: 'title_exact', matchReason: 'Matched by exact imported title.' };
     }
-    const compactTitleKey = compactImportTitleKey(importedTitle, nola);
+    const compactTitleKey = compactImportTitleKey(importedTitle, importedCode);
     if (compactTitleKey && libraryLookup.byUniqueCompactTitle?.has(compactTitleKey)) {
       return { program: libraryLookup.byUniqueCompactTitle.get(compactTitleKey), matchMethod: 'title_clean_exact', matchReason: 'Matched by cleaned imported title after stripping report-only code/noise.' };
     }
     const specificNola = /\d{3,}/.test(nolaKey);
     if (specificNola && broadImportedTitle(importedTitle)) {
-      return { program: null, matchMethod: 'unmatched', matchReason: `NOLA ${nola} did not match a pledge-library NOLA after normalization. The imported title “${importedTitle}” is too broad for safe fuzzy title matching.` };
+      return { program: null, matchMethod: 'unmatched', matchReason: `NOLA ${importedLibraryNola} did not match a pledge-library NOLA after normalization. The imported title “${importedTitle}” is too broad for safe fuzzy title matching.` };
     }
     const fuzzy = findFuzzyTitleMatch(importedTitle, libraryLookup);
     if (fuzzy?.mode === 'auto' && fuzzy.row) {
@@ -1101,13 +1140,18 @@
     if (fuzzy?.mode === 'suggest' && fuzzy.row) {
       return { program: null, suggestedProgram: fuzzy.row, matchMethod: 'suggested_title', matchReason: fuzzy.reason, fuzzyScore: fuzzy.score };
     }
-    return { program: null, matchMethod: 'unmatched', matchReason: nola ? `No pledge-library match found for NOLA ${nola}.` : 'No pledge-library match found for that imported title.' };
+    if (reportOnlyCode) {
+      return { program: null, matchMethod: 'unmatched', matchReason: `Report ID ${importedCode} is not a pledge-library NOLA. No safe library match was found from the imported title.` };
+    }
+    return { program: null, matchMethod: 'unmatched', matchReason: importedLibraryNola ? `No pledge-library match found for NOLA ${importedLibraryNola}.` : 'No pledge-library match found for that imported title.' };
   }
 
   function normalizeAiringRow(row, meta, libraryLookup) {
     const extracted = extractImportedFields(row);
     const importedTitle = extracted.importedTitle;
     const nola = extracted.nola;
+    const importedReportCode = isReportOnlyProgramCode(nola) ? utils.normalizeText(nola) : '';
+    const importedLibraryNola = libraryNolaForImport(nola);
     if (!nola && !importedTitle) {
       return { row: null, warning: `Skipped one row in ${meta.fileName} because it had neither a usable title nor a NOLA.` };
     }
@@ -1144,6 +1188,7 @@
     }
     const matchedLibraryTitle = matchedProgram ? derive.title(matchedProgram) : '';
     const matchedProgramId = matchedProgram ? derive.programId(matchedProgram) : '';
+    const matchedProgramNola = matchedProgram ? (derive.nola(matchedProgram) || '') : '';
     const titleMismatch = matchedProgram && importedTitle && utils.normalizeLookupKey(importedTitle) !== utils.normalizeLookupKey(matchedLibraryTitle);
 
     const normalizedRow = {
@@ -1153,7 +1198,9 @@
       program_title: matchedLibraryTitle || importedTitle || null,
       imported_program_title: importedTitle || null,
       matched_library_title: matchedLibraryTitle || null,
-      nola_code: nola || null,
+      nola_code: matchedProgramNola || importedLibraryNola || null,
+      imported_nola_code: importedLibraryNola || null,
+      source_report_code: importedReportCode || null,
       station: station || null,
       aired_at: airedAt || null,
       air_date: airDate || null,
@@ -1191,7 +1238,7 @@
       ? ''
       : matchedProgram
         ? (titleMismatch ? `Imported title “${importedTitle}” matched library title “${matchedLibraryTitle}”. Imported using the library title.` : '')
-        : `${nola || importedTitle} from ${meta.fileName} did not match any title in the pledge library.`;
+        : `${importedReportCode ? `Report ID ${importedReportCode}` : (importedLibraryNola || importedTitle)} from ${meta.fileName} did not match any title in the pledge library.`;
 
     return { row: normalizedRow, warning };
   }
@@ -2355,7 +2402,7 @@
     });
   }
 
-  function applyManualMatchToGroup(rowHash, programId, options = {}) {
+  function applyManualMatchToRows(rows = [], programId, options = {}) {
     const targetId = String(programId || '').trim();
     if (!targetId) {
       setNotice('Choose a pledge-library title before applying a manual match.', 'warn');
@@ -2366,10 +2413,15 @@
       setNotice('That program could not be found in the current pledge library.', 'warn');
       return 0;
     }
-    const rows = rowsForUnmatchedTitleGroup(rowHash);
-    if (!rows.length) return 0;
-    const shouldPersist = options.persistRule ?? rows.some((row) => row.pending_persist_match_rule === true);
-    rows.forEach((airing) => {
+    const safeRows = (Array.isArray(rows) ? rows : [])
+      .filter((row) => row && !isImportMatched(row));
+    if (!safeRows.length) return 0;
+    const shouldPersist = options.persistRule ?? safeRows.some((row) => row.pending_persist_match_rule === true);
+    const firstAliasNola = importedSourceCodeForRow(safeRows[0] || {});
+    const targetNola = derive.nola(targetRow) || '';
+    safeRows.forEach((airing) => {
+      const priorSourceCode = importedSourceCodeForRow(airing);
+      const priorImportedNola = libraryNolaForImport(airing.imported_nola_code || airing.nola_code || '');
       airing.program_id = derive.programId(targetRow) || null;
       airing.pledge_program_id = airing.program_id;
       airing.matched_library_title = derive.title(targetRow) || '';
@@ -2379,15 +2431,18 @@
       airing.pending_manual_match_label = '';
       airing.title = airing.matched_library_title || airing.imported_program_title || airing.title;
       airing.program_title = airing.title;
+      airing.nola_code = targetNola || priorImportedNola || null;
+      airing.imported_nola_code = priorImportedNola || null;
+      airing.source_report_code = isReportOnlyProgramCode(priorSourceCode) ? priorSourceCode : (airing.source_report_code || null);
       airing.match_method = 'manual_library';
       airing.match_reason = 'Matched manually from import review';
       airing.pending_persist_match_rule = Boolean(shouldPersist);
       airing.row_hash = computeImportRowHash(airing);
     });
-    if (shouldPersist) storeAliasRule({ station: rows[0]?.station || '', importedTitle: rows[0]?.imported_program_title || rows[0]?.title || '', importedNola: rows[0]?.nola_code || '', targetProgram: targetRow });
+    if (shouldPersist) storeAliasRule({ station: safeRows[0]?.station || '', importedTitle: safeRows[0]?.imported_program_title || safeRows[0]?.title || '', importedNola: firstAliasNola || '', targetProgram: targetRow });
     if (options.render !== false) renderAfterManualMatch({ deferFullRender: true });
-    const label = utils.toDisplayText(rows[0]?.imported_program_title || rows[0]?.nola_code || 'row');
-    const count = rows.length;
+    const label = utils.toDisplayText(safeRows[0]?.imported_program_title || safeRows[0]?.nola_code || 'row');
+    const count = safeRows.length;
     const persistNote = shouldPersist ? ' Future imports will auto-match this title.' : '';
     if (options.status !== false) {
       setStatus(`Manual match applied for ${label}. ${utils.formatCount(count)} row${count === 1 ? '' : 's'} updated.${persistNote}`);
@@ -2396,23 +2451,42 @@
     return count;
   }
 
+  function applyManualMatchToGroup(rowHash, programId, options = {}) {
+    const rows = rowsForUnmatchedTitleGroup(rowHash).filter((row) => !isImportMatched(row));
+    return applyManualMatchToRows(rows, programId, options);
+  }
+
   function applyAllPendingMatches() {
     const pendingRows = getUnmatchedRows().filter((row) => String(row.pending_manual_match_program_id || '').trim());
     if (!pendingRows.length) {
       setNotice('Stage one or more unmatched-title matches before using Apply All.', 'warn');
       return;
     }
-    const seen = new Set();
-    let updated = 0;
+    const groups = new Map();
     pendingRows.forEach((row) => {
+      const programId = String(row.pending_manual_match_program_id || '').trim();
+      if (!programId) return;
       const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
-      if (!groupKey || seen.has(groupKey)) return;
-      seen.add(groupKey);
-      updated += applyManualMatchToGroup(row.row_hash, row.pending_manual_match_program_id, { persistRule: row.pending_persist_match_rule === true, render: false, status: false });
+      const key = `${programId}::${groupKey || row.row_hash || Math.random()}`;
+      if (!groups.has(key)) {
+        groups.set(key, { programId, persistRule: false, rows: [] });
+      }
+      const group = groups.get(key);
+      group.persistRule = group.persistRule || row.pending_persist_match_rule === true;
+      group.rows.push(row);
+    });
+    let updated = 0;
+    let groupCount = 0;
+    groups.forEach((group) => {
+      const changed = applyManualMatchToRows(group.rows, group.programId, { persistRule: group.persistRule, render: false, status: false });
+      if (changed) {
+        updated += changed;
+        groupCount += 1;
+      }
     });
     if (updated) {
       renderAfterManualMatch({ deferFullRender: true });
-      setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'}.`);
+      setNotice(`Applied staged matches to ${utils.formatCount(updated)} unmatched row${updated === 1 ? '' : 's'} across ${utils.formatCount(groupCount)} title group${groupCount === 1 ? '' : 's'}.`);
     }
   }
 
@@ -2658,13 +2732,15 @@
     const airing = imp().airingsRows.find((row) => row.row_hash === rowHash);
     if (!airing) return;
     const title = utils.normalizeText(airing.imported_program_title || airing.title);
-    const nola = utils.normalizeText(airing.nola_code);
+    const rawImportedCode = importedSourceCodeForRow(airing);
+    const nola = libraryNolaForImport(airing.imported_nola_code || airing.nola_code || '');
     if (!title) {
       setNotice('This unmatched row has no usable title, so a new library title cannot be created from it.', 'warn');
       return;
     }
     if (!nola) {
-      setNotice('This unmatched row has no NOLA, so it cannot create a new pledge title yet.', 'warn');
+      const extra = rawImportedCode && isReportOnlyProgramCode(rawImportedCode) ? ` It has report ID ${rawImportedCode}, but that is not a pledge-library NOLA.` : '';
+      setNotice(`This unmatched row has no usable pledge-library NOLA, so it cannot create a new pledge title yet.${extra}`, 'warn');
       return;
     }
     const existing = (state.rawRows || []).find((row) => utils.normalizeLookupKey(derive.nola(row)) === utils.normalizeLookupKey(nola));
@@ -2708,13 +2784,17 @@
       const suggestedTitle = row.pending_manual_match_program_id || row.manual_match_program_id
         ? (options.find((entry) => String(entry.value) === selectedProgramId)?.label || '')
         : '';
+      const libraryNola = libraryNolaForProgramId(selectedProgramId);
+      const sourceChip = importedSourceCodeLabel(row);
+      const libraryNolaChip = libraryNola ? `<span class="mini-chip">Library NOLA ${escape(libraryNola)}</span>` : '';
       return `
       <tr class="import-match-review-row">
         <td colspan="9">
           <div class="import-match-card">
             <div class="import-match-card-main">
               <strong>${escape(importedTitle)}</strong>
-              <span class="mini-chip">${escape(row.nola_code || 'No NOLA')}</span>
+              <span class="mini-chip">${escape(sourceChip)}</span>
+              ${libraryNolaChip}
               <span class="mini-chip">${escape(formatImportedAiredAt(row))}</span>
               <span class="mini-chip">${row.dollars == null ? 'No dollars' : escape(utils.formatMoney(row.dollars))}</span>
             </div>

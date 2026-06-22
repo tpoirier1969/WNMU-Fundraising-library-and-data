@@ -1,0 +1,12 @@
+Install v0.22.40 changed files
+
+Copy these files into the site root, preserving folders:
+
+- index.html
+- pledge-performance-lab.html
+- version.json
+- assets/js/core.js
+- assets/js/data.js
+- assets/js/ui-imports.js
+
+Do not overwrite config.js.
