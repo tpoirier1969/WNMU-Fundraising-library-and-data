@@ -203,6 +203,13 @@
         <select id="secondary-topic"><option value="all">All secondary topics</option></select>
       </div>
       <div class="field">
+        <label for="rights-scope">Broadcast rights</label>
+        <select id="rights-scope">
+          <option value="all">All rights statuses</option>
+          <option value="current">Current rights only</option>
+        </select>
+      </div>
+      <div class="field">
         <label for="evidence">Evidence filter</label>
         <select id="evidence" title="Use this only when you want to hide low-sample rows. It does not apply equally to every question, especially live breaks and new comparisons.">
           <option value="all">Show all evidence</option>
@@ -350,6 +357,7 @@
     metric: 'avg',
     topicFilters: [],
     secondaryTopicFilter: 'all',
+    rightsScope: 'all',
     advancedDistributor: 'all',
     advancedLive: 'all',
     advancedDaypart: 'all',
@@ -365,7 +373,7 @@
   const el = (id) => document.getElementById(id);
   const dom = {
     notice: el('notice'), lab: el('lab'), signIn: el('sign-in'), signOut: el('sign-out'),
-    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), reload: el('reload'), scopeNote: el('scope-note'),
+    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), rightsScope: el('rights-scope'), reload: el('reload'), scopeNote: el('scope-note'),
     advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),
     cards: el('cards'), detail: document.querySelector('.detail'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
     chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
@@ -462,6 +470,47 @@
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  function todayKey() { return localDateKey(new Date()); }
+
+  function normalizedDateKey(value) {
+    const date = parseLocalDate(value);
+    return date ? localDateKey(date) : '';
+  }
+
+  function rightsExpiredFromEnd(rightsEnd = '') {
+    const end = normalizedDateKey(rightsEnd);
+    return Boolean(end && end < todayKey());
+  }
+
+  function rightsNotStartedFromStart(rightsStart = '') {
+    const start = normalizedDateKey(rightsStart);
+    return Boolean(start && start > todayKey());
+  }
+
+  function formatDateKey(value = '') {
+    const key = normalizedDateKey(value);
+    if (!key) return '—';
+    const [year, month, day] = key.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function currentRightsOnly() {
+    return state.rightsScope === 'current';
+  }
+
+  function recordWithinBroadcastRights(record = {}) {
+    if (!currentRightsOnly()) return true;
+    if (!record || record.isNonSpecific) return false;
+    if (!record.libraryKnown) return false;
+    if (record.rightsExpired || record.rightsNotStarted || record.inactive) return false;
+    return true;
+  }
+
+  function rightsEndNote(row = {}) {
+    if (!currentRightsOnly()) return '';
+    return ` <span class="mix">(rights end ${escapeHtml(row.rightsEndDisplay || formatDateKey(row.rightsEnd) || '—')})</span>`;
   }
 
   function pledgeSeason(date) {
@@ -697,6 +746,14 @@
     return null;
   }
 
+  function libraryInactive(row = {}) {
+    if (!row) return false;
+    const archiveRaw = text(firstNonEmpty(row.is_archived, row.archived, row.inactive_flag, '')).toLowerCase();
+    if (['true', 't', 'yes', 'y', '1', 'archived', 'inactive'].includes(archiveRaw)) return true;
+    const status = lookupKey(firstNonEmpty(row.status, row.library_state, ''));
+    return status === 'archived' || status === 'inactive';
+  }
+
   function placementLive(placement = {}) {
     // Canonical source for Performance Analytics live-break logic.
     // Saved Scheduling placement truth wins. A stale false alias must never suppress live notes.
@@ -862,6 +919,15 @@
         topicMissing,
         isNonSpecific: nonSpecific,
         distributor: text(lib.distributor || row.distributor || ''),
+        libraryKnown: Boolean(lib && lib.id),
+        rightsStart: text(lib.rights_start || ''),
+        rightsEnd: text(lib.rights_end || ''),
+        rightsStartKey: normalizedDateKey(lib.rights_start || ''),
+        rightsEndKey: normalizedDateKey(lib.rights_end || ''),
+        rightsEndDisplay: formatDateKey(lib.rights_end || ''),
+        rightsExpired: rightsExpiredFromEnd(lib.rights_end || ''),
+        rightsNotStarted: rightsNotStartedFromStart(lib.rights_start || ''),
+        inactive: libraryInactive(lib),
         date,
         dateKey: temporal.dateKey,
         startMinutes: temporal.startMinutes,
@@ -1035,6 +1101,15 @@
           topicMissing,
           isNonSpecific: nonSpecific,
           distributor: text(firstNonEmpty(lib.distributor, matched?.distributor, placement.distributor, '')),
+          libraryKnown: Boolean(lib && lib.id),
+          rightsStart: text(lib.rights_start || ''),
+          rightsEnd: text(lib.rights_end || ''),
+          rightsStartKey: normalizedDateKey(lib.rights_start || ''),
+          rightsEndKey: normalizedDateKey(lib.rights_end || ''),
+          rightsEndDisplay: formatDateKey(lib.rights_end || ''),
+          rightsExpired: rightsExpiredFromEnd(lib.rights_end || ''),
+          rightsNotStarted: rightsNotStartedFromStart(lib.rights_start || ''),
+          inactive: libraryInactive(lib),
           date,
           dateKey,
           startMinutes,
@@ -1103,9 +1178,13 @@
     const pledges = records.reduce((sum, record) => sum + Number(record.pledges || 0), 0);
     const mix = seasonMix(records);
     const ids = [...new Set(records.map((record) => record.programOpenId || record.programId).filter(Boolean))];
+    const rightsEndKeys = [...new Set(records.map((record) => record.rightsEndKey || '').filter(Boolean))].sort();
+    const rightsEndKey = rightsEndKeys[0] || '';
     return {
       title,
       programOpenId: ids.length === 1 ? ids[0] : '',
+      rightsEnd: rightsEndKey,
+      rightsEndDisplay: rightsEndKey ? formatDateKey(rightsEndKey) : '—',
       dollars,
       broadcastDollars: records.reduce((sum, record) => sum + Number(firstNonEmpty(record.broadcastDollars, record.dollars, 0) || 0), 0),
       onlineDollars: records.reduce((sum, record) => sum + Number(record.onlineDollars || 0), 0),
@@ -1477,6 +1556,7 @@
       && !lookupKey(state.search)
       && !(Array.isArray(state.topicFilters) && state.topicFilters.length)
       && state.secondaryTopicFilter === 'all'
+      && !currentRightsOnly()
       && state.advancedDistributor === 'all'
       && state.advancedLive === 'all'
       && state.advancedDaypart === 'all'
@@ -1513,6 +1593,7 @@
       if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.nola}`).includes(searchKey)) return false;
       if (selectedTopics.length && !selectedTopics.includes(record.topic)) return false;
       if (selectedSecondaryTopic !== 'all' && (record.secondaryTopic || '') !== selectedSecondaryTopic) return false;
+      if (!recordWithinBroadcastRights(record)) return false;
       if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
       if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;
       if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
@@ -1547,8 +1628,9 @@
   function programTitleCell(row) {
     const label = escapeHtml(row.title || 'Untitled program');
     const programId = text(row.programOpenId || row.programId || '');
-    if (!programId) return label;
-    return `<button type="button" class="program-link" data-program-detail-id="${escapeHtml(programId)}" data-program-detail-title="${escapeHtml(row.title || '')}">${label}</button>`;
+    const suffix = rightsEndNote(row);
+    if (!programId) return `${label}${suffix}`;
+    return `<button type="button" class="program-link" data-program-detail-id="${escapeHtml(programId)}" data-program-detail-title="${escapeHtml(row.title || '')}">${label}</button>${suffix}`;
   }
 
   function rowsPrograms() {
@@ -1844,6 +1926,7 @@
       read: programRead,
       columns: [
         ['Program', (row) => labelWithMixCell(row, programTitleCell(row)), '', (row) => row.title],
+        ['Rights end', (row) => escapeHtml(row.rightsEndDisplay || '—'), '', (row) => row.rightsEnd || '9999-12-31'],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
@@ -2096,9 +2179,9 @@
     ]);
     let libraryRows = [];
     try {
-      libraryRows = await fetchAll(LIBRARY_VIEW, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+      libraryRows = await fetchAll(LIBRARY_VIEW, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end,status,library_state,is_archived,archived,inactive_flag');
     } catch (_error) {
-      libraryRows = await fetchAll(BASE_TABLE, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end');
+      libraryRows = await fetchAll(BASE_TABLE, 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end,status,library_state,is_archived,archived,inactive_flag');
     }
     state.libraryRows = libraryRows;
     state.libraryById = new Map(libraryRows.map((row) => [text(row.id), row]).filter(([id]) => id));
@@ -2138,6 +2221,7 @@
     updateTopicSummary();
     dom.secondaryTopic.innerHTML = '<option value="all">All secondary topics</option>' + secondaryTopics.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
     if (secondaryTopics.includes(state.secondaryTopicFilter)) dom.secondaryTopic.value = state.secondaryTopicFilter; else { state.secondaryTopicFilter = 'all'; dom.secondaryTopic.value = 'all'; }
+    if (dom.rightsScope) dom.rightsScope.value = state.rightsScope || 'all';
     dom.advDistributor.innerHTML = '<option value="all">All distributors</option>' + distributors.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
     if (distributors.includes(state.advancedDistributor)) dom.advDistributor.value = state.advancedDistributor; else { state.advancedDistributor = 'all'; dom.advDistributor.value = 'all'; }
     dom.advMetric.value = state.metric;
@@ -2180,7 +2264,7 @@
     }
     dom.scopeNote.textContent = disabled.length
       ? `Disabled or ignored for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
-      : 'Filters are active for this question. Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.';
+      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, inactive, not-yet-in-rights, and unverified titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`;
   }
 
   function render() {
@@ -2535,6 +2619,7 @@
     dom.search.addEventListener('input', () => { state.search = dom.search.value; render(); });
     dom.evidence.addEventListener('change', () => { state.evidence = dom.evidence.value; render(); });
     dom.secondaryTopic.addEventListener('change', () => { state.secondaryTopicFilter = dom.secondaryTopic.value || 'all'; render(); });
+    dom.rightsScope?.addEventListener('change', () => { state.rightsScope = dom.rightsScope.value || 'all'; state.tableSort = { question: state.question, index: null, direction: 'asc' }; render(); });
     dom.topicOptions.addEventListener('change', (event) => {
       const input = event.target.closest('input[type="checkbox"]');
       if (!input) return;

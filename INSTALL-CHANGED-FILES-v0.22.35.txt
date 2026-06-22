@@ -1,0 +1,3 @@
+Install these changed files over your current site files, preserving paths.
+Do not replace or expose config.js.
+After copying, hard refresh the browser so the v0.22.35 cache-busters load.

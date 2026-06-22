@@ -201,6 +201,7 @@
     performanceEndDate: document.getElementById('performance-end-date'),
     performanceUseAllDates: document.getElementById('performance-use-all-dates'),
     performanceIncludeExpired: document.getElementById('performance-include-expired'),
+    performanceCurrentRightsOnly: document.getElementById('performance-current-rights-only'),
     performanceMonthSelect: document.getElementById('performance-month-select'),
     performanceTopicSelect: document.getElementById('performance-topic-select'),
     performanceSecondaryTopicSelect: document.getElementById('performance-secondary-topic-select'),

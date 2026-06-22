@@ -314,6 +314,15 @@
     return localDateKey(new Date());
   }
 
+  function normalizedRightsStartValue(programRow) {
+    if (!programRow) return '';
+    const parsed = utils.parseFlexibleDateInput(derive.rightsBegin(programRow));
+    if (parsed?.valid && parsed?.iso) return parsed.iso;
+    const raw = utils.normalizeText(derive.rightsBegin(programRow));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    return '';
+  }
+
   function normalizedRightsEndValue(programRow) {
     if (!programRow) return '';
     const parsed = utils.parseFlexibleDateInput(derive.rightsEnd(programRow));
@@ -328,11 +337,32 @@
     return Boolean(rightsEnd && rightsEnd < localTodayKey());
   }
 
+  function programRightsNotStarted(programRow) {
+    const rightsStart = normalizedRightsStartValue(programRow);
+    return Boolean(rightsStart && rightsStart > localTodayKey());
+  }
+
+  function currentRightsOnlyActive() {
+    return !perf().includeExpiredPrograms;
+  }
+
   function recordIncludedByProgramScope(record) {
-    if (perf().includeExpiredPrograms) return true;
-    if (!record || record.isNonSpecific) return true;
-    if (record.libraryProgramKnown) return Boolean(record.libraryProgramActive && !record.libraryRightsExpired);
-    return true;
+    if (!currentRightsOnlyActive()) return true;
+    if (!record || record.isNonSpecific) return false;
+    if (record.libraryProgramKnown) {
+      return Boolean(record.libraryProgramActive && !record.libraryRightsExpired && !record.libraryRightsNotStarted);
+    }
+    return false;
+  }
+
+  function rightsEndDisplay(value) {
+    return value ? utils.formatDate(value, value) : 'No end date';
+  }
+
+  function programRightsSuffixForGroup(group) {
+    if (!currentRightsOnlyActive() || perf().criterion !== 'program' || !group) return '';
+    const display = rightsEndDisplay(group.libraryRightsEnd || '');
+    return ` <span class="performance-program-rights-end">(rights end ${utils.escapeHtml(display)})</span>`;
   }
 
   function matchesDaySet(record, value) {
@@ -726,8 +756,10 @@
           excludedForIntegrity: false,
           libraryProgramKnown: false,
           libraryProgramActive: true,
+          libraryRightsStart: '',
           libraryRightsEnd: '',
           libraryRightsExpired: false,
+          libraryRightsNotStarted: false,
           nolaCode: '',
           signature: '',
           matchSource: 'unmatched',
@@ -762,8 +794,10 @@
       if (programRow) {
         record.libraryProgramKnown = true;
         record.libraryProgramActive = derive.isActive(programRow);
+        record.libraryRightsStart = record.libraryRightsStart || normalizedRightsStartValue(programRow);
         record.libraryRightsEnd = record.libraryRightsEnd || normalizedRightsEndValue(programRow);
         record.libraryRightsExpired = Boolean(record.libraryRightsExpired || programIsExpired(programRow));
+        record.libraryRightsNotStarted = Boolean(record.libraryRightsNotStarted || programRightsNotStarted(programRow));
       }
       if (record.isNonSpecific) {
         record.importedTitle = utils.canonicalNonSpecificTitle();
@@ -1314,6 +1348,7 @@
           pledgesPerMinute: 0,
           titles: new Set(),
           programIds: new Set(),
+          rightsEndValues: new Set(),
           minTime: null,
           minMinutes: null,
           topicTimeSortKey: null,
@@ -1333,6 +1368,7 @@
       group.moneyCount += 1;
       group.titles.add(record.title || 'Unknown title');
       if (record.programId) group.programIds.add(String(record.programId));
+      if (record.libraryRightsEnd) group.rightsEndValues.add(String(record.libraryRightsEnd));
       if (Number.isFinite(record.topicTimeSortKey)) {
         group.topicTimeSortKey = group.topicTimeSortKey == null ? record.topicTimeSortKey : Math.min(group.topicTimeSortKey, record.topicTimeSortKey);
       }
@@ -1370,6 +1406,7 @@
       titleCount: group.titles.size,
       titles: [...group.titles].sort((a, b) => utils.compareText(a, b)),
       programOpenId: group.programIds.size === 1 ? [...group.programIds][0] : '',
+      libraryRightsEnd: group.rightsEndValues.size ? [...group.rightsEndValues].sort()[0] : '',
       belowSampleThreshold: minGroupAirings > 1 && group.airingCount < minGroupAirings
     }));
 
@@ -3468,7 +3505,7 @@
     }
     els.performanceTableBody.innerHTML = groups.map((group) => {
       const labelHtml = perf().criterion === 'program'
-        ? App.programLinks.render({ programId: group.programOpenId, title: group.label, className: 'performance-program-link' })
+        ? `${App.programLinks.render({ programId: group.programOpenId, title: group.label, className: 'performance-program-link' })}${programRightsSuffixForGroup(group)}`
         : utils.escapeHtml(group.label);
       const sampleNote = group.belowSampleThreshold
         ? `<div class="sample-warning-inline">Low sample</div>`
@@ -3502,13 +3539,19 @@
       ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`],
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
-      ['Metric', metricLabel()]
+      ['Metric', metricLabel()],
+      ['Broadcast rights', currentRightsOnlyActive() ? 'Current only' : 'All']
     ];
     if (perf().secondaryTopicFilter) perf().criteriaSummary.push(['Secondary topic', perf().secondaryTopicFilter]);
     if (!els.performanceCriteriaBar) return;
     els.performanceCriteriaBar.innerHTML = perf().criteriaSummary.map(([label, value]) => `
       <div class="performance-criteria-pill"><span class="label">${utils.escapeHtml(label)}</span><span>${utils.escapeHtml(value)}</span></div>
     `).join('');
+    if (currentRightsOnlyActive() && analysisMeta.scopedExpiredProgramCount) {
+      els.performanceCriteriaBar.innerHTML += `
+        <div class="performance-criteria-pill warn"><span class="label">Rights filter removed</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.scopedExpiredProgramCount))}</span></div>
+      `;
+    }
     if (analysisMeta.excludedIntegrityCount) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Excluded suspect rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedIntegrityCount))}</span></div>
@@ -3548,6 +3591,7 @@
       ['Day set', daySetLabel(perf().daySetFilter), perf().daySetFilter ? 'This limits the comparison to the selected slice of the week.' : 'Leave this on All week to see the full filter window. For day-part or topic timing work, split Mon-Fri, Saturday, and Sunday when the weekly average is too coarse.'],
       ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : perf().criterion === 'topic_dayset' ? 'This view becomes especially useful with no topic filter because it compares each topic across Mon-Fri, Saturday, and Sunday.' : 'Checks primary topic metadata inherited from the library.'],
       ['Secondary topic filter', perf().secondaryTopicFilter || 'All secondary topics', 'Limits the records to one secondary topic. Use this with Main topic = Music to compare or inspect Music substyles.'],
+      ['Broadcast rights', currentRightsOnlyActive() ? 'Current broadcast rights only' : 'All matched program history', currentRightsOnlyActive() ? 'Rows whose matched library title is expired, inactive, not yet in rights, or missing a verifiable library record are hidden.' : 'Expired, inactive, and out-of-window titles remain visible so historical performance is not silently erased.'],
       ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one broadcast-day and hour slot. The chart becomes a weekly heatmap so strong slots stand out fast.' : perf().criterion === 'topic_dayset' ? 'Each row in the heatmap is one topic split into Mon-Fri, Saturday, and Sunday.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), metricReadText()],
       ['Minimum airing warning', meta.minGroupAirings > 1 ? `${utils.formatCount(meta.minGroupAirings)} airings` : 'None', minSampleExplanation()],
@@ -4156,7 +4200,8 @@
     }
     if (els.performanceFilterInput) els.performanceFilterInput.value = perf().labelFilter || '';
     if (els.performanceUseAllDates) els.performanceUseAllDates.checked = Boolean(perf().useAllDates);
-    perf().includeExpiredPrograms = true;
+    const rightsOnlyControl = els.performanceCurrentRightsOnly || els.performanceIncludeExpired;
+    if (rightsOnlyControl) rightsOnlyControl.checked = currentRightsOnlyActive();
     updateQuickFilterTooltips();
     const oldestDate = perf().dataShape?.oldestDate || '';
     const newestDate = perf().dataShape?.newestDate || '';
@@ -4384,6 +4429,8 @@
     els.performanceStartDate?.addEventListener('change', (event) => { perf().startDate = event.target.value || ''; perf().useAllDates = false; rerender(); });
     els.performanceEndDate?.addEventListener('change', (event) => { perf().endDate = event.target.value || ''; perf().useAllDates = false; rerender(); });
     els.performanceUseAllDates?.addEventListener('change', (event) => { perf().useAllDates = Boolean(event.target.checked); rerender(); });
+    const rightsOnlyControl = els.performanceCurrentRightsOnly || els.performanceIncludeExpired;
+    rightsOnlyControl?.addEventListener('change', (event) => { perf().includeExpiredPrograms = !Boolean(event.target.checked); rerender(); });
     els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; rerender(); });
     els.performanceDaySetSelect?.addEventListener('change', (event) => { perf().daySetFilter = event.target.value || ''; rerender(); });
     els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; rerender(); });

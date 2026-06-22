@@ -5905,3 +5905,25 @@ input.goal-difference-negative {
 .import-unmatched-card .import-unmatched-wrap {
   max-height: min(82vh, 760px);
 }
+
+/* v0.22.35 analytics broadcast-rights filters */
+.inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  font-weight: 700;
+  color: var(--text);
+}
+.performance-toolbar-grid .filter-field input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+}
+.performance-program-rights-end {
+  display: inline-block;
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: .82rem;
+  font-style: italic;
+  font-weight: 700;
+}
