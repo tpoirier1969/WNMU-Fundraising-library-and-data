@@ -1,0 +1,5 @@
+Install these changed files over the current WNMU Pledge Program Library deployment.
+
+v0.22.42 fixes the Program Library state filter so All titles keeps archived/inactive title variants visible instead of collapsing them behind active versions.
+
+No SQL changes are required.

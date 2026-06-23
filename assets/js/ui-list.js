@@ -154,7 +154,7 @@
   }
 
   function buildFilterOptions() {
-    const sourceRows = filters.collapseRows(state.rawRows || [], { statusPreference: state.statusFilter });
+    const sourceRows = collapseRowsForCurrentState();
     const topicRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'topic'));
     const secondaryRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'secondary'));
     const distributorRows = sourceRows.filter((row) => rowMatchesFiltersExcept(row, 'distributor'));
@@ -188,6 +188,13 @@
 
   function hasAired(row) {
     return filters.rowHasAired(row);
+  }
+
+  function collapseRowsForCurrentState() {
+    return filters.collapseRows(state.rawRows || [], {
+      statusPreference: state.statusFilter,
+      keepStateVariants: state.statusFilter === 'all'
+    });
   }
 
   function earningsTone(row) {
@@ -339,7 +346,7 @@
   }
 
   function applyLibraryView() {
-    const sourceRows = filters.collapseRows(state.rawRows || [], { statusPreference: state.statusFilter });
+    const sourceRows = collapseRowsForCurrentState();
     state.sourceCollapsedCount = sourceRows.length;
     buildFilterOptions();
     state.rows = sortRows(sourceRows.filter(rowMatchesFilters));

@@ -103,14 +103,17 @@
     return true;
   }
 
-  function identityKey(row = {}) {
-    if (utils.isNonSpecificRow(row)) return 'non_specific';
+  function identityKey(row = {}, options = {}) {
+    const stateSuffix = options.keepStateVariants
+      ? `::state:${derive.isActive(row) ? 'active' : 'archived'}`
+      : '';
+    if (utils.isNonSpecificRow(row)) return `non_specific${stateSuffix}`;
     const direct = String(derive.programId(row) || '').trim();
-    if (direct) return `id:${direct}`;
+    if (direct) return `id:${direct}${stateSuffix}`;
     const lookupKey = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
-    if (lookupKey) return lookupKey;
+    if (lookupKey) return `${lookupKey}${stateSuffix}`;
     const titleKey = utils.normalizeLookupKey(derive.title(row));
-    if (titleKey) return `title:${titleKey}`;
+    if (titleKey) return `title:${titleKey}${stateSuffix}`;
     return '';
   }
 
@@ -136,9 +139,10 @@
 
   function collapseRows(rows = [], options = {}) {
     const statusPreference = options.statusPreference || 'all';
+    const keepStateVariants = Boolean(options.keepStateVariants);
     const groups = new Map();
     (rows || []).forEach((row, index) => {
-      const key = identityKey(row) || `row:${index}`;
+      const key = identityKey(row, { keepStateVariants }) || `row:${index}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(row);
     });
