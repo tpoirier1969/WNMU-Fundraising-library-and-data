@@ -1,0 +1,13 @@
+WNMU Pledge Program Library v0.22.43 changed-files patch
+
+Install by copying these files over the existing app files, preserving folders:
+
+- index.html
+- pledge-performance-lab.html
+- version.json
+- assets/js/core.js
+- assets/js/program-filters.js
+- assets/js/ui-list.js
+- assets/js/ui-detail.js
+
+Do not overwrite config.js.

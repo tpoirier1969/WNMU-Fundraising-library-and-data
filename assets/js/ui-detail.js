@@ -865,7 +865,7 @@
       labelValue('Rights begin', utils.escapeHtml(utils.formatDate(derive.rightsBegin(program)))),
       labelValue('Rights end', utils.escapeHtml(utils.formatDate(derive.rightsEnd(program)))),
       labelValue('Last aired', utils.escapeHtml(lastAired || 'N/A')),
-      labelValue('Status', utils.escapeHtml(utils.normalizeText(utils.firstNonEmpty(program.status, program.library_state, derive.isActive(program) ? 'Active' : 'Archived')) || '—')),
+      labelValue('Status', utils.escapeHtml(derive.isActive(program) ? 'Active' : 'Archived by rights-end date')),
       labelValue('Total contributions', utils.escapeHtml(utils.formatMoney(derive.totalRaised(program)))),
       labelValue('Average per fundraiser', utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(program)))),
       labelValue('Package type', utils.escapeHtml(utils.normalizeText(program.package_type) || '—')),

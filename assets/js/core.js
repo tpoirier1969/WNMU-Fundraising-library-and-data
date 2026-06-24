@@ -7,7 +7,7 @@ window.PledgeLib = window.PledgeLib || {};
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: 'v0.22.42',
+    APP_VERSION: 'v0.22.43',
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -914,11 +914,10 @@ window.PledgeLib = window.PledgeLib || {};
       return derive.lastAiredDisplay(row);
     },
 
-    hasExplicitArchiveState(row) {
-      const archived = utils.firstNonEmpty(row?.is_archived, row?.archived, row?.inactive_flag);
-      if (typeof archived === 'boolean') return archived;
-      const raw = utils.normalizeText(utils.firstNonEmpty(row?.status, row?.library_state)).toLowerCase();
-      return raw === 'archived' || raw === 'inactive';
+    hasExplicitArchiveState(_row) {
+      // Archive state is intentionally date-only.  Older status/archive flags may exist
+      // in old data or views, but they do not control Program Library visibility.
+      return false;
     },
 
     rightsExpired(row) {
@@ -933,9 +932,9 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     isActive(row) {
-      if (derive.hasExplicitArchiveState(row)) return false;
-      if (derive.rightsExpired(row)) return false;
-      return true;
+      // Active/archived is controlled only by Rights End:
+      // blank/future/today = active; past date = archived.
+      return !derive.rightsExpired(row);
     },
 
     scheduleById(id) {

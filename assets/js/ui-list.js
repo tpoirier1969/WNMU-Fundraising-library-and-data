@@ -286,16 +286,11 @@
       const rightsEndToneInfo = rightsEndTone(rightsEnd);
       const rightsEndStyle = rightsEndToneInfo?.style || '';
       const rightsEndTitle = rightsEndToneInfo?.label || 'No rights-end heat color';
-      const isArchivedRow = !derive.isActive(row);
-      const explicitlyArchived = derive.hasExplicitArchiveState(row);
-      const rightsExpired = derive.rightsExpired(row);
-      const showUnarchiveButton = isArchivedRow && explicitlyArchived && App.auth?.canEdit?.();
-      const archiveStatusNote = isArchivedRow && !explicitlyArchived && rightsExpired
+      const isArchivedRow = derive.rightsExpired(row);
+      const archiveStatusNote = isArchivedRow
         ? `<div class="title-row-actions"><span class="sub">Archived by rights-end date — extend rights to restore.</span></div>`
         : '';
-      const unarchiveButtonHtml = showUnarchiveButton
-        ? `<div class="title-row-actions"><button type="button" class="ghost archive-row-button" data-unarchive-id="${utils.escapeHtml(programId)}" data-unarchive-db-id="${utils.escapeHtml(utils.firstNonEmpty(row?.id, ''))}" data-unarchive-program-id="${utils.escapeHtml(utils.firstNonEmpty(row?.program_id, ''))}" data-unarchive-nola="${utils.escapeHtml(derive.nola(row) || '')}" data-unarchive-title="${utils.escapeHtml(derive.title(row) || '')}" data-unarchive-rights-end="${utils.escapeHtml(rightsEnd || '')}" data-unarchive-explicit="true">Take out of archive</button></div>`
-        : archiveStatusNote;
+      const unarchiveButtonHtml = archiveStatusNote;
       return `
         <tr data-id="${utils.escapeHtml(programId)}" class="library-earnings-${utils.escapeHtml(tone)} ${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
           <td class="title-cell" title="${utils.escapeHtml(`Title tint: ${toneLabel}`)}">

@@ -95,11 +95,12 @@
   }
 
   function rowMatchesStatus(row = {}, statusFilter = 'active') {
-    if (statusFilter === 'active') {
-      if (row?.__preserve_visible) return true;
-      return derive.isActive(row);
-    }
-    if (statusFilter === 'archived') return !derive.isActive(row) && !row?.__preserve_visible;
+    // Library state is date-only:
+    // All Titles = no archive filtering.
+    // Active Only = Rights End blank/today/future.
+    // Archived Only = Rights End before today.
+    if (statusFilter === 'active') return derive.isActive(row);
+    if (statusFilter === 'archived') return derive.rightsExpired(row);
     return true;
   }
 

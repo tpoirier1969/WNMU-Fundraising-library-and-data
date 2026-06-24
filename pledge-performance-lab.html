@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.42</title>
+  <title>WNMU Pledge Performance Analytics v0.22.43</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -166,7 +166,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.42</div>
+        <div class="eyebrow">Admin analytics · v0.22.43</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -811,12 +811,10 @@
     return null;
   }
 
-  function libraryInactive(row = {}) {
-    if (!row) return false;
-    const archiveRaw = text(firstNonEmpty(row.is_archived, row.archived, row.inactive_flag, '')).toLowerCase();
-    if (['true', 't', 'yes', 'y', '1', 'archived', 'inactive'].includes(archiveRaw)) return true;
-    const status = lookupKey(firstNonEmpty(row.status, row.library_state, ''));
-    return status === 'archived' || status === 'inactive';
+  function libraryInactive(_row = {}) {
+    // Archive state is date-only in the main app.  Older status/archive fields may
+    // exist in legacy data, but analytics must not treat them as archive state.
+    return false;
   }
 
   function placementLive(placement = {}) {
@@ -2354,7 +2352,7 @@
     }
     setScopeNote(disabled.length
       ? `Disabled or ignored for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
-      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, inactive, not-yet-in-rights, and unverified titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`);
+      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, not-yet-in-rights, and unknown-library titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`);
   }
 
   function render() {
