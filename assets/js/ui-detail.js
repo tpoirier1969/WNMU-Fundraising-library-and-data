@@ -294,6 +294,13 @@
     return detailRecordHasExplicitTime(row) ? `${detailDateLabel(when)} · ${detailTimeLabel(when)}` : detailDateLabel(when);
   }
 
+  function detailDateRangeLabel(startKey = '', endKey = '') {
+    const startText = startKey ? utils.formatDate(startKey, startKey) : '';
+    const endText = endKey ? utils.formatDate(endKey, endKey) : '';
+    if (startText && endText && startText !== endText) return `${startText} → ${endText}`;
+    return startText || endText || 'Unknown date';
+  }
+
   function detailDateLabel(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown date';
     return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -453,18 +460,21 @@
       });
   }
 
-  function buildAiringInsightRows(program, driveResults = [], exactAirings = []) {
-    const cache = getDetailBenchmarkCache();
-    const topic = derive.topicPrimary(program);
-    const topicKey = utils.normalizeLookupKey(topic);
-    const resolvedAirings = resolvedExactAiringRows(exactAirings, driveResults)
-      .map((row) => ({ ...row, __detail_when: detailRecordDate(row) }))
+  function buildResolvedDetailAiringTimeline(driveResults = [], exactAirings = []) {
+    return resolvedExactAiringRows(exactAirings, driveResults)
+      .map((row, index) => ({ ...row, __detail_when: detailRecordDate(row), __detail_source_index: index }))
       .sort((a, b) => {
         const aTime = a.__detail_when instanceof Date && !Number.isNaN(a.__detail_when.getTime()) ? a.__detail_when.getTime() : Number.POSITIVE_INFINITY;
         const bTime = b.__detail_when instanceof Date && !Number.isNaN(b.__detail_when.getTime()) ? b.__detail_when.getTime() : Number.POSITIVE_INFINITY;
-        return aTime - bTime;
+        return aTime - bTime || Number(a.__detail_source_index || 0) - Number(b.__detail_source_index || 0);
       });
-    return resolvedAirings.map((row) => {
+  }
+
+  function buildIndividualAiringInsightRows(program, resolvedRows = []) {
+    const cache = getDetailBenchmarkCache();
+    const topic = derive.topicPrimary(program);
+    const topicKey = utils.normalizeLookupKey(topic);
+    return (Array.isArray(resolvedRows) ? resolvedRows : []).map((row) => {
       const when = row.__detail_when;
       const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
       const pledges = detailPledges(row);
@@ -501,6 +511,121 @@
     });
   }
 
+  function buildAiringInsightRows(program, driveResults = [], exactAirings = []) {
+    return buildIndividualAiringInsightRows(program, buildResolvedDetailAiringTimeline(driveResults, exactAirings));
+  }
+
+  function mergeDetailFundraiserRange(target = {}, descriptor = {}) {
+    if (!target || !descriptor) return target;
+    if (!target.startKey || (descriptor.startKey && descriptor.startKey < target.startKey)) target.startKey = descriptor.startKey;
+    if (!target.endKey || (descriptor.endKey && descriptor.endKey > target.endKey)) target.endKey = descriptor.endKey;
+    if (!target.label && descriptor.label) target.label = descriptor.label;
+    target.axisLabel = detailFundraiserAxisLabel(target.startKey || target.endKey || '', target.label || descriptor.label || 'Fundraiser');
+    target.hoverLabel = detailFundraiserHoverLabel(target.startKey || '', target.endKey || '', target.label || descriptor.label || 'Fundraiser');
+    return target;
+  }
+
+  function buildAggregatedAiringSeries(program, driveResults = [], exactAirings = []) {
+    const resolvedRows = buildResolvedDetailAiringTimeline(driveResults, exactAirings);
+    const individualInsights = buildIndividualAiringInsightRows(program, resolvedRows);
+    const grouped = new Map();
+
+    resolvedRows.forEach((row, index) => {
+      const when = row.__detail_when;
+      const dateKey = when instanceof Date && !Number.isNaN(when.getTime()) ? utils.dateKeyFromDate(when) : detailNormalizedDateKey(row?.air_date || row?.aired_at || row?.date_key);
+      const descriptor = detailFundraiserDescriptor(row) || {
+        key: `offcycle:${dateKey || index}`,
+        startKey: dateKey || '',
+        endKey: dateKey || '',
+        label: dateKey ? `Off-cycle pledge — ${detailDateRangeLabel(dateKey, dateKey)}` : `Off-cycle pledge ${index + 1}`,
+        axisLabel: detailFundraiserAxisLabel(dateKey || '', dateKey || `Airing ${index + 1}`),
+        hoverLabel: dateKey ? `Off-cycle pledge — ${detailDateRangeLabel(dateKey, dateKey)}` : `Off-cycle pledge ${index + 1}`,
+        isOffCycle: true
+      };
+      const key = descriptor.key || `airing-${index}`;
+      const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
+      const insight = individualInsights[index] || null;
+      const expectedValue = Number(insight?.expectedTopicAmount);
+      const prior = grouped.get(key) || {
+        label: descriptor.hoverLabel || descriptor.label || `Fundraiser ${grouped.size + 1}`,
+        dateKey: descriptor.startKey || dateKey || `${index + 1}`,
+        sortKey: descriptor.startKey || dateKey || `${index + 1}`,
+        amount: 0,
+        pledges: 0,
+        airingCount: 0,
+        rows: [],
+        firstWhen: null,
+        lastWhen: null,
+        fundraiser: { ...descriptor },
+        expectedTopicAmountTotal: 0,
+        expectedTopicAmountCount: 0,
+        insightNotes: []
+      };
+
+      prior.amount += amount;
+      prior.pledges += detailPledges(row);
+      prior.airingCount += 1;
+      prior.rows.push(row);
+      if (when instanceof Date && !Number.isNaN(when.getTime())) {
+        if (!prior.firstWhen || when.getTime() < prior.firstWhen.getTime()) prior.firstWhen = when;
+        if (!prior.lastWhen || when.getTime() > prior.lastWhen.getTime()) prior.lastWhen = when;
+      }
+      if (Number.isFinite(expectedValue) && expectedValue >= 0) {
+        prior.expectedTopicAmountTotal += expectedValue;
+        prior.expectedTopicAmountCount += 1;
+      }
+      if (insight?.combinedNote && !prior.insightNotes.includes(insight.combinedNote)) prior.insightNotes.push(insight.combinedNote);
+      mergeDetailFundraiserRange(prior.fundraiser, descriptor);
+      grouped.set(key, prior);
+    });
+
+    const series = [...grouped.values()].map((group, index) => {
+      const startKey = group.fundraiser?.startKey || (group.firstWhen ? utils.dateKeyFromDate(group.firstWhen) : group.dateKey);
+      const endKey = group.fundraiser?.endKey || (group.lastWhen ? utils.dateKeyFromDate(group.lastWhen) : startKey);
+      const when = detailDateFromParts(startKey, '', 12) || group.firstWhen || group.lastWhen || null;
+      const sortKey = when instanceof Date && !Number.isNaN(when.getTime()) ? when.getTime() : String(group.sortKey || index);
+      const expectedTopicAmount = group.expectedTopicAmountCount ? group.expectedTopicAmountTotal : null;
+      const periodLabel = group.fundraiser?.hoverLabel || group.label || detailDateRangeLabel(startKey, endKey);
+      const avgPerAiring = group.airingCount ? (group.amount / group.airingCount) : 0;
+      return {
+        label: periodLabel,
+        dateKey: startKey || group.dateKey || `${index + 1}`,
+        sortKey,
+        amount: group.amount,
+        when,
+        dayLabel: detailDateRangeLabel(startKey, endKey),
+        timeLabel: 'Fundraiser total',
+        pledges: group.pledges,
+        airingCount: group.airingCount,
+        avgPerAiring,
+        fundraiser: {
+          ...(group.fundraiser || {}),
+          startKey: startKey || '',
+          endKey: endKey || '',
+          axisLabel: detailFundraiserAxisLabel(startKey || endKey || '', group.fundraiser?.label || group.label || 'Fundraiser'),
+          hoverLabel: detailFundraiserHoverLabel(startKey || '', endKey || '', group.fundraiser?.label || group.label || 'Fundraiser')
+        },
+        row: group.rows[0] || null,
+        rows: group.rows,
+        expectedTopicAmount,
+        insight: {
+          expectedTopicAmount,
+          topicNote: expectedTopicAmount == null ? 'Topic expectation thin for this period' : 'Topic expectation summed across this period',
+          combinedNote: group.insightNotes.slice(0, 3).join(' · ')
+        }
+      };
+    }).sort((a, b) => {
+      if (typeof a.sortKey === 'number' && typeof b.sortKey === 'number') return a.sortKey - b.sortKey;
+      return String(a.sortKey).localeCompare(String(b.sortKey));
+    });
+
+    return {
+      series,
+      insightRows: series.map((entry) => entry.insight || null)
+    };
+  }
+
+
 
 
   function detailFundraiserAxisLabel(dateKey = '', label = '') {
@@ -524,20 +649,110 @@
     return bits.join(' · ') || 'Fundraiser';
   }
 
+  function detailScheduleForAiring(dateKey = '', scheduleId = '') {
+    const schedules = Array.isArray(state.schedules) ? state.schedules : [];
+    if (!schedules.length) return null;
+    const idKey = utils.normalizeText(scheduleId);
+    if (idKey) {
+      const byId = schedules.find((schedule) => utils.normalizeText(schedule?.id) === idKey);
+      if (byId) return byId;
+    }
+    const dayKey = detailNormalizedDateKey(dateKey);
+    if (!dayKey) return null;
+    const containing = schedules.filter((schedule) => {
+      const start = detailNormalizedDateKey(schedule?.startDate || schedule?.start_date);
+      const end = detailNormalizedDateKey(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date);
+      return start && end && start <= dayKey && dayKey <= end;
+    }).sort((a, b) => {
+      const aStart = detailNormalizedDateKey(a?.startDate || a?.start_date);
+      const aEnd = detailNormalizedDateKey(a?.endDate || a?.end_date || a?.startDate || a?.start_date);
+      const bStart = detailNormalizedDateKey(b?.startDate || b?.start_date);
+      const bEnd = detailNormalizedDateKey(b?.endDate || b?.end_date || b?.startDate || b?.start_date);
+      const aSpan = Math.max(0, Date.parse(aEnd || dayKey) - Date.parse(aStart || dayKey));
+      const bSpan = Math.max(0, Date.parse(bEnd || dayKey) - Date.parse(bStart || dayKey));
+      return aSpan - bSpan || utils.compareText(a?.title || '', b?.title || '');
+    });
+    return containing[0] || null;
+  }
+
   function detailFundraiserDescriptor(row = {}) {
-    const startKey = detailNormalizedDateKey(utils.firstNonEmpty(row?.drive_start_date, row?.drive_date, row?.air_date, row?.aired_at, row?.date_key));
-    const endKey = detailNormalizedDateKey(utils.firstNonEmpty(row?.drive_end_date, row?.drive_start_date, row?.drive_date, row?.air_date, row?.aired_at, row?.date_key));
-    const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column, '')) || '';
-    const keyBase = startKey || detailNormalizedDateKey(utils.firstNonEmpty(row?.air_date, row?.aired_at, row?.drive_date, row?.date_key));
-    if (!keyBase && !label) return null;
-    const key = [keyBase || '', endKey || '', utils.normalizeLookupKey(label)].join('|');
+    let explicitStartKey = detailNormalizedDateKey(utils.firstNonEmpty(
+      row?.drive_start_date,
+      row?.fundraiser_start_date,
+      row?.fundraiser_start,
+      row?.schedule_start_date,
+      row?.pledge_start_date,
+      row?.start_date,
+      row?.drive_date
+    ));
+    let explicitEndKey = detailNormalizedDateKey(utils.firstNonEmpty(
+      row?.drive_end_date,
+      row?.fundraiser_end_date,
+      row?.fundraiser_end,
+      row?.schedule_end_date,
+      row?.pledge_end_date,
+      row?.end_date
+    ));
+    const rowDateKey = detailNormalizedDateKey(utils.firstNonEmpty(row?.air_date, row?.aired_at, row?.date_key, row?.drive_date));
+    let label = utils.normalizeText(utils.firstNonEmpty(
+      row?.fundraiser_label,
+      row?.fundraiser_name,
+      row?.pledge_period_label,
+      row?.pledge_period_name,
+      row?.schedule_label,
+      row?.schedule_name,
+      row?.drive_label,
+      row?.drive_column,
+      row?.drive_name,
+      row?.campaign_name,
+      ''
+    )) || '';
+    let periodId = utils.normalizeText(utils.firstNonEmpty(
+      row?.fundraiser_id,
+      row?.fundraiser_schedule_id,
+      row?.pledge_fundraiser_schedule_id,
+      row?.schedule_id,
+      row?.drive_id,
+      row?.campaign_id,
+      ''
+    )) || '';
+    const matchedSchedule = detailScheduleForAiring(rowDateKey || explicitStartKey || explicitEndKey, periodId);
+    if (matchedSchedule) {
+      periodId = utils.normalizeText(matchedSchedule.id || periodId || '');
+      label = label || utils.normalizeText(matchedSchedule.title || '');
+      explicitStartKey = explicitStartKey || detailNormalizedDateKey(matchedSchedule.startDate || matchedSchedule.start_date);
+      explicitEndKey = explicitEndKey || detailNormalizedDateKey(matchedSchedule.endDate || matchedSchedule.end_date || matchedSchedule.startDate || matchedSchedule.start_date);
+    }
+    const startKey = explicitStartKey || rowDateKey || '';
+    const endKey = explicitEndKey || explicitStartKey || rowDateKey || '';
+    if (!periodId && !label && !startKey) return null;
+
+    let key = '';
+    if (periodId) {
+      key = `period-id:${periodId}`;
+    } else if (label) {
+      const labelKey = utils.normalizeLookupKey(label);
+      if (explicitStartKey || explicitEndKey) {
+        key = `period:${labelKey}|${explicitStartKey || ''}|${explicitEndKey || ''}`;
+      } else {
+        const labelHasYear = /\b(?:19|20)\d{2}\b/.test(label);
+        const yearKey = !labelHasYear && rowDateKey ? rowDateKey.slice(0, 4) : '';
+        key = `period:${labelKey}|${yearKey}`;
+      }
+    } else {
+      key = `offcycle:${startKey}`;
+    }
+
+    const effectiveLabel = label || (periodId ? `Fundraiser ${periodId}` : `Off-cycle pledge — ${detailDateRangeLabel(startKey, endKey)}`);
     return {
       key,
-      startKey: keyBase || '',
+      startKey: startKey || '',
       endKey: endKey || '',
-      label,
-      axisLabel: detailFundraiserAxisLabel(keyBase || endKey || '', label),
-      hoverLabel: detailFundraiserHoverLabel(keyBase || '', endKey || '', label)
+      label: effectiveLabel,
+      axisLabel: detailFundraiserAxisLabel(startKey || endKey || '', effectiveLabel),
+      hoverLabel: detailFundraiserHoverLabel(startKey || '', endKey || '', effectiveLabel),
+      periodId,
+      isOffCycle: !periodId && !label
     };
   }
 
@@ -599,72 +814,68 @@
     return { slots, slotByKey };
   }
 
-  function buildGraphSeries(driveResults = [], exactAirings = []) {
-    if (exactAirings.length) {
-      return resolvedExactAiringRows(exactAirings, driveResults)
-        .map((row, index) => {
-          const when = detailRecordDate(row);
-          const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)) || 0) || 0;
-          const baseLabel = when instanceof Date && !Number.isNaN(when.getTime())
-            ? `${detailDateLabel(when)} · ${detailTimeLabel(when)}`
-            : (utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.notes)) || `Airing ${index + 1}`);
-          return {
-            label: baseLabel,
-            dateKey: when instanceof Date && !Number.isNaN(when.getTime()) ? utils.dateKeyFromDate(when) : `${index + 1}`,
-            sortKey: when instanceof Date && !Number.isNaN(when.getTime()) ? when.getTime() : index,
-            amount,
-            when,
-            dayLabel: detailDayLabel(when),
-            timeLabel: detailRecordHasExplicitTime(row) ? detailTimeLabel(when) : 'Unknown time',
-            pledges: detailPledges(row),
-            fundraiser: detailFundraiserDescriptor(row),
-            row
-          };
-        })
-        .sort((a, b) => a.sortKey - b.sortKey);
-    }
+  function buildGraphSeries(program, driveResults = [], exactAirings = []) {
+    if (exactAirings.length) return buildAggregatedAiringSeries(program, driveResults, exactAirings);
+
     const sourceRows = driveResults || [];
     const grouped = new Map();
     sourceRows.forEach((row) => {
       const iso = utils.firstNonEmpty(row?.drive_date, row?.drive_start_date, row?.aired_at, row?.date_key);
       const dateKey = detailNormalizedDateKey(iso) || utils.dateKeyFromDate(iso) || utils.normalizeText(iso);
-      const label = utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column)) || (dateKey || 'Unknown');
+      const descriptor = detailFundraiserDescriptor(row);
+      const label = descriptor?.hoverLabel || utils.normalizeText(utils.firstNonEmpty(row?.fundraiser_label, row?.drive_label, row?.drive_column)) || (dateKey || 'Unknown');
       const amount = Number(contributionAmount(row) || 0) || 0;
       if (!dateKey && !label) return;
-      const key = `${dateKey || label}|${label}`;
+      const key = descriptor?.key || `${dateKey || label}|${label}`;
       const prior = grouped.get(key) || {
         label,
-        dateKey: dateKey || label,
-        sortKey: dateKey || label,
+        dateKey: descriptor?.startKey || dateKey || label,
+        sortKey: descriptor?.startKey || dateKey || label,
         amount: 0,
-        fundraiser: detailFundraiserDescriptor(row),
-        row
+        pledges: 0,
+        airingCount: 0,
+        fundraiser: descriptor || detailFundraiserDescriptor(row),
+        row,
+        rows: []
       };
       prior.amount += amount;
+      prior.pledges += detailPledges(row);
+      prior.airingCount += Number(utils.firstNonEmpty(row?.airing_count, row?.airings, row?.broadcast_count, row?.count, 0) || 0) || 0;
+      prior.rows.push(row);
       grouped.set(key, prior);
     });
-    return [...grouped.values()].sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)));
+    const series = [...grouped.values()].map((entry) => ({
+      ...entry,
+      airingCount: entry.airingCount || entry.rows.length || 0,
+      avgPerAiring: (entry.airingCount || entry.rows.length) ? entry.amount / (entry.airingCount || entry.rows.length) : 0,
+      dayLabel: detailDateRangeLabel(entry.fundraiser?.startKey || entry.dateKey || '', entry.fundraiser?.endKey || entry.dateKey || ''),
+      timeLabel: 'Fundraiser total',
+      when: detailDateFromParts(entry.fundraiser?.startKey || entry.dateKey || '', '', 12)
+    })).sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)));
+    return { series, insightRows: [] };
   }
+
 
 
   function renderPerformanceGraph(program, driveResults = [], exactAirings = []) {
     if (!els.detailPerformanceGraph || !els.detailGraphPill) return;
     maybeRefreshDetailBenchmarks();
-    const series = buildGraphSeries(driveResults, exactAirings);
-    const insightRows = buildAiringInsightRows(program, driveResults, exactAirings);
+    const graphData = buildGraphSeries(program, driveResults, exactAirings);
+    const series = graphData?.series || [];
+    const insightRows = graphData?.insightRows || [];
     if (!series.length) {
       els.detailGraphPill.textContent = 'Needs history';
       els.detailPerformanceGraph.innerHTML = '<div class="detail-graph-empty">This section fills in once the title has readable airing or fundraiser history.</div>';
       return;
     }
-    els.detailGraphPill.textContent = `${series.length} point${series.length === 1 ? '' : 's'}`;
+    els.detailGraphPill.textContent = `${series.length} pledge period${series.length === 1 ? '' : 's'}`;
     const width = 820;
     const height = 320;
     const margin = { top: 18, right: 22, bottom: 110, left: 58 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
     const expectedValues = insightRows
-      .map((entry) => Number(entry?.expectedTopicAmount))
+      .map((entry) => entry?.expectedTopicAmount == null ? NaN : Number(entry.expectedTopicAmount))
       .filter((value) => Number.isFinite(value) && value >= 0);
     const maxAmount = Math.max(
       ...series.map((entry) => Number(entry.amount || 0) || 0),
@@ -691,7 +902,8 @@
     const slotSeen = new Map();
     const slotOffsetStep = axisSlots.length > 1 ? Math.min(16, Math.max(6, xStep * 0.22)) : 0;
     const points = seriesWithSlots.map((entry, index) => {
-      const expectedTopicAmount = Number(insightRows[index]?.expectedTopicAmount);
+      const rawExpectedTopicAmount = insightRows[index]?.expectedTopicAmount;
+      const expectedTopicAmount = rawExpectedTopicAmount == null ? NaN : Number(rawExpectedTopicAmount);
       const centerX = axisSlots.length > 1 ? margin.left + (xStep * entry.slotIndex) : margin.left + (innerW / 2);
       const countInSlot = Number(slotCounts.get(entry.slotIndex) || 1);
       const slotOrder = Number(slotSeen.get(entry.slotIndex) || 0);
@@ -739,8 +951,8 @@
       if (!Number.isFinite(pt.expectedY)) return '';
       const tooltip = [
         pt.fundraiser?.hoverLabel || '',
-        pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
-        `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}`,
+        pt.dayLabel || pt.label,
+        `Expected ${topicName} total across period: ${utils.formatMoney(pt.expectedTopicAmount)}`,
         pt.insight?.topicNote || ''
       ].filter(Boolean).join('\n');
       return `<g><circle cx="${pt.x}" cy="${pt.expectedY}" r="3.5" class="detail-graph-expected-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
@@ -748,9 +960,10 @@
     const dots = points.map((pt) => {
       const tooltip = [
         pt.fundraiser?.hoverLabel || '',
-        pt.when instanceof Date && !Number.isNaN(pt.when.getTime()) ? `${detailDateLabel(pt.when)} · ${detailDayLabel(pt.when)} · ${pt.row && detailRecordHasExplicitTime(pt.row) ? detailTimeLabel(pt.when) : 'Unknown time'}` : pt.label,
-        `${utils.formatMoney(pt.amount)}${Number.isFinite(pt.pledges) && pt.pledges > 0 ? ` · ${utils.formatCount(pt.pledges)} pledges` : ''}`,
-        pt.expectedTopicAmount != null ? `Expected for ${topicName}: ${utils.formatMoney(pt.expectedTopicAmount)}` : 'Topic expectation thin',
+        pt.dayLabel || pt.label,
+        `${utils.formatMoney(pt.amount)} total${Number.isFinite(pt.pledges) && pt.pledges > 0 ? ` · ${utils.formatCount(pt.pledges)} pledges` : ''}`,
+        `${utils.formatCount(pt.airingCount || 0)} airing${Number(pt.airingCount || 0) === 1 ? '' : 's'} used${Number(pt.airingCount || 0) ? ` · ${utils.formatMoney(pt.avgPerAiring || 0)} avg/airing` : ''}`,
+        pt.expectedTopicAmount != null ? `Expected ${topicName} total across period: ${utils.formatMoney(pt.expectedTopicAmount)}` : 'Topic expectation thin',
         pt.insight?.combinedNote || ''
       ].filter(Boolean).join('\n');
       return `<g><circle cx="${pt.x}" cy="${pt.y}" r="4" class="detail-graph-dot"></circle><title>${utils.escapeHtml(tooltip)}</title></g>`;
@@ -761,10 +974,10 @@
       return Boolean((prev && Math.abs(prev.x - pt.x) < 44) || (next && Math.abs(next.x - pt.x) < 44));
     });
     const pointLabels = points.map((pt, index) => {
-      const fullDay = utils.escapeHtml(pt.dayLabel || 'Unknown day');
-      const timeText = utils.escapeHtml(pt.timeLabel || 'Unknown time');
-      const slotLine = `${timeText}`;
-      const noteLine = fullDay;
+      const periodText = utils.escapeHtml(pt.fundraiser?.axisLabel || pt.label || 'Pledge period');
+      const amountText = utils.escapeHtml(utils.formatMoney(pt.amount || 0));
+      const slotLine = `${periodText}`;
+      const noteLine = `${amountText} total`;
       const anchor = index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle';
       const labelX = index === 0 ? pt.x + 10 : index === points.length - 1 ? pt.x - 10 : pt.x;
       const labelAbove = (index % 2 === 0 && pt.y > (margin.top + 30)) || pt.y > (margin.top + innerH * 0.72);
@@ -782,19 +995,19 @@
       </g>`;
     }).join('');
     const latest = points[points.length - 1];
-    const latestWhen = latest.when instanceof Date && !Number.isNaN(latest.when.getTime()) ? `${detailDateLabel(latest.when)} · ${latest.row && detailRecordHasExplicitTime(latest.row) ? detailTimeLabel(latest.when) : 'Unknown time'}` : utils.formatDate(latest.dateKey, latest.dateKey);
-    const latestExpectedText = latest.expectedTopicAmount != null ? ` vs topic-expected ${utils.formatMoney(latest.expectedTopicAmount)}` : '';
-    const fundraiserSpanNote = axisSlots.length > points.length ? ` Timeline ticks show ${utils.formatCount(axisSlots.length)} fundraisers between the first and last airing.` : '';
-    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · blue = actual dollars, orange = expected results by topic for that day/time slot. Latest: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} on ${utils.escapeHtml(latestWhen)}.${utils.escapeHtml(fundraiserSpanNote)}`;
+    const latestWhen = latest.fundraiser?.hoverLabel || latest.dayLabel || utils.formatDate(latest.dateKey, latest.dateKey);
+    const latestExpectedText = latest.expectedTopicAmount != null ? ` vs topic-expected period total ${utils.formatMoney(latest.expectedTopicAmount)}` : '';
+    const fundraiserSpanNote = axisSlots.length > points.length ? ` Timeline ticks show ${utils.formatCount(axisSlots.length)} pledge periods between the first and last result.` : '';
+    const summary = `${utils.escapeHtml(derive.title(program) || 'Program')} · Each point totals this title’s results within one pledge period. Blue = actual period total; orange = topic-expected period total. Latest period: ${utils.escapeHtml(utils.formatMoney(latest.amount))}${utils.escapeHtml(latestExpectedText)} for ${utils.escapeHtml(latestWhen)}.${utils.escapeHtml(fundraiserSpanNote)}`;
     const legend = `
       <div class="detail-graph-legend" aria-hidden="true">
-        <span><span class="detail-graph-swatch detail-graph-swatch-actual"></span>Actual</span>
-        <span><span class="detail-graph-swatch detail-graph-swatch-expected"></span>Expected results by topic</span>
+        <span><span class="detail-graph-swatch detail-graph-swatch-actual"></span>Actual pledge-period total</span>
+        <span><span class="detail-graph-swatch detail-graph-swatch-expected"></span>Expected topic period total</span>
       </div>`;
     els.detailPerformanceGraph.innerHTML = `
       <div class="detail-graph-summary">${summary}</div>
       ${legend}
-      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart with actual dollars, topic-expected dollars, and fundraiser timeline ticks between the first and last airing">
+      <svg viewBox="0 0 ${width} ${height}" class="detail-graph-svg" role="img" aria-label="Income over time chart with one actual-dollar point per pledge period and optional topic-expected period totals">
         ${yTicks}
         <line x1="${margin.left}" y1="${baselineY}" x2="${width - margin.right}" y2="${baselineY}" class="detail-graph-axis-line"></line>
         ${axisTicks}

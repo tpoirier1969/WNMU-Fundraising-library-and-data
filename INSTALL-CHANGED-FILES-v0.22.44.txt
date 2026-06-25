@@ -1,0 +1,10 @@
+WNMU Pledge Program Library v0.22.44 changed-files patch
+
+Install by copying the included files over the matching files in the current app folder.
+
+Changed behavior:
+- Program Detail > Income over time now charts pledge-period/fundraiser totals instead of individual broadcast points.
+- Expected-by-topic comparison is aggregated to the same pledge-period level.
+
+No SQL changes are required.
+Do not replace config.js. This patch does not include config.js.
