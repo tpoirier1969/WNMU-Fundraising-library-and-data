@@ -1,0 +1,8 @@
+Install v0.22.47 changed files
+
+1. Back up the current app folder.
+2. Unzip this package over the existing deployed app folder.
+3. Keep your existing config.js. This ZIP intentionally does not include config.js.
+4. Hard-refresh the browser after deployment.
+
+This patch is cumulative from the provided v0.22.46 changed-file baseline.

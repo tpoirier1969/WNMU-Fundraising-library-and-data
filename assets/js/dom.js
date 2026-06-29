@@ -137,6 +137,7 @@
     scheduleProgramTopicSelect: document.getElementById('schedule-program-topic-select'),
     scheduleModalWarning: document.getElementById('schedule-modal-warning'),
     scheduleSlotRescue: document.getElementById('schedule-slot-rescue'),
+    schedulePlaceholderControls: document.getElementById('schedule-placeholder-controls'),
     scheduleProgramResults: document.getElementById('schedule-program-results'),
     scheduleSelectedPreview: document.getElementById('schedule-selected-preview'),
     scheduleLiveBreakFlag: document.getElementById('schedule-live-break-flag'),

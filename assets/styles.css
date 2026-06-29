@@ -5928,3 +5928,55 @@ input.goal-difference-negative {
   font-style: italic;
   font-weight: 700;
 }
+
+/* v0.22.47 schedule placeholders */
+.schedule-placement.placeholder {
+  background: linear-gradient(180deg, #f8e8a6, #dfb847);
+  color: #3b2a00;
+  border: 1px dashed rgba(91, 69, 10, 0.45);
+  box-shadow: 0 6px 14px rgba(126, 95, 16, .16);
+}
+.schedule-placement.placeholder strong {
+  color: #2f2100;
+}
+.schedule-selected-card.placeholder {
+  background: #fff7da;
+  border: 1px dashed rgba(138, 101, 0, .35);
+}
+.schedule-placeholder-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px dashed rgba(138, 101, 0, .35);
+  border-radius: 14px;
+  background: #fff9e8;
+}
+.schedule-placeholder-head {
+  display: grid;
+  gap: 2px;
+}
+.schedule-placeholder-head strong {
+  color: var(--heading);
+}
+.schedule-placeholder-head span {
+  color: var(--muted);
+  font-size: .9rem;
+}
+.schedule-placeholder-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 160px) auto;
+  gap: 10px;
+  align-items: end;
+}
+.schedule-placeholder-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .schedule-placeholder-grid {
+    grid-template-columns: 1fr;
+  }
+}

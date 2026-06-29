@@ -2232,21 +2232,39 @@
     return Boolean(App.auth?.canEdit?.());
   }
 
+  function isPlaceholderPlacement(placement = {}) {
+    return Boolean(placement?.isPlaceholder || placement?.placementType === 'placeholder');
+  }
+
+  function placeholderTitle(placement = {}) {
+    return utils.normalizeText(placement?.placeholderTitle || placement?.programTitle || placement?.title || 'Placeholder');
+  }
+
+  function placeholderLengthMinutes(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 60;
+    return Math.max(15, Math.min(480, Math.round(numeric / 15) * 15));
+  }
+
   function hasScheduleClipboard() {
-    return Boolean(state.scheduleClipboard?.programId);
+    return Boolean(state.scheduleClipboard?.programId || state.scheduleClipboard?.isPlaceholder);
   }
 
   function copyPlacementToClipboard(placement) {
     if (!placement) return false;
+    const placeholder = isPlaceholderPlacement(placement);
     state.scheduleClipboard = {
-      programId: placement.programId,
-      programTitle: placement.programTitle,
-      lengthMinutes: placement.lengthMinutes,
-      liveBreakFlag: hasLiveBreakFlag(placement),
-      isNonPledge: Boolean(placement.isNonPledge),
-      sourceName: placement.sourceName || '',
-      sourceLabel: placement.sourceLabel || '',
-      liveBreakNotes: placement.liveBreakNotes || ''
+      programId: placeholder ? '' : placement.programId,
+      programTitle: placeholder ? placeholderTitle(placement) : placement.programTitle,
+      placeholderTitle: placeholder ? placeholderTitle(placement) : '',
+      lengthMinutes: placeholderLengthMinutes(placement.lengthMinutes),
+      liveBreakFlag: placeholder ? false : hasLiveBreakFlag(placement),
+      isNonPledge: Boolean(!placeholder && placement.isNonPledge),
+      isPlaceholder: placeholder,
+      placementType: placeholder ? 'placeholder' : '',
+      sourceName: placeholder ? '' : (placement.sourceName || ''),
+      sourceLabel: placeholder ? '' : (placement.sourceLabel || ''),
+      liveBreakNotes: placeholder ? '' : (placement.liveBreakNotes || '')
     };
     return true;
   }
@@ -2781,8 +2799,9 @@
     showScheduleModalWarning('', '');
     const schedule = getActiveSchedule();
     const placement = slot && schedule ? findPlacementForSlot(schedule, slot.key) : null;
-    state.selectedScheduleProgram = placement ? placement.programId : null;
-    state.scheduleNonPledgeMode = Boolean(placement?.isNonPledge);
+    state.selectedScheduleProgram = placement && !isPlaceholderPlacement(placement) ? placement.programId : null;
+    if (isPlaceholderPlacement(placement)) state.scheduleProgramQuery = placeholderTitle(placement);
+    state.scheduleNonPledgeMode = Boolean(placement?.isNonPledge && !isPlaceholderPlacement(placement));
   }
 
   function openScheduleModal(slot) {
@@ -3083,7 +3102,7 @@
   }
 
   function scheduledPlacementRuntimeMinutes(placement = {}) {
-    if (!placement || placement.isNonPledge) return null;
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return null;
     const detailKey = scheduleDetailKeyForPlacement(placement);
     const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
     const row = getProgramRowById(placement.programId || '') || {};
@@ -3134,7 +3153,7 @@
   }
 
   function scheduleDetailKeyForPlacement(placement = {}) {
-    if (!placement || placement.isNonPledge) return '';
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return '';
     const directId = String(placement.programId || '').trim();
     const row = directId ? getProgramRowById(directId) : null;
     return String(derive.programId(row) || directId || '').trim();
@@ -3238,14 +3257,16 @@
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', calendarPlacementIsLive(schedule, placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : ''].filter(Boolean).join(' ');
-        const expectationBadge = isStart ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
-        const breakWarning = isStart ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
+        const isPlaceholder = isPlaceholderPlacement(placement);
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', isPlaceholder ? 'placeholder' : '', calendarPlacementIsLive(schedule, placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : ''].filter(Boolean).join(' ');
+        const expectationBadge = isStart && !isPlaceholder ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
+        const breakWarning = isStart && !isPlaceholder ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const subtitleBits = [];
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
+          if (isPlaceholder) subtitleBits.push('placeholder');
           if (placement.isNonPledge) subtitleBits.push('non-pledge');
-          if (calendarPlacementIsLive(schedule, placement)) subtitleBits.push('live break');
+          if (!isPlaceholder && calendarPlacementIsLive(schedule, placement)) subtitleBits.push('live break');
         }
         const transferToggle = isStart && editable
           ? `<label class="schedule-placement-transfer-toggle" data-placement-transfer-toggle title="Mark this title as entered in traffic/scheduling software">
@@ -3258,7 +3279,7 @@
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${calendarPlacementIsLive(schedule, placement) ? 'true' : 'false'}" style="${style}">${transferToggle}${liveCalendarBadge}${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${calendarPlacementIsLive(schedule, placement) ? 'true' : 'false'}" style="${style}">${isPlaceholder ? '' : transferToggle}${liveCalendarBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -3427,9 +3448,9 @@
       els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml || '<div class="schedule-hint">Scheduled program details will appear here once you start assigning titles.</div>';
       return;
     }
-    const pledgePlacements = annotatePlacements(schedule).filter((placement) => !placement.isNonPledge);
+    const pledgePlacements = annotatePlacements(schedule).filter((placement) => !placement.isNonPledge && !isPlaceholderPlacement(placement));
     if (!pledgePlacements.length) {
-      els.scheduleProgramDetails.innerHTML = `${fundraiserSummaryHtml}<div class="schedule-hint">Only non-pledge markers are on this calendar right now. They stay on the calendar, but they do not appear in the pledge detail list below.</div>`;
+      els.scheduleProgramDetails.innerHTML = `${fundraiserSummaryHtml}<div class="schedule-hint">Only placeholders or non-pledge markers are on this calendar right now. They stay on the calendar, but they do not appear in the pledge detail list below until swapped for real pledge titles.</div>`;
       return;
     }
     const grouped = new Map();
@@ -3518,6 +3539,50 @@
     }).join('');
   }
 
+  function placeholderLengthOptionsHtml(selectedMinutes = 60) {
+    const selected = placeholderLengthMinutes(selectedMinutes);
+    const options = [15, 30, 60, 90, 120, 150, 180, 210, 240, 300, 360];
+    if (!options.includes(selected)) options.push(selected);
+    options.sort((a, b) => a - b);
+    return options.map((minutes) => `<option value="${minutes}"${minutes === selected ? ' selected' : ''}>${minutes} min</option>`).join('');
+  }
+
+  function renderPlaceholderControls(currentPlacement = null, editable = false) {
+    const existingPlaceholder = isPlaceholderPlacement(currentPlacement);
+    const titleValue = existingPlaceholder ? placeholderTitle(currentPlacement) : utils.normalizeText(state.scheduleProgramQuery || '');
+    const lengthValue = existingPlaceholder ? placeholderLengthMinutes(currentPlacement.lengthMinutes) : 60;
+    const buttonText = existingPlaceholder ? 'Update placeholder' : 'Add placeholder';
+    const findText = existingPlaceholder ? 'Find matching programs' : 'Search this title';
+    return `
+      <section class="schedule-placeholder-panel" aria-label="Placeholder block">
+        <div class="schedule-placeholder-head">
+          <strong>Placeholder block</strong>
+          <span>Use this when you know the title idea but have not picked the real library record yet.</span>
+        </div>
+        <div class="schedule-placeholder-grid">
+          <label class="filter-field search-grow">
+            <span class="filter-label">Placeholder title</span>
+            <input id="schedule-placeholder-title" type="text" value="${utils.escapeHtml(titleValue)}" placeholder="Type a temporary program title" ${editable ? '' : 'disabled'}>
+          </label>
+          <label class="filter-field">
+            <span class="filter-label">Length</span>
+            <select id="schedule-placeholder-length" ${editable ? '' : 'disabled'}>${placeholderLengthOptionsHtml(lengthValue)}</select>
+          </label>
+          <div class="schedule-placeholder-actions">
+            <button type="button" class="secondary" id="schedule-placeholder-save-button" ${editable ? '' : 'disabled'}>${buttonText}</button>
+            <button type="button" class="ghost" id="schedule-placeholder-find-button" ${editable ? '' : 'disabled'}>${findText}</button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function syncPlaceholderControls(currentPlacement = null, editable = false) {
+    const host = document.getElementById('schedule-placeholder-controls');
+    if (!host) return;
+    host.innerHTML = renderPlaceholderControls(currentPlacement, editable);
+  }
+
   function renderProgramPicker() {
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
@@ -3554,6 +3619,7 @@
     const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
+    syncPlaceholderControls(currentPlacement, editable);
     renderScheduleSlotRescue(schedule, slot, currentPlacement, editable);
 
     if (!editable) {
@@ -3611,7 +3677,8 @@
     }
 
     if (currentPlacement) {
-      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card">${renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min</div></div>`;
+      const placeholder = isPlaceholderPlacement(currentPlacement);
+      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''}">${placeholder ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>` : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${placeholder ? ' · placeholder' : ''}</div></div>`;
       if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;
     } else {
@@ -3620,8 +3687,9 @@
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
     if (els.scheduleLiveBreakFlag) {
-      els.scheduleLiveBreakFlag.checked = hasLiveBreakFlag(currentPlacement || {});
-      els.scheduleLiveBreakFlag.disabled = !editable;
+      const placeholder = isPlaceholderPlacement(currentPlacement);
+      els.scheduleLiveBreakFlag.checked = placeholder ? false : hasLiveBreakFlag(currentPlacement || {});
+      els.scheduleLiveBreakFlag.disabled = !editable || placeholder;
     }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
     if (els.scheduleAssignmentNote) {
@@ -3824,6 +3892,64 @@
     renderScheduledProgramDetails();
   }
 
+  async function savePlaceholderToSelectedSlot(closeAfter = true) {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to add placeholders.', 'bad'); return false; }
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    if (!schedule || !slot) return false;
+    const title = utils.normalizeText(document.getElementById('schedule-placeholder-title')?.value || state.scheduleProgramQuery || '');
+    if (!title) {
+      showScheduleModalWarning('Type a placeholder title first.', 'warn');
+      document.getElementById('schedule-placeholder-title')?.focus?.();
+      return false;
+    }
+    const lengthMinutes = placeholderLengthMinutes(document.getElementById('schedule-placeholder-length')?.value || 60);
+    const slotCount = Math.max(1, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES));
+    const existing = findPlacementForSlot(schedule, slot.key);
+    const base = {
+      id: existing?.id || utils.makeId('placeholder'),
+      placementType: 'placeholder',
+      isPlaceholder: true,
+      programId: '',
+      programTitle: title,
+      placeholderTitle: title,
+      lengthMinutes,
+      dateKey: slot.dateKey,
+      startMinutes: slot.minutes,
+      endMinutes: slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES),
+      startSlotKey: slot.key,
+      liveBreakFlag: false,
+      liveBreakNotes: '',
+      isNonPledge: false,
+      sourceName: '',
+      sourceLabel: '',
+      transferredToStation: existing?.transferredToStation || false
+    };
+    if (existing) Object.assign(existing, base);
+    else schedule.placements.push(base);
+    state.scheduleProgramQuery = title;
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    setNotice(`Added placeholder “${title}” at ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
+    if (closeAfter) closeScheduleModal();
+    return true;
+  }
+
+  function findProgramsForPlaceholder() {
+    const title = utils.normalizeText(document.getElementById('schedule-placeholder-title')?.value || '');
+    if (!title) {
+      showScheduleModalWarning('Type a placeholder title first.', 'warn');
+      document.getElementById('schedule-placeholder-title')?.focus?.();
+      return false;
+    }
+    state.scheduleProgramQuery = title;
+    if (els.scheduleProgramSearch) els.scheduleProgramSearch.value = title;
+    renderProgramPicker();
+    showScheduleModalWarning(`Showing library matches for “${title}”. Pick Schedule to replace the placeholder with a real program.`, 'ok');
+    return true;
+  }
+
   async function assignProgramToSelectedSlot(programId, options = {}) {
     if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to assign programs.', 'bad'); return; }
     const schedule = getActiveSchedule();
@@ -3854,6 +3980,9 @@
       liveBreakFlag: Boolean(els.scheduleLiveBreakFlag?.checked),
       liveBreakNotes: Boolean(els.scheduleLiveBreakFlag?.checked) ? (existing?.liveBreakNotes || '') : '',
       isNonPledge,
+      isPlaceholder: false,
+      placementType: '',
+      placeholderTitle: '',
       sourceName: row?.__external_source_name || '',
       sourceLabel: row?.__external_source_label || '',
       transferredToStation: existing?.transferredToStation || false
@@ -3921,13 +4050,16 @@
     if (!canScheduleEdit()) { setNotice('Viewer mode. Sign in as admin to move scheduled programs.', 'warn'); return; }
     const schedule = getActiveSchedule();
     const placement = findPlacementById(schedule, placementId);
-    const row = getProgramRowById(placement?.programId);
-    if (!schedule || !placement || !row) return;
-    const rightsCheck = rightsCheckForDate(row, targetDateKey);
-    if (!rightsCheck.ok) {
-      setNotice(rightsCheck.reason, 'warn');
-      showScheduleModalWarning(rightsCheck.reason, 'bad');
-      return;
+    const placeholder = isPlaceholderPlacement(placement);
+    const row = placeholder ? null : getProgramRowById(placement?.programId);
+    if (!schedule || !placement || (!placeholder && !row)) return;
+    if (!placeholder) {
+      const rightsCheck = rightsCheckForDate(row, targetDateKey);
+      if (!rightsCheck.ok) {
+        setNotice(rightsCheck.reason, 'warn');
+        showScheduleModalWarning(rightsCheck.reason, 'bad');
+        return;
+      }
     }
     const slotCount = Math.max(1, Math.ceil(Number(placement.lengthMinutes || 30) / constants.DEFAULT_SLOT_MINUTES));
     placement.dateKey = targetDateKey;
@@ -3960,45 +4092,52 @@
     const clip = state.scheduleClipboard;
     const slot = state.selectedScheduleSlot;
     const schedule = getActiveSchedule();
-    if (!clip?.programId || !slot || !schedule) {
+    if (!(clip?.programId || clip?.isPlaceholder) || !slot || !schedule) {
       showScheduleModalWarning('Nothing is copied yet.', 'warn');
       return false;
     }
-    const row = getProgramRowById(clip.programId);
-    if (!row) {
+    const placeholder = Boolean(clip.isPlaceholder);
+    const row = placeholder ? null : getProgramRowById(clip.programId);
+    if (!placeholder && !row) {
       showScheduleModalWarning('The copied title could not be found in the current database.', 'bad');
       return false;
     }
-    const rightsCheck = rightsCheckForDate(row, slot.dateKey);
-    if (!rightsCheck.ok) {
-      showScheduleModalWarning(rightsCheck.reason, 'bad');
-      return false;
+    if (!placeholder) {
+      const rightsCheck = rightsCheckForDate(row, slot.dateKey);
+      if (!rightsCheck.ok) {
+        showScheduleModalWarning(rightsCheck.reason, 'bad');
+        return false;
+      }
     }
     const existing = findPlacementForSlot(schedule, slot.key);
     if (existing) schedule.placements = schedule.placements.filter((item) => item.id !== existing.id);
-    const lengthMinutes = Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
+    const lengthMinutes = placeholder ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     schedule.placements.push({
-      id: utils.makeId('placement'),
-      programId: derive.programId(row),
-      programTitle: derive.title(row),
+      id: utils.makeId(placeholder ? 'placeholder' : 'placement'),
+      programId: placeholder ? '' : derive.programId(row),
+      programTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : derive.title(row),
+      placeholderTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : '',
+      placementType: placeholder ? 'placeholder' : '',
+      isPlaceholder: placeholder,
       dateKey: slot.dateKey,
       startMinutes: slot.minutes,
       endMinutes,
       startSlotKey: slot.key,
       lengthMinutes,
-      liveBreakFlag: Boolean(clip.liveBreakFlag),
-      liveBreakNotes: Boolean(clip.liveBreakFlag) ? (clip.liveBreakNotes || '') : '',
-      isNonPledge: Boolean(clip.isNonPledge || row?.__external_source_name),
-      sourceName: clip.sourceName || row?.__external_source_name || '',
-      sourceLabel: clip.sourceLabel || row?.__external_source_label || ''
+      liveBreakFlag: placeholder ? false : Boolean(clip.liveBreakFlag),
+      liveBreakNotes: placeholder ? '' : (Boolean(clip.liveBreakFlag) ? (clip.liveBreakNotes || '') : ''),
+      isNonPledge: Boolean(!placeholder && (clip.isNonPledge || row?.__external_source_name)),
+      sourceName: placeholder ? '' : (clip.sourceName || row?.__external_source_name || ''),
+      sourceLabel: placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')
     });
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
-    showScheduleModalWarning(`Pasted ${derive.title(row)} into ${slotLabel(slot.dateKey, slot.minutes)}.`, 'ok');
-    setNotice(`Pasted ${derive.title(row)} into ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
+    const pastedTitle = placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : derive.title(row);
+    showScheduleModalWarning(`Pasted ${pastedTitle} into ${slotLabel(slot.dateKey, slot.minutes)}.`, 'ok');
+    setNotice(`Pasted ${pastedTitle} into ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
     if (closeAfter) closeScheduleModal();
     return true;
   }
@@ -4006,7 +4145,7 @@
   async function openPlacementDetailFromContext(slot, editMode = true) {
     const schedule = getActiveSchedule();
     const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
-    if (!placement || placement.isNonPledge) return false;
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return false;
     await App.detailUi.loadProgramDetail(placement.programId, { preserveMode: editMode && canScheduleEdit() });
     if (editMode && canScheduleEdit()) App.detailUi.setDetailMode('edit');
     return true;
@@ -4050,10 +4189,11 @@
     menu.id = 'schedule-context-menu';
     menu.className = 'schedule-context-menu hidden';
     menu.innerHTML = [
-      '<button type="button" data-action="copy">Copy program</button>',
-      '<button type="button" data-action="paste">Paste copied program here</button>',
+      '<button type="button" data-action="placeholder">Add / edit placeholder…</button>',
+      '<button type="button" data-action="copy">Copy block</button>',
+      '<button type="button" data-action="paste">Paste copied block here</button>',
       '<button type="button" data-action="detail">Open details / edit</button>',
-      '<button type="button" class="destructive" data-action="delete">Delete scheduled program</button>'
+      '<button type="button" class="destructive" data-action="delete">Delete scheduled block</button>'
     ].join('');
     document.body.appendChild(menu);
     menu.addEventListener('click', (event) => {
@@ -4064,6 +4204,7 @@
       hideScheduleContextMenu();
       if (!slot) return;
       state.selectedScheduleSlot = slot;
+      if (action === 'placeholder') openScheduleModal(slot);
       if (action === 'copy') copySelectedPlacement(false);
       if (action === 'paste') void pasteClipboardToSelectedSlot(false);
       if (action === 'detail') void openPlacementDetailFromContext(slot, true);
@@ -4090,13 +4231,16 @@
     const schedule = getActiveSchedule();
     const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
     const menu = ensureScheduleContextMenu();
+    const placeholderButton = menu.querySelector('[data-action="placeholder"]');
     const copyButton = menu.querySelector('[data-action="copy"]');
     const pasteButton = menu.querySelector('[data-action="paste"]');
     const detailButton = menu.querySelector('[data-action="detail"]');
     const deleteButton = menu.querySelector('[data-action="delete"]');
+    const isPlaceholder = isPlaceholderPlacement(placement);
+    if (placeholderButton) placeholderButton.textContent = isPlaceholder ? 'Edit / match placeholder…' : 'Add placeholder…';
     if (copyButton) copyButton.disabled = !placement;
     if (pasteButton) pasteButton.disabled = !hasScheduleClipboard();
-    if (detailButton) detailButton.disabled = !placement || Boolean(placement?.isNonPledge);
+    if (detailButton) detailButton.disabled = !placement || Boolean(placement?.isNonPledge) || isPlaceholder;
     if (deleteButton) deleteButton.disabled = !placement;
     menu.classList.remove('hidden');
     menu.style.left = `${event.pageX}px`;
@@ -4161,18 +4305,20 @@
     const detailKey = scheduleDetailKeyForPlacement(item);
     const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
     const detail = cache?.detail || null;
-    const baseRow = item.isNonPledge ? {} : (getProgramRowById(item.programId || '') || {});
+    const placeholder = isPlaceholderPlacement(item);
+    const baseRow = (item.isNonPledge || placeholder) ? {} : (getProgramRowById(item.programId || '') || {});
     const displayRow = detail?.program ? utils.mergeRows(detail.program, baseRow) : baseRow;
-    const runtime = scheduledRuntimeInfo(displayRow, cache, item.lengthMinutes);
+    const runtime = placeholder ? { label: `${placeholderLengthMinutes(item.lengthMinutes)} min` } : scheduledRuntimeInfo(displayRow, cache, item.lengthMinutes);
     const markerBits = [];
+    if (placeholder) markerBits.push('placeholder');
     if (item.isNonPledge) markerBits.push('non-pledge marker');
     if (hasLiveBreakFlag(item)) markerBits.push('live break');
     if (item.transferredToStation) markerBits.push('entered in traffic');
-    const nola = item.isNonPledge ? '' : derive.nola(displayRow);
-    const topic = item.isNonPledge ? '' : derive.topicPrimary(displayRow);
-    const distributor = item.isNonPledge ? '' : derive.distributor(displayRow);
-    const description = item.isNonPledge ? '' : derive.description(displayRow);
-    const premiums = item.isNonPledge ? '' : derive.premiumSummary(displayRow);
+    const nola = (item.isNonPledge || placeholder) ? '' : derive.nola(displayRow);
+    const topic = (item.isNonPledge || placeholder) ? '' : derive.topicPrimary(displayRow);
+    const distributor = (item.isNonPledge || placeholder) ? '' : derive.distributor(displayRow);
+    const description = placeholder ? 'Temporary placeholder. Swap this block for the real program when ready.' : (item.isNonPledge ? '' : derive.description(displayRow));
+    const premiums = (item.isNonPledge || placeholder) ? '' : derive.premiumSummary(displayRow);
     const metaBits = [
       runtime?.label || (Number.isFinite(Number(item.lengthMinutes)) ? `${item.lengthMinutes} min` : ''),
       nola,
@@ -4182,7 +4328,7 @@
     ].map((part) => utils.normalizeText(part)).filter(Boolean);
 
     let timingHtml = '';
-    if (!item.isNonPledge && item.programId) {
+    if (!item.isNonPledge && !placeholder && item.programId) {
       if (cache?.loaded && !cache?.error) {
         const missingBreakInfo = !scheduleDetailHasBreakInfo(cache.detail || {});
         timingHtml = `
@@ -5098,6 +5244,21 @@
       queueScheduleInlineScrollbarSync();
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
+    els.scheduleProgramPicker?.addEventListener('click', (event) => {
+      const save = event.target.closest('#schedule-placeholder-save-button');
+      if (save) {
+        event.preventDefault();
+        event.stopPropagation();
+        void savePlaceholderToSelectedSlot(false);
+        return;
+      }
+      const find = event.target.closest('#schedule-placeholder-find-button');
+      if (find) {
+        event.preventDefault();
+        event.stopPropagation();
+        findProgramsForPlaceholder();
+      }
+    });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
     els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterRightsStartYear?.addEventListener('change', (event) => { state.scheduleFilterRightsStartYear = Boolean(event.target.checked); renderProgramPicker(); });
