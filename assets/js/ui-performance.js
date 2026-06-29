@@ -23,6 +23,7 @@
     { key: 'late_night', label: 'Late night', range: '11:00 PM–11:59 PM', startHour: 23, endHour: 24 }
   ];
   const TEMPORAL_CRITERIA = new Set(['date', 'day', 'time', 'daypart', 'weekpart', 'topic_time', 'topic_dayset', 'topic_day', 'topic_daypart_day']);
+  const FUNDRAISER_SEASON_FILTERS = ['March', 'June', 'August', 'December'];
   const MIN_SAMPLE_DEFAULT = 1;
   const MIN_SAMPLE_TOPIC_AVERAGE = 2;
 
@@ -1037,7 +1038,7 @@
       case 'day': return 'Day of week';
       case 'daypart': return 'Day-part';
       case 'weekpart': return 'Weekend vs weekday';
-      case 'time': return 'Time';
+      case 'time': return 'Start time';
       case 'topic_time': return 'Topic time slot';
       case 'topic_dayset': return 'Topic week split';
       case 'topic_day': return 'Topic by day';
@@ -1087,8 +1088,16 @@
     return group.label;
   }
 
+  function medianNumber(values = []) {
+    const clean = values.map((value) => Number(value)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+    if (!clean.length) return 0;
+    const mid = Math.floor(clean.length / 2);
+    return clean.length % 2 ? clean[mid] : ((clean[mid - 1] + clean[mid]) / 2);
+  }
+
   function metricLabel(metric = perf().metric) {
     switch (metric) {
+      case 'median_dollars': return 'Median dollars / airing';
       case 'total_dollars': return 'Total dollars';
       case 'airings': return 'Airing count';
       case 'avg_pledges': return 'Average pledges / airing';
@@ -1105,6 +1114,10 @@
 
   function metricValue(group, metric = perf().metric) {
     switch (metric) {
+      case 'median_dollars': {
+        const median = Number(group?.medianDollars);
+        return Number.isFinite(median) ? median : Number(group?.avgDollars || 0);
+      }
       case 'total_dollars': return group.totalDollars;
       case 'airings': return group.airingCount;
       case 'avg_pledges': return group.avgPledges;
@@ -1123,6 +1136,7 @@
     const num = Number(value);
     switch (metric) {
       case 'total_dollars':
+      case 'median_dollars':
       case 'avg_dollars':
       case 'dollars_per_pledge':
       case 'dollars_per_minute':
@@ -1145,6 +1159,11 @@
     const metric = options.metric || perf().metric;
     let value;
     switch (metric) {
+      case 'median_dollars': {
+        const median = Number(group?.medianDollars);
+        value = utils.formatMoney(Number.isFinite(median) ? median : Number(group?.avgDollars || 0));
+        break;
+      }
       case 'total_dollars':
         value = utils.formatMoney(group.totalDollars);
         break;
@@ -1185,7 +1204,7 @@
   function minSampleThreshold() {
     const criterion = perf().criterion;
     const metric = perf().metric;
-    if ((criterion === 'topic' || criterion === 'secondary_topic' || criterion === 'topic_time' || criterion === 'topic_dayset' || criterion === 'topic_day' || criterion === 'topic_daypart_day') && ['avg_dollars', 'avg_pledges', 'avg_sustainers', 'dollars_per_pledge', 'dollars_per_minute', 'pledges_per_minute'].includes(metric)) return MIN_SAMPLE_TOPIC_AVERAGE;
+    if ((criterion === 'topic' || criterion === 'secondary_topic' || criterion === 'topic_time' || criterion === 'topic_dayset' || criterion === 'topic_day' || criterion === 'topic_daypart_day') && ['median_dollars', 'avg_dollars', 'avg_pledges', 'avg_sustainers', 'dollars_per_pledge', 'dollars_per_minute', 'pledges_per_minute'].includes(metric)) return MIN_SAMPLE_TOPIC_AVERAGE;
     return MIN_SAMPLE_DEFAULT;
   }
 
@@ -1303,7 +1322,7 @@
     const sourceRecords = perf().records || [];
     const selectedProgramKey = utils.normalizeLookupKey(perf().programFilter || '');
     const scopedRecords = sourceRecords.filter((record) => {
-      if (perf().monthFilter !== '' && record.monthIndex !== Number(perf().monthFilter)) return false;
+      if (perf().monthFilter !== '' && scheduleSeasonLabelForRecord(record) !== perf().monthFilter) return false;
       if (perf().topicFilter && !topicMatches(record, perf().topicFilter)) return false;
       if (perf().secondaryTopicFilter && !secondaryTopicMatches(record, perf().secondaryTopicFilter)) return false;
       if (selectedProgramKey && utils.normalizeLookupKey(record.programId || record.nolaCode || record.title) !== selectedProgramKey) return false;
@@ -1340,7 +1359,9 @@
           totalSustainers: 0,
           totalMinutes: 0,
           moneyCount: 0,
+          dollarValues: [],
           avgDollars: 0,
+          medianDollars: 0,
           avgPledges: 0,
           avgSustainers: 0,
           dollarsPerPledge: 0,
@@ -1361,7 +1382,9 @@
       }
       const group = groups.get(label);
       group.airingCount += 1;
-      group.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
+      const recordDollars = Number.isFinite(record.amount) ? record.amount : 0;
+      group.totalDollars += recordDollars;
+      group.dollarValues.push(recordDollars);
       group.totalPledges += Number.isFinite(record.pledges) ? record.pledges : 0;
       group.totalSustainers += Number.isFinite(record.sustainers) ? record.sustainers : 0;
       group.totalMinutes += Number.isFinite(record.minutes) ? record.minutes : 0;
@@ -1398,6 +1421,7 @@
     const grouped = [...groups.values()].map((group) => ({
       ...group,
       avgDollars: group.airingCount ? group.totalDollars / group.airingCount : 0,
+      medianDollars: medianNumber(group.dollarValues || []),
       avgPledges: group.airingCount ? group.totalPledges / group.airingCount : 0,
       avgSustainers: group.airingCount ? group.totalSustainers / group.airingCount : 0,
       dollarsPerPledge: group.totalPledges > 0 ? group.totalDollars / group.totalPledges : 0,
@@ -1604,7 +1628,10 @@
 
   function aggregateMetricCell(target, record) {
     target.airingCount += 1;
-    target.totalDollars += Number.isFinite(record.amount) ? record.amount : 0;
+    const dollars = Number.isFinite(record.amount) ? record.amount : 0;
+    target.totalDollars += dollars;
+    if (!Array.isArray(target.dollarValues)) target.dollarValues = [];
+    target.dollarValues.push(dollars);
     target.totalPledges += Number.isFinite(record.pledges) ? record.pledges : 0;
     target.totalSustainers += Number.isFinite(record.sustainers) ? record.sustainers : 0;
     target.totalMinutes += Number.isFinite(record.minutes) ? record.minutes : 0;
@@ -1614,6 +1641,7 @@
     return {
       ...cell,
       avgDollars: cell.airingCount ? (cell.totalDollars / cell.airingCount) : 0,
+      medianDollars: medianNumber(cell.dollarValues || []),
       avgPledges: cell.airingCount ? (cell.totalPledges / cell.airingCount) : 0,
       avgSustainers: cell.airingCount ? (cell.totalSustainers / cell.airingCount) : 0,
       dollarsPerPledge: cell.totalPledges > 0 ? (cell.totalDollars / cell.totalPledges) : 0,
@@ -1623,7 +1651,7 @@
   }
 
   function emptyMetricCell(label = '') {
-    return { label, airingCount: 0, totalDollars: 0, totalPledges: 0, totalSustainers: 0, totalMinutes: 0, avgDollars: 0, avgPledges: 0, avgSustainers: 0, dollarsPerPledge: 0, dollarsPerMinute: 0, pledgesPerMinute: 0 };
+    return { label, airingCount: 0, totalDollars: 0, totalPledges: 0, totalSustainers: 0, totalMinutes: 0, avgDollars: 0, medianDollars: 0, dollarValues: [], avgPledges: 0, avgSustainers: 0, dollarsPerPledge: 0, dollarsPerMinute: 0, pledgesPerMinute: 0 };
   }
 
   function buildDaypartDaySetGroups(records) {
@@ -3540,18 +3568,15 @@
       ['Quick filter', quick],
       ['Compare by', criterionDisplayName()],
       ['Metric', metricLabel()],
-      ['Broadcast rights', currentRightsOnlyActive() ? 'Current only' : 'All']
+      ['Fundraiser season', perf().monthFilter || 'All'],
+      ['Daypart', perf().daypartScope || 'All']
     ];
+    if (perf().topicFilter) perf().criteriaSummary.push(['Main topic', perf().topicFilter]);
     if (perf().secondaryTopicFilter) perf().criteriaSummary.push(['Secondary topic', perf().secondaryTopicFilter]);
     if (!els.performanceCriteriaBar) return;
     els.performanceCriteriaBar.innerHTML = perf().criteriaSummary.map(([label, value]) => `
       <div class="performance-criteria-pill"><span class="label">${utils.escapeHtml(label)}</span><span>${utils.escapeHtml(value)}</span></div>
     `).join('');
-    if (currentRightsOnlyActive() && analysisMeta.scopedExpiredProgramCount) {
-      els.performanceCriteriaBar.innerHTML += `
-        <div class="performance-criteria-pill warn"><span class="label">Rights filter removed</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.scopedExpiredProgramCount))}</span></div>
-      `;
-    }
     if (analysisMeta.excludedIntegrityCount) {
       els.performanceCriteriaBar.innerHTML += `
         <div class="performance-criteria-pill warn"><span class="label">Excluded suspect rows</span><span>${utils.escapeHtml(utils.formatCount(analysisMeta.excludedIntegrityCount))}</span></div>
@@ -3573,6 +3598,7 @@
       case 'total_pledges': return 'This is raw pledge count represented by the filtered events.';
       case 'avg_sustainers': return 'This is total sustainers divided by airings, useful when you want to spot sustained giving strength.';
       case 'total_sustainers': return 'This is raw sustainer count represented by the filtered events.';
+      case 'median_dollars': return 'This is the middle airing-dollar result in each group. It is the default for start-time decisions because one monster airing will not hijack the answer.';
       case 'dollars_per_pledge': return 'This shows how much money each pledge was worth on average. Small pledge counts can make this wobble.';
       case 'dollars_per_minute': return 'This shows revenue efficiency by on-air minute, using imported program_minutes values.';
       case 'pledges_per_minute': return 'This shows response-rate efficiency by on-air minute.';
@@ -3587,11 +3613,11 @@
       ['Date window', perf().useAllDates ? 'All available dates' : (perf().startDate || perf().endDate ? `${utils.formatDate(perf().startDate || perf().dataShape?.oldestDate || null, 'Earliest available')} to ${utils.formatDate(perf().endDate || perf().dataShape?.newestDate || null, 'Latest available')}` : 'All available dates'), 'Filters use broadcast-day dates, so overnight hours before the boundary roll into the prior TV day.'],
       ['Broadcast day', `Starts ${utils.minutesToLabel(broadcastDayStartHour() * 60)}`, 'Anything before this hour is treated as part of the previous broadcast day for weekday/weekend and topic-slot logic.'],
       ['Quick filter', quickFilterLabel() || 'None', quickFilterExplanation() || 'No quick-filter-specific interpretation is active.'],
-      ['Fundraiser month', perf().monthFilter === '' ? 'All months' : MONTH_NAMES[Number(perf().monthFilter)] || 'Unknown month', 'This cuts across years. “December” means every included row whose broadcast date lands in December.'],
+      ['Fundraiser season', perf().monthFilter === '' ? 'All fundraiser seasons' : perf().monthFilter, 'This cuts across years and uses saved fundraiser schedule labels/date windows when available. A fundraiser that starts a day or two in the previous month still rolls into March, June, August, or December when the schedule/date context makes that clear.'],
       ['Day set', daySetLabel(perf().daySetFilter), perf().daySetFilter ? 'This limits the comparison to the selected slice of the week.' : 'Leave this on All week to see the full filter window. For day-part or topic timing work, split Mon-Fri, Saturday, and Sunday when the weekly average is too coarse.'],
+      ['Daypart', perf().daypartScope || 'All dayparts', perf().daypartScope ? 'Limits the start-time comparison to this broad part of the day. Useful for questions like afternoon programming at 1:00 vs 3:00.' : 'Leave this on All dayparts to compare every start bucket in the selected fundraiser/topic window.'],
       ['Topic filter', perf().topicFilter || 'All topics', perf().criterion === 'topic_time' ? 'Pick one main topic here to answer the real scheduling question: when does that topic perform best?' : perf().criterion === 'topic_dayset' ? 'This view becomes especially useful with no topic filter because it compares each topic across Mon-Fri, Saturday, and Sunday.' : 'Checks primary topic metadata inherited from the library.'],
       ['Secondary topic filter', perf().secondaryTopicFilter || 'All secondary topics', 'Limits the records to one secondary topic. Use this with Main topic = Music to compare or inspect Music substyles.'],
-      ['Broadcast rights', currentRightsOnlyActive() ? 'Current broadcast rights only' : 'All matched program history', currentRightsOnlyActive() ? 'Rows whose matched library title is expired, inactive, not yet in rights, or missing a verifiable library record are hidden.' : 'Expired, inactive, and out-of-window titles remain visible so historical performance is not silently erased.'],
       ['Compare by', criterionDisplayName(), perf().criterion === 'topic_time' ? 'Each row in the table is one broadcast-day and hour slot. The chart becomes a weekly heatmap so strong slots stand out fast.' : perf().criterion === 'topic_dayset' ? 'Each row in the heatmap is one topic split into Mon-Fri, Saturday, and Sunday.' : `Each row in the comparison table is one ${criterionDisplayName().toLowerCase()} bucket.`],
       ['Metric', metricLabel(), metricReadText()],
       ['Minimum airing warning', meta.minGroupAirings > 1 ? `${utils.formatCount(meta.minGroupAirings)} airings` : 'None', minSampleExplanation()],
@@ -3794,6 +3820,7 @@
     const finalize = (group) => ({
       ...group,
       avgDollars: group.airingCount ? group.totalDollars / group.airingCount : 0,
+      medianDollars: medianNumber(group.dollarValues || []),
       avgPledges: group.airingCount ? group.totalPledges / group.airingCount : 0,
       avgSustainers: group.airingCount ? group.totalSustainers / group.airingCount : 0,
       dollarsPerPledge: group.totalPledges > 0 ? group.totalDollars / group.totalPledges : 0,
@@ -3869,7 +3896,7 @@
     const delta = metricValue(slotA) - metricValue(slotB);
     const winnerText = delta === 0 ? 'These two slots are tied on the selected metric in the current filter window.' : `${delta > 0 ? slotA.label : slotB.label} is currently ahead on ${metricLabel().toLowerCase()}.`;
     els.performanceIntelligence.innerHTML = `
-      <div class="performance-mini-note">Scheduling intelligence respects the current date window, month filter, and broadcast-day boundary. Overnight airings before ${utils.escapeHtml(utils.minutesToLabel(broadcastDayStartHour() * 60))} are rolled into the previous TV day.</div>
+      <div class="performance-mini-note">Scheduling intelligence respects the current date window, fundraiser-season filter, and broadcast-day boundary. Overnight airings before ${utils.escapeHtml(utils.minutesToLabel(broadcastDayStartHour() * 60))} are rolled into the previous TV day.</div>
       <div class="performance-intelligence-grid">
         ${insightCard('Best slot overall', bestOverall, confidenceForGroup(bestOverall))}
         ${insightCard('Best Mon-Fri slice', bySlice.weekday, confidenceForGroup(bySlice.weekday || {}))}
@@ -3963,6 +3990,7 @@
       topic_winners: 'Top Topics',
       secondary_topic_winners: 'Secondary topic winners',
       topic_time_performance: 'Topic Time Performance',
+      start_time_performance: 'Start time performance',
       topic_slot_winners: 'Topic winners by slot',
       topic_week_split: 'Topic week split',
       topic_by_day: 'Topic by day',
@@ -4004,6 +4032,8 @@
         return 'Ranks main topics by average dollars per qualified airing. This is not the same thing as top individual programs.';
       case 'secondary_topic_winners':
         return 'Ranks secondary topics by average dollars per qualified airing. Use Main topic = Music when you want to compare Music subtopics only.';
+      case 'start_time_performance':
+        return 'Compares exact 30-minute start buckets using the selected fundraiser season, topic/subtopic, day set, and date window. Median dollars is the default so 8:00, 9:30, 10:30, 1:00, and 3:00 can be compared without one weird jackpot airing rigging the answer.';
       case 'topic_slot_winners':
         return 'Shows which main topic currently wins each day-and-30-minute slot, with long programs split across the half-hour blocks they actually occupy, so you can stop guessing whether Thursday at 7:00 AM wants Health, Science, or something else.';
       case 'topic_week_split':
@@ -4063,6 +4093,8 @@
         return 'Use this for broad strategy: which topics tend to win, regardless of individual title.';
       case 'topic_time_performance':
         return 'Use this when you want to know when a selected topic tends to work best during the week.';
+      case 'start_time_performance':
+        return 'Use this to settle start-time arguments with 30-minute buckets. It defaults to median dollars so one freakish pledge airing does not bully the schedule.';
       case 'topic_slot_winners':
         return 'Use this to answer “what topic should own this 30-minute slot?” instead of “what single title happened to do well there?”';
       case 'topic_week_split':
@@ -4097,7 +4129,7 @@
   function quickFilterControlImpact(name) {
     const notes = [
       'Changing the date range or turning on Use all available dates changes which fundraiser airings are included.',
-      'Changing Fundraiser month, Day set, Main topic, Secondary topic, Program, or the label search narrows the same quick filter instead of turning it off.',
+      'Changing Fundraiser season, Day set, Daypart, Main topic, Secondary topic, or the label search narrows the same quick filter instead of turning it off.',
       'Changing Compare by, Metric, or Chart type turns this back into a custom view because those settings replace the quick-filter preset.'
     ];
     if (name === 'topic_time_performance' && !perf().topicFilter) {
@@ -4191,6 +4223,7 @@
     if (els.performanceCriterionSelect) els.performanceCriterionSelect.value = perf().criterion;
     if (els.performanceMetricSelect) els.performanceMetricSelect.value = perf().metric;
     if (els.performanceDaySetSelect) els.performanceDaySetSelect.value = perf().daySetFilter || '';
+    if (els.performanceDaypartScopeSelect) els.performanceDaypartScopeSelect.value = perf().daypartScope || '';
     if (els.performanceChartTypeSelect) els.performanceChartTypeSelect.value = perf().chartType;
     if (els.performanceTopnSelect) {
       els.performanceTopnSelect.value = String(perf().topN);
@@ -4348,6 +4381,7 @@
     secondary_topic_winners: { criterion: 'secondary_topic', metric: 'avg_dollars', chartType: 'bar', topN: 12, monthFilter: '', topicFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_winners: { criterion: 'topic', metric: 'avg_dollars', chartType: 'bar', topN: 10, monthFilter: '', topicFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_time_performance: { criterion: 'topic_time', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
+    start_time_performance: { criterion: 'time', metric: 'median_dollars', chartType: 'line', topN: 999, monthFilter: '', topicFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_slot_winners: { criterion: 'time', metric: 'avg_dollars', chartType: 'heatmap', topN: 999, monthFilter: '', topicFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_week_split: { criterion: 'topic_dayset', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', topicFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
     topic_by_day: { criterion: 'topic_day', metric: 'avg_dollars', chartType: 'auto', topN: 999, monthFilter: '', topicFilter: '', secondaryTopicFilter: '', labelFilter: '', programFilter: '', daySetFilter: '', daypartScope: '', weekpartScope: '' },
@@ -4433,6 +4467,7 @@
     rightsOnlyControl?.addEventListener('change', (event) => { perf().includeExpiredPrograms = !Boolean(event.target.checked); rerender(); });
     els.performanceMonthSelect?.addEventListener('change', (event) => { perf().monthFilter = event.target.value; rerender(); });
     els.performanceDaySetSelect?.addEventListener('change', (event) => { perf().daySetFilter = event.target.value || ''; rerender(); });
+    els.performanceDaypartScopeSelect?.addEventListener('change', (event) => { perf().daypartScope = event.target.value || ''; rerender(); });
     els.performanceTopicSelect?.addEventListener('change', (event) => { perf().topicFilter = event.target.value || ''; rerender(); });
     els.performanceSecondaryTopicSelect?.addEventListener('change', (event) => { perf().secondaryTopicFilter = event.target.value || ''; rerender(); });
     els.performanceSlotCompareA?.addEventListener('change', (event) => { perf().slotCompareA = event.target.value || ''; renderSchedulingIntelligence(); });

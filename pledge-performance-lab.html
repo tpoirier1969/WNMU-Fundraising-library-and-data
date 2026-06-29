@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.44</title>
+  <title>WNMU Pledge Performance Analytics v0.22.45</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -166,7 +166,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.44</div>
+        <div class="eyebrow">Admin analytics · v0.22.45</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -206,13 +206,6 @@
         <select id="secondary-topic"><option value="all">All secondary topics</option></select>
       </div>
       <div class="field">
-        <label for="rights-scope">Broadcast rights</label>
-        <select id="rights-scope">
-          <option value="all">All rights statuses</option>
-          <option value="current">Current rights only</option>
-        </select>
-      </div>
-      <div class="field">
         <label for="evidence">Evidence filter</label>
         <select id="evidence" title="Use this only when you want to hide low-sample rows. It does not apply equally to every question, especially live breaks and new comparisons.">
           <option value="all">Show all evidence</option>
@@ -235,6 +228,7 @@
               <div class="field adv-metric-field">
                 <label for="adv-metric">Rank by</label>
                 <select id="adv-metric">
+                  <option value="median" selected>Median $ / airing</option>
                   <option value="avg">Average $ / airing</option>
                   <option value="total">Total dollars</option>
                   <option value="pledges">Pledge count</option>
@@ -353,12 +347,12 @@
     libraryRows: [],
     libraryById: new Map(),
     libraryByTitle: new Map(),
-    question: 'programs',
+    question: 'startTimes',
     season: 'all',
     year: 'all',
     search: '',
     evidence: 'all',
-    metric: 'avg',
+    metric: 'median',
     topicFilters: [],
     secondaryTopicFilter: 'all',
     rightsScope: 'all',
@@ -1256,6 +1250,7 @@
       broadcasts: records.reduce((sum, record) => sum + Number(firstNonEmpty(record.broadcasts, 1) || 0), 0),
       seasons: seasons.size,
       avg: records.length ? dollars / records.length : 0,
+      median: medianValue(records.map((record) => Number(record.dollars || 0))),
       weak: records.length < WEAK_BROADCASTS || seasons.size < WEAK_SEASONS,
       mix: mix.label,
       allFour: mix.allFour,
@@ -1669,6 +1664,7 @@
   }
 
   function metricValue(row) {
+    if (state.metric === 'median') return Number(row.median || 0);
     if (state.metric === 'total') return Number(row.dollars || 0);
     if (state.metric === 'pledges') return Number(row.pledges || 0);
     if (state.metric === 'broadcasts') return Number(row.broadcasts || 0);
@@ -1676,6 +1672,7 @@
   }
 
   function formatMetricValue(row) {
+    if (state.metric === 'median') return formatMoney(row.median || 0);
     if (state.metric === 'total') return formatMoney(row.dollars || 0);
     if (state.metric === 'pledges') return formatNumber(row.pledges || 0);
     if (state.metric === 'broadcasts') return formatNumber(row.broadcasts || 0);
@@ -1683,6 +1680,7 @@
   }
 
   function metricLabel() {
+    if (state.metric === 'median') return 'Median / airing';
     if (state.metric === 'total') return 'Total dollars';
     if (state.metric === 'pledges') return 'Pledges';
     if (state.metric === 'broadcasts') return 'Broadcasts';
@@ -1695,6 +1693,35 @@
     const suffix = rightsEndNote(row);
     if (!programId) return `${label}${suffix}`;
     return `<button type="button" class="program-link" data-program-detail-id="${escapeHtml(programId)}" data-program-detail-title="${escapeHtml(row.title || '')}">${label}</button>${suffix}`;
+  }
+
+  function startTimeLabel(record = {}) {
+    const minutes = Number(record.startMinutes);
+    return Number.isFinite(minutes) ? formatTimeFromMinutes(Math.floor(minutes / 30) * 30) : 'Unknown start time';
+  }
+
+  function startTimeSortKey(row = {}) {
+    const value = Number(row.startMinutes);
+    return Number.isFinite(value) ? value : 99999;
+  }
+
+  function startTimeRead(rows = []) {
+    if (!rows.length) return 'No start-time records match the current filters.';
+    const top = [...rows].sort((a, b) => Number(b.median || 0) - Number(a.median || 0) || Number(b.avg || 0) - Number(a.avg || 0))[0];
+    const useful = rows.filter((row) => Number(row.broadcasts || 0) >= 3);
+    const bestUseful = useful[0] || top;
+    return `Start-time performance is grouped in <b>30-minute start buckets</b>, not rounded to the hour. The default rank is <b>median dollars per airing</b>, so one freakishly good broadcast does not get to boss the schedule around.<br><br>Best current bucket: <b>${escapeHtml(bestUseful.title)}</b> with median <b>${formatMoney(bestUseful.median || 0)}</b>, average <b>${formatMoney(bestUseful.avg || 0)}</b>, across <b>${formatNumber(bestUseful.broadcasts || 0)}</b> airing(s).<br><br>Use Pledge season = March/June/August/December, plus Primary and Secondary topic, to test specific arguments like <b>August Music at 8:00 vs 9:30 vs 10:30</b>, or afternoon blocks like <b>1:00 vs 3:00</b>.`;
+  }
+
+  function rowsStartTimes() {
+    return applyEvidence([...groupBy(filteredRecordsFor('startTimes'), startTimeLabel)]
+      .map(([title, records]) => {
+        const row = summarizeGroup(title, records);
+        row.startMinutes = records.map((record) => Number(record.startMinutes)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b)[0];
+        return row;
+      })
+      .filter((row) => row.title !== 'Unknown start time')
+      .sort((a, b) => startTimeSortKey(a) - startTimeSortKey(b)));
   }
 
   function rowsPrograms() {
@@ -1977,6 +2004,27 @@
   }
 
   const QUESTIONS = {
+    startTimes: {
+      title: 'Start time performance',
+      summary: 'Median and average income by 30-minute program start bucket.',
+      graphTitle: 'Start time buckets by median dollars per airing',
+      tableTitle: 'Start time performance',
+      tableNote: 'Grouped in exact 30-minute start buckets. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',
+      rows: rowsStartTimes,
+      metricDriven: true,
+      metric: (rows) => rows[0] ? formatMoney(rows[0].median || 0) : '—',
+      tag: 'time lens',
+      read: startTimeRead,
+      columns: [
+        ['Start time', (row) => labelWithMixCell(row), '', (row) => startTimeSortKey(row)],
+        ['Median / airing', (row) => formatMoney(row.median || 0), 'money emphasis', (row) => row.median || 0],
+        ['Avg / airing', (row) => formatMoney(row.avg || 0), 'money', (row) => row.avg || 0],
+        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
+        ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
+      ]
+    },
     programs: {
       title: 'What programs raise the most?',
       summary: 'Best current earners for the selected season/year.',
@@ -2391,7 +2439,7 @@
   }
 
   function chartRowLabel(row) {
-    const showMix = ['programs', 'topicOverview', 'topics', 'secondaryTopics', 'seasonal', 'live'].includes(state.question) && row.mix;
+    const showMix = ['startTimes', 'programs', 'topicOverview', 'topics', 'secondaryTopics', 'seasonal', 'live'].includes(state.question) && row.mix;
     const titleHtml = `<span class="chart-title-label">${escapeHtml(row.title)}</span>`;
     return `${titleHtml}${showMix ? `<span class="chart-season-mix">${escapeHtml(row.mix)}</span>` : ''}`;
   }
@@ -2399,6 +2447,7 @@
   function questionSourceText(question = {}) {
     if (state.question === 'seasonOverview') return seasonOverviewUsesDriveTotals() ? 'Using saved fundraiser totals.' : 'Using content-level airing rows because content filters are active.';
     if (question.source === 'schedule') return 'Using saved Scheduling placements.';
+    if (state.question === 'startTimes') return 'Using imported pledge airing rows grouped by 30-minute start bucket.';
     if (state.question === 'seasonal' || state.question === 'topics' || state.question === 'topicOverview') return 'Using imported pledge airing rows joined to primary library topics.';
     if (state.question === 'secondaryTopics') return 'Using imported pledge airing rows joined to secondary library topics.';
     return 'Using imported pledge airing rows joined to library program identity.';
@@ -2481,7 +2530,7 @@
   }
 
   function renderSeasonalLiftChart(rows) {
-    const chartRows = rows.slice(0, 12);
+    const chartRows = state.question === 'startTimes' ? rows : rows.slice(0, 12);
     if (!chartRows.length) {
       dom.chart.innerHTML = '<div class="empty">No graphable rows.</div>';
       return;
@@ -2515,7 +2564,7 @@
       renderSeasonalLiftChart(rows);
       return;
     }
-    const chartRows = rows.slice(0, 12);
+    const chartRows = state.question === 'startTimes' ? rows : rows.slice(0, 12);
     if (!chartRows.length) {
       dom.chart.innerHTML = '<div class="empty">No graphable rows.</div>';
       return;

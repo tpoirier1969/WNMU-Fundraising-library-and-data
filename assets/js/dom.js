@@ -204,6 +204,8 @@
     performanceIncludeExpired: document.getElementById('performance-include-expired'),
     performanceCurrentRightsOnly: document.getElementById('performance-current-rights-only'),
     performanceMonthSelect: document.getElementById('performance-month-select'),
+    performanceDaySetSelect: document.getElementById('performance-day-set-select'),
+    performanceDaypartScopeSelect: document.getElementById('performance-daypart-scope-select'),
     performanceTopicSelect: document.getElementById('performance-topic-select'),
     performanceSecondaryTopicSelect: document.getElementById('performance-secondary-topic-select'),
     performanceQuickFilterPill: document.getElementById('performance-quick-filter-pill'),
