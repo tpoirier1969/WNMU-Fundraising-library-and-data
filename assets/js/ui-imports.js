@@ -880,12 +880,24 @@
     return utils.dateKeyFromDate(date);
   }
 
+  function excelFractionTime(value) {
+    const num = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+    if (!Number.isFinite(num) || num < 0 || num >= 1) return '';
+    let totalMinutes = Math.round(num * 24 * 60);
+    if (totalMinutes >= 1440) totalMinutes = 1439;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+  }
+
   function parseTimeish(value) {
     if (value == null || value === '') return '';
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
       return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}:00`;
     }
     if (typeof value === 'number' && Number.isFinite(value)) {
+      const excel = excelFractionTime(value);
+      if (excel) return excel;
       const raw = String(Math.trunc(value));
       if (raw.length <= 4) {
         const padded = raw.padStart(4, '0');
@@ -894,6 +906,8 @@
     }
     const text = utils.normalizeText(value);
     if (!text) return '';
+    const excel = excelFractionTime(text);
+    if (excel) return excel;
     if (/^\d{3,4}$/.test(text)) {
       const padded = text.padStart(4, '0');
       return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:00`;

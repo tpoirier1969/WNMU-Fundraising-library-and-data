@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Performance Analytics v0.22.45</title>
+  <title>WNMU Pledge Performance Analytics v0.22.46</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
   <style>
@@ -166,7 +166,7 @@
     <div class="brand">
       <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
       <div>
-        <div class="eyebrow">Admin analytics · v0.22.45</div>
+        <div class="eyebrow">Admin analytics · v0.22.46</div>
         <h1>Pledge Performance Analytics</h1>
         <p>Admin-only performance analytics using live Supabase data. This page does not save changes.</p>
       </div>
@@ -494,23 +494,80 @@
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
+
+  function objectFromMaybeJson(value) {
+    if (!value) return null;
+    if (typeof value === 'object' && !Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      const raw = value.trim();
+      if (!raw || !/^[{[]/.test(raw)) return null;
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function payloadValue(row = {}, keys = [], regex = null) {
+    const payload = objectFromMaybeJson(row?.raw_payload || row?.rawPayload || row?.raw || row?.raw_workbook_row || row?.source_row || row?.sourceRow);
+    if (!payload) return null;
+    for (const key of keys) {
+      if (payload[key] != null && text(payload[key]) !== '') return payload[key];
+    }
+    if (regex) {
+      for (const [key, value] of Object.entries(payload)) {
+        if (regex.test(key) && text(value) !== '') return value;
+      }
+    }
+    return null;
+  }
+
+  function excelFractionMinutes(value) {
+    const num = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+    if (!Number.isFinite(num) || num < 0 || num >= 1) return null;
+    let total = Math.round(num * 24 * 60);
+    if (total >= 1440) total = 1439;
+    return total;
+  }
+
+  function isMidnightMinutes(value) {
+    const minutes = parseMinutes(value);
+    return Number.isFinite(minutes) && minutes === 0;
+  }
+
+  function preferredRawTime(row = {}, fallback = null) {
+    const raw = payloadValue(row, ['air_time', 'program_time', 'break_time', 'broadcast_time', 'time'], /(air_?time|program_?time|break_?time|broadcast_?time|time)$/i);
+    if (Number.isFinite(parseMinutes(raw)) && (isMidnightMinutes(fallback) || !Number.isFinite(parseMinutes(fallback)))) return raw;
+    return fallback;
+  }
+
   function parseMinutes(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return (value.getHours() * 60) + value.getMinutes();
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const excel = excelFractionMinutes(value);
+      if (Number.isFinite(excel)) return excel;
+    }
     const raw = text(value);
     if (!raw) return null;
+    const excel = excelFractionMinutes(raw);
+    if (Number.isFinite(excel)) return excel;
     const ampm = raw.match(/\b(am|pm)\b/i)?.[1]?.toLowerCase() || '';
-    const match = raw.match(/(\d{1,2})(?::?(\d{2}))?/);
+    const match = raw.match(/^(\d{1,2})(?::?(\d{2}))?(?::?(\d{2}))?(?:\s*(?:am|pm))?$/i);
     if (!match) return null;
     let hour = Number(match[1] || 0);
     const minute = Number(match[2] || 0);
     if (ampm === 'pm' && hour < 12) hour += 12;
     if (ampm === 'am' && hour === 12) hour = 0;
-    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
     return (hour * 60) + minute;
   }
 
   function parseAiringDate(row) {
     const explicitDate = text(firstNonEmpty(row?.air_date, row?.aired_date, row?.drive_date, ''));
-    const explicitTime = text(firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, ''));
+    const explicitTime = preferredRawTime(row, firstNonEmpty(row?.air_time, row?.time_of_day, row?.scheduled_time, ''));
     if (explicitDate) {
       const date = parseLocalDate(explicitDate);
       if (!date) return { date: null, dateKey: '', startMinutes: null };
@@ -938,6 +995,33 @@
     return unique.some((item) => item.live) ? unique.find((item) => item.live) : unique[0];
   }
 
+
+  function sameTwelveHourClock(a, b) {
+    if (!Number.isFinite(Number(a)) || !Number.isFinite(Number(b))) return false;
+    return Math.abs((Number(a) % 720) - (Number(b) % 720)) <= 1;
+  }
+
+  function applyScheduleStartCorrection(record = {}, scheduleMatch = null) {
+    if (!record || !scheduleMatch) return false;
+    const start = Number(scheduleMatch.start);
+    if (!Number.isFinite(start) || start < 0) return false;
+    const current = Number(record.startMinutes);
+    if (!Number.isFinite(current) || Math.abs(current - start) <= 1) return false;
+    const rawTime = firstNonEmpty(record.row?.air_time, payloadValue(record.row, ['air_time', 'program_time', 'break_time', 'broadcast_time', 'time'], /(air_?time|program_?time|break_?time|broadcast_?time|time)$/i), '');
+    const rawText = text(rawTime);
+    const safe = sameTwelveHourClock(current, start)
+      || (current === 0 && /^(0{1,2}:?0{2}(?::0{2})?|12:?0{2}\s*a\.?m\.?)$/i.test(rawText));
+    if (!safe) return false;
+    record.startMinutes = start;
+    if (record.date instanceof Date && !Number.isNaN(record.date.getTime())) {
+      record.date.setHours(Math.floor(start / 60) % 24, start % 60, 0, 0);
+      record.dateKey = localDateKey(record.date);
+    }
+    record.daypart = daypartFromMinutes(start);
+    record.timeCorrectedFromSchedule = true;
+    return true;
+  }
+
   function buildRecords(airings, libraryRows, schedules) {
     const indexes = buildLibraryIndexes(libraryRows);
     const scheduleIndex = buildScheduleIndex(schedules, indexes);
@@ -1006,6 +1090,7 @@
       const scheduleMatch = findScheduleMatch(record, scheduleIndex);
       if (scheduleMatch) {
         record.scheduleMatched = true;
+        applyScheduleStartCorrection(record, scheduleMatch);
         record.live = Boolean(scheduleMatch.live);
         record.liveState = scheduleMatch.live ? 'live' : 'nonlive';
         record.liveSource = 'schedule';
@@ -1649,6 +1734,7 @@
     const sourceRecords = question.source === 'schedule' ? state.scheduleRecords : state.records;
     return sourceRecords.filter((record) => {
       if (!recordInAnalyticsCohort(record)) return false;
+      if (question.excludeNonSpecific && record.isNonSpecific) return false;
       if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.nola}`).includes(searchKey)) return false;
       if (selectedTopics.length && !selectedTopics.includes(record.topic)) return false;
       if (selectedSecondaryTopic !== 'all' && (record.secondaryTopic || '') !== selectedSecondaryTopic) return false;
@@ -2012,6 +2098,7 @@
       tableNote: 'Grouped in exact 30-minute start buckets. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',
       rows: rowsStartTimes,
       metricDriven: true,
+      excludeNonSpecific: true,
       metric: (rows) => rows[0] ? formatMoney(rows[0].median || 0) : '—',
       tag: 'time lens',
       read: startTimeRead,
@@ -2312,10 +2399,21 @@
     return true;
   }
 
+
+  async function fetchAiringsForAnalytics() {
+    const base = 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash,program_minutes';
+    try {
+      return await fetchAll(AIRINGS_TABLE, `${base},raw_payload`, 'air_date');
+    } catch (error) {
+      console.warn('Airings raw_payload fetch failed; retrying without raw payload.', error);
+      return fetchAll(AIRINGS_TABLE, base, 'air_date');
+    }
+  }
+
   async function load() {
     note('Loading live pledge performance records…');
     const [airings, scheduleRows] = await Promise.all([
-      fetchAll(AIRINGS_TABLE, 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash,program_minutes', 'air_date'),
+      fetchAiringsForAnalytics(),
       fetchAll(SCHEDULES_TABLE, 'id,title,start_date,end_date,created_at,updated_at,schedule_data', 'start_date')
     ]);
     const libraryRows = await fetchLibraryRows();

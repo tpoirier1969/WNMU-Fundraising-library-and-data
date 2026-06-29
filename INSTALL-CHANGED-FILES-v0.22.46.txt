@@ -1,0 +1,12 @@
+Install v0.22.46 changed files by copying these files over the existing app files:
+
+index.html
+pledge-performance-lab.html
+version.json
+assets/js/core.js
+assets/js/ui-performance.js
+assets/js/ui-imports.js
+
+Do not replace config.js. This package does not include config.js.
+
+After installing, hard-refresh the browser or clear cached app files if the footer/version pill still shows an older version.

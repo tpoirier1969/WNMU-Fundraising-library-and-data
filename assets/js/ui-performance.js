@@ -96,6 +96,93 @@
     return null;
   }
 
+
+  function objectFromMaybeJson(value) {
+    if (!value) return null;
+    if (typeof value === 'object' && !Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (!text || !/^[{[]/.test(text)) return null;
+      try {
+        const parsed = JSON.parse(text);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function rawPayloadForRow(row = {}) {
+    return objectFromMaybeJson(row?.raw_payload || row?.rawPayload || row?.raw || row?.raw_workbook_row || row?.source_row || row?.sourceRow);
+  }
+
+  function excelFractionToClock(value) {
+    const num = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+    if (!Number.isFinite(num) || num < 0 || num >= 1) return null;
+    let totalMinutes = Math.round(num * 24 * 60);
+    if (totalMinutes >= 1440) totalMinutes = 1439;
+    return {
+      hour: Math.floor(totalMinutes / 60),
+      minute: totalMinutes % 60,
+      second: 0,
+      source: 'excel_fraction'
+    };
+  }
+
+  function parseAiringClock(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return { hour: value.getHours(), minute: value.getMinutes(), second: value.getSeconds() || 0, source: 'date_object' };
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const excel = excelFractionToClock(value);
+      if (excel) return excel;
+    }
+    const text = utils.normalizeText(value);
+    if (!text) return null;
+    const excel = excelFractionToClock(text);
+    if (excel) return excel;
+    const parsed = utils.parseClockTime(text);
+    if (parsed) return { hour: parsed.hour, minute: parsed.minute, second: parsed.second || 0, source: 'clock_text' };
+    return null;
+  }
+
+  function rawPayloadTimeValue(row = {}) {
+    const payload = rawPayloadForRow(row);
+    if (!payload) return null;
+    return candidateValue(payload, TIME_ONLY_KEYS, /(air_?time|program_?time|break_?time|slot_?time|scheduled_?time|time_?of_?day|airtime|broadcast_?time)/i);
+  }
+
+  function isMidnightClockText(value) {
+    const parsed = parseAiringClock(value);
+    return Boolean(parsed && parsed.hour === 0 && parsed.minute === 0 && (parsed.second || 0) === 0);
+  }
+
+  function preferredTimeValueForRow(row = {}, fallbackValue = null) {
+    const rawValue = rawPayloadTimeValue(row);
+    if (parseAiringClock(rawValue)) {
+      if (isMidnightClockText(fallbackValue) || !parseAiringClock(fallbackValue)) return rawValue;
+    }
+    return fallbackValue;
+  }
+
+  function refreshTemporalLabels(record) {
+    if (!record) return;
+    record.day = dayLabel(record);
+    record.date = dateLabel(record);
+    record.time = timeBucketLabel(record);
+    record.hour = hourBucketLabel(record);
+    record.topicTime = topicTimeLabel(record);
+    record.topicWeekSplit = topicWeekSplitLabel(record);
+    record.topicDay = topicDayLabel(record);
+    record.topicDaypartDay = topicDaypartDayLabel(record);
+    record.topicTimeSortKey = topicTimeSortKey(record);
+    record.topicDaySortKey = topicDaySortKey(record);
+    record.topicDaypartDaySortKey = topicDaypartDaySortKey(record);
+    const dateForMonth = record.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime()) ? record.broadcastWhen : record.when;
+    record.monthIndex = record.hasDate && dateForMonth instanceof Date && !Number.isNaN(dateForMonth.getTime()) ? dateForMonth.getMonth() : null;
+  }
+
   function placementLiveBreakFlag(placement = {}) {
     const parsed = parseBooleanish(placement?.liveBreakFlag);
     if (parsed === true) return true;
@@ -108,7 +195,7 @@
     const rawDateTime = candidateValue(row, DATETIME_KEYS, /(aired_?at|air_?date|drive_?date|date_?time|datetime|broadcast_?at|scheduled_?at|airing_?date)/i);
     const rawTimeOnly = candidateValue(row, TIME_ONLY_KEYS, /(air_?time|slot_?time|scheduled_?time|time_?of_?day|airtime|broadcast_?time)/i);
     const explicitAirDate = utils.normalizeText(utils.firstNonEmpty(row?.air_date, row?.broadcast_date, row?.date_key, row?.airing_date));
-    const explicitAirTime = utils.normalizeText(rawTimeOnly);
+    const explicitAirTime = preferredTimeValueForRow(row, rawTimeOnly);
     const out = {
       when: null,
       broadcastWhen: null,
@@ -124,17 +211,17 @@
       out.rawDateText = parsedDate.iso;
       const normalizedTime = utils.normalizeText(timeText);
       if (normalizedTime) out.rawTimeText = normalizedTime;
-      const timeMatch = normalizedTime.match(/^(\d{1,2})(?::?(\d{2}))?(?::?(\d{2}))?$/);
-      const hour = timeMatch ? Number(timeMatch[1] || 0) : 12;
-      const minute = timeMatch ? Number(timeMatch[2] || 0) : 0;
-      const second = timeMatch ? Number(timeMatch[3] || 0) : 0;
+      const parsedClock = parseAiringClock(timeText);
+      const hour = parsedClock ? parsedClock.hour : 12;
+      const minute = parsedClock ? parsedClock.minute : 0;
+      const second = parsedClock ? parsedClock.second || 0 : 0;
       const [year, month, day] = parsedDate.iso.split('-').map((part) => Number(part));
       const local = new Date(year, month - 1, day, hour, minute, second || 0, 0);
       if (Number.isNaN(local.getTime())) return false;
       out.when = local;
       out.broadcastWhen = broadcastAnchorDate(local);
       out.hasDate = true;
-      out.hasExplicitTime = Boolean(normalizedTime && timeMatch);
+      out.hasExplicitTime = Boolean(parsedClock);
       return true;
     };
 
@@ -642,6 +729,58 @@
     return [];
   }
 
+
+  function sameDateScheduleCandidates(record, placementIndex) {
+    if (!record?.hasDate) return [];
+    const signature = record.signature || signatureForProgram(null, record);
+    const nolaKey = utils.normalizeLookupKey(record?.nolaCode || record?.nola_code || record?.nola || '');
+    const titleKey = utils.normalizeLookupKey(record?.title || record?.program_title || record?.name || '');
+    const dateKey = scheduleDateKeyForRecord(record);
+    const candidates = [
+      ...(placementIndex?.byDate?.get(`${signature}|${dateKey}`) || []),
+      ...(placementIndex?.byDateNola?.get(`${nolaKey}|${dateKey}`) || []),
+      ...(placementIndex?.byDateTitle?.get(`${titleKey}|${dateKey}`) || [])
+    ];
+    const unique = [];
+    const seen = new Set();
+    candidates.forEach((item) => {
+      const key = `${item.scheduleId}|${item.placementId}|${item.dateKey}|${item.startMinutes}|${item.titleKey}|${item.nolaKey}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      unique.push(item);
+    });
+    return unique;
+  }
+
+  function sameTwelveHourClock(a, b) {
+    if (!Number.isFinite(Number(a)) || !Number.isFinite(Number(b))) return false;
+    return Math.abs((Number(a) % 720) - (Number(b) % 720)) <= 1;
+  }
+
+  function applyScheduleStartTimeCorrection(record, placementIndex) {
+    if (!(record?.when instanceof Date) || Number.isNaN(record.when.getTime()) || !record.hasDate || !record.hasExplicitTime) return false;
+    if (scheduleMatchesForRecord(record, placementIndex).length) return false;
+    const candidates = sameDateScheduleCandidates(record, placementIndex);
+    if (candidates.length !== 1) return false;
+    const placement = candidates[0];
+    const startMinutes = Number(placement.startMinutes);
+    if (!Number.isFinite(startMinutes) || startMinutes < 0) return false;
+    const parsedMinutes = (record.when.getHours() * 60) + record.when.getMinutes();
+    if (Math.abs(parsedMinutes - startMinutes) <= 1) return false;
+    const rawText = utils.normalizeText(record.rawTimeText || '');
+    const safeToCorrect = sameTwelveHourClock(parsedMinutes, startMinutes)
+      || (parsedMinutes === 0 && /^(0{1,2}:?0{2}(?::0{2})?|12:?0{2}\s*a\.?m\.?)$/i.test(rawText));
+    if (!safeToCorrect) return false;
+    const corrected = new Date(record.when.getTime());
+    corrected.setHours(Math.floor(startMinutes / 60) % 24, startMinutes % 60, 0, 0);
+    record.when = corrected;
+    record.broadcastWhen = broadcastAnchorDate(corrected);
+    record.timeCorrectedFromSchedule = true;
+    record.timeCorrectionLabel = `Corrected start from ${utils.minutesToLabel(parsedMinutes)} to saved schedule ${utils.minutesToLabel(startMinutes)}`;
+    refreshTemporalLabels(record);
+    return true;
+  }
+
   function scheduleLiveBreakLabelForRecord(record, placementIndex) {
     const matches = scheduleMatchesForRecord(record, placementIndex);
     if (matches.length) {
@@ -712,6 +851,7 @@
     let missingMoneyRows = 0;
     let annotatedTitleRows = 0;
     let scheduleMismatchRows = 0;
+    let scheduleTimeCorrectedRows = 0;
 
     function eventId(signature, dateKey, timeKey) {
       return [signature || 'unknown', dateKey || 'unknown-date', timeKey || 'unknown-time'].join('|');
@@ -844,19 +984,7 @@
       if (!record.broadcastWhen && temporal?.broadcastWhen) record.broadcastWhen = temporal.broadcastWhen;
       if (temporal?.hasDate) record.hasDate = true;
       if (temporal?.hasExplicitTime) record.hasExplicitTime = true;
-      record.day = dayLabel(record);
-      record.date = dateLabel(record);
-      record.time = timeBucketLabel(record);
-      record.hour = hourBucketLabel(record);
-      record.topicTime = topicTimeLabel(record);
-      record.topicWeekSplit = topicWeekSplitLabel(record);
-      record.topicDay = topicDayLabel(record);
-      record.topicDaypartDay = topicDaypartDayLabel(record);
-      record.topicTimeSortKey = topicTimeSortKey(record);
-      record.topicDaySortKey = topicDaySortKey(record);
-      record.topicDaypartDaySortKey = topicDaypartDaySortKey(record);
-      const dateForMonth = record.broadcastWhen instanceof Date && !Number.isNaN(record.broadcastWhen.getTime()) ? record.broadcastWhen : record.when;
-      record.monthIndex = record.hasDate && dateForMonth instanceof Date && !Number.isNaN(dateForMonth.getTime()) ? dateForMonth.getMonth() : null;
+      refreshTemporalLabels(record);
     }
 
     airingRows.forEach((sourceRow) => {
@@ -940,6 +1068,7 @@
 
     const placementIndex = buildSchedulePlacementIndex(indexes);
     for (const record of events.values()) {
+      if (applyScheduleStartTimeCorrection(record, placementIndex)) scheduleTimeCorrectedRows += 1;
       const scheduleLive = scheduleLiveBreakLabelForRecord(record, placementIndex);
       if (scheduleLive.matched) {
         record.liveBreaks = scheduleLive.label;
@@ -1008,6 +1137,7 @@
       missingMoneyRows,
       annotatedTitleRows,
       scheduleMismatchRows,
+      scheduleTimeCorrectedRows,
       nonSpecificRows: records.filter((record) => isNonSpecificRecord(record)).length,
       quarantinedEvents: records.filter((record) => record.excludedForIntegrity).length,
       recordsWithMoney: records.filter((record) => record.moneyTrusted).length,
@@ -3770,6 +3900,7 @@
     notes.push(`${utils.formatCount(shape.recordsWithTopic || 0)} events inherited topic metadata from the library. ${utils.formatCount(shape.scheduleMismatchRows || 0)} normalized events were quarantined because they do not reconcile to a saved schedule placement.`);
     notes.push(`Imported airings currently represent ${utils.formatCount(shape.totalPledges || 0)} pledges, ${utils.formatCount(shape.totalSustainers || 0)} sustainers, and ${utils.formatCount(shape.totalMinutes || 0)} program minutes in this analytics layer.`);
     notes.push(`Broadcast-day logic starts at ${utils.minutesToLabel(broadcastDayStartHour() * 60)}, so post-midnight airings before that time are treated as part of the previous TV day.`);
+    if (shape.scheduleTimeCorrectedRows) notes.push(`${utils.formatCount(shape.scheduleTimeCorrectedRows || 0)} imported airing start time${shape.scheduleTimeCorrectedRows === 1 ? '' : 's'} were corrected from the saved schedule placement because the report time looked like a 12-hour/midnight import artifact.`);
     if (shape.annotatedTitleRows) notes.push(`${utils.formatCount(shape.annotatedTitleRows || 0)} imported rows look like they contain title annotations or notes. Those rows are still allowed if their identity matches cleanly, but they are called out here because they deserve eyeballs.`);
     notes.push('Average dollars per airing is still the safest headline metric when sample sizes differ, but the added pledge, sustainer, and per-minute metrics help expose cases where dollars alone lie by omission.');
     notes.push('Premium analysis is metadata-only for now. It does not know which premium item viewers actually chose.');
