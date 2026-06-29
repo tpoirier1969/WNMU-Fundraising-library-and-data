@@ -1,0 +1,13 @@
+Install v0.22.51 changed files
+
+Copy the contents of this ZIP into the existing app folder, preserving folders, and overwrite matching files.
+
+Important files in this patch:
+- index.html
+- pledge-performance-lab.html
+- version.json
+- assets/styles.css
+- assets/js/core.js
+- assets/js/ui-scheduling.js
+
+Do not replace config.js. This patch does not include config.js.

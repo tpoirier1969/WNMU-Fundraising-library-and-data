@@ -1041,12 +1041,19 @@ button:disabled {
 }
 .schedule-slot.selected { outline: 2px solid #7aaac8; outline-offset: -2px; }
 .schedule-slot.row-highlighted {
-  background: #fff9dc;
-  box-shadow: inset 0 2px 0 rgba(212, 155, 0, .45), inset 0 -2px 0 rgba(212, 155, 0, .35);
+  background: transparent;
+  box-shadow: none;
 }
-.schedule-slot.row-highlighted.weekend { background: #fff5cf; }
-.schedule-slot.row-highlighted .schedule-placement {
-  box-shadow: 0 0 0 3px rgba(212, 155, 0, .55), 0 12px 20px rgba(15, 50, 80, .18);
+.schedule-slot.row-highlighted.weekend { background: transparent; }
+.schedule-row-highlight-overlay {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 4;
+  pointer-events: none;
+  border-top: 2px solid rgba(212, 155, 0, .78);
+  border-bottom: 2px solid rgba(212, 155, 0, .66);
+  background: rgba(255, 215, 92, .24);
+  box-shadow: inset 0 0 0 9999px rgba(255, 226, 128, .08);
 }
 .schedule-slot.drag-target { outline: 2px dashed var(--pbs-blue-dark); outline-offset: -2px; background: #eef5fb; }
 .schedule-slot.guide-line-red { border-top: 2px solid rgba(191, 42, 51, 0.9); }

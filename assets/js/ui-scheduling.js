@@ -3293,10 +3293,14 @@
       .filter((minutes) => minutes >= visibleStartMin && minutes < visibleEndMin)
       .map((minutes) => `<div class="schedule-guide-overlay" style="top:${((minutes - visibleStartMin) / constants.DEFAULT_SLOT_MINUTES) * slotHeight}px"></div>`)
       .join('');
+    const highlightedMinutes = Number(state.scheduleHighlightedRowMinutes);
+    const rowHighlightOverlay = Number.isFinite(highlightedMinutes) && highlightedMinutes >= visibleStartMin && highlightedMinutes < visibleEndMin
+      ? `<div class="schedule-row-highlight-overlay" aria-hidden="true" style="top:${((highlightedMinutes - visibleStartMin) / constants.DEFAULT_SLOT_MINUTES) * slotHeight}px; left:${timeColumnWidth}px; width:${dayKeys.length * columnWidth}px; height:${slotHeight}px;"></div>`
+      : '';
 
     els.scheduleGrid.innerHTML = `
       <div class="schedule-grid-head" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${header.join('')}</div>
-      <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}${guideOverlays}</div>
+      <div class="schedule-grid-body" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${body.join('')}${guideOverlays}${rowHighlightOverlay}</div>
       <div class="schedule-grid-foot" style="grid-template-columns:${gridTemplate}; width:${gridWidth}px; min-width:${gridWidth}px;">${footer.join('')}</div>
     `;
     const slotFitCacheDirty = (schedule.placements || []).some((item) => item?.__slotFitCacheDirty);
