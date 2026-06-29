@@ -3245,9 +3245,13 @@
     const body = [];
     times.forEach((minutes) => {
       const normalizedMinutes = ((minutes % 1440) + 1440) % 1440;
-      const showTimeLabel = !compactTimeLabels || (ultraCompactTimeLabels ? (normalizedMinutes % 120 === 0) : (normalizedMinutes % 60 === 0));
+      const isHighlightedRow = Number(state.scheduleHighlightedRowMinutes) === minutes;
+      const showTimeLabel = isHighlightedRow || !compactTimeLabels || (ultraCompactTimeLabels ? (normalizedMinutes % 120 === 0) : (normalizedMinutes % 60 === 0));
       const guideClass = guideMinutes.has(minutes) || guideMinutes.has(normalizedMinutes) ? ' guide-line-red' : '';
-      body.push(`<div class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}${guideClass}"><span>${showTimeLabel ? utils.escapeHtml(utils.minutesToLabel(minutes)) : ''}</span></div>`);
+      const rowHighlightClass = isHighlightedRow ? ' row-highlighted' : '';
+      const timeLabel = utils.minutesToLabel(minutes);
+      const timeLabelHelp = isHighlightedRow ? `Clear ${timeLabel} row highlight` : `Highlight ${timeLabel} row across the calendar`;
+      body.push(`<button type="button" class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}${guideClass}${rowHighlightClass}" data-schedule-row-minutes="${minutes}" aria-pressed="${isHighlightedRow ? 'true' : 'false'}" aria-label="${utils.escapeHtml(timeLabelHelp)}" title="${utils.escapeHtml(timeLabelHelp)}"><span>${showTimeLabel ? utils.escapeHtml(timeLabel) : ''}</span></button>`);
       dayKeys.forEach((displayDateKey) => {
         const actualDateKey = minutes >= 1440 ? utils.plusDays(displayDateKey, 1) : displayDateKey;
         const actualMinutes = minutes >= 1440 ? minutes - 1440 : minutes;
@@ -3278,7 +3282,7 @@
           ? '<span class="schedule-live-calendar-badge" title="Live break flagged">LIVE</span>'
           : '';
         body.push(`
-          <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}">
+          <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}">
             ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${calendarPlacementIsLive(schedule, placement) ? 'true' : 'false'}" style="${style}">${isPlaceholder ? '' : transferToggle}${liveCalendarBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
@@ -5162,6 +5166,16 @@
     });
     els.scheduleGrid?.addEventListener('click', (event) => {
       if (event.target.closest('[data-placement-transfer-toggle], [data-grid-transfer-placement-id]')) return;
+      const timeLabel = event.target.closest('[data-schedule-row-minutes]');
+      if (timeLabel) {
+        hideScheduleContextMenu();
+        const minutes = Number(timeLabel.dataset.scheduleRowMinutes);
+        if (Number.isFinite(minutes)) {
+          state.scheduleHighlightedRowMinutes = Number(state.scheduleHighlightedRowMinutes) === minutes ? null : minutes;
+          renderScheduleGrid();
+        }
+        return;
+      }
       hideScheduleContextMenu();
       const block = event.target.closest('[data-placement-id]');
       if (block) {

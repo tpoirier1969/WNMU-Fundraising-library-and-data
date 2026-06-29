@@ -1,0 +1,12 @@
+WNMU Pledge Program Library v0.22.49 changed-files repair patch
+
+Install:
+1. Unzip this package.
+2. Copy all files and folders into the app folder, preserving paths.
+3. Say yes/overwrite when prompted.
+4. Make sure the nested files under assets/js/ and assets/styles.css are overwritten, not just index.html.
+5. Hard-refresh the browser after install.
+
+This is a cumulative repair over v0.22.47/v0.22.48. It includes the schedule placeholder work and the calendar row-highlight work so the app does not run with mixed .47/.48 assets.
+
+Do not copy config.js. This package does not contain config.js.
