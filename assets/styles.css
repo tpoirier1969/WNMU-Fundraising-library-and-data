@@ -997,9 +997,15 @@ button:disabled {
   padding: 0 8px;
   box-sizing: border-box;
   color: var(--muted);
+  font: inherit;
   font-size: var(--schedule-time-font-size, .78rem);
+  text-align: left;
   background: #fbfdfe;
   overflow: visible;
+  appearance: none;
+  border-left: 0;
+  border-top: 0;
+  cursor: pointer;
 }
 .schedule-time-label > span {
   position: absolute;
@@ -1009,6 +1015,20 @@ button:disabled {
   white-space: nowrap;
 }
 .schedule-time-label.quiet > span { display: none; }
+.schedule-time-label:hover,
+.schedule-time-label:focus-visible {
+  color: var(--pbs-blue-dark);
+  background: #eef5fb;
+  outline: 2px solid rgba(27, 110, 168, .35);
+  outline-offset: -2px;
+}
+.schedule-time-label.row-highlighted {
+  color: #12384f;
+  font-weight: 900;
+  background: #fff4c2;
+  box-shadow: inset 4px 0 0 #d49b00;
+}
+.schedule-time-label.row-highlighted > span { display: block; }
 .schedule-slot {
   position: relative;
   min-height: 0;
@@ -1020,6 +1040,14 @@ button:disabled {
   cursor: pointer;
 }
 .schedule-slot.selected { outline: 2px solid #7aaac8; outline-offset: -2px; }
+.schedule-slot.row-highlighted {
+  background: #fff9dc;
+  box-shadow: inset 0 2px 0 rgba(212, 155, 0, .45), inset 0 -2px 0 rgba(212, 155, 0, .35);
+}
+.schedule-slot.row-highlighted.weekend { background: #fff5cf; }
+.schedule-slot.row-highlighted .schedule-placement {
+  box-shadow: 0 0 0 3px rgba(212, 155, 0, .55), 0 12px 20px rgba(15, 50, 80, .18);
+}
 .schedule-slot.drag-target { outline: 2px dashed var(--pbs-blue-dark); outline-offset: -2px; background: #eef5fb; }
 .schedule-slot.guide-line-red { border-top: 2px solid rgba(191, 42, 51, 0.9); }
 .schedule-time-label.guide-line-red { border-top: 2px solid rgba(191, 42, 51, 0.9); }

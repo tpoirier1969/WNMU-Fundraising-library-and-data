@@ -1,0 +1,17 @@
+Install WNMU Pledge Program Library v0.22.50 changed files
+
+1. Unzip this package.
+2. Copy its contents into the app folder, preserving folders.
+3. Overwrite existing files when prompted.
+
+Important: this patch includes assets/styles.css. Make sure it lands in the assets folder, not at the app root.
+
+Files included:
+- index.html
+- pledge-performance-lab.html
+- version.json
+- assets/styles.css
+- assets/js/core.js
+- assets/js/ui-scheduling.js
+
+No config.js is included.
