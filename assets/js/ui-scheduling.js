@@ -4602,6 +4602,312 @@
   }
 
 
+  function schedulePrintDayLabel(dateKey = '') {
+    const date = new Date(`${dateKey}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return dateKey;
+    return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function schedulePrintCalendarSlotHeight(slotCount = 1) {
+    if (slotCount <= 24) return 22;
+    if (slotCount <= 30) return 18;
+    if (slotCount <= 36) return 15;
+    if (slotCount <= 44) return 13;
+    return 11;
+  }
+
+  function schedulePrintCalendarPlacementHtml(placement = {}, pageDays = [], visibleStartMin = 0, visibleEndMin = 1440) {
+    const dayIndex = pageDays.indexOf(placement.displayDateKey);
+    if (dayIndex < 0) return '';
+    const placementStart = Number(placement.displayStartMinutes || 0);
+    const placementEnd = Number(placement.displayEndMinutes || placementStart + constants.DEFAULT_SLOT_MINUTES);
+    if (placementEnd <= visibleStartMin || placementStart >= visibleEndMin) return '';
+    const clippedStart = Math.max(visibleStartMin, placementStart);
+    const clippedEnd = Math.min(visibleEndMin, placementEnd);
+    const rowStart = Math.floor((clippedStart - visibleStartMin) / constants.DEFAULT_SLOT_MINUTES) + 2;
+    const rowSpan = Math.max(1, Math.ceil((clippedEnd - clippedStart) / constants.DEFAULT_SLOT_MINUTES));
+    const isPlaceholder = isPlaceholderPlacement(placement);
+    const title = isPlaceholder ? placeholderTitle(placement) : (placement.programTitle || 'Untitled program');
+    const meta = [];
+    meta.push(`${Math.max(1, Math.round(Number(placement.lengthMinutes || 0) || constants.DEFAULT_SLOT_MINUTES))} min`);
+    if (isPlaceholder) meta.push('placeholder');
+    if (placement.isNonPledge) meta.push('non-pledge');
+    if (!isPlaceholder && calendarPlacementIsLive(getActiveSchedule(), placement)) meta.push('live break');
+    if (placement.transferredToStation) meta.push('entered');
+    if (placementStart < visibleStartMin) meta.unshift('continues');
+    const classes = [
+      'print-placement',
+      isPlaceholder ? 'placeholder' : '',
+      placement.isNonPledge ? 'non-pledge' : '',
+      calendarPlacementIsLive(getActiveSchedule(), placement) ? 'live-break' : '',
+      placement.transferredToStation ? 'transferred' : '',
+      rowSpan === 1 ? 'one-slot' : '',
+      rowSpan === 2 ? 'two-slot' : ''
+    ].filter(Boolean).join(' ');
+    return `<div class="${classes}" style="grid-column:${dayIndex + 2};grid-row:${rowStart} / span ${rowSpan};">
+      <div class="print-placement-title">${utils.escapeHtml(title)}</div>
+      <div class="print-placement-meta">${utils.escapeHtml(meta.join(' · '))}</div>
+    </div>`;
+  }
+
+  function schedulePrintCalendarPageHtml({ schedule = {}, pageDays = [], placements = [], visibleStartMin = 0, visibleEndMin = 1440, pageNumber = 1, totalPages = 1 } = {}) {
+    const times = [];
+    for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
+    const slotCount = times.length;
+    const slotHeight = schedulePrintCalendarSlotHeight(slotCount);
+    const gridColumns = `0.72in repeat(${Math.max(1, pageDays.length)}, minmax(0, 1fr))`;
+    const gridRows = `0.48in repeat(${Math.max(1, slotCount)}, ${slotHeight}px)`;
+    const cells = [];
+    cells.push('<div class="print-corner" style="grid-column:1;grid-row:1;"></div>');
+    pageDays.forEach((dateKey, index) => {
+      cells.push(`<div class="print-day-head ${isWeekendDateKey(dateKey) ? 'weekend' : ''}" style="grid-column:${index + 2};grid-row:1;">${utils.escapeHtml(schedulePrintDayLabel(dateKey))}</div>`);
+    });
+    times.forEach((minutes, timeIndex) => {
+      const normalizedMinutes = ((minutes % 1440) + 1440) % 1440;
+      const row = timeIndex + 2;
+      const isHour = normalizedMinutes % 60 === 0;
+      cells.push(`<div class="print-time-label ${isHour ? 'hour' : ''}" style="grid-column:1;grid-row:${row};">${utils.escapeHtml(utils.minutesToLabel(minutes))}</div>`);
+      pageDays.forEach((dateKey, dayIndex) => {
+        cells.push(`<div class="print-slot ${isHour ? 'hour' : ''} ${isWeekendDateKey(dateKey) ? 'weekend' : ''}" style="grid-column:${dayIndex + 2};grid-row:${row};"></div>`);
+      });
+    });
+    const placementHtml = placements
+      .map((placement) => schedulePrintCalendarPlacementHtml(placement, pageDays, visibleStartMin, visibleEndMin))
+      .filter(Boolean)
+      .join('');
+    const pageRange = pageDays.length
+      ? `${utils.formatDate(pageDays[0])} – ${utils.formatDate(pageDays[pageDays.length - 1])}`
+      : '';
+    return `<section class="calendar-page">
+      <header class="calendar-page-head">
+        <div>
+          <h1>${utils.escapeHtml(schedule.title || 'Pledge Schedule')}</h1>
+          <div class="calendar-page-subtitle">${utils.escapeHtml(pageRange)} · ${utils.escapeHtml(utils.minutesToLabel(visibleStartMin))} – ${utils.escapeHtml(utils.minutesToLabel(visibleEndMin - constants.DEFAULT_SLOT_MINUTES))}</div>
+        </div>
+        <div class="calendar-page-number">Page ${pageNumber} of ${totalPages}</div>
+      </header>
+      <div class="print-calendar-grid" style="grid-template-columns:${gridColumns};grid-template-rows:${gridRows};">${cells.join('')}${placementHtml}</div>
+    </section>`;
+  }
+
+  function schedulePrintCalendarDocumentHtml(schedule = {}) {
+    const dayKeys = visibleDateKeys(schedule);
+    const windowConfig = getScheduleWindow(state.scheduleView);
+    const visibleStartMin = windowConfig.startMinutes;
+    const visibleEndMin = windowConfig.endMinutes;
+    const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
+    const daysPerPage = dayKeys.length <= 9 ? Math.max(1, dayKeys.length) : 7;
+    const pages = [];
+    for (let index = 0; index < dayKeys.length; index += daysPerPage) pages.push(dayKeys.slice(index, index + daysPerPage));
+    if (!pages.length) pages.push([]);
+    const pageHtml = pages.map((pageDays, index) => schedulePrintCalendarPageHtml({
+      schedule,
+      pageDays,
+      placements,
+      visibleStartMin,
+      visibleEndMin,
+      pageNumber: index + 1,
+      totalPages: pages.length
+    })).join('');
+    const generatedAt = new Date().toLocaleString();
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${utils.escapeHtml(schedule.title || 'Pledge Schedule')} — Print Calendar</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    @page { size: landscape; margin: 0.28in; }
+    body {
+      margin: 0;
+      background: #eef3f7;
+      color: #10283e;
+      font-family: Aptos, "Segoe UI", Arial, Helvetica, sans-serif;
+    }
+    .preview-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 18px;
+      background: #ffffff;
+      border-bottom: 1px solid #cad7e0;
+      box-shadow: 0 4px 14px rgba(17,43,66,.12);
+    }
+    .preview-toolbar button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 18px;
+      background: #0f4f7d;
+      color: #ffffff;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .preview-toolbar span { color: #52697c; font-size: 13px; }
+    .print-document { padding: 18px; }
+    .calendar-page {
+      width: 100%;
+      max-width: 13.2in;
+      margin: 0 auto 18px;
+      padding: 0.20in;
+      background: #ffffff;
+      box-shadow: 0 8px 28px rgba(17,43,66,.16);
+      break-after: page;
+      page-break-after: always;
+    }
+    .calendar-page:last-child { break-after: auto; page-break-after: auto; }
+    .calendar-page-head {
+      min-height: 0.55in;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 8px;
+    }
+    h1 { margin: 0 0 3px; font-size: 20px; line-height: 1.05; color: #0b385c; }
+    .calendar-page-subtitle { font-size: 10px; color: #506779; }
+    .calendar-page-number { font-size: 9px; color: #687d8d; white-space: nowrap; }
+    .print-calendar-grid {
+      display: grid;
+      position: relative;
+      border-top: 1px solid #9cb2c2;
+      border-left: 1px solid #9cb2c2;
+      overflow: hidden;
+    }
+    .print-corner,
+    .print-day-head,
+    .print-time-label,
+    .print-slot {
+      min-width: 0;
+      border-right: 1px solid #bdcbd5;
+      border-bottom: 1px solid #d6e0e7;
+    }
+    .print-corner { background: #e5eef5; }
+    .print-day-head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3px 4px;
+      background: #dceaf5;
+      color: #07375d;
+      font-size: 9px;
+      font-weight: 900;
+      text-align: center;
+    }
+    .print-day-head.weekend { background: #e7f0f7; }
+    .print-time-label {
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 1px 4px 0 2px;
+      background: #f4f8fb;
+      color: #344e63;
+      font-size: 7px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+    .print-time-label.hour { color: #0b385c; font-weight: 900; }
+    .print-slot { background: #ffffff; }
+    .print-slot.weekend { background: #f8fbfd; }
+    .print-slot.hour { border-top: 1px solid #9fb3c2; }
+    .print-placement {
+      z-index: 5;
+      min-width: 0;
+      margin: 1px;
+      padding: 3px 4px;
+      overflow: hidden;
+      border: 1.5px solid #1d5e8e;
+      border-radius: 4px;
+      background: #dcebf7;
+      color: #082e4b;
+      font-size: 7.5px;
+      line-height: 1.08;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .print-placement.placeholder { background: #fff0b8; border-color: #b98300; color: #563c00; }
+    .print-placement.non-pledge { background: #eceff1; border-color: #687783; color: #26343e; }
+    .print-placement.live-break { box-shadow: inset 3px 0 0 #b3261e; }
+    .print-placement.transferred { box-shadow: inset 0 0 0 1px #2b7c43; }
+    .print-placement.live-break.transferred { box-shadow: inset 3px 0 0 #b3261e, inset 0 0 0 1px #2b7c43; }
+    .print-placement-title { font-weight: 900; overflow-wrap: anywhere; }
+    .print-placement-meta { margin-top: 2px; font-size: 6.5px; opacity: .82; overflow-wrap: anywhere; }
+    .print-placement.one-slot { padding-top: 1px; padding-bottom: 1px; }
+    .print-placement.one-slot .print-placement-meta { display: none; }
+    .print-placement.two-slot .print-placement-meta { margin-top: 1px; }
+    .print-generated { padding: 0 18px 18px; color: #657989; font-size: 11px; text-align: center; }
+    @media print {
+      body { background: #ffffff; }
+      .preview-toolbar, .print-generated { display: none !important; }
+      .print-document { padding: 0; }
+      .calendar-page {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-toolbar">
+    <button type="button" onclick="window.print()">Print Calendar</button>
+    <span>Landscape preview using the currently visible calendar hours. Drives longer than nine days are split into readable pages.</span>
+  </div>
+  <main class="print-document">${pageHtml}</main>
+  <div class="print-generated">Generated ${utils.escapeHtml(generatedAt)}</div>
+</body>
+</html>`;
+  }
+
+  function schedulePrintCalendarStatusHtml(message = 'Building printable calendar…') {
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Print Calendar</title><style>body{font-family:Aptos,"Segoe UI",Arial,sans-serif;margin:40px;color:#111;background:#fff;}h1{font-size:26px;margin:0 0 10px;}p{font-size:15px;}</style></head><body><h1>Print Calendar</h1><p>${utils.escapeHtml(message)}</p></body></html>`;
+  }
+
+  function schedulePrintCalendarFallbackDownload(html = '', schedule = {}) {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(schedule.title || 'fundraiser').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'fundraiser'}-calendar-print.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+  }
+
+  async function printScheduleCalendarView() {
+    let previewTab = null;
+    try {
+      previewTab = window.open('', '_blank');
+      if (previewTab) scheduleExportWriteTab(previewTab, schedulePrintCalendarStatusHtml('Building printable calendar…'));
+    } catch (error) {
+      previewTab = null;
+    }
+
+    try {
+      if (!state.schedulingReady) await ensureReady();
+      const schedule = getActiveSchedule();
+      if (!schedule) {
+        const message = 'No fundraiser is loaded yet. Open or create a fundraiser first.';
+        if (!scheduleExportWriteTab(previewTab, schedulePrintCalendarStatusHtml(message))) alert(message);
+        return;
+      }
+      const html = schedulePrintCalendarDocumentHtml(schedule);
+      if (!scheduleExportWriteTab(previewTab, html)) schedulePrintCalendarFallbackDownload(html, schedule);
+    } catch (error) {
+      console.error(error);
+      const message = error?.message || 'Printable calendar failed.';
+      if (!scheduleExportWriteTab(previewTab, schedulePrintCalendarStatusHtml(message))) alert(message);
+    }
+  }
+
+
   function driveComparisonDateFromRow(row = {}) {
     return utils.normalizeText(row.air_date)
       || utils.normalizeText(row.drive_start_date)
@@ -5318,8 +5624,12 @@
     els.scheduleEndEarlierButton?.addEventListener('click', () => adjustRange('end', -1));
     els.scheduleEndLaterButton?.addEventListener('click', () => adjustRange('end', 1));
     const openDailyRundown = () => { void exportScheduleView(); };
+    const openPrintCalendar = () => { void printScheduleCalendarView(); };
     els.scheduleExportButton?.addEventListener('click', openDailyRundown);
     els.scheduleDailyRundownButton?.addEventListener('click', openDailyRundown);
+    els.scheduleMobileDailyRundownButton?.addEventListener('click', openDailyRundown);
+    els.schedulePrintCalendarButton?.addEventListener('click', openPrintCalendar);
+    els.scheduleMobilePrintCalendarButton?.addEventListener('click', openPrintCalendar);
     els.scheduleProgramDetails?.addEventListener('click', (event) => {
       const toggle = event.target.closest('[data-scheduled-card-toggle]');
       if (!toggle) return;

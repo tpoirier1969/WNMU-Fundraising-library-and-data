@@ -1,0 +1,10 @@
+Install v0.22.52
+
+1. Close or stop the currently open app page if practical.
+2. Copy every file and folder from this ZIP into the WNMU Pledge app folder.
+3. Preserve the folder structure, especially assets/js/ and assets/styles.css.
+4. Allow existing files to be overwritten.
+5. Refresh the browser with Ctrl+R, or close and reopen the app.
+6. Confirm the visible version is v0.22.52.
+
+This patch intentionally does not include config.js.

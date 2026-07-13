@@ -6015,3 +6015,43 @@ input.goal-difference-negative {
     grid-template-columns: 1fr;
   }
 }
+
+/* v0.22.52 scheduling output actions */
+.schedule-sidebar-output-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.schedule-sidebar-output-actions .ghost,
+.schedule-mobile-output-actions .ghost {
+  white-space: nowrap;
+}
+#schedule-print-calendar-button,
+#schedule-mobile-print-calendar-button {
+  border-color: rgba(15,79,125,.42);
+  color: var(--pbs-blue-dark);
+  font-weight: 900;
+}
+.schedule-mobile-output-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.schedule-mobile-output-actions .ghost {
+  width: 100%;
+}
+@media (max-width: 1200px) and (min-width: 761px) {
+  .schedule-sidebar-output-actions {
+    margin-left: auto;
+  }
+  .schedule-sidebar-open-row {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+@media (max-width: 460px) {
+  .schedule-mobile-output-actions {
+    grid-template-columns: 1fr;
+  }
+}
