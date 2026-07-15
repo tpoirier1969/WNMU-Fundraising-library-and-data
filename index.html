@@ -24,7 +24,7 @@
         const url=new URL(value,window.location.href);
         if(url.origin!==window.location.origin||url.pathname.endsWith('config.js'))return value;
         url.searchParams.set('v',VERSION);
-        return `${url.pathname.replace(/^\//,'')}${url.search}${url.hash}`;
+        return `${url.pathname}${url.search}${url.hash}`;
       }catch(_error){return value}
     };
     const disclosure=(doc,key,label)=>{
