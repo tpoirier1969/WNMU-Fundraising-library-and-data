@@ -1866,7 +1866,11 @@
         }, 1200);
       }
 
-      window.addEventListener('DOMContentLoaded', () => {
+      let splitScreenInitialized = false;
+
+      function initializeSplitScreenTest() {
+        if (splitScreenInitialized) return;
+        splitScreenInitialized = true;
         addPrototypeBadge();
         moveDetailIntoWorkspace();
         groupDetailSections();
@@ -1876,9 +1880,36 @@
         keepPanelVisible();
         watchAllFields();
         monitorAdminState();
-        window.setTimeout(showBlankAddScreenWhenNeeded, 200);
-        window.setTimeout(showBlankAddScreenWhenNeeded, 900);
-      });
+        window.setTimeout(showBlankAddScreenWhenNeeded, 120);
+        window.setTimeout(showBlankAddScreenWhenNeeded, 700);
+      }
+
+      function normalAppStartupFinished() {
+        const App = window.PledgeLib;
+        const libraryBody = document.getElementById('library-body');
+        if (!App?.appInit || !App?.libraryLoader || !App?.detailUi || !App?.auth || !libraryBody) return false;
+        if (App.state?.loadingState?.active) return false;
+        const libraryText = String(libraryBody.textContent || '').trim();
+        return !/^Loading library/i.test(libraryText);
+      }
+
+      function waitForNormalAppStartup() {
+        const startedAt = Date.now();
+        const timer = window.setInterval(() => {
+          if (normalAppStartupFinished()) {
+            window.clearInterval(timer);
+            initializeSplitScreenTest();
+            return;
+          }
+
+          if (Date.now() - startedAt > 20000) {
+            window.clearInterval(timer);
+            console.warn('Split-screen test waited for the normal app startup but it did not finish within 20 seconds. Leaving the standard page structure intact so the startup error remains visible.');
+          }
+        }, 100);
+      }
+
+      window.addEventListener('load', waitForNormalAppStartup, { once: true });
     })();
   </script>
 </body>
