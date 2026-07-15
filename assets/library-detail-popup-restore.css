@@ -1,0 +1,24 @@
+/* Restore the original program-detail modal outside the Program Library split pane. */
+body.library-split-default:not(.library-detail-embedded).modal-open {
+  overflow: hidden !important;
+}
+
+body.library-split-default:not(.library-detail-embedded) #detail-backdrop.hidden {
+  display: none !important;
+}
+
+body.library-split-default:not(.library-detail-embedded) #detail-backdrop:not(.hidden) {
+  display: block !important;
+}
+
+body.library-split-default:not(.library-detail-embedded) #detail-modal.hidden {
+  display: none !important;
+}
+
+body.library-split-default:not(.library-detail-embedded) #detail-modal:not(.hidden) {
+  display: flex !important;
+}
+
+body.library-split-default.library-detail-embedded #detail-backdrop {
+  display: none !important;
+}

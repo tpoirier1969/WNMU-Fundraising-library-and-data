@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.22.53</title>
+  <title>WNMU Pledge Program Library v0.22.54</title>
   <style>
     body{margin:0;font-family:system-ui,sans-serif;background:#eef4f7;color:#223a47}
     .split-boot{min-height:100vh;display:grid;place-items:center;padding:24px}
@@ -16,7 +16,7 @@
   <script>
   (async()=>{
     'use strict';
-    const VERSION='0.22.53', LABEL=`v${VERSION}`, status=document.getElementById('split-boot-status');
+    const VERSION='0.22.54', LABEL=`v${VERSION}`, status=document.getElementById('split-boot-status');
     const setStatus=(message)=>{if(status)status.textContent=message};
     const versioned=(value='')=>{
       if(!value)return value;
@@ -41,7 +41,7 @@
       const modal=doc.getElementById('detail-modal');
       const content=doc.getElementById('detail-content');
       if(!pane||!list||!modal||!content)throw new Error('Required Program Library elements were not found in app-shell.html.');
-      doc.body.classList.add('library-split-default');
+      doc.body.classList.add('library-split-default','library-detail-embedded');
       pane.dataset.librarySplitView='library';
       const mobile=doc.createElement('div');
       mobile.id='library-split-mobile-switcher';
@@ -73,11 +73,13 @@
     }
     function injectAssets(doc){
       const css=doc.createElement('link');css.rel='stylesheet';css.href=`assets/library-split-default.css?v=${VERSION}`;doc.head.append(css);
+      const popupCss=doc.createElement('link');popupCss.rel='stylesheet';popupCss.href=`assets/library-detail-popup-restore.css?v=${VERSION}`;doc.head.append(popupCss);
       const core=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/core\.js/i.test(script.getAttribute('src')||''));
       if(core){const override=doc.createElement('script');override.textContent=`window.addEventListener('DOMContentLoaded',()=>{if(window.PledgeLib?.constants)window.PledgeLib.constants.APP_VERSION='${LABEL}'})`;core.after(override)}
       const appInit=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/app-init\.js/i.test(script.getAttribute('src')||''));
       const controller=doc.createElement('script');controller.defer=true;controller.src=`assets/js/library-split-default.js?v=${VERSION}`;
-      if(appInit)appInit.before(controller);else doc.head.append(controller);
+      const workspaceFix=doc.createElement('script');workspaceFix.defer=true;workspaceFix.src=`assets/js/library-detail-workspace-fix.js?v=${VERSION}`;
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix)}else{doc.head.append(controller,workspaceFix)}
     }
     try{
       setStatus('Loading the application shell…');
