@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WNMU Pledge Program Library v0.22.54</title>
+  <title>WNMU Pledge Program Library v0.22.55</title>
   <style>
     body{margin:0;font-family:system-ui,sans-serif;background:#eef4f7;color:#223a47}
     .split-boot{min-height:100vh;display:grid;place-items:center;padding:24px}
@@ -16,7 +16,7 @@
   <script>
   (async()=>{
     'use strict';
-    const VERSION='0.22.54', LABEL=`v${VERSION}`, status=document.getElementById('split-boot-status');
+    const VERSION='0.22.55', LABEL=`v${VERSION}`, status=document.getElementById('split-boot-status');
     const setStatus=(message)=>{if(status)status.textContent=message};
     const versioned=(value='')=>{
       if(!value)return value;
@@ -79,7 +79,8 @@
       const appInit=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/app-init\.js/i.test(script.getAttribute('src')||''));
       const controller=doc.createElement('script');controller.defer=true;controller.src=`assets/js/library-split-default.js?v=${VERSION}`;
       const workspaceFix=doc.createElement('script');workspaceFix.defer=true;workspaceFix.src=`assets/js/library-detail-workspace-fix.js?v=${VERSION}`;
-      if(appInit){appInit.before(controller);appInit.before(workspaceFix)}else{doc.head.append(controller,workspaceFix)}
+      const timingFast=doc.createElement('script');timingFast.defer=true;timingFast.src=`assets/js/detail-timing-fast.js?v=${VERSION}`;
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast)}else{doc.head.append(controller,workspaceFix,timingFast)}
     }
     try{
       setStatus('Loading the application shell…');
