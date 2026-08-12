@@ -1403,7 +1403,7 @@
         const { data, error } = await state.client
           .from(constants.AIRINGS_TABLE)
           .select('*')
-          .in('match_method', ['manual_library', 'saved_title_rule'])
+          .eq('match_method', 'manual_library')
           .range(from, from + pageSize - 1);
         if (error) throw error;
         const chunk = data || [];
@@ -1415,7 +1415,7 @@
     } catch (error) {
       console.warn('Filtered import match-memory query failed; falling back to the imported airing history.', error);
       const allRows = await fetchAllRows(constants.AIRINGS_TABLE);
-      return (allRows || []).filter((row) => ['manual_library', 'saved_title_rule'].includes(String(row?.match_method || '').trim().toLowerCase()));
+      return (allRows || []).filter((row) => String(row?.match_method || '').trim().toLowerCase() === 'manual_library');
     }
   }
 

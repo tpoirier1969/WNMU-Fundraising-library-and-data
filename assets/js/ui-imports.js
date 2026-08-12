@@ -158,7 +158,7 @@
 
     (Array.isArray(rows) ? rows : []).forEach((row, index) => {
       const method = String(row?.match_method || '').trim().toLowerCase();
-      if (!['manual_library', 'saved_title_rule'].includes(method)) return;
+      if (method !== 'manual_library') return;
       const importedTitle = utils.normalizeText(row?.imported_program_title || '');
       const targetProgramId = String(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, '') || '').trim();
       if (!importedTitle || !targetProgramId) return;
@@ -175,7 +175,8 @@
   }
 
   async function loadRememberedAliasRules() {
-    const localRules = utils.storageGet(IMPORT_MATCH_RULES_STORAGE_KEY, []);
+    const localRules = (utils.storageGet(IMPORT_MATCH_RULES_STORAGE_KEY, []) || [])
+      .filter((rule) => !String(rule?.id || '').startsWith('history:'));
     let historicalRules = [];
     try {
       const historicalRows = App.data.fetchImportedMatchMemoryRows
@@ -1224,14 +1225,6 @@
     const importedCode = utils.normalizeText(nola || '');
     const importedLibraryNola = libraryNolaForImport(importedCode);
     const reportOnlyCode = Boolean(importedCode && !importedLibraryNola && isReportOnlyProgramCode(importedCode));
-    const aliasRule = findAliasRuleForRow({ station, imported_program_title: importedTitle, nola_code: importedCode });
-    if (aliasRule) {
-      const target = (state.rawRows || []).find((row) => String(derive.programId(row) || '').trim() === String(aliasRule.targetProgramId || '').trim()) || null;
-      if (target) {
-        const scopeLabel = aliasRule.matchScope === 'title' ? 'saved import-title rule' : 'saved import-title/NOLA rule';
-        return { program: target, matchMethod: 'saved_title_rule', matchReason: `Matched from a ${scopeLabel}.` };
-      }
-    }
     if (reportOnlyCode && libraryLookup.byProgramId?.has(importedCode)) {
       const idMatchedProgram = libraryLookup.byProgramId.get(importedCode);
       const matchedNola = derive.nola(idMatchedProgram) || '';
@@ -1256,6 +1249,14 @@
     const specificNola = /\d{3,}/.test(nolaKey);
     if (specificNola && broadImportedTitle(importedTitle)) {
       return { program: null, matchMethod: 'unmatched', matchReason: `NOLA ${importedLibraryNola} did not match a pledge-library NOLA after normalization. The imported title “${importedTitle}” is too broad for safe fuzzy title matching.` };
+    }
+    const aliasRule = findAliasRuleForRow({ station, imported_program_title: importedTitle, nola_code: importedCode });
+    if (aliasRule) {
+      const target = (state.rawRows || []).find((row) => String(derive.programId(row) || '').trim() === String(aliasRule.targetProgramId || '').trim()) || null;
+      if (target) {
+        const scopeLabel = aliasRule.matchScope === 'title' ? 'saved import-title rule' : 'saved import-title/NOLA rule';
+        return { program: target, matchMethod: 'saved_title_rule', matchReason: `Matched from a ${scopeLabel}.` };
+      }
     }
     const fuzzy = findFuzzyTitleMatch(importedTitle, libraryLookup);
     if (fuzzy?.mode === 'auto' && fuzzy.row) {
@@ -2071,7 +2072,14 @@
       } else if (summary.airings.written > 0) {
         success += ' WARNING: rows imported, but no fundraiser calendar/dropdown update was attempted.';
       }
-      const finalTone = (verification?.missingDateCount || scheduleError) ? 'warn' : 'success';
+      const scheduleConflictCount = Number(scheduleSummary?.scheduleConflicts || 0) || 0;
+      if (scheduleConflictCount > 0) {
+        success += ` WARNING: ${utils.formatCount(scheduleConflictCount)} imported airing${scheduleConflictCount === 1 ? '' : 's'} did not match the existing calendar at the same date/time. Existing scheduled programming was left unchanged.`;
+      }
+      if (scheduleSummary?.scheduleChangesSkipped) {
+        success += ' No scheduler changes from this import were applied because review was requested.';
+      }
+      const finalTone = (verification?.missingDateCount || scheduleError || scheduleConflictCount > 0 || scheduleSummary?.scheduleChangesSkipped) ? 'warn' : 'success';
       setStatus(success);
       setResultBanner(success, finalTone);
       setNotice(success, finalTone);

@@ -189,9 +189,7 @@
     next.dayEndMinutes = needsLegacyUpgrade ? constants.DEFAULT_DAY_END_MINUTES : endMinutes;
     next.dayStartHour = Math.floor(next.dayStartMinutes / 60);
     next.dayEndHour = Math.floor(next.dayEndMinutes / 60);
-    next.placements = (Array.isArray(next.placements) ? next.placements : []).filter((placement) => {
-      return !(placement?.importedFromReport && placementLooksNonSpecific(placement));
-    }).map((placement) => ({
+    next.placements = (Array.isArray(next.placements) ? next.placements : []).map((placement) => ({
       ...placement,
       liveBreakFlag: canonicalScheduleLiveBreakFlag(placement),
       liveBreakNotes: utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''),
@@ -349,27 +347,6 @@
     return activeSchedule;
   }
 
-  async function healImportedSchedulesIfNeeded() {
-    if (state.scheduleImportedHealCompleted) return;
-    state.scheduleImportedHealCompleted = true;
-    const importedSchedules = (state.schedules || []).filter((schedule) => (schedule?.meta?.importedFromReports) || (schedule?.placements || []).some((placement) => placement?.importedFromReport));
-    if (!importedSchedules.length) return;
-    try {
-      const rows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
-      if (!Array.isArray(rows) || !rows.length) return;
-      const dirtySchedules = [];
-      const summary = mergeImportedRowsIntoSchedules(rows, { rebuild: false, activateFirst: false, dirtySchedules });
-      if ((summary.placementsCreated || summary.restoredPlacements || summary.reboundPlacements || summary.mergedDuplicateSchedules) && dirtySchedules.length) {
-        for (const schedule of dirtySchedules) {
-          await persistSchedules(schedule);
-        }
-      }
-      if (summary.removedScheduleIds?.length) await deleteMergedImportedScheduleRecords(summary.removedScheduleIds);
-    } catch (error) {
-      console.warn('Imported schedule auto-heal failed.', error);
-    }
-  }
-
   function scheduleWarmupDelay(defer = true) {
     if (!defer) return Promise.resolve();
     return new Promise((resolve) => {
@@ -419,14 +396,6 @@
       requestScheduleExpectationData();
     }
 
-    void healImportedSchedulesIfNeeded()
-      .then(() => {
-        ensureCurrentScheduleApplied();
-        if (state.activeWorkspace === 'scheduling') renderAll();
-      })
-      .catch((error) => {
-        console.warn('Imported schedule auto-heal failed.', error);
-      });
   }
 
   async function persistSchedules(schedule) {
@@ -1715,6 +1684,80 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return { restoredPlacements, reboundPlacements, unresolvedCollisions };
   }
 
+  function scheduledPlacementMatchesImported(existing = {}, incoming = {}) {
+    if (!existing || !incoming) return false;
+    const existingHash = String(existing?.sourceAiringHash || '').trim();
+    const incomingHash = String(incoming?.sourceAiringHash || '').trim();
+    if (existingHash && incomingHash && existingHash === incomingHash) return true;
+    const existingId = String(existing?.programId || '').trim();
+    const incomingId = String(incoming?.programId || '').trim();
+    if (existingId && incomingId && existingId === incomingId) return true;
+    const existingTitle = utils.normalizeLookupKey(existing?.programTitle || '');
+    const incomingTitle = utils.normalizeLookupKey(incoming?.programTitle || '');
+    if (existingTitle && incomingTitle && existingTitle === incomingTitle) return true;
+    const existingNola = importedNolaCodeKey(utils.firstNonEmpty(existing?.nolaCode, existing?.nola, ''));
+    const incomingNola = importedNolaCodeKey(utils.firstNonEmpty(incoming?.nolaCode, incoming?.nola, ''));
+    return Boolean(existingNola && incomingNola && existingNola === incomingNola);
+  }
+
+  function importedScheduleConflict(schedule = {}, placement = {}) {
+    if (!schedule || !placement?.dateKey || !Number.isFinite(Number(placement?.startMinutes))) return null;
+    const slotKey = `${placement.dateKey}|${Number(placement.startMinutes)}`;
+    const existing = findPlacementForSlot(schedule, slotKey);
+    if (!existing || scheduledPlacementMatchesImported(existing, placement)) return null;
+    return {
+      scheduleId: schedule.id || '',
+      scheduleTitle: schedule.title || '',
+      dateKey: placement.dateKey,
+      startMinutes: Number(placement.startMinutes),
+      scheduledTitle: existing.programTitle || 'Scheduled block',
+      importedTitle: placement.programTitle || 'Imported report title',
+      existingPlacementId: existing.id || '',
+      importedRowHash: placement.sourceAiringHash || ''
+    };
+  }
+
+  function analyzeImportedScheduleConflicts(rows = []) {
+    const prepared = prepareImportedScheduleRows(rows);
+    const conflicts = [];
+    (prepared.groups || []).forEach((group) => {
+      if (group?.spansCalendarYears || group?.suspiciousSpan) return;
+      const schedule = findExistingScheduleForImportedGroup(group, groupImportedFileKeys(group));
+      if (!schedule) return;
+      (group.rows || []).forEach((entry) => {
+        if (entry?.isNonSpecific || !canBuildImportedPlacement(entry) || !entry?.dateKey || !Number.isFinite(importedRowStartMinutes(entry.row))) return;
+        const placement = buildPlacementFromImportedAiring({ ...entry, startMinutes: importedRowStartMinutes(entry.row) });
+        const conflict = importedScheduleConflict(schedule, placement);
+        if (conflict) conflicts.push(conflict);
+      });
+    });
+    const seen = new Set();
+    return conflicts.filter((item) => {
+      const key = `${item.scheduleId}|${item.dateKey}|${item.startMinutes}|${utils.normalizeLookupKey(item.scheduledTitle)}|${utils.normalizeLookupKey(item.importedTitle)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function importedScheduleConflictPrompt(conflicts = []) {
+    const preview = (Array.isArray(conflicts) ? conflicts : []).slice(0, 6).map((item) => {
+      return `${formatScheduleDay(item.dateKey)} ${utils.minutesToLabel(item.startMinutes)}: schedule has “${item.scheduledTitle}”; report says “${item.importedTitle}”`;
+    });
+    const more = conflicts.length > preview.length ? `\n…and ${conflicts.length - preview.length} more conflict${conflicts.length - preview.length === 1 ? '' : 's'}.` : '';
+    return [
+      "What you just imported doesn't appear to match what's in the schedule.",
+      '',
+      ...preview,
+      more,
+      '',
+      'No scheduled program will be deleted or replaced automatically.',
+      '',
+      'Click OK to keep the existing schedule and add only non-conflicting imported placements.',
+      'Click Cancel to make NO schedule changes from this import so you can review the calendar first.'
+    ].filter((line) => line !== '').join('\n');
+  }
+
   function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [], allowDuplicateMerges = true, allowCreateMissing = true, allowRefreshPlacements = true, allowTitleUpdates = false } = {}) {
     const prepared = prepareImportedScheduleRows(rows);
     const { sourceRows, groupedRows, skippedRows, groups, diagnostics } = prepared;
@@ -1727,6 +1770,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     let restoredPlacements = 0;
     let reboundPlacements = 0;
     let unresolvedCollisions = 0;
+    const scheduleConflicts = [];
     let mergedDuplicateSchedules = 0;
     let suspiciousSpanGroups = 0;
     let suspiciousSpanRows = 0;
@@ -1774,22 +1818,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       }
       const preservedLiveBreaks = collectLiveBreakPreserveMap(schedule, group.key);
       const shouldRefreshPlacements = Boolean(allowRefreshPlacements || createdThisSchedule || duplicateSchedules.length || rebuild);
-      if (!createdThisSchedule) {
-        updatedSchedules += 1;
-        if (shouldRefreshPlacements && rebuild) {
-          schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport);
-        } else if (shouldRefreshPlacements) {
-          schedule.placements = (schedule.placements || []).filter((placement) => {
-            if (!placement?.importedFromReport) return true;
-            const sameImportedKey = utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key);
-            const sameFile = groupFileKeys.has(utils.normalizeLookupKey(placement?.sourceName || ''));
-            const inGroupRange = placement?.dateKey && group.startDate && group.endDate
-              ? placement.dateKey >= group.startDate && placement.dateKey <= group.endDate
-              : false;
-            return !(sameImportedKey || (sameFile && inGroupRange));
-          });
-        }
-      }
+      if (!createdThisSchedule) updatedSchedules += 1;
       const scheduleableRows = group.rows.filter((entry) => !entry?.isNonSpecific && canBuildImportedPlacement(entry) && entry?.dateKey && Number.isFinite(importedRowStartMinutes(entry.row)));
       const totals = summarizeImportedRows(group.rows);
       schedule.meta = {
@@ -1813,6 +1842,22 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const placement = applyPreservedLiveBreakFlag(buildPlacementFromImportedAiring(prepared), preservedLiveBreaks, group.key);
         if (!placement) return;
         placement.importedFundraiserKey = group.key;
+        const conflict = importedScheduleConflict(schedule, placement);
+        if (conflict) {
+          scheduleConflicts.push(conflict);
+          skippedPlacements += 1;
+          return;
+        }
+        const existingAtSlot = findPlacementForSlot(schedule, placement.startSlotKey);
+        if (existingAtSlot && scheduledPlacementMatchesImported(existingAtSlot, placement)) {
+          existingAtSlot.importedBroadcastDollars = Number(placement.importedBroadcastDollars || 0) || 0;
+          if (placement.sourceAiringHash) existingAtSlot.sourceAiringHash = placement.sourceAiringHash;
+          if (placement.sourceImportBatchId) existingAtSlot.sourceImportBatchId = placement.sourceImportBatchId;
+          existingAtSlot.importMatchMethod = placement.importMatchMethod || existingAtSlot.importMatchMethod || '';
+          existingAtSlot.importMatchReason = placement.importMatchReason || existingAtSlot.importMatchReason || '';
+          skippedPlacements += 1;
+          return;
+        }
         const dedupeKey = placement.sourceAiringHash || `${placement.programId}|${placement.dateKey}|${placement.startMinutes}`;
         const signature = placementSignature(placement, group.key);
         if (existingKeys.has(dedupeKey)) { skippedPlacements += 1; return; }
@@ -1843,10 +1888,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         createdPlacements += 1;
         if (placement.durationCorrectedFromLibrary) correctedDurations += 1;
       });
-      const coverage = shouldRefreshPlacements ? reconcileImportedScheduleCoverage(schedule, scheduleableRows, group.key) : null;
-      restoredPlacements += Number(coverage?.restoredPlacements || 0) || 0;
-      reboundPlacements += Number(coverage?.reboundPlacements || 0) || 0;
-      unresolvedCollisions += Number(coverage?.unresolvedCollisions || 0) || 0;
+      // Existing calendar blocks are authoritative. Imported rows never replace them here.
     });
 
     if (activateFirst && firstScheduleId) {
@@ -1866,6 +1908,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       restoredPlacements,
       reboundPlacements,
       unresolvedCollisions,
+      scheduleConflicts: scheduleConflicts.length,
+      scheduleConflictDetails: scheduleConflicts.slice(0, 25),
       mergedDuplicateSchedules,
       suspiciousSpanGroups,
       suspiciousSpanRows,
@@ -1996,16 +2040,45 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   async function buildSchedulesFromImportedReports(options = {}) {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to build fundraiser calendars from imported reports.', 'warn'); return null; }
     const rows = Array.isArray(options.rows) ? options.rows : await App.data.fetchImportedAirings();
+    const preflightConflicts = analyzeImportedScheduleConflicts(rows);
+    if (preflightConflicts.length && options.promptOnConflicts !== false) {
+      const proceedSafely = window.confirm(importedScheduleConflictPrompt(preflightConflicts));
+      if (!proceedSafely) {
+        setNotice(`Imported report results were kept, but no calendar changes were made because ${utils.formatCount(preflightConflicts.length)} schedule conflict${preflightConflicts.length === 1 ? '' : 's'} need review.`, 'warn');
+        return {
+          schedulesCreated: 0,
+          schedulesUpdated: 0,
+          placementsCreated: 0,
+          placementsSkipped: 0,
+          skippedRows: 0,
+          correctedDurations: 0,
+          restoredPlacements: 0,
+          reboundPlacements: 0,
+          unresolvedCollisions: preflightConflicts.length,
+          scheduleConflicts: preflightConflicts.length,
+          scheduleConflictDetails: preflightConflicts.slice(0, 25),
+          scheduleChangesSkipped: true,
+          mergedDuplicateSchedules: 0,
+          suspiciousSpanGroups: 0,
+          suspiciousSpanRows: 0,
+          removedScheduleIds: [],
+          fundraiserCount: 0,
+          diagnostics: { inputRows: rows.length, droppedRows: [] }
+        };
+      }
+    }
     const dirtySchedules = [];
     const summary = mergeImportedRowsIntoSchedules(rows, {
       rebuild: Boolean(options.rebuild),
       activateFirst: options.activateFirst !== false,
       dirtySchedules,
-      allowDuplicateMerges: options.allowDuplicateMerges !== false,
+      allowDuplicateMerges: Boolean(options.allowDuplicateMerges),
       allowCreateMissing: options.allowCreateMissing !== false,
       allowRefreshPlacements: options.allowRefreshPlacements !== false,
       allowTitleUpdates: Boolean(options.allowTitleUpdates)
     });
+    summary.scheduleConflicts = Math.max(Number(summary.scheduleConflicts || 0) || 0, preflightConflicts.length);
+    if (preflightConflicts.length) summary.scheduleConflictDetails = preflightConflicts.slice(0, 25);
     for (const schedule of dirtySchedules) {
       await persistSchedules(schedule);
     }
@@ -2725,16 +2798,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     }
     const existingSlotPlacement = findPlacementForSlot(schedule, slot.key);
     const existingHashPlacement = scheduleImportedPlacementByHash(schedule, rowHash);
-    schedule.placements = (schedule.placements || []).filter((item) => item.id !== existingSlotPlacement?.id && item.id !== existingHashPlacement?.id);
-    if (existingHashPlacement?.transferredToStation || existingSlotPlacement?.transferredToStation) placement.transferredToStation = true;
-    if (hasLiveBreakFlag(existingHashPlacement) || hasLiveBreakFlag(existingSlotPlacement)) {
-      placement.liveBreakFlag = true;
-      placement.liveBreakNotes = existingHashPlacement?.liveBreakNotes || existingSlotPlacement?.liveBreakNotes || '';
+    if (existingSlotPlacement) {
+      showScheduleModalWarning(`That slot already contains ${existingSlotPlacement.programTitle}. Imported-row rescue will not replace it. Use Admin right-click → Delete scheduled block first.`, 'bad');
+      return false;
     }
-    schedule.placements.push({
-      ...placement,
-      id: existingHashPlacement?.id || existingSlotPlacement?.id || placement.id
-    });
+    if (existingHashPlacement) {
+      showScheduleModalWarning(`That imported airing is already scheduled as ${existingHashPlacement.programTitle}. It was not moved or duplicated.`, 'warn');
+      return false;
+    }
+    schedule.placements.push(placement);
     state.scheduleSlotRescueCache = {};
     await persistSchedules(schedule);
     renderScheduleGrid();
@@ -3727,11 +3799,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (currentPlacement) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
       els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''}">${placeholder ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>` : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${placeholder ? ' · placeholder' : ''}</div></div>`;
-      if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = !editable;
+      if (els.scheduleClearPlacementButton) { els.scheduleClearPlacementButton.disabled = true; els.scheduleClearPlacementButton.classList.add('hidden'); }
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;
     } else {
       els.scheduleSelectedPreview.innerHTML = '<div class="schedule-hint">No program assigned to this slot yet.</div>';
-      if (els.scheduleClearPlacementButton) els.scheduleClearPlacementButton.disabled = true;
+      if (els.scheduleClearPlacementButton) { els.scheduleClearPlacementButton.disabled = true; els.scheduleClearPlacementButton.classList.add('hidden'); }
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
     if (els.scheduleLiveBreakFlag) {
@@ -3954,6 +4026,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const lengthMinutes = placeholderLengthMinutes(document.getElementById('schedule-placeholder-length')?.value || 60);
     const slotCount = Math.max(1, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES));
     const existing = findPlacementForSlot(schedule, slot.key);
+    if (existing && !isPlaceholderPlacement(existing)) {
+      showScheduleModalWarning('That slot already contains a scheduled program. Use Admin right-click → Delete scheduled block first if you really intend to remove it.', 'bad');
+      return false;
+    }
     const base = {
       id: existing?.id || utils.makeId('placeholder'),
       placementType: 'placeholder',
@@ -4015,6 +4091,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const lengthMinutes = derive.runtimeMinutes(row) || derive.lengthBucket(row) || 30;
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const existing = findPlacementForSlot(schedule, slot.key);
+    const existingSameProgram = existing && !isPlaceholderPlacement(existing)
+      && String(existing.programId || '').trim() === String(derive.programId(row) || '').trim();
+    if (existing && !isPlaceholderPlacement(existing) && !existingSameProgram) {
+      showScheduleModalWarning('That slot already contains a scheduled program. It will not be replaced. Use Admin right-click → Delete scheduled block first.', 'bad');
+      return;
+    }
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     const base = {
       id: existing?.id || utils.makeId('place'),
@@ -4045,19 +4127,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
   async function clearSelectedPlacement() {
-    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to remove programs.', 'bad'); return; }
-    const schedule = getActiveSchedule();
-    const slot = state.selectedScheduleSlot;
-    if (!schedule || !slot) return;
-    const target = findPlacementForSlot(schedule, slot.key);
-    if (!target) return;
-    schedule.placements = schedule.placements.filter((item) => item.id !== target.id);
-    await persistSchedules(schedule);
-    renderScheduleGrid();
-    renderProgramPicker();
-    closeScheduleModal();
-    setNotice(`Removed ${target.programTitle} from ${slotLabel(target.dateKey, target.startMinutes)}.`);
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to remove programs.', 'bad'); return false; }
+    showScheduleModalWarning('Scheduled programs can only be removed with Admin right-click → Delete scheduled block.', 'warn');
+    return false;
   }
+
 
   async function updateLiveBreakFlag() {
     if (!canScheduleEdit()) return;
@@ -4110,6 +4184,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       }
     }
     const slotCount = Math.max(1, Math.ceil(Number(placement.lengthMinutes || 30) / constants.DEFAULT_SLOT_MINUTES));
+    const occupiedTarget = findPlacementForSlot(schedule, `${targetDateKey}|${targetMinutes}`);
+    if (occupiedTarget && occupiedTarget.id !== placement.id) {
+      setNotice(`Cannot move ${placement.programTitle} onto ${occupiedTarget.programTitle}. Delete the existing target block first with Admin right-click → Delete scheduled block.`, 'warn');
+      return;
+    }
     placement.dateKey = targetDateKey;
     placement.startMinutes = targetMinutes;
     placement.endMinutes = targetMinutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
@@ -4158,7 +4237,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       }
     }
     const existing = findPlacementForSlot(schedule, slot.key);
-    if (existing) schedule.placements = schedule.placements.filter((item) => item.id !== existing.id);
+    if (existing) {
+      showScheduleModalWarning(`That slot already contains ${existing.programTitle}. Paste will not replace it. Use Admin right-click → Delete scheduled block first.`, 'bad');
+      return false;
+    }
     const lengthMinutes = placeholder ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
