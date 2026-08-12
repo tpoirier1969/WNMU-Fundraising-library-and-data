@@ -1,0 +1,235 @@
+name: Comprehensive version-system repair
+on:
+  push:
+    branches: [fix-version-system-comprehensive-20260812]
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-version-system-comprehensive-20260812
+          fetch-depth: 0
+      - name: Repair all active version ownership paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path, old, new, label):
+              p=Path(path); text=p.read_text()
+              count=text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              p.write_text(text.replace(old,new,1))
+
+          # Feature scripts must never own or mutate the application revision.
+          replace_once('assets/js/library-detail-workspace-fix.js', "  const APP_VERSION = 'v0.22.54';\n", '', 'workspace fix local version constant')
+          replace_once('assets/js/library-detail-workspace-fix.js', "    App.constants.APP_VERSION = APP_VERSION;\n", '', 'workspace fix version mutation')
+          replace_once('assets/js/library-split-default.js', "    App.constants.APP_VERSION = 'v0.22.53';\n", '', 'split view version mutation')
+          replace_once('assets/js/detail-timing-fast.js', "  const APP_VERSION = 'v0.22.55';\n", '', 'timing fast local version constant')
+          replace_once('assets/js/detail-timing-fast.js', "    App.constants.APP_VERSION = APP_VERSION;\n", '', 'timing fast version mutation')
+
+          # core.js owns an immutable boot-version view sourced from the launcher/manifest.
+          replace_once(
+              'assets/js/core.js',
+              "  const cfg = window.PLEDGE_MANAGER_CONFIG || {};\n\n  App.cfg = cfg;",
+              "  const cfg = window.PLEDGE_MANAGER_CONFIG || {};\n  const BOOT_APP_VERSION = String(window.__PLEDGE_APP_VERSION__ || '').trim();\n\n  App.cfg = cfg;",
+              'core boot version capture'
+          )
+          replace_once(
+              'assets/js/core.js',
+              "    APP_VERSION: String(window.__PLEDGE_APP_VERSION__ || '').trim(),",
+              "    APP_VERSION: BOOT_APP_VERSION,",
+              'core version initializer'
+          )
+          replace_once(
+              'assets/js/core.js',
+              "  };\n\n  const adminEmails = Array.isArray(cfg.ADMIN_EMAILS)",
+              "  };\n\n  Object.defineProperty(App.constants, 'APP_VERSION', {\n    enumerable: true,\n    configurable: false,\n    get() { return BOOT_APP_VERSION; },\n    set(attemptedVersion) {\n      const attempted = String(attemptedVersion || '').trim();\n      if (attempted && attempted !== BOOT_APP_VERSION) {\n        console.warn(`Ignored attempt to overwrite application version ${BOOT_APP_VERSION} with ${attempted}.`);\n      }\n    }\n  });\n\n  const adminEmails = Array.isArray(cfg.ADMIN_EMAILS)",
+              'core immutable version property'
+          )
+
+          # The update gate reads the boot version directly, never a feature-mutated value.
+          replace_once(
+              'assets/js/app-init.js',
+              "  function cleanVersion(value = '') {\n    return String(value || '').trim().replace(/^v/i, '');\n  }\n\n  function compareVersions",
+              "  function cleanVersion(value = '') {\n    return String(value || '').trim().replace(/^v/i, '');\n  }\n\n  function getBootLocalVersion() {\n    return cleanVersion(\n      window.__PLEDGE_APP_VERSION__\n      || document.documentElement?.dataset?.appVersion\n      || constants.APP_VERSION\n      || ''\n    );\n  }\n\n  function compareVersions",
+              'app init boot-version helper'
+          )
+          replace_once('assets/js/app-init.js', "      localVersion: cleanVersion(localVersion || constants.APP_VERSION),", "      localVersion: cleanVersion(localVersion || getBootLocalVersion()),", 'gate state local version')
+          replace_once('assets/js/app-init.js', "    const local = cleanVersion(localVersion || constants.APP_VERSION);", "    const local = cleanVersion(localVersion || getBootLocalVersion());", 'gate display local version')
+          replace_once('assets/js/app-init.js', "    const localVersion = cleanVersion(constants.APP_VERSION);", "    const localVersion = getBootLocalVersion();", 'remote update local version')
+
+          # The canonical launcher reads version.json, seeds the runtime, and labels the generated document.
+          replace_once(
+              'index.html',
+              "      LABEL=`v${VERSION}`;\n",
+              "      LABEL=`v${VERSION}`;\n      window.__PLEDGE_APP_VERSION__=LABEL;\n",
+              'launcher global boot seed'
+          )
+          replace_once(
+              'index.html',
+              "      doc.title=`WNMU Pledge Program Library ${LABEL}`;\n",
+              "      doc.title=`WNMU Pledge Program Library ${LABEL}`;\n      doc.documentElement.dataset.appVersion=VERSION;\n",
+              'launcher document version marker'
+          )
+
+          # app-shell.html is an internal shell, not a supported direct entry point.
+          replace_once(
+              'app-shell.html',
+              "  <title>WNMU Pledge Program Library</title>\n",
+              "  <title>WNMU Pledge Program Library</title>\n  <script>\n    if (/\\/app-shell\\.html$/i.test(window.location.pathname)) window.location.replace('./');\n  </script>\n",
+              'app shell direct-entry guard'
+          )
+
+          # Performance Lab now uses the same version.json source and no replacement ladder.
+          Path('pledge-performance-lab.html').write_text('''<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width,initial-scale=1">\n  <title>WNMU Pledge Performance Lab</title>\n  <style>body{margin:0;font-family:system-ui,sans-serif;background:#eef4f7;color:#223a47}.boot{min-height:100vh;display:grid;place-items:center}.card{padding:24px;border:1px solid #cbd8de;border-radius:16px;background:#fff}</style>\n</head>\n<body>\n  <main class="boot"><div class="card"><h2>Loading Pledge Performance Lab…</h2><p id="status">Loading the current analytics workspace.</p></div></main>\n  <script>\n  (async()=>{\n    const status=document.getElementById('status');\n    try{\n      const versionResponse=await fetch(`version.json?_=${Date.now()}`,{cache:'no-store'});\n      if(!versionResponse.ok)throw new Error(`Could not load version.json (${versionResponse.status}).`);\n      const payload=await versionResponse.json();\n      const version=String(payload?.appVersion||payload?.version||'').trim().replace(/^v/i,'');\n      if(!version)throw new Error('version.json does not contain an appVersion.');\n      const label=`v${version}`;\n      const response=await fetch(`pledge-performance-lab-shell.html?v=${encodeURIComponent(version)}&_=${Date.now()}`,{cache:'no-store'});\n      if(!response.ok)throw new Error('Could not load the performance lab shell.');\n      const doc=new DOMParser().parseFromString(await response.text(),'text/html');\n      doc.title=`WNMU Pledge Performance Analytics ${label}`;\n      doc.documentElement.dataset.appVersion=version;\n      const versionNode=doc.getElementById('performance-lab-version');\n      if(versionNode)versionNode.textContent=label;\n      document.open();\n      document.write('<!doctype html>'+doc.documentElement.outerHTML);\n      document.close();\n    }catch(error){\n      console.error(error);\n      status.textContent='The performance lab could not start: '+(error.message||error);\n    }\n  })();\n  </script>\n</body>\n</html>\n''')
+
+          replace_once('pledge-performance-lab-shell.html', '<title>WNMU Pledge Performance Analytics v0.22.52</title>', '<title>WNMU Pledge Performance Analytics</title>', 'performance shell title')
+          replace_once('pledge-performance-lab-shell.html', '<div class="eyebrow">Admin analytics · v0.22.52</div>', '<div class="eyebrow">Admin analytics · <span id="performance-lab-version">v…</span></div>', 'performance shell visible version')
+          replace_once(
+              'pledge-performance-lab-shell.html',
+              "  <title>WNMU Pledge Performance Analytics</title>\n",
+              "  <title>WNMU Pledge Performance Analytics</title>\n  <script>\n    if (/\\/pledge-performance-lab-shell\\.html$/i.test(window.location.pathname)) window.location.replace('pledge-performance-lab.html');\n  </script>\n",
+              'performance shell direct-entry guard'
+          )
+
+          # The old split-screen test cannot bootstrap the new loader correctly; make it canonical.
+          Path('splitscreentext.html').write_text('''<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WNMU Pledge Program Library</title></head>\n<body><script>window.location.replace('./');</script></body>\n</html>\n''')
+
+          # Config examples must not teach a second revision source.
+          config_example=Path('config.example.js')
+          text=config_example.read_text()
+          line="  APP_VERSION: 'v0.21.30',\n"
+          if text.count(line) != 1: raise SystemExit('config.example.js APP_VERSION line not uniquely found')
+          config_example.write_text(text.replace(line,'',1))
+
+          # One and only revision bump.
+          manifest=json.loads(Path('version.json').read_text())
+          manifest['appVersion']='0.22.59'
+          manifest['releasedAt']='2026-08-12'
+          Path('version.json').write_text(json.dumps(manifest,separators=(',',':'))+'\n')
+          PY
+      - name: Verify all version paths and syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+
+          # All active JS must still parse.
+          for f in assets/js/*.js; do node --check "$f" >/dev/null; done
+
+          # All inline scripts in active HTML entry/shell files must parse.
+          python - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          files=['index.html','app-shell.html','pledge-performance-lab.html','pledge-performance-lab-shell.html','splitscreentext.html']
+          for name in files:
+              text=Path(name).read_text()
+              scripts=[]
+              for m in re.finditer(r'<script([^>]*)>(.*?)</script>',text,re.I|re.S):
+                  if re.search(r'\bsrc\s*=',m.group(1),re.I): continue
+                  body=m.group(2).strip()
+                  if body: scripts.append(body)
+              for i,body in enumerate(scripts):
+                  p=Path(f'/tmp/{Path(name).stem}-inline-{i}.js')
+                  p.write_text(body)
+                  subprocess.run(['node','--check',str(p)],check=True,stdout=subprocess.DEVNULL)
+          PY
+
+          # Static architecture assertions for the live application graph.
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+          current=json.loads(Path('version.json').read_text())['appVersion']
+          if current!='0.22.59': raise SystemExit(f'Unexpected manifest version {current}')
+
+          active=[
+            'index.html','app-shell.html','pledge-performance-lab.html','pledge-performance-lab-shell.html','splitscreentext.html',
+            'config.js','config.example.js',
+            'assets/js/core.js','assets/js/app-init.js','assets/js/library-split-default.js',
+            'assets/js/library-detail-workspace-fix.js','assets/js/detail-timing-fast.js'
+          ]
+          texts={p:Path(p).read_text() for p in active}
+
+          for p,text in texts.items():
+              if p!='version.json' and re.search(r'0\.22\.\d+',text):
+                  raise SystemExit(f'Hardcoded 0.22.x revision remains in active runtime file {p}')
+
+          mutators=[]
+          for p,text in texts.items():
+              if re.search(r'App\.constants\.APP_VERSION\s*=',text): mutators.append(p)
+          if mutators: raise SystemExit('Feature version mutators remain: '+', '.join(mutators))
+
+          if "Object.defineProperty(App.constants, 'APP_VERSION'" not in texts['assets/js/core.js']:
+              raise SystemExit('APP_VERSION is not protected in core.js')
+          if 'getBootLocalVersion()' not in texts['assets/js/app-init.js']:
+              raise SystemExit('Update gate is not using immutable boot version')
+          if 'version.json' not in texts['index.html'] or '__PLEDGE_APP_VERSION__' not in texts['index.html']:
+              raise SystemExit('Canonical launcher is not sourcing/seeding version.json')
+          if 'version.json' not in texts['pledge-performance-lab.html']:
+              raise SystemExit('Performance Lab is not sourcing version.json')
+          if 'APP_VERSION' in texts['config.example.js']:
+              raise SystemExit('config.example.js still defines APP_VERSION')
+          if '/app-shell\\.html$' not in texts['app-shell.html']:
+              raise SystemExit('Direct app-shell guard missing')
+          if '/pledge-performance-lab-shell\\.html$' not in texts['pledge-performance-lab-shell.html']:
+              raise SystemExit('Direct performance shell guard missing')
+          PY
+
+          # Runtime guard: core's application version cannot be overwritten by a feature script.
+          node <<'NODE'
+          const fs=require('fs');
+          const vm=require('vm');
+          const context={
+            window:{__PLEDGE_APP_VERSION__:'v9.8.7',PLEDGE_MANAGER_CONFIG:{}},
+            console,
+            Intl,
+            Date,
+            Set,
+            Map
+          };
+          vm.createContext(context);
+          vm.runInContext(fs.readFileSync('assets/js/core.js','utf8'),context);
+          const constants=context.window.PledgeLib.constants;
+          if(constants.APP_VERSION!=='v9.8.7') throw new Error('core did not accept the boot version');
+          constants.APP_VERSION='v1.2.3';
+          if(constants.APP_VERSION!=='v9.8.7') throw new Error('APP_VERSION was mutable');
+          console.log('Immutable boot-version test passed.');
+          NODE
+
+          # Only expected product files may differ from main.
+          changed="$(git diff --name-only origin/main...HEAD; git diff --name-only)"
+          printf '%s\n' "$changed" | sed '/^$/d' | sort -u > /tmp/changed.txt
+          cat >/tmp/expected.txt <<'EOF'
+          .github/workflows/comprehensive-version-repair.yml
+          app-shell.html
+          assets/js/app-init.js
+          assets/js/core.js
+          assets/js/detail-timing-fast.js
+          assets/js/library-detail-workspace-fix.js
+          assets/js/library-split-default.js
+          config.example.js
+          index.html
+          pledge-performance-lab-shell.html
+          pledge-performance-lab.html
+          splitscreentext.html
+          version.json
+          EOF
+          sort -u /tmp/expected.txt -o /tmp/expected.txt
+          diff -u /tmp/expected.txt /tmp/changed.txt
+      - name: Commit verified comprehensive repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name Tod
+          git config user.email tpoirier@nmu.edu
+          rm .github/workflows/comprehensive-version-repair.yml
+          git add app-shell.html assets/js/app-init.js assets/js/core.js assets/js/detail-timing-fast.js assets/js/library-detail-workspace-fix.js assets/js/library-split-default.js config.example.js index.html pledge-performance-lab-shell.html pledge-performance-lab.html splitscreentext.html version.json .github/workflows/comprehensive-version-repair.yml
+          git commit -m "Make version.json the only application revision source"
+          git push origin HEAD:fix-version-system-comprehensive-20260812
