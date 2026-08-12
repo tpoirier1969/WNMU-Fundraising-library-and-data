@@ -16,8 +16,22 @@
   <script>
   (async()=>{
     'use strict';
-    const VERSION='0.22.57', LABEL=`v${VERSION}`, status=document.getElementById('split-boot-status');
+    const status=document.getElementById('split-boot-status');
     const setStatus=(message)=>{if(status)status.textContent=message};
+    let VERSION='', LABEL='';
+    try {
+      setStatus('Checking application version…');
+      const versionResponse=await fetch(`version.json?_=${Date.now()}`,{cache:'no-store'});
+      if(!versionResponse.ok)throw new Error(`Could not load version.json (${versionResponse.status}).`);
+      const versionPayload=await versionResponse.json();
+      VERSION=String(versionPayload?.appVersion||versionPayload?.version||'').trim().replace(/^v/i,'');
+      if(!VERSION)throw new Error('version.json does not contain an appVersion.');
+      LABEL=`v${VERSION}`;
+    } catch(error) {
+      console.error(error);
+      setStatus(`The Pledge Program Library could not determine its version: ${error.message||error}`);
+      return;
+    }
     const versioned=(value='')=>{
       if(!value)return value;
       try{
@@ -75,7 +89,7 @@
       const css=doc.createElement('link');css.rel='stylesheet';css.href=`assets/library-split-default.css?v=${VERSION}`;doc.head.append(css);
       const popupCss=doc.createElement('link');popupCss.rel='stylesheet';popupCss.href=`assets/library-detail-popup-restore.css?v=${VERSION}`;doc.head.append(popupCss);
       const core=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/core\.js/i.test(script.getAttribute('src')||''));
-      if(core){const override=doc.createElement('script');override.textContent=`window.addEventListener('DOMContentLoaded',()=>{if(window.PledgeLib?.constants)window.PledgeLib.constants.APP_VERSION='${LABEL}'})`;core.after(override)}
+      if(core){const seed=doc.createElement('script');seed.textContent=`window.__PLEDGE_APP_VERSION__=${JSON.stringify(LABEL)};`;core.before(seed)}
       const appInit=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/app-init\.js/i.test(script.getAttribute('src')||''));
       const controller=doc.createElement('script');controller.defer=true;controller.src=`assets/js/library-split-default.js?v=${VERSION}`;
       const workspaceFix=doc.createElement('script');workspaceFix.defer=true;workspaceFix.src=`assets/js/library-detail-workspace-fix.js?v=${VERSION}`;
