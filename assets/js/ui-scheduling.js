@@ -209,11 +209,15 @@
   }
 
   function scheduleLooksAutoImported(schedule = {}) {
-    const titleKey = utils.normalizeLookupKey(schedule?.title || '');
-    return titleKey.startsWith('imported pledge')
-      || Boolean(schedule?.meta?.importedFromReports)
-      || Boolean(utils.normalizeText(schedule?.meta?.importedFundraiserKey || ''));
-  }
+  if (schedule?.meta?.autoCreatedFromReports === true) return true;
+  if (schedule?.meta?.autoCreatedFromReports === false) return false;
+  const titleKey = utils.normalizeLookupKey(schedule?.title || '');
+  if (titleKey.startsWith('imported pledge')) return true;
+  const hasImportedIdentity = Boolean(schedule?.meta?.importedFromReports)
+    || Boolean(utils.normalizeText(schedule?.meta?.importedFundraiserKey || ''));
+  return hasImportedIdentity && !scheduleHasManualOrUserContent(schedule);
+}
+
 
   function scheduleSameRangePreferenceScore(schedule = {}) {
     let score = 0;
@@ -1346,36 +1350,67 @@
   }
 
 
-  function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupImportedFileKeys(group)) {
-    const identity = `imported|${group.key}`.toLowerCase();
-    let schedule = state.schedules.find((item) => scheduleIdentityKey(item) === identity) || null;
-    if (!schedule) {
-      schedule = state.schedules.find((item) => {
-        const importedPlacement = (item.placements || []).find((placement) => placement?.importedFromReport && utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key));
-        return Boolean(importedPlacement);
-      }) || null;
-    }
-    if (!schedule) schedule = findBestSameRangeScheduleForImportedGroup(group);
-    if (!schedule) {
-      schedule = state.schedules.find((item) => {
-        const sameRange = utils.normalizeText(item.startDate) === group.startDate && utils.normalizeText(item.endDate) === group.endDate;
-        const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
-        return sameRange && hasImportedPlacements;
-      }) || null;
-    }
-    if (!schedule) {
-      schedule = state.schedules.find((item) => {
-        const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
-        if (!hasImportedPlacements) return false;
-        if (!datesOverlap(utils.normalizeText(item.startDate), utils.normalizeText(item.endDate), group.startDate, group.endDate)) return false;
-        if (!scheduleAndGroupShareCalendarYear(item, group)) return false;
-        const itemFileKeys = scheduleImportedFileKeys(item);
-        if (!itemFileKeys.size || !groupFileKeys.size) return false;
-        return [...groupFileKeys].some((key) => itemFileKeys.has(key));
-      }) || null;
-    }
-    return schedule;
+  function scheduleContainsImportedGroup(schedule = {}, group = {}) {
+  const scheduleStart = utils.normalizeText(schedule?.startDate || '');
+  const scheduleEnd = utils.normalizeText(schedule?.endDate || scheduleStart);
+  const groupStart = utils.normalizeText(group?.startDate || '');
+  const groupEnd = utils.normalizeText(group?.endDate || groupStart);
+  if (!(scheduleStart && scheduleEnd && groupStart && groupEnd)) return false;
+  if (scheduleStart > groupStart || scheduleEnd < groupEnd) return false;
+  return scheduleAndGroupShareCalendarYear(schedule, group);
+}
+
+function findBestContainingScheduleForImportedGroup(group = {}) {
+  const candidates = (state.schedules || []).filter((item) => {
+    if (!scheduleContainsImportedGroup(item, group)) return false;
+    return !scheduleLooksAutoImported(item) || scheduleHasManualOrUserContent(item);
+  });
+  if (!candidates.length) return null;
+  return [...candidates].sort((a, b) => {
+    const aExact = utils.normalizeText(a?.startDate) === utils.normalizeText(group?.startDate)
+      && utils.normalizeText(a?.endDate) === utils.normalizeText(group?.endDate);
+    const bExact = utils.normalizeText(b?.startDate) === utils.normalizeText(group?.startDate)
+      && utils.normalizeText(b?.endDate) === utils.normalizeText(group?.endDate);
+    if (aExact !== bExact) return aExact ? -1 : 1;
+    const aSpan = dateRangeSpanDays(utils.normalizeText(a?.startDate), utils.normalizeText(a?.endDate));
+    const bSpan = dateRangeSpanDays(utils.normalizeText(b?.startDate), utils.normalizeText(b?.endDate));
+    if (aSpan !== bSpan) return aSpan - bSpan;
+    return scheduleSameRangePreferenceScore(b) - scheduleSameRangePreferenceScore(a);
+  })[0] || null;
+}
+
+function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupImportedFileKeys(group)) {
+  const identity = `imported|${group.key}`.toLowerCase();
+  let schedule = findBestContainingScheduleForImportedGroup(group);
+  if (!schedule) schedule = state.schedules.find((item) => scheduleIdentityKey(item) === identity) || null;
+  if (!schedule) {
+    schedule = state.schedules.find((item) => {
+      const importedPlacement = (item.placements || []).find((placement) => placement?.importedFromReport && utils.normalizeText(placement?.importedFundraiserKey) === utils.normalizeText(group.key));
+      return Boolean(importedPlacement);
+    }) || null;
   }
+  if (!schedule) schedule = findBestSameRangeScheduleForImportedGroup(group);
+  if (!schedule) {
+    schedule = state.schedules.find((item) => {
+      const sameRange = utils.normalizeText(item.startDate) === group.startDate && utils.normalizeText(item.endDate) === group.endDate;
+      const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
+      return sameRange && hasImportedPlacements;
+    }) || null;
+  }
+  if (!schedule) {
+    schedule = state.schedules.find((item) => {
+      const hasImportedPlacements = (item.placements || []).some((placement) => placement.importedFromReport);
+      if (!hasImportedPlacements) return false;
+      if (!datesOverlap(utils.normalizeText(item.startDate), utils.normalizeText(item.endDate), group.startDate, group.endDate)) return false;
+      if (!scheduleAndGroupShareCalendarYear(item, group)) return false;
+      const itemFileKeys = scheduleImportedFileKeys(item);
+      if (!itemFileKeys.size || !groupFileKeys.size) return false;
+      return [...groupFileKeys].some((key) => itemFileKeys.has(key));
+    }) || null;
+  }
+  return schedule;
+}
+
 
   function prepareImportedScheduleRows(rows = []) {
     const deduped = dedupeImportedRows(Array.isArray(rows) ? rows : []);
@@ -1711,12 +1746,16 @@
       const groupFileKeys = groupImportedFileKeys(group);
       let schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);
       let createdThisSchedule = false;
+      let scheduleWasAutoImported = schedule
+        ? (scheduleLooksAutoImported(schedule) && !scheduleHasManualOrUserContent(schedule))
+        : false;
       if (!schedule) {
         if (!allowCreateMissing) return;
         schedule = createScheduleRecord({ title: group.title, startDate: group.startDate, endDate: group.endDate, dayStartHour: constants.DEFAULT_DAY_START_HOUR, dayEndHour: constants.DEFAULT_DAY_END_HOUR, dayStartMinutes: constants.DEFAULT_DAY_START_MINUTES, dayEndMinutes: constants.DEFAULT_DAY_END_MINUTES });
         state.schedules.unshift(schedule);
         createdSchedules += 1;
         createdThisSchedule = true;
+        scheduleWasAutoImported = true;
       }
       const duplicateSchedules = allowDuplicateMerges ? findMergeableDuplicateSchedulesForImportedGroup(schedule, group, groupFileKeys) : [];
       duplicateSchedules.forEach((duplicate) => {
@@ -1728,7 +1767,7 @@
         state.schedules = (state.schedules || []).filter((item) => !removedScheduleIds.includes(item.id));
         if (removedScheduleIds.includes(state.activeScheduleId)) state.activeScheduleId = schedule.id;
       }
-      if (scheduleLooksAutoImported(schedule)) {
+      if (scheduleWasAutoImported) {
         if (createdThisSchedule || allowTitleUpdates) schedule.title = group.title || schedule.title;
         schedule.startDate = group.startDate || schedule.startDate;
         schedule.endDate = group.endDate || schedule.endDate;
@@ -1755,6 +1794,7 @@
       const totals = summarizeImportedRows(group.rows);
       schedule.meta = {
         ...(schedule.meta || {}),
+        autoCreatedFromReports: Boolean(scheduleWasAutoImported || createdThisSchedule),
         importedFundraiserKey: group.key,
         importedFromReports: true,
         importedDriveStartDate: group.startDate,
