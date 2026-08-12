@@ -1394,6 +1394,31 @@
     return fetchAllRows(constants.AIRINGS_TABLE);
   }
 
+  async function fetchImportedMatchMemoryRows() {
+    const pageSize = 1000;
+    let from = 0;
+    const rows = [];
+    try {
+      while (true) {
+        const { data, error } = await state.client
+          .from(constants.AIRINGS_TABLE)
+          .select('*')
+          .in('match_method', ['manual_library', 'saved_title_rule'])
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const chunk = data || [];
+        rows.push(...chunk);
+        if (chunk.length < pageSize) break;
+        from += pageSize;
+      }
+      return rows;
+    } catch (error) {
+      console.warn('Filtered import match-memory query failed; falling back to the imported airing history.', error);
+      const allRows = await fetchAllRows(constants.AIRINGS_TABLE);
+      return (allRows || []).filter((row) => ['manual_library', 'saved_title_rule'].includes(String(row?.match_method || '').trim().toLowerCase()));
+    }
+  }
+
   async function fetchUnlinkedImportedAirings() {
     const rows = await fetchAllRows(constants.AIRINGS_TABLE);
     return (rows || []).filter((row) => {
@@ -1615,6 +1640,7 @@
     deleteScheduleRemote,
     fetchPerformanceInputs,
     fetchImportedAirings,
+    fetchImportedMatchMemoryRows,
     fetchUnlinkedImportedAirings,
     updateImportedAiringByHash,
     deleteImportedAiringByHash,

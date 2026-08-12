@@ -93,6 +93,103 @@
     utils.storageSet(IMPORT_MATCH_RULES_STORAGE_KEY, imp().aliasRules);
   }
 
+  function aliasRuleTimestamp(rule = {}) {
+    const stamp = Date.parse(rule.updatedAt || rule.updated_at || rule.createdAt || rule.created_at || '');
+    return Number.isFinite(stamp) ? stamp : 0;
+  }
+
+  function mergeAliasRuleSets(...ruleSets) {
+    const merged = new Map();
+    ruleSets.flat().forEach((rule) => {
+      if (!rule || rule.active === false) return;
+      const importedTitle = utils.normalizeText(rule.importedTitle || '');
+      const targetProgramId = String(rule.targetProgramId || '').trim();
+      if (!importedTitle || !targetProgramId) return;
+      const key = aliasRuleKey(rule.station || '', importedTitle, rule.importedNola || rule.nola_code || '');
+      const current = merged.get(key);
+      if (!current || aliasRuleTimestamp(rule) >= aliasRuleTimestamp(current)) merged.set(key, rule);
+    });
+    return [...merged.values()];
+  }
+
+  function historicalImportedNola(row = {}) {
+    const raw = row?.raw_payload && typeof row.raw_payload === 'object' ? row.raw_payload : {};
+    return utils.normalizeText(utils.firstNonEmpty(
+      row?.source_report_code,
+      row?.imported_report_code,
+      row?.imported_nola_code,
+      raw?.nola_code,
+      raw?.nola,
+      raw?.program_nola,
+      raw?.program_code,
+      raw?.episode_code,
+      ''
+    ) || '');
+  }
+
+  function historicalAliasRulesFromAirings(rows = []) {
+    const latestByRule = new Map();
+    const addRule = ({ station = '', importedTitle = '', importedNola = '', targetProgramId = '', matchScope = 'title', updatedAt = '', stamp = 0 } = {}) => {
+      const title = utils.normalizeText(importedTitle || '');
+      const targetId = String(targetProgramId || '').trim();
+      if (!title || !targetId) return;
+      const targetProgram = (state.rawRows || []).find((candidate) => String(derive.programId(candidate) || '').trim() === targetId) || null;
+      if (!targetProgram) return;
+      const nola = matchScope === 'title_nola' ? utils.normalizeText(importedNola || '') : '';
+      const rule = {
+        id: `history:${importStationKey(station)}:${importTitleKey(title)}:${importNolaCodeKey(nola)}:${targetId}`,
+        station: utils.normalizeText(station || ''),
+        importedTitle: title,
+        importedTitleKey: importTitleKey(title),
+        importedCompactTitleKey: compactImportTitleKey(title, nola),
+        importedNola: nola,
+        importedNolaKey: importNolaCodeKey(nola),
+        targetProgramId: targetId,
+        targetProgramTitle: derive.title(targetProgram) || title,
+        targetProgramNola: derive.nola(targetProgram) || '',
+        matchScope,
+        active: true,
+        updatedAt: updatedAt || ''
+      };
+      const key = aliasRuleKey(rule.station, rule.importedTitle, rule.importedNola);
+      const current = latestByRule.get(key);
+      if (!current || stamp >= current.stamp) latestByRule.set(key, { stamp, rule });
+    };
+
+    (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+      const method = String(row?.match_method || '').trim().toLowerCase();
+      if (!['manual_library', 'saved_title_rule'].includes(method)) return;
+      const importedTitle = utils.normalizeText(row?.imported_program_title || '');
+      const targetProgramId = String(utils.firstNonEmpty(row?.program_id, row?.pledge_program_id, '') || '').trim();
+      if (!importedTitle || !targetProgramId) return;
+      const station = utils.normalizeText(row?.station || '');
+      const importedNola = historicalImportedNola(row);
+      const updatedAt = utils.normalizeText(utils.firstNonEmpty(row?.updated_at, row?.created_at, row?.imported_at, row?.aired_at, '') || '');
+      const parsedStamp = Date.parse(updatedAt);
+      const stamp = Number.isFinite(parsedStamp) ? parsedStamp : index + 1;
+      if (importedNola) addRule({ station, importedTitle, importedNola, targetProgramId, matchScope: 'title_nola', updatedAt, stamp });
+      addRule({ station, importedTitle, targetProgramId, matchScope: 'title', updatedAt, stamp });
+    });
+
+    return [...latestByRule.values()].map((entry) => entry.rule);
+  }
+
+  async function loadRememberedAliasRules() {
+    const localRules = utils.storageGet(IMPORT_MATCH_RULES_STORAGE_KEY, []);
+    let historicalRules = [];
+    try {
+      const historicalRows = App.data.fetchImportedMatchMemoryRows
+        ? await App.data.fetchImportedMatchMemoryRows()
+        : await App.data.fetchImportedAirings();
+      historicalRules = historicalAliasRulesFromAirings(historicalRows);
+    } catch (error) {
+      console.warn('Could not refresh remembered import matches from Supabase. Browser memory remains available.', error);
+    }
+    const merged = mergeAliasRuleSets(historicalRules, localRules);
+    saveStoredAliasRules(merged);
+    return merged;
+  }
+
   function importNolaCodeKey(value = '') {
     if (typeof utils.nolaCodeKey === 'function') return utils.nolaCodeKey(value);
     return utils.normalizeText(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -2369,15 +2466,6 @@
     });
   }
 
-  function syncVisiblePersistMatchControls(rowHash, shouldPersist = false) {
-    const bodyEl = els.importUnmatchedBody;
-    if (!bodyEl) return;
-    rowsForUnmatchedTitleGroup(rowHash).forEach((row) => {
-      const checkbox = bodyEl.querySelector(`.import-persist-match-check[data-row-hash="${cssEscape(row.row_hash || '')}"]`);
-      if (checkbox) checkbox.checked = Boolean(shouldPersist);
-    });
-  }
-
   function recomputeImportManualMatchDerivedData() {
     imp().driveRows = deriveRollups(imp().airingsRows);
     imp().rawAccountingSummaries = buildAccountingSummaryRows();
@@ -2422,13 +2510,6 @@
     });
   }
 
-  function syncPersistMatchRule(rowHash, shouldPersist = false) {
-    const rows = rowsForUnmatchedTitleGroup(rowHash);
-    rows.forEach((row) => {
-      row.pending_persist_match_rule = Boolean(shouldPersist);
-    });
-  }
-
   function applyManualMatchToRows(rows = [], programId, options = {}) {
     const targetId = String(programId || '').trim();
     if (!targetId) {
@@ -2443,8 +2524,7 @@
     const safeRows = (Array.isArray(rows) ? rows : [])
       .filter((row) => row && !isImportMatched(row));
     if (!safeRows.length) return 0;
-    const shouldPersist = options.persistRule ?? safeRows.some((row) => row.pending_persist_match_rule === true);
-    const firstAliasNola = importedSourceCodeForRow(safeRows[0] || {});
+    const shouldPersist = options.persistRule !== false;
     const targetNola = derive.nola(targetRow) || '';
     safeRows.forEach((airing) => {
       const priorSourceCode = importedSourceCodeForRow(airing);
@@ -2466,7 +2546,18 @@
       airing.pending_persist_match_rule = Boolean(shouldPersist);
       airing.row_hash = computeImportRowHash(airing);
     });
-    if (shouldPersist) storeAliasRule({ station: safeRows[0]?.station || '', importedTitle: safeRows[0]?.imported_program_title || safeRows[0]?.title || '', importedNola: firstAliasNola || '', targetProgram: targetRow });
+    if (shouldPersist) {
+      const rememberedKeys = new Set();
+      safeRows.forEach((airing) => {
+        const importedTitle = airing?.imported_program_title || airing?.title || '';
+        const importedNola = importedSourceCodeForRow(airing);
+        const station = airing?.station || '';
+        const key = aliasRuleKey(station, importedTitle, importedNola);
+        if (!importedTitle || rememberedKeys.has(key)) return;
+        rememberedKeys.add(key);
+        storeAliasRule({ station, importedTitle, importedNola, targetProgram: targetRow });
+      });
+    }
     if (options.render !== false) renderAfterManualMatch({ deferFullRender: true });
     const label = utils.toDisplayText(safeRows[0]?.imported_program_title || safeRows[0]?.nola_code || 'row');
     const count = safeRows.length;
@@ -2496,7 +2587,7 @@
       const groupKey = unmatchedTitleGroupKey(row) || row.row_hash || '';
       const key = `${programId}::${groupKey || row.row_hash || Math.random()}`;
       if (!groups.has(key)) {
-        groups.set(key, { programId, persistRule: false, rows: [] });
+        groups.set(key, { programId, persistRule: true, rows: [] });
       }
       const group = groups.get(key);
       group.persistRule = group.persistRule || row.pending_persist_match_rule === true;
@@ -2620,6 +2711,7 @@
 
   async function linkExistingUnlinkedRow(rowHash, programId) {
     const targetRow = selectedProgramRow(programId);
+    const sourceRow = (imp().existingUnlinkedRows || []).find((row) => row.row_hash === rowHash) || null;
     if (!targetRow) {
       setNotice('Choose a pledge-library title before using Link selected title.', 'warn');
       return;
@@ -2635,6 +2727,14 @@
     };
     const response = await App.data.updateImportedAiringByHash(rowHash, payload);
     if (response.error) throw response.error;
+    if (sourceRow?.imported_program_title) {
+      storeAliasRule({
+        station: sourceRow?.raw?.station || '',
+        importedTitle: sourceRow.imported_program_title,
+        importedNola: historicalImportedNola(sourceRow.raw || sourceRow),
+        targetProgram: targetRow
+      });
+    }
     await refreshExistingUnlinkedRows({ silent: true });
     await refreshTableStatus({ silent: true });
     setStatus('Quarantined imported row linked to the library.');
@@ -2704,6 +2804,14 @@
       is_non_specific: false
     };
     await updateImportedRowsByHashes(suspect.row_hashes, payload);
+    if (suspect.imported_program_title) {
+      storeAliasRule({
+        station: suspect?.raw?.station || '',
+        importedTitle: suspect.imported_program_title,
+        importedNola: historicalImportedNola(suspect.raw || suspect),
+        targetProgram: targetRow
+      });
+    }
     if (imp().suspectLinkSelections) delete imp().suspectLinkSelections[suspectId];
     await App.performanceUi?.refreshData?.({ silent: true });
     App.performanceUi?.renderAll?.();
@@ -2784,7 +2892,7 @@
       App.listUi?.buildFilterOptions?.();
       const createdId = derive.programId(response.data || {});
       syncPendingManualMatch(rowHash, createdId);
-      const linkedCount = applyManualMatchToGroup(rowHash, createdId, { persistRule: rowsForUnmatchedTitleGroup(rowHash).some((row) => row.pending_persist_match_rule === true) });
+      const linkedCount = applyManualMatchToGroup(rowHash, createdId);
       setNotice(`Created ${title} and linked ${utils.formatCount(linkedCount)} row${linkedCount === 1 ? '' : 's'} from that unmatched title group.`);
     } catch (error) {
       setNotice(`Could not create a new pledge title from that unmatched row. ${error?.message || error}`, 'warn');
@@ -2828,10 +2936,7 @@
             <div class="import-match-card-reason">${escape(reason)}${suggestedTitle ? ` · Suggested: ${escape(suggestedTitle)}` : ''}</div>
             <div class="import-match-card-controls">
               <select class="import-manual-match-select" data-row-hash="${escape(row.row_hash)}">${optionHtml}</select>
-              <label class="import-rule-check">
-                <input type="checkbox" class="import-persist-match-check" data-row-hash="${escape(row.row_hash)}" ${row.pending_persist_match_rule === true ? 'checked' : ''}>
-                <span>Remember this match</span>
-              </label>
+              <div class="muted import-rule-auto-note">Confirmed matches are remembered automatically for future reports.</div>
               <div class="import-match-actions">
                 <button type="button" class="ghost import-apply-match-button" data-row-hash="${escape(row.row_hash)}">Apply</button>
                 <button type="button" class="ghost import-create-link-button" data-row-hash="${escape(row.row_hash)}">Create + link</button>
@@ -3045,7 +3150,7 @@
 
   async function ensureReady() {
     if (!imp().ready) {
-      imp().aliasRules = utils.storageGet(IMPORT_MATCH_RULES_STORAGE_KEY, []);
+      await loadRememberedAliasRules();
       imp().reportTotalsByFile = utils.storageGet(IMPORT_REPORT_TOTALS_STORAGE_KEY, {});
       await refreshTableStatus({ silent: true });
       await refreshExistingUnlinkedRows({ silent: true });
@@ -3154,15 +3259,6 @@
       input.blur();
     });
     els.importUnmatchedBody?.addEventListener('change', (event) => {
-      const ruleToggle = event.target.closest('.import-persist-match-check');
-      if (ruleToggle) {
-        const rowHash = ruleToggle.getAttribute('data-row-hash') || '';
-        const shouldPersist = Boolean(ruleToggle.checked);
-        syncPersistMatchRule(rowHash, shouldPersist);
-        syncVisiblePersistMatchControls(rowHash, shouldPersist);
-        renderActions();
-        return;
-      }
       const select = event.target.closest('.import-manual-match-select');
       if (!select) return;
       const rowHash = select.getAttribute('data-row-hash') || '';
