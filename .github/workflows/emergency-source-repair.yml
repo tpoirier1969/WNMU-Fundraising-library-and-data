@@ -1,0 +1,71 @@
+name: Emergency source repair
+
+on:
+  push:
+    paths:
+      - ".github/workflows/emergency-source-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply source repair
+        run: python tools/emergency_repair.py
+
+      - name: Validate source
+        shell: bash
+        run: |
+          node --check assets/js/data.js
+          node --check assets/js/ui-imports.js
+          node --check assets/js/ui-scheduling.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          data = Path('assets/js/data.js').read_text(encoding='utf-8')
+          imports = Path('assets/js/ui-imports.js').read_text(encoding='utf-8')
+          sched = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert version.get('appVersion') == '0.22.61'
+          assert "function healImportedSchedulesIfNeeded" not in sched
+          assert "healImportedSchedulesIfNeeded()" not in sched
+          assert "schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport)" not in sched
+          assert "scheduleConflicts" in sched
+          assert "importedScheduleConflictPrompt" in sched
+          assert "Admin right-click → Delete scheduled block" in sched
+          assert "allowDuplicateMerges: Boolean(options.allowDuplicateMerges)" in sched
+          assert "if (method !== 'manual_library') return;" in imports
+          assert ".eq('match_method', 'manual_library')" in data
+          fn = imports[imports.index('function findProgramForImport'):imports.index('function normalizeAiringRow')]
+          alias = fn.index('const aliasRule = findAliasRuleForRow')
+          for marker in [
+              "if (reportOnlyCode && libraryLookup.byProgramId",
+              "if (nolaKey && libraryLookup.byNola.has",
+              "if (titleKey && libraryLookup.byUniqueTitle.has",
+              "if (compactTitleKey && libraryLookup.byUniqueCompactTitle?.has"
+          ]:
+              assert fn.index(marker) < alias, (marker, fn.index(marker), alias)
+          assert alias < fn.index('const fuzzy = findFuzzyTitleMatch')
+          PY
+
+      - name: Commit repaired source and remove temporary harness
+        shell: bash
+        run: |
+          rm -f tools/emergency_repair.py .github/workflows/emergency-source-repair.yml
+          rmdir tools 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Prevent import schedule hallucinations and protect calendar blocks"
+          git push origin HEAD:main
