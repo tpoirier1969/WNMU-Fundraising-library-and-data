@@ -1,0 +1,94 @@
+name: Audit version system v2
+on:
+  push:
+    branches: [audit-version-system-20260812]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit-version-system-20260812
+          fetch-depth: 0
+      - name: Exhaustive Python version audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          root = Path('.')
+          manifest = json.loads(Path('version.json').read_text())
+          current = str(manifest.get('appVersion','')).strip()
+          print('CURRENT:', current)
+
+          text_exts = {'.html','.js','.json','.css','.md','.txt','.sql','.yml','.yaml'}
+          files=[]
+          for p in root.rglob('*'):
+              if not p.is_file() or '.git' in p.parts: continue
+              if p.suffix.lower() not in text_exts: continue
+              try: text=p.read_text(errors='replace')
+              except Exception: continue
+              files.append((p,text))
+
+          patterns = {
+            'exact_0_22_54': re.compile(r'0\.22\.54'),
+            'all_0_22_versions': re.compile(r'0\.22\.\d+'),
+            'app_version': re.compile(r'APP_VERSION'),
+            'seed_version': re.compile(r'__PLEDGE_APP_VERSION__'),
+            'version_json': re.compile(r'version\.json', re.I),
+            'version_gate': re.compile(r'version[-_]?gate|newer app version|update required', re.I),
+            'remote_version': re.compile(r'remoteVersion|RemoteVersion|remote_version'),
+            'service_worker': re.compile(r'serviceWorker|service-worker|sw\.js', re.I),
+            'cache_api': re.compile(r'\bcaches\.|Cache-Control|cache\s*:', re.I),
+            'location_nav': re.compile(r'location\.(?:href|assign|replace)|window\.open|href\s*=', re.I),
+          }
+
+          for name,pat in patterns.items():
+              print(f'\n=== {name} ===')
+              count=0
+              for p,text in files:
+                  for lineno,line in enumerate(text.splitlines(),1):
+                      if pat.search(line):
+                          count+=1
+                          print(f'{p}:{lineno}: {line[:500]}')
+              print('MATCHES:',count)
+
+          print('\n=== HTML ENTRY POINTS ===')
+          for p,text in files:
+              if p.suffix.lower() != '.html': continue
+              title=''
+              m=re.search(r'<title>(.*?)</title>',text,re.I|re.S)
+              if m: title=re.sub(r'\s+',' ',m.group(1)).strip()
+              print(f'ENTRY {p} | {title}')
+              for src in re.findall(r'<script[^>]+src=["\']([^"\']+)',text,re.I): print('  SCRIPT',src)
+              for href in re.findall(r'<a[^>]+href=["\']([^"\']+)',text,re.I): print('  LINK',href)
+
+          print('\n=== CURRENT REVISION OUTSIDE version.json ===')
+          for p,text in files:
+              if p.as_posix()=='version.json': continue
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if current and current in line:
+                      print(f'{p}:{lineno}: {line[:500]}')
+
+          print('\n=== APP_VERSION ASSIGNMENTS / MUTATIONS ===')
+          assignment_patterns=[
+              re.compile(r'APP_VERSION\s*[:=]'),
+              re.compile(r'constants\.APP_VERSION\s*='),
+              re.compile(r'__PLEDGE_APP_VERSION__\s*='),
+          ]
+          for p,text in files:
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if any(pat.search(line) for pat in assignment_patterns):
+                      print(f'{p}:{lineno}: {line[:500]}')
+
+          print('\n=== INTERNAL HTML LINKS TARGETING NON-CANONICAL ENTRYPOINTS ===')
+          for p,text in files:
+              if p.suffix.lower() not in {'.html','.js'}: continue
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if re.search(r'(pledge-performance-lab|splitscreentext|trace40|WNMU-Pledge-Program-Library-v0\.18|app-shell\.html)',line,re.I):
+                      print(f'{p}:{lineno}: {line[:500]}')
+          PY
