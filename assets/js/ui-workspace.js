@@ -122,7 +122,7 @@
   function decorateSchedulePlacement(node, schedule) {
     const placementId = node.dataset.placementId || '';
     const dateKey = node.dataset.dateKey || '';
-    const startMinutes = Number(node.dataset.startMinutes);
+    const startMinutes = Number(node.dataset.minutes);
     const placement = placementById(schedule, placementId);
     const existing = node.querySelector(':scope > .schedule-broadcast-dollar-stamp');
 
@@ -157,7 +157,7 @@
     const grid = document.getElementById('schedule-grid');
     const schedule = activeSchedule();
     if (!grid || !schedule) return;
-    grid.querySelectorAll('.schedule-placement[data-placement-id][data-date-key][data-start-minutes]').forEach((node) => {
+    grid.querySelectorAll('.schedule-placement[data-placement-id][data-date-key][data-minutes]').forEach((node) => {
       decorateSchedulePlacement(node, schedule);
     });
   }
