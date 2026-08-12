@@ -12,59 +12,89 @@ jobs:
         with:
           ref: audit-version-system-20260812
           fetch-depth: 0
-      - name: Repository-wide version audit
+      - name: Exhaustive repository version audit
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== CURRENT REVISION MANIFEST ==='
-          cat version.json
-          echo
-          echo '=== ALL RUNTIME VERSION-RELATED REFERENCES ==='
-          rg -n --hidden --glob '!.git/**' --glob '*.html' --glob '*.js' --glob '*.json' --glob '*.css' \
-            -e 'APP_VERSION' \
-            -e '__PLEDGE_APP_VERSION__' \
-            -e 'version\.json' \
-            -e 'VERSION_MANIFEST' \
-            -e 'version-gate' \
-            -e 'versionGate' \
-            -e 'RemoteVersion' \
-            -e 'remoteVersion' \
-            -e 'serviceWorker' \
-            -e 'caches\.' \
-            -e '0\.22\.[0-9]+' \
-            . || true
-          echo
-          echo '=== ALL HTML ENTRY POINTS AND SCRIPT SOURCES ==='
           python - <<'PY'
           from pathlib import Path
-          import re
-          for path in sorted(Path('.').rglob('*.html')):
-              if '.git' in path.parts: continue
-              text = path.read_text(errors='replace')
-              print(f'--- {path} ---')
-              title = re.search(r'<title>(.*?)</title>', text, re.I|re.S)
-              if title: print('TITLE:', re.sub(r'\s+',' ',title.group(1)).strip())
-              for src in re.findall(r'<script[^>]+src=["\']([^"\']+)', text, re.I):
-                  print('SCRIPT:', src)
-              for href in re.findall(r'<link[^>]+href=["\']([^"\']+)', text, re.I):
-                  if '.css' in href: print('CSS:', href)
+          import json, re
+
+          manifest = json.loads(Path('version.json').read_text())
+          current = str(manifest.get('appVersion','')).strip()
+          print('=== CURRENT REVISION ===')
+          print(current)
+
+          text_exts = {'.html','.js','.json','.css','.md','.txt','.sql','.yml','.yaml'}
+          files=[]
+          for p in Path('.').rglob('*'):
+              if not p.is_file() or '.git' in p.parts: continue
+              if p.suffix.lower() not in text_exts: continue
+              try: text=p.read_text(errors='replace')
+              except Exception: continue
+              files.append((p,text))
+
+          patterns = {
+            'EXACT 0.22.54': re.compile(r'0\.22\.54'),
+            'ALL 0.22.x LITERALS': re.compile(r'0\.22\.\d+'),
+            'APP_VERSION REFERENCES': re.compile(r'APP_VERSION'),
+            'INJECTED VERSION REFERENCES': re.compile(r'__PLEDGE_APP_VERSION__'),
+            'VERSION MANIFEST REFERENCES': re.compile(r'version\.json|VERSION_MANIFEST', re.I),
+            'VERSION GATE REFERENCES': re.compile(r'version[-_]?gate|newer app version|update required', re.I),
+            'REMOTE VERSION REFERENCES': re.compile(r'remoteVersion|RemoteVersion|remote_version'),
+            'SERVICE WORKER REFERENCES': re.compile(r'serviceWorker|service-worker|sw\.js', re.I),
+            'CACHE REFERENCES': re.compile(r'\bcaches\.|Cache-Control|cache\s*:', re.I),
+          }
+
+          for name,pat in patterns.items():
+              print(f'\n=== {name} ===')
+              count=0
+              for p,text in files:
+                  for lineno,line in enumerate(text.splitlines(),1):
+                      if pat.search(line):
+                          count+=1
+                          print(f'{p}:{lineno}: {line[:700]}')
+              print('MATCHES:',count)
+
+          print('\n=== HTML ENTRY POINTS + ASSETS + LINKS ===')
+          for p,text in files:
+              if p.suffix.lower() != '.html': continue
+              m=re.search(r'<title>(.*?)</title>',text,re.I|re.S)
+              title=re.sub(r'\s+',' ',m.group(1)).strip() if m else ''
+              print(f'ENTRY {p} | {title}')
+              for src in re.findall(r'<script[^>]+src=["\']([^"\']+)',text,re.I): print('  SCRIPT',src)
+              for href in re.findall(r'<a[^>]+href=["\']([^"\']+)',text,re.I): print('  LINK',href)
+
+          print('\n=== CURRENT REVISION OUTSIDE version.json ===')
+          for p,text in files:
+              if p.as_posix()=='version.json': continue
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if current and current in line:
+                      print(f'{p}:{lineno}: {line[:700]}')
+
+          print('\n=== VERSION STATE ASSIGNMENTS / MUTATIONS ===')
+          assigners=[
+              re.compile(r'APP_VERSION\s*[:=]'),
+              re.compile(r'constants\.APP_VERSION\s*='),
+              re.compile(r'__PLEDGE_APP_VERSION__\s*='),
+              re.compile(r'remoteVersionInfo\s*[:=]'),
+          ]
+          for p,text in files:
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if any(rx.search(line) for rx in assigners):
+                      print(f'{p}:{lineno}: {line[:700]}')
+
+          print('\n=== INTERNAL REFERENCES TO ALTERNATE ENTRY POINTS ===')
+          alt = re.compile(r'(pledge-performance-lab|splitscreentext|trace40|WNMU-Pledge-Program-Library-v0\.18|app-shell\.html)',re.I)
+          for p,text in files:
+              if p.suffix.lower() not in {'.html','.js','.md','.txt'}: continue
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if alt.search(line): print(f'{p}:{lineno}: {line[:700]}')
+
+          print('\n=== POSSIBLE SCRIPT-BASED NAVIGATION / REDIRECTS ===')
+          nav=re.compile(r'location\.(?:href|assign|replace)|window\.open|history\.(?:pushState|replaceState)',re.I)
+          for p,text in files:
+              if p.suffix.lower() not in {'.html','.js'}: continue
+              for lineno,line in enumerate(text.splitlines(),1):
+                  if nav.search(line): print(f'{p}:{lineno}: {line[:700]}')
           PY
-          echo
-          echo '=== FILES THAT ASSIGN OR MUTATE VERSION STATE ==='
-          rg -n --hidden --glob '!.git/**' --glob '*.js' --glob '*.html' \
-            -e 'APP_VERSION\s*[:=]' \
-            -e 'constants\.APP_VERSION\s*=' \
-            -e '__PLEDGE_APP_VERSION__\s*=' \
-            -e 'remoteVersionInfo' \
-            . || true
-          echo
-          echo '=== SERVICE WORKER / CACHE FILES ==='
-          find . -type f \( -iname '*service*worker*' -o -iname 'sw.js' -o -iname 'manifest*.json' \) -print
-          echo
-          echo '=== CURRENT-VERSION LITERALS OUTSIDE version.json ==='
-          current=$(python - <<'PY'
-          import json
-          print(json.load(open('version.json'))['appVersion'])
-          PY
-          )
-          rg -n --hidden --glob '!.git/**' --glob '!version.json' --glob '*.html' --glob '*.js' --glob '*.json' --glob '*.css' "$current" . || true
