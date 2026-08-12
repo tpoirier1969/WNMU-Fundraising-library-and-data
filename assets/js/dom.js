@@ -132,6 +132,7 @@
     scheduleEndEarlierButton: document.getElementById('schedule-end-earlier-button'),
     scheduleEndLaterButton: document.getElementById('schedule-end-later-button'),
     scheduleWindowLabel: document.getElementById('schedule-window-label'),
+    scheduleSameFundraiserComparison: document.getElementById('schedule-same-fundraiser-comparison'),
     scheduleGrid: document.getElementById('schedule-grid'),
     scheduleProgramPicker: document.getElementById('schedule-program-picker'),
     scheduleSlotLabel: document.getElementById('schedule-slot-label'),

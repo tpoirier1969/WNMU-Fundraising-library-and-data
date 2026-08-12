@@ -6055,3 +6055,89 @@ input.goal-difference-negative {
     grid-template-columns: 1fr;
   }
 }
+
+/* Scheduling daily fundraiser results and same-point historical comparison */
+.schedule-grid-head .schedule-day-head {
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.schedule-grid-head .schedule-day-date {
+  display: block;
+  max-width: 100%;
+}
+.schedule-day-total {
+  display: block;
+  max-width: 100%;
+  font-size: .78rem;
+  line-height: 1;
+  font-weight: 900;
+  color: #244b67;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.schedule-day-total.reported { color: #0c5a3d; }
+.schedule-day-total.unreported { color: #6e7f8c; font-weight: 750; }
+.schedule-same-fundraiser-comparison {
+  min-width: 250px;
+  max-width: 340px;
+  padding: 6px 9px;
+  border: 1px solid #cfdde6;
+  border-radius: 10px;
+  background: #f7fafc;
+  color: var(--heading);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.schedule-comparison-kicker {
+  font-size: .66rem;
+  line-height: 1.15;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+  color: #536f82;
+}
+.schedule-comparison-status {
+  font-size: .76rem;
+  line-height: 1.2;
+  color: var(--muted);
+}
+.schedule-comparison-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.schedule-comparison-values span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.schedule-comparison-values small {
+  color: #61798a;
+  font-size: .64rem;
+  line-height: 1.1;
+}
+.schedule-comparison-values strong {
+  color: var(--heading);
+  font-size: .88rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .schedule-same-fundraiser-comparison {
+    min-width: 210px;
+    max-width: none;
+  }
+}
+@media (max-width: 720px) {
+  .schedule-same-fundraiser-comparison {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+  }
+}

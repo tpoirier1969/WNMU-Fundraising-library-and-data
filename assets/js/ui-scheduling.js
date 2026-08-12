@@ -3311,6 +3311,165 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return '<span class="schedule-placement-break-needed">BREAK INFO NEEDED</span>';
   }
 
+  function scheduleFundraiserDayKeys(schedule = {}) {
+    return schedule?.startDate && schedule?.endDate ? utils.datesBetween(schedule.startDate, schedule.endDate) : [];
+  }
+
+  function scheduleOnlineMailCents(schedule = {}) {
+    const total = (Number(schedule?.onlineDollars || 0) || 0) + (Number(schedule?.mailDollars || 0) || 0);
+    return Math.round(total * 100);
+  }
+
+  function scheduleProratedOnlineMailByDate(schedule = {}) {
+    const days = scheduleFundraiserDayKeys(schedule);
+    const result = new Map();
+    if (!days.length) return result;
+    const totalCents = scheduleOnlineMailCents(schedule);
+    const baseCents = Math.trunc(totalCents / days.length);
+    const remainderCents = totalCents - (baseCents * days.length);
+    days.forEach((dateKey, index) => {
+      result.set(dateKey, baseCents + (index === days.length - 1 ? remainderCents : 0));
+    });
+    return result;
+  }
+
+  function scheduleImportedDates(schedule = {}, importedRows = []) {
+    return [...new Set(importedRowsForSchedule(schedule, importedRows)
+      .map((row) => importedRowDateKey(row))
+      .filter(Boolean))]
+      .sort();
+  }
+
+  function scheduleDailyMoneyMap(schedule = {}, importedRows = []) {
+    const relevantRows = importedRowsForSchedule(schedule, importedRows);
+    const broadcastByDate = new Map();
+    const importedDates = new Set();
+    relevantRows.forEach((row) => {
+      const dateKey = importedRowDateKey(row);
+      if (!dateKey) return;
+      importedDates.add(dateKey);
+      broadcastByDate.set(dateKey, (broadcastByDate.get(dateKey) || 0) + (Number(row?.dollars || 0) || 0));
+    });
+    const manualByDate = scheduleProratedOnlineMailByDate(schedule);
+    const result = new Map();
+    scheduleFundraiserDayKeys(schedule).forEach((dateKey) => {
+      const hasImportedResults = importedDates.has(dateKey);
+      const broadcast = hasImportedResults ? (broadcastByDate.get(dateKey) || 0) : 0;
+      const onlineMail = hasImportedResults ? ((manualByDate.get(dateKey) || 0) / 100) : 0;
+      result.set(dateKey, {
+        dateKey,
+        hasImportedResults,
+        broadcast,
+        onlineMail,
+        total: broadcast + onlineMail
+      });
+    });
+    return result;
+  }
+
+  function schedulePartialOnlineMailTotal(schedule = {}, dayCount = 0) {
+    const days = scheduleFundraiserDayKeys(schedule);
+    const count = Math.max(0, Math.min(days.length, Math.trunc(Number(dayCount) || 0)));
+    if (!days.length || !count) return 0;
+    const shares = scheduleProratedOnlineMailByDate(schedule);
+    return days.slice(0, count).reduce((sum, dateKey) => sum + ((shares.get(dateKey) || 0) / 100), 0);
+  }
+
+  function scheduleFundraiserMonth(schedule = {}) {
+    const month = Number(String(schedule?.startDate || '').slice(5, 7));
+    return Number.isFinite(month) && month >= 1 && month <= 12 ? month : 0;
+  }
+
+  function scheduleFundraiserYear(schedule = {}) {
+    const year = Number(String(schedule?.startDate || '').slice(0, 4));
+    return Number.isFinite(year) ? year : 0;
+  }
+
+  function scheduleFundraiserMonthLabel(schedule = {}) {
+    const month = scheduleFundraiserMonth(schedule);
+    if (!month) return 'Same fundraiser';
+    const date = new Date(2000, month - 1, 1);
+    return `${date.toLocaleDateString(undefined, { month: 'long' })} fundraiser`;
+  }
+
+  function scheduleComparablePartialResult(schedule = {}, importedRows = [], dayCount = 0) {
+    const wantedCount = Math.max(0, Math.trunc(Number(dayCount) || 0));
+    if (!wantedCount) return null;
+    const relevantRows = importedRowsForSchedule(schedule, importedRows);
+    const importedDates = [...new Set(relevantRows.map((row) => importedRowDateKey(row)).filter(Boolean))].sort();
+    if (importedDates.length < wantedCount) return null;
+    const selectedDates = new Set(importedDates.slice(0, wantedCount));
+    const broadcast = relevantRows.reduce((sum, row) => selectedDates.has(importedRowDateKey(row)) ? sum + (Number(row?.dollars || 0) || 0) : sum, 0);
+    const onlineMail = schedulePartialOnlineMailTotal(schedule, wantedCount);
+    return {
+      dayCount: wantedCount,
+      broadcast,
+      onlineMail,
+      total: broadcast + onlineMail
+    };
+  }
+
+  function scheduleSameFundraiserComparison(schedule = {}, importedRows = []) {
+    const currentDays = scheduleImportedDates(schedule, importedRows);
+    const dayCount = currentDays.length;
+    const currentMonth = scheduleFundraiserMonth(schedule);
+    const currentYear = scheduleFundraiserYear(schedule);
+    if (!dayCount || !currentMonth || !currentYear) return { dayCount, comparisons: [], previous: null, average: null };
+
+    const bestByYear = new Map();
+    (state.schedules || []).forEach((candidate) => {
+      if (!candidate || candidate.id === schedule.id || !getScheduleDateSpanInfo(candidate).ok) return;
+      const year = scheduleFundraiserYear(candidate);
+      if (!year || year >= currentYear || scheduleFundraiserMonth(candidate) !== currentMonth) return;
+      const existing = bestByYear.get(year);
+      if (!existing || scheduleSameRangePreferenceScore(candidate) > scheduleSameRangePreferenceScore(existing)) bestByYear.set(year, candidate);
+    });
+
+    const comparisons = [...bestByYear.entries()]
+      .map(([year, candidate]) => {
+        const result = scheduleComparablePartialResult(candidate, importedRows, dayCount);
+        return result ? { year, schedule: candidate, ...result } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.year - b.year);
+    const previous = comparisons[comparisons.length - 1] || null;
+    const average = comparisons.length
+      ? comparisons.reduce((sum, item) => sum + item.total, 0) / comparisons.length
+      : null;
+    return { dayCount, comparisons, previous, average };
+  }
+
+  function renderSameFundraiserComparison(schedule = {}, importedRows = [], importedRowsReady = false) {
+    const el = els.scheduleSameFundraiserComparison;
+    if (!el) return;
+    if (!schedule) {
+      el.innerHTML = '<div class="schedule-comparison-kicker">Same fundraiser comparison</div><div class="schedule-comparison-status">No fundraiser selected.</div>';
+      return;
+    }
+    const fundraiserLabel = scheduleFundraiserMonthLabel(schedule);
+    if (!importedRowsReady) {
+      el.innerHTML = `<div class="schedule-comparison-kicker">${utils.escapeHtml(fundraiserLabel)}</div><div class="schedule-comparison-status">Loading comparable results…</div>`;
+      return;
+    }
+    const comparison = scheduleSameFundraiserComparison(schedule, importedRows);
+    if (!comparison.dayCount) {
+      el.innerHTML = `<div class="schedule-comparison-kicker">${utils.escapeHtml(fundraiserLabel)}</div><div class="schedule-comparison-status">Waiting for the first imported result-day.</div>`;
+      return;
+    }
+    const dayLabel = `${comparison.dayCount} imported day${comparison.dayCount === 1 ? '' : 's'}`;
+    const previousLabel = comparison.previous ? `Previous ${comparison.previous.year}` : 'Previous';
+    const previousValue = comparison.previous ? utils.formatMoney(comparison.previous.total) : 'N/A';
+    const averageLabel = comparison.comparisons.length ? `Prior avg (${comparison.comparisons.length})` : 'Prior avg';
+    const averageValue = Number.isFinite(comparison.average) ? utils.formatMoney(comparison.average) : 'N/A';
+    el.innerHTML = `
+      <div class="schedule-comparison-kicker">${utils.escapeHtml(fundraiserLabel)} · first ${utils.escapeHtml(dayLabel)}</div>
+      <div class="schedule-comparison-values">
+        <span><small>${utils.escapeHtml(previousLabel)}</small><strong>${utils.escapeHtml(previousValue)}</strong></span>
+        <span><small>${utils.escapeHtml(averageLabel)}</small><strong>${utils.escapeHtml(averageValue)}</strong></span>
+      </div>
+    `;
+  }
+
   function renderScheduleGrid() {
     const schedule = getActiveSchedule();
     if (!schedule) {
@@ -3339,6 +3498,16 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     requestScheduleExpectationData();
     if (!state.scheduleAiringHistoryLoaded && !state.scheduleAiringHistoryLoading) void ensureScheduleAiringHistoryLoaded();
     const dayKeys = visibleDateKeys(schedule);
+    const importedRowsReady = Array.isArray(state.scheduleImportedAiringsCache);
+    const importedRows = importedRowsReady ? state.scheduleImportedAiringsCache : [];
+    if (!importedRowsReady && !state.scheduleImportedAiringsPromise) {
+      const scheduleId = schedule.id;
+      void ensureScheduleImportedAiringsLoaded().then(() => {
+        if (state.activeScheduleId === scheduleId) renderScheduleGrid();
+      });
+    }
+    const dailyMoney = scheduleDailyMoneyMap(schedule, importedRows);
+    renderSameFundraiserComparison(schedule, importedRows, importedRowsReady);
     const windowConfig = getScheduleWindow(state.scheduleView);
     const visibleStartMin = windowConfig.startMinutes;
     const visibleEndMin = windowConfig.endMinutes;
@@ -3379,7 +3548,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     dayKeys.forEach((dateKey) => {
       const label = utils.escapeHtml(formatScheduleDay(dateKey));
       const weekendClass = isWeekendDateKey(dateKey) ? 'weekend' : '';
-      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span>${label}</span></div>`);
+      const money = dailyMoney.get(dateKey) || { broadcast: 0, onlineMail: 0, total: 0, hasImportedResults: false };
+      const moneyTitle = money.hasImportedResults
+        ? `Imported broadcast ${utils.formatMoney(money.broadcast)} + prorated Online/Mail ${utils.formatMoney(money.onlineMail)}`
+        : 'No imported results for this date yet';
+      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span><span class="schedule-day-total ${money.hasImportedResults ? 'reported' : 'unreported'}" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span></div>`);
       footer.push(`<div class="schedule-day-head schedule-day-foot ${weekendClass}"><span>${label}</span></div>`);
     });
 
