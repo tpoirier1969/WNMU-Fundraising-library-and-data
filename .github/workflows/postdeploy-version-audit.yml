@@ -1,0 +1,98 @@
+name: Post-deployment version audit
+on:
+  push:
+    branches: [verify-version-system-postdeploy-20260812]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: verify-version-system-postdeploy-20260812
+          fetch-depth: 0
+      - name: Audit production version architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json,re
+
+          current=json.loads(Path('version.json').read_text())['appVersion']
+          print('Manifest version:',current)
+
+          # Current production surfaces, excluding explicitly archived snapshots/docs.
+          roots=[Path('index.html'),Path('app-shell.html'),Path('pledge-performance-lab.html'),Path('pledge-performance-lab-shell.html'),Path('splitscreentext.html'),Path('config.js'),Path('config.example.js')]
+          roots += sorted(Path('assets/js').glob('*.js'))
+          current_files=[p for p in roots if p.exists()]
+
+          exact_current=[]
+          hardcoded_app_versions=[]
+          version_mutators=[]
+          version_sources=[]
+          for p in current_files:
+              text=p.read_text(errors='replace')
+              for n,line in enumerate(text.splitlines(),1):
+                  if current in line: exact_current.append((p,n,line.strip()))
+                  if re.search(r"APP_VERSION\s*[:=]\s*['\"]v?\d",line): hardcoded_app_versions.append((p,n,line.strip()))
+                  if re.search(r'App\.constants\.APP_VERSION\s*=',line): version_mutators.append((p,n,line.strip()))
+                  if re.search(r'version\.json|__PLEDGE_APP_VERSION__|BOOT_APP_VERSION|getBootLocalVersion',line): version_sources.append((p,n,line.strip()))
+
+          print('\nExact current revision outside manifest:')
+          for row in exact_current: print(*row,sep=':')
+          if exact_current: raise SystemExit('Current revision literal exists outside version.json in active production files')
+
+          print('\nHardcoded APP_VERSION values in active production files:')
+          for row in hardcoded_app_versions: print(*row,sep=':')
+          if hardcoded_app_versions: raise SystemExit('Hardcoded APP_VERSION remains in active production files')
+
+          print('\nAPP_VERSION mutators in active production files:')
+          for row in version_mutators: print(*row,sep=':')
+          if version_mutators: raise SystemExit('Feature code can still mutate APP_VERSION')
+
+          # Enumerate all HTML files and identify which ones current app links to.
+          print('\nHTML files:')
+          for p in sorted(Path('.').rglob('*.html')):
+              if '.git' in p.parts: continue
+              text=p.read_text(errors='replace')
+              title=re.search(r'<title>(.*?)</title>',text,re.I|re.S)
+              title=re.sub(r'\s+',' ',title.group(1)).strip() if title else ''
+              print(f'{p}: {title}')
+
+          # Search current production files for references to legacy top-level/archived app assets.
+          dangerous_refs=[]
+          legacy_terms=[r'assets/app\.js',r'trace40/',r'WNMU-Pledge-Program-Library-v0\.18',r'splitscreentext\.html']
+          for p in current_files:
+              text=p.read_text(errors='replace')
+              for n,line in enumerate(text.splitlines(),1):
+                  if any(re.search(term,line,re.I) for term in legacy_terms):
+                      dangerous_refs.append((p,n,line.strip()))
+          print('\nLegacy references from current production graph:')
+          for row in dangerous_refs: print(*row,sep=':')
+          if dangerous_refs: raise SystemExit('Current production graph references a legacy app path')
+
+          # Validate alternate shell entry points redirect to canonical loaders.
+          shell=Path('app-shell.html').read_text()
+          perf_shell=Path('pledge-performance-lab-shell.html').read_text()
+          split=Path('splitscreentext.html').read_text()
+          if "window.location.replace('./')" not in shell: raise SystemExit('app-shell direct-access redirect missing')
+          if "window.location.replace('pledge-performance-lab.html')" not in perf_shell: raise SystemExit('performance shell direct-access redirect missing')
+          if "window.location.replace('./')" not in split: raise SystemExit('split-screen legacy redirect missing')
+
+          # Confirm exact single-source chain.
+          index=Path('index.html').read_text()
+          core=Path('assets/js/core.js').read_text()
+          init=Path('assets/js/app-init.js').read_text()
+          perf=Path('pledge-performance-lab.html').read_text()
+          if 'version.json' not in index: raise SystemExit('index does not load version.json')
+          if 'window.__PLEDGE_APP_VERSION__=LABEL' not in index: raise SystemExit('index does not seed boot version')
+          if 'BOOT_APP_VERSION' not in core or "Object.defineProperty(App.constants, 'APP_VERSION'" not in core: raise SystemExit('core does not protect boot version')
+          if 'getBootLocalVersion' not in init: raise SystemExit('update gate does not use boot version')
+          if 'version.json' not in perf: raise SystemExit('performance lab has independent version source')
+
+          print('\nVersion source references in production graph:')
+          for row in version_sources: print(*row,sep=':')
+          print('\nPOST-DEPLOY VERSION AUDIT PASSED')
+          PY
