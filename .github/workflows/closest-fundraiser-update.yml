@@ -1,0 +1,43 @@
+name: Closest fundraiser scheduler update
+
+on:
+  push:
+    paths:
+      - ".github/workflows/closest-fundraiser-update.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - run: python tools/closest_fundraiser_update.py
+      - shell: bash
+        run: |
+          node --check assets/js/ui-scheduling.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          text = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
+          assert 'function scheduleDistanceFromToday' in text
+          assert 'function closestScheduleToToday' in text
+          assert 'activeSchedule = closestScheduleToToday(ordered)' in text
+          assert json.loads(Path('version.json').read_text())['appVersion'] == '0.22.62'
+          PY
+      - shell: bash
+        run: |
+          rm -f tools/closest_fundraiser_update.py .github/workflows/closest-fundraiser-update.yml
+          rmdir tools 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Select fundraiser closest to the current date"
+          git push origin HEAD:main
