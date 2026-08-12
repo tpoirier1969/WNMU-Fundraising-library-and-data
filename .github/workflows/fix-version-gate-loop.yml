@@ -1,0 +1,70 @@
+name: Fix version gate loop
+
+on:
+  push:
+    branches:
+      - fix-version-gate-loop-20260812
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-version-gate-loop-20260812
+          fetch-depth: 0
+
+      - name: Align application version markers
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          core = Path('assets/js/core.js')
+          text = core.read_text(encoding='utf-8')
+          old = "APP_VERSION: 'v0.22.52'"
+          new = "APP_VERSION: 'v0.22.57'"
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one stale core version marker, found {text.count(old)}')
+          core.write_text(text.replace(old, new), encoding='utf-8')
+
+          index = Path('index.html')
+          index_text = index.read_text(encoding='utf-8')
+          if index_text.count('0.22.56') != 2:
+              raise SystemExit(f'Expected two 0.22.56 index markers, found {index_text.count("0.22.56")}')
+          index.write_text(index_text.replace('0.22.56', '0.22.57'), encoding='utf-8')
+
+          version = Path('version.json')
+          payload = json.loads(version.read_text(encoding='utf-8'))
+          if payload.get('appVersion') != '0.22.56':
+              raise SystemExit(f'Expected manifest 0.22.56, found {payload.get("appVersion")!r}')
+          version.write_text(json.dumps({'appVersion':'0.22.57','releasedAt':'2026-08-12'}, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          node --check assets/js/core.js
+          node --check assets/js/app-init.js
+          git diff --check
+          grep -F "APP_VERSION: 'v0.22.57'" assets/js/core.js
+          grep -F "const VERSION='0.22.57'" index.html
+          grep -F '"appVersion":"0.22.57"' version.json
+          changed="$(git diff --name-only)"
+          test "$changed" = "assets/js/core.js
+          index.html
+          version.json"
+
+      - name: Commit verified version fix
+        shell: bash
+        run: |
+          git config user.name "Tod"
+          git config user.email "tpoirier@nmu.edu"
+          git rm .github/workflows/fix-version-gate-loop.yml
+          git add assets/js/core.js index.html version.json
+          git commit -m "Fix infinite newer-version gate loop"
+          git push origin fix-version-gate-loop-20260812
