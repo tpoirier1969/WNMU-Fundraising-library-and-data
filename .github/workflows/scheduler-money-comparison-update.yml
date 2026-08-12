@@ -1,0 +1,68 @@
+name: Scheduler daily totals and comparison update
+
+on:
+  push:
+    paths:
+      - ".github/workflows/scheduler-money-comparison-update.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - run: python tools/scheduler_money_comparison_update.py
+      - name: Validate scheduling source and markup
+        shell: bash
+        run: |
+          node --check assets/js/ui-scheduling.js
+          node --check assets/js/dom.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          html = Path('app-shell.html').read_text(encoding='utf-8')
+          dom = Path('assets/js/dom.js').read_text(encoding='utf-8')
+          sched = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
+          css = Path('assets/styles.css').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert version['appVersion'] == '0.22.63'
+          assert html.count('id="schedule-same-fundraiser-comparison"') == 1
+          assert "scheduleSameFundraiserComparison: document.getElementById('schedule-same-fundraiser-comparison')" in dom
+          for marker in [
+              'function scheduleDailyMoneyMap',
+              'function scheduleSameFundraiserComparison',
+              'function renderSameFundraiserComparison',
+              'schedule-day-total',
+              'dailyMoney.get(dateKey)',
+              'schedulePartialOnlineMailTotal'
+          ]:
+              assert marker in sched, marker
+          assert '.schedule-same-fundraiser-comparison {' in css
+          assert '.schedule-day-total {' in css
+          # Historical calculation must require enough imported result-days.
+          assert 'if (importedDates.length < wantedCount) return null;' in sched
+          # Future/unreported dates must not receive prorated Online/Mail in display totals.
+          assert 'const onlineMail = hasImportedResults ?' in sched
+          # Do not regress the schedule safety invariants from the emergency release.
+          assert 'function healImportedSchedulesIfNeeded' not in sched
+          assert 'Admin right-click → Delete scheduled block' in sched
+          assert 'function importedScheduleConflictPrompt' in sched
+          PY
+      - name: Remove temporary harness and commit
+        shell: bash
+        run: |
+          rm -f tools/scheduler_money_comparison_update.py .github/workflows/scheduler-money-comparison-update.yml
+          rmdir tools 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Show daily fundraiser totals and historical pace comparison"
+          git push origin HEAD:main
