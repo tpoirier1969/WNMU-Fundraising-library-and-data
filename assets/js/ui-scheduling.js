@@ -331,6 +331,36 @@
     renderHomeDriveSummary();
   }
 
+  function scheduleDistanceFromToday(schedule = {}, todayKey = utils.dateKeyFromDate(new Date())) {
+    const info = getScheduleDateSpanInfo(schedule);
+    if (!info.ok) return Number.POSITIVE_INFINITY;
+    const start = utils.normalizeText(schedule.startDate);
+    const end = utils.normalizeText(schedule.endDate || start);
+    if (!todayKey || !start || !end) return Number.POSITIVE_INFINITY;
+    if (todayKey >= start && todayKey <= end) return 0;
+    if (todayKey < start) {
+      const distance = daysBetweenDateKeys(todayKey, start);
+      return Number.isFinite(distance) ? Math.abs(distance) : Number.POSITIVE_INFINITY;
+    }
+    const distance = daysBetweenDateKeys(end, todayKey);
+    return Number.isFinite(distance) ? Math.abs(distance) : Number.POSITIVE_INFINITY;
+  }
+
+  function closestScheduleToToday(items = [], todayKey = utils.dateKeyFromDate(new Date())) {
+    return [...(Array.isArray(items) ? items : [])]
+      .filter((item) => getScheduleDateSpanInfo(item).ok)
+      .sort((a, b) => {
+        const aDistance = scheduleDistanceFromToday(a, todayKey);
+        const bDistance = scheduleDistanceFromToday(b, todayKey);
+        if (aDistance !== bDistance) return aDistance - bDistance;
+        const aUpcoming = utils.normalizeText(a.startDate) > todayKey;
+        const bUpcoming = utils.normalizeText(b.startDate) > todayKey;
+        if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+        if (aUpcoming && bUpcoming) return utils.normalizeText(a.startDate).localeCompare(utils.normalizeText(b.startDate));
+        return utils.normalizeText(b.endDate).localeCompare(utils.normalizeText(a.endDate));
+      })[0] || null;
+  }
+
   function ensureCurrentScheduleApplied() {
     const ordered = sortSchedulesNewestFirst(state.schedules || []);
     if (!ordered.length) {
@@ -340,7 +370,7 @@
     let activeSchedule = getActiveSchedule();
     const activeInfo = activeSchedule ? getScheduleDateSpanInfo(activeSchedule) : null;
     if (!state.activeScheduleId || !activeSchedule || !activeInfo?.ok) {
-      activeSchedule = ordered.find((item) => getScheduleDateSpanInfo(item).ok) || ordered[0] || null;
+      activeSchedule = closestScheduleToToday(ordered) || ordered.find((item) => getScheduleDateSpanInfo(item).ok) || ordered[0] || null;
       state.activeScheduleId = activeSchedule?.id || '';
     }
     if (activeSchedule && getScheduleDateSpanInfo(activeSchedule).ok) applyScheduleToView(activeSchedule);
