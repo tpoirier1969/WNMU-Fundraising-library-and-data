@@ -30,6 +30,14 @@ jobs:
           p.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
       - run: python tools/scheduler_money_comparison_update.py
+      - name: Normalize stylesheet ending
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('assets/styles.css')
+          p.write_text(p.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
+          PY
       - name: Validate scheduling source and markup
         shell: bash
         run: |
