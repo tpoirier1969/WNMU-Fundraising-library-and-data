@@ -23,7 +23,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json
+          import json, re
 
           path = Path('assets/js/ui-scheduling.js')
           text = path.read_text(encoding='utf-8')
@@ -38,6 +38,12 @@ jobs:
               if source.find(start_marker, start + 1) >= 0:
                   raise SystemExit(f'{label}: start marker is not unique')
               return source[:start] + replacement + source[end:]
+
+          def regex_once(source, pattern, replacement, label):
+              next_text, count = re.subn(pattern, replacement, source, count=1, flags=re.M)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return next_text
 
           text = replace_region(
               text,
@@ -130,70 +136,31 @@ jobs:
               raise SystemExit('mergeImportedRowsIntoSchedules region not found')
           merge = text[merge_start:merge_end]
 
-          def replace_once(source, old, new, label):
-              count = source.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
-              return source.replace(old, new, 1)
-
-          merge = replace_once(
+          merge = regex_once(
               merge,
-              """      let schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);
-              let createdThisSchedule = false;
-              if (!schedule) {
-          """,
-              """      let schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);
-              let createdThisSchedule = false;
-              let scheduleWasAutoImported = schedule
-                ? (scheduleLooksAutoImported(schedule) && !scheduleHasManualOrUserContent(schedule))
-                : false;
-              if (!schedule) {
-          """,
+              r'^(?P<i>\s*)let schedule = findExistingScheduleForImportedGroup\(group, groupFileKeys\);\n(?P=i)let createdThisSchedule = false;\n(?P=i)if \(!schedule\) \{',
+              lambda m: f"{m.group('i')}let schedule = findExistingScheduleForImportedGroup(group, groupFileKeys);\n{m.group('i')}let createdThisSchedule = false;\n{m.group('i')}let scheduleWasAutoImported = schedule\n{m.group('i')}  ? (scheduleLooksAutoImported(schedule) && !scheduleHasManualOrUserContent(schedule))\n{m.group('i')}  : false;\n{m.group('i')}if (!schedule) {{",
               'capture fundraiser origin'
           )
 
-          merge = replace_once(
+          merge = regex_once(
               merge,
-              """        createdSchedules += 1;
-                createdThisSchedule = true;
-              }
-          """,
-              """        createdSchedules += 1;
-                createdThisSchedule = true;
-                scheduleWasAutoImported = true;
-              }
-          """,
+              r'^(?P<i>\s*)createdSchedules \+= 1;\n(?P=i)createdThisSchedule = true;\n(?P<close>\s*)\}',
+              lambda m: f"{m.group('i')}createdSchedules += 1;\n{m.group('i')}createdThisSchedule = true;\n{m.group('i')}scheduleWasAutoImported = true;\n{m.group('close')}}}",
               'mark newly created fundraiser as imported'
           )
 
-          merge = replace_once(
+          merge = regex_once(
               merge,
-              """      if (scheduleLooksAutoImported(schedule)) {
-                if (createdThisSchedule || allowTitleUpdates) schedule.title = group.title || schedule.title;
-                schedule.startDate = group.startDate || schedule.startDate;
-                schedule.endDate = group.endDate || schedule.endDate;
-              }
-          """,
-              """      if (scheduleWasAutoImported) {
-                if (createdThisSchedule || allowTitleUpdates) schedule.title = group.title || schedule.title;
-                schedule.startDate = group.startDate || schedule.startDate;
-                schedule.endDate = group.endDate || schedule.endDate;
-              }
-          """,
+              r'^(?P<i>\s*)if \(scheduleLooksAutoImported\(schedule\)\) \{\n(?P<body>(?:(?!^\s*\}).*\n)*)^(?P=i)\}',
+              lambda m: f"{m.group('i')}if (scheduleWasAutoImported) {{\n{m.group('body')}{m.group('i')}}}",
               'protect user fundraiser boundaries'
           )
 
-          merge = replace_once(
+          merge = regex_once(
               merge,
-              """      schedule.meta = {
-                ...(schedule.meta || {}),
-                importedFundraiserKey: group.key,
-          """,
-              """      schedule.meta = {
-                ...(schedule.meta || {}),
-                autoCreatedFromReports: Boolean(scheduleWasAutoImported || createdThisSchedule),
-                importedFundraiserKey: group.key,
-          """,
+              r'^(?P<i>\s*)schedule\.meta = \{\n(?P=i)  \.\.\.\(schedule\.meta \|\| \{\}\),\n',
+              lambda m: f"{m.group('i')}schedule.meta = {{\n{m.group('i')}  ...(schedule.meta || {{}}),\n{m.group('i')}  autoCreatedFromReports: Boolean(scheduleWasAutoImported || createdThisSchedule),\n",
               'persist fundraiser origin'
           )
 
@@ -210,8 +177,7 @@ jobs:
           index = index_path.read_text(encoding='utf-8')
           if index.count('0.22.55') != 2:
               raise SystemExit(f"index.html expected exactly two 0.22.55 markers, found {index.count('0.22.55')}")
-          index = index.replace('0.22.55', '0.22.56')
-          index_path.write_text(index, encoding='utf-8')
+          index_path.write_text(index.replace('0.22.55', '0.22.56'), encoding='utf-8')
           PY
 
       - name: Validate source and importer behavior
@@ -222,35 +188,31 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           text = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
-          required = [
+          for marker in [
               'function scheduleContainsImportedGroup',
               'function findBestContainingScheduleForImportedGroup',
               'let schedule = findBestContainingScheduleForImportedGroup(group);',
               'let scheduleWasAutoImported = schedule',
               'if (scheduleWasAutoImported) {',
               'autoCreatedFromReports: Boolean(scheduleWasAutoImported || createdThisSchedule)'
-          ]
-          for item in required:
-              if item not in text:
-                  raise SystemExit(f'Missing required fix marker: {item}')
+          ]:
+              if marker not in text:
+                  raise SystemExit(f'Missing required fix marker: {marker}')
           find_start = text.index('function findExistingScheduleForImportedGroup')
           find_end = text.index('function prepareImportedScheduleRows', find_start)
           find_body = text[find_start:find_end]
           if find_body.index('findBestContainingScheduleForImportedGroup(group)') > find_body.index('scheduleIdentityKey(item) === identity'):
-              raise SystemExit('Containing fundraiser lookup does not run before imported identity lookup')
+              raise SystemExit('Containing fundraiser lookup is not first')
           PY
 
           node <<'NODE'
           const fs = require('fs');
           const src = fs.readFileSync('assets/js/ui-scheduling.js', 'utf8');
           function extract(name) {
-            const marker = `function ${name}`;
-            const start = src.indexOf(marker);
+            const start = src.indexOf(`function ${name}`);
             if (start < 0) throw new Error(`Missing function ${name}`);
             const brace = src.indexOf('{', start);
-            let depth = 0;
-            let quote = '';
-            let escape = false;
+            let depth = 0, quote = '', escape = false;
             for (let i = brace; i < src.length; i += 1) {
               const ch = src[i];
               if (quote) {
@@ -261,88 +223,40 @@ jobs:
               }
               if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
               if (ch === '{') depth += 1;
-              if (ch === '}') {
-                depth -= 1;
-                if (depth === 0) return src.slice(start, i + 1);
-              }
+              if (ch === '}' && --depth === 0) return src.slice(start, i + 1);
             }
             throw new Error(`Unclosed function ${name}`);
           }
-
           const utils = {
-            normalizeText: (v) => String(v || '').trim(),
-            normalizeLookupKey: (v) => String(v || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+            normalizeText: v => String(v || '').trim(),
+            normalizeLookupKey: v => String(v || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
           };
           const state = { schedules: [] };
-          const names = [
-            'dateKeyToDate',
-            'daysBetweenDateKeys',
-            'dateKeyYear',
-            'dateRangeSpansCalendarYears',
-            'dateRangeSpanDays',
-            'scheduleAndGroupShareCalendarYear',
-            'scheduleManualMoneyTotal',
-            'scheduleHasManualOrUserContent',
-            'scheduleLooksAutoImported',
-            'scheduleSameRangePreferenceScore',
-            'scheduleContainsImportedGroup',
+          eval([
+            'dateKeyToDate','daysBetweenDateKeys','dateKeyYear','dateRangeSpansCalendarYears','dateRangeSpanDays',
+            'scheduleAndGroupShareCalendarYear','scheduleManualMoneyTotal','scheduleHasManualOrUserContent',
+            'scheduleLooksAutoImported','scheduleSameRangePreferenceScore','scheduleContainsImportedGroup',
             'findBestContainingScheduleForImportedGroup'
-          ];
-          eval(names.map(extract).join('\n'));
-
-          function assert(condition, message) {
-            if (!condition) throw new Error(message);
-          }
-
+          ].map(extract).join('\n'));
+          const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
           const group = { startDate: '2026-08-08', endDate: '2026-08-11' };
-          const realAugust = {
-            id: 'real', title: 'August Fundraiser', startDate: '2026-08-01', endDate: '2026-08-16',
-            placements: [{ id: 'manual-slot', importedFromReport: false }], meta: {}
-          };
-          const bogusImported = {
-            id: 'bogus', title: 'Imported pledge Aug 8 - Aug 11', startDate: '2026-08-08', endDate: '2026-08-11',
-            placements: [{ id: 'imported-slot', importedFromReport: true }],
-            meta: { importedFromReports: true, importedFundraiserKey: 'cluster|aug8|aug11' }
-          };
-          state.schedules = [bogusImported, realAugust];
-          assert(findBestContainingScheduleForImportedGroup(group)?.id === 'real', 'Real containing fundraiser must beat exact auto-imported duplicate');
-
-          const narrower = {
-            id: 'narrow', title: 'Mid-August Fundraiser', startDate: '2026-08-05', endDate: '2026-08-12',
-            placements: [{ importedFromReport: false }], meta: {}
-          };
-          state.schedules = [realAugust, narrower];
-          assert(findBestContainingScheduleForImportedGroup(group)?.id === 'narrow', 'Smallest user-created containing fundraiser should win');
-
-          const exactManual = {
-            id: 'exact-manual', title: 'Special Fundraiser', startDate: '2026-08-08', endDate: '2026-08-11',
-            placements: [{ importedFromReport: false }], meta: {}
-          };
-          state.schedules = [realAugust, exactManual];
-          assert(findBestContainingScheduleForImportedGroup(group)?.id === 'exact-manual', 'Exact user-created range should beat broader containing range');
-
-          const importedButUserOwned = {
-            id: 'user-owned', title: 'August Fundraiser', startDate: '2026-08-01', endDate: '2026-08-16',
-            placements: [{ importedFromReport: true }],
-            meta: { autoCreatedFromReports: false, importedFromReports: true, importedFundraiserKey: 'cluster|x' }
-          };
-          assert(scheduleLooksAutoImported(importedButUserOwned) === false, 'Explicit user-created origin must survive later imports');
-
-          const autoSpecificTitle = {
-            id: 'auto-specific', title: 'August Membership Drive', startDate: '2026-08-08', endDate: '2026-08-11',
-            placements: [{ importedFromReport: true }],
-            meta: { autoCreatedFromReports: true, importedFromReports: true }
-          };
-          assert(scheduleLooksAutoImported(autoSpecificTitle) === true, 'Explicit auto-created origin must not depend on title');
-
-          state.schedules = [bogusImported];
-          assert(findBestContainingScheduleForImportedGroup(group) === null, 'Auto-created fundraiser alone should fall through to existing import identity logic');
-
+          const real = { id:'real', title:'August Fundraiser', startDate:'2026-08-01', endDate:'2026-08-16', placements:[{importedFromReport:false}], meta:{} };
+          const bogus = { id:'bogus', title:'Imported pledge Aug 8 - Aug 11', startDate:'2026-08-08', endDate:'2026-08-11', placements:[{importedFromReport:true}], meta:{importedFromReports:true, importedFundraiserKey:'cluster|aug'} };
+          state.schedules = [bogus, real];
+          assert(findBestContainingScheduleForImportedGroup(group)?.id === 'real', 'real fundraiser must beat auto-imported duplicate');
+          const narrow = { id:'narrow', title:'Mid August', startDate:'2026-08-05', endDate:'2026-08-12', placements:[{importedFromReport:false}], meta:{} };
+          state.schedules = [real, narrow];
+          assert(findBestContainingScheduleForImportedGroup(group)?.id === 'narrow', 'smallest containing fundraiser should win');
+          const explicitUser = { title:'August', startDate:'2026-08-01', endDate:'2026-08-16', placements:[{importedFromReport:true}], meta:{autoCreatedFromReports:false, importedFromReports:true} };
+          assert(scheduleLooksAutoImported(explicitUser) === false, 'explicit user origin must survive imports');
+          const explicitAuto = { title:'Named Drive', placements:[{importedFromReport:true}], meta:{autoCreatedFromReports:true, importedFromReports:true} };
+          assert(scheduleLooksAutoImported(explicitAuto) === true, 'explicit auto origin must survive title changes');
+          state.schedules = [bogus];
+          assert(findBestContainingScheduleForImportedGroup(group) === null, 'auto-only schedule should fall through to legacy identity matching');
           console.log('Targeted partial-import containment tests passed.');
           NODE
 
           changed="$(git diff --name-only)"
-          printf '%s\n' "$changed"
           test "$changed" = "assets/js/ui-scheduling.js
           index.html
           version.json"
