@@ -688,7 +688,7 @@
         program: Object.keys(detailProgram).length ? detailProgram : null,
         timings: timingsByProgram.get(programId) || [],
         driveResults: drivesByProgram.get(programId) || [],
-        airings: airingsByProgram.get(programId) || [],
+        airings: canonicalizeImportedAirings(airingsByProgram.get(programId) || []),
         warnings: buildDetailWarnings(baseResp, timingResp, driveResp, airingsResp)
       };
       resultMap[programId] = detail;
@@ -751,7 +751,7 @@
         program: Object.keys(detailProgram).length ? detailProgram : null,
         timings: timingResp.data || [],
         driveResults: driveResp.data || [],
-        airings: airingsResp.data || [],
+        airings: canonicalizeImportedAirings(airingsResp.data || []),
         warnings: buildDetailWarnings(baseResp, timingResp, driveResp, airingsResp)
       };
       state.detailCache[programId] = detail;
@@ -1357,6 +1357,90 @@
     ].join('|').toLowerCase();
   }
 
+  function importedAiringIdentity(row = {}) {
+    const canonicalProgramId = String(utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.manual_match_program_id, '') || '').trim();
+    return canonicalProgramId
+      ? `program_id:${canonicalProgramId}`
+      : (utils.nolaIdentityKey(
+          row.nola_code || row.nola || row.program_nola || '',
+          row.imported_program_title || row.program_title || row.title || row.name || ''
+        ) || utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || ''));
+  }
+
+  function validatedImportedDateKey(yearValue, monthValue, dayValue) {
+    const year = Number(yearValue);
+    const month = Number(monthValue);
+    const day = Number(dayValue);
+    if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+    const key = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const date = new Date(`${key}T12:00:00Z`);
+    if (Number.isNaN(date.getTime())) return '';
+    if (date.getUTCFullYear() !== year || (date.getUTCMonth() + 1) !== month || date.getUTCDate() !== day) return '';
+    return key;
+  }
+
+  function importedReportCoverageEnd(row = {}) {
+    const direct = utils.normalizeText(row.drive_end_date || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(direct)) return direct;
+
+    const text = [row.fundraiser_label, row.source_file_name]
+      .map((value) => utils.normalizeText(value))
+      .filter(Boolean)
+      .join(' ');
+    if (!text) return '';
+
+    const found = [];
+    for (const match of text.matchAll(/\b(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)\b/g)) {
+      const key = validatedImportedDateKey(match[1], match[2], match[3]);
+      if (key) found.push(key);
+    }
+    for (const match of text.matchAll(/\b([01]\d)([0-3]\d)(\d{2})\b/g)) {
+      const key = validatedImportedDateKey(`20${match[3]}`, match[1], match[2]);
+      if (key) found.push(key);
+    }
+    for (const match of text.matchAll(/\b([01]\d)([0-3]\d)(20\d{2})\b/g)) {
+      const key = validatedImportedDateKey(match[3], match[1], match[2]);
+      if (key) found.push(key);
+    }
+    return found.sort().slice(-1)[0] || '';
+  }
+
+  function importedAiringTimestamp(row = {}) {
+    const values = [row.updated_at, row.imported_at, row.created_at];
+    for (const value of values) {
+      const stamp = Date.parse(value || '');
+      if (Number.isFinite(stamp)) return stamp;
+    }
+    return 0;
+  }
+
+  function canonicalizeImportedAirings(rows = []) {
+    const chosen = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+      const identity = importedAiringIdentity(row);
+      const dateKey = utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '';
+      const timeKey = utils.normalizeText(row.air_time);
+      const naturalKey = identity && dateKey && timeKey
+        ? importNaturalKey(row)
+        : `raw:${utils.normalizeText(row.id || row.row_hash || index)}`;
+      const candidate = {
+        row,
+        index,
+        reportEnd: importedReportCoverageEnd(row),
+        timestamp: importedAiringTimestamp(row)
+      };
+      const current = chosen.get(naturalKey);
+      const candidateWins = !current
+        || candidate.reportEnd > current.reportEnd
+        || (candidate.reportEnd === current.reportEnd && candidate.timestamp > current.timestamp)
+        || (candidate.reportEnd === current.reportEnd && candidate.timestamp === current.timestamp && candidate.index > current.index);
+      if (candidateWins) chosen.set(naturalKey, candidate);
+    });
+    return [...chosen.values()]
+      .sort((a, b) => a.index - b.index)
+      .map((entry) => entry.row);
+  }
+
   async function fetchExistingImportedNaturalKeyRows(rows = []) {
     const wanted = new Set((Array.isArray(rows) ? rows : []).map((row) => importNaturalKey(row)).filter(Boolean));
     if (!wanted.size) return new Map();
@@ -1391,7 +1475,8 @@
   }
 
   async function fetchImportedAirings() {
-    return fetchAllRows(constants.AIRINGS_TABLE);
+    const rows = await fetchAllRows(constants.AIRINGS_TABLE);
+    return canonicalizeImportedAirings(rows);
   }
 
   async function fetchImportedMatchMemoryRows() {
@@ -1452,11 +1537,12 @@
     if (!rowHash) return { error: new Error('Missing row hash.') };
     return state.client.from(constants.AIRINGS_TABLE).delete().eq('row_hash', rowHash);
   }
+
   async function fetchPerformanceInputs() {
     const warnings = [];
     let airingRows = [];
     try {
-      airingRows = await fetchAllRows(constants.AIRINGS_TABLE);
+      airingRows = await fetchImportedAirings();
     } catch (error) {
       warnings.push(`Airings read warning: ${error.message || error}`);
     }
@@ -1640,6 +1726,7 @@
     deleteScheduleRemote,
     fetchPerformanceInputs,
     fetchImportedAirings,
+    canonicalizeImportedAirings,
     fetchImportedMatchMemoryRows,
     fetchUnlinkedImportedAirings,
     updateImportedAiringByHash,
