@@ -211,7 +211,9 @@ jobs:
           function extract(name) {
             const start = src.indexOf(`function ${name}`);
             if (start < 0) throw new Error(`Missing function ${name}`);
-            const brace = src.indexOf('{', start);
+            const signatureEnd = src.indexOf(') {', start);
+            if (signatureEnd < 0) throw new Error(`Missing body for function ${name}`);
+            const brace = signatureEnd + 2;
             let depth = 0, quote = '', escape = false;
             for (let i = brace; i < src.length; i += 1) {
               const ch = src[i];
