@@ -3,11 +3,12 @@ window.PledgeLib = window.PledgeLib || {};
 (() => {
   const App = window.PledgeLib;
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
+  const BOOT_APP_VERSION = String(window.__PLEDGE_APP_VERSION__ || '').trim();
 
   App.cfg = cfg;
   App.constants = {
     APP_NAME: 'WNMU Pledge Program Library',
-    APP_VERSION: String(window.__PLEDGE_APP_VERSION__ || '').trim(),
+    APP_VERSION: BOOT_APP_VERSION,
     LIBRARY_VIEW: 'pledge_program_library_summary_v2',
     BASE_TABLE: 'pledge_programs_v2',
     TIMING_TABLE: 'pledge_program_timings_v2',
@@ -87,6 +88,18 @@ window.PledgeLib = window.PledgeLib || {};
     VERSION_MANIFEST: 'version.json',
     VERSION_CHECK_INTERVAL_MS: 10 * 60 * 1000
   };
+
+  Object.defineProperty(App.constants, 'APP_VERSION', {
+    enumerable: true,
+    configurable: false,
+    get() { return BOOT_APP_VERSION; },
+    set(attemptedVersion) {
+      const attempted = String(attemptedVersion || '').trim();
+      if (attempted && attempted !== BOOT_APP_VERSION) {
+        console.warn(`Ignored attempt to overwrite application version ${BOOT_APP_VERSION} with ${attempted}.`);
+      }
+    }
+  });
 
   const adminEmails = Array.isArray(cfg.ADMIN_EMAILS)
     ? cfg.ADMIN_EMAILS.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean)

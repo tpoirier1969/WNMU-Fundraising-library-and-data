@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.22.55';
   const CACHE_TTL_MS = 10 * 60 * 1000;
   const fetchedAt = new Map();
   const partialIds = new Set();
@@ -205,7 +204,6 @@
       return;
     }
     initialized = true;
-    App.constants.APP_VERSION = APP_VERSION;
     seedQueryHints();
     patchWorkflows();
   }

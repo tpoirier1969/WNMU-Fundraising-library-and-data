@@ -20,7 +20,7 @@
     state.versionGateActive = Boolean(active);
     state.remoteVersionInfo = {
       ...(state.remoteVersionInfo || {}),
-      localVersion: cleanVersion(localVersion || constants.APP_VERSION),
+      localVersion: cleanVersion(localVersion || getBootLocalVersion()),
       remoteVersion: cleanVersion(remoteVersion || state.remoteVersionInfo?.remoteVersion || ''),
       blocked: Boolean(active)
     };
@@ -30,7 +30,7 @@
     if (gateEls.dismissButton) gateEls.dismissButton.classList.toggle('hidden', Boolean(active));
 
     const remote = cleanVersion(remoteVersion || state.remoteVersionInfo?.remoteVersion || '');
-    const local = cleanVersion(localVersion || constants.APP_VERSION);
+    const local = cleanVersion(localVersion || getBootLocalVersion());
     if (gateEls.message) {
       gateEls.message.textContent = remote
         ? `The user must refresh this page to load the new version of the site to keep working. This page is running v${local}; v${remote} is published.`
@@ -43,6 +43,15 @@
 
   function cleanVersion(value = '') {
     return String(value || '').trim().replace(/^v/i, '');
+  }
+
+  function getBootLocalVersion() {
+    return cleanVersion(
+      window.__PLEDGE_APP_VERSION__
+      || document.documentElement?.dataset?.appVersion
+      || constants.APP_VERSION
+      || ''
+    );
   }
 
   function compareVersions(a = '', b = '') {
@@ -129,7 +138,7 @@
   }
 
   function applyRemoteVersionBanner(payload = {}) {
-    const localVersion = cleanVersion(constants.APP_VERSION);
+    const localVersion = getBootLocalVersion();
     const remoteVersion = cleanVersion(payload?.appVersion || payload?.version || '');
     state.remoteVersionInfo = {
       ...(state.remoteVersionInfo || {}),

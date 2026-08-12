@@ -254,7 +254,6 @@
       window.setTimeout(initialize, 30);
       return;
     }
-    App.constants.APP_VERSION = 'v0.22.53';
     initialized = true;
     restoreDisclosureState();
     installDivider();

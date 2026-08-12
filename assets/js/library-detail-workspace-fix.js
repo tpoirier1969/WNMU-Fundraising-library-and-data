@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const APP_VERSION = 'v0.22.54';
   let initialized = false;
   let patched = false;
 
@@ -164,7 +163,6 @@
       return;
     }
     initialized = true;
-    App.constants.APP_VERSION = APP_VERSION;
     patchWorkflows();
     bindCaptureGuards();
     sync({ hidePopup: !inLibrary() });

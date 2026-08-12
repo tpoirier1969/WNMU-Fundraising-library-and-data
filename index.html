@@ -27,6 +27,7 @@
       VERSION=String(versionPayload?.appVersion||versionPayload?.version||'').trim().replace(/^v/i,'');
       if(!VERSION)throw new Error('version.json does not contain an appVersion.');
       LABEL=`v${VERSION}`;
+      window.__PLEDGE_APP_VERSION__=LABEL;
     } catch(error) {
       console.error(error);
       setStatus(`The Pledge Program Library could not determine its version: ${error.message||error}`);
@@ -102,6 +103,7 @@
       if(!response.ok)throw new Error(`Could not load app-shell.html (${response.status}).`);
       const doc=new DOMParser().parseFromString(await response.text(),'text/html');
       doc.title=`WNMU Pledge Program Library ${LABEL}`;
+      doc.documentElement.dataset.appVersion=VERSION;
       doc.querySelectorAll('script[src]').forEach((script)=>script.setAttribute('src',versioned(script.getAttribute('src')||'')));
       doc.querySelectorAll('link[rel~="stylesheet"][href]').forEach((link)=>link.setAttribute('href',versioned(link.getAttribute('href')||'')));
       const flag=doc.getElementById('version-flag'),footer=doc.getElementById('footer-version');if(flag)flag.textContent=LABEL;if(footer)footer.textContent=LABEL;

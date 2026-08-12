@@ -1,1 +1,38 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WNMU Pledge Performance Lab v0.22.55</title><style>body{margin:0;font-family:system-ui,sans-serif;background:#eef4f7;color:#223a47}.boot{min-height:100vh;display:grid;place-items:center}.card{padding:24px;border:1px solid #cbd8de;border-radius:16px;background:#fff}</style></head><body><main class="boot"><div class="card"><h2>Loading Pledge Performance Lab…</h2><p id="status">Loading the current analytics workspace.</p></div></main><script>(async()=>{const s=document.getElementById('status');try{const r=await fetch('pledge-performance-lab-shell.html?v=0.22.55&_='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error('Could not load the performance lab shell.');let h=await r.text();h=h.replaceAll('0.22.52','0.22.55').replaceAll('v0.22.52','v0.22.55').replaceAll('0.22.53','0.22.55').replaceAll('v0.22.53','v0.22.55').replaceAll('0.22.54','0.22.55').replaceAll('v0.22.54','v0.22.55');document.open();document.write(h);document.close()}catch(e){console.error(e);s.textContent='The performance lab could not start: '+(e.message||e)}})();</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WNMU Pledge Performance Lab</title>
+  <style>body{margin:0;font-family:system-ui,sans-serif;background:#eef4f7;color:#223a47}.boot{min-height:100vh;display:grid;place-items:center}.card{padding:24px;border:1px solid #cbd8de;border-radius:16px;background:#fff}</style>
+</head>
+<body>
+  <main class="boot"><div class="card"><h2>Loading Pledge Performance Lab…</h2><p id="status">Loading the current analytics workspace.</p></div></main>
+  <script>
+  (async()=>{
+    const status=document.getElementById('status');
+    try{
+      const versionResponse=await fetch(`version.json?_=${Date.now()}`,{cache:'no-store'});
+      if(!versionResponse.ok)throw new Error(`Could not load version.json (${versionResponse.status}).`);
+      const payload=await versionResponse.json();
+      const version=String(payload?.appVersion||payload?.version||'').trim().replace(/^v/i,'');
+      if(!version)throw new Error('version.json does not contain an appVersion.');
+      const label=`v${version}`;
+      const response=await fetch(`pledge-performance-lab-shell.html?v=${encodeURIComponent(version)}&_=${Date.now()}`,{cache:'no-store'});
+      if(!response.ok)throw new Error('Could not load the performance lab shell.');
+      const doc=new DOMParser().parseFromString(await response.text(),'text/html');
+      doc.title=`WNMU Pledge Performance Analytics ${label}`;
+      doc.documentElement.dataset.appVersion=version;
+      const versionNode=doc.getElementById('performance-lab-version');
+      if(versionNode)versionNode.textContent=label;
+      document.open();
+      document.write('<!doctype html>'+doc.documentElement.outerHTML);
+      document.close();
+    }catch(error){
+      console.error(error);
+      status.textContent='The performance lab could not start: '+(error.message||error);
+    }
+  })();
+  </script>
+</body>
+</html>
