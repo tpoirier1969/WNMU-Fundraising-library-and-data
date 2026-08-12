@@ -1925,34 +1925,47 @@
 
 
 
-  async function buildSchedulerFromCurrentBatch(options = {}) {
+  async function buildSchedulerFromCurrentBatch() {
     if (!App.auth.canEdit()) {
-      setResultBanner('Scheduler creation is admin-only.', 'warn');
+      setResultBanner('Archive schedule reconstruction is admin-only.', 'warn');
       return;
     }
     if (filesWithReconciliationDifferences().length) {
-      setResultBanner(`Fix the raw CSV reconciliation difference for ${utils.formatCount(filesWithReconciliationDifferences().length)} file${filesWithReconciliationDifferences().length === 1 ? '' : 's'} before creating scheduler entries.`, 'warn');
+      setResultBanner(`Fix the raw CSV reconciliation difference for ${utils.formatCount(filesWithReconciliationDifferences().length)} file${filesWithReconciliationDifferences().length === 1 ? '' : 's'} before reconstructing archive schedules.`, 'warn');
       return;
     }
     const allRows = Array.isArray(imp().airingsRows) ? imp().airingsRows.slice() : [];
     const matchedRows = getImportableRows();
     const quarantinedCount = allRows.length - matchedRows.length;
     if (!allRows.length) {
-      setResultBanner('No imported airings are available for scheduler creation yet.', 'warn');
+      setResultBanner('No imported airings are available for archive schedule reconstruction yet.', 'warn');
       return;
     }
     if (!matchedRows.length) {
-      setResultBanner(`No matched/importable airings are available for scheduler creation. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} must be linked or marked non-specific first.`, 'warn');
+      setResultBanner(`No matched/importable airings are available for archive schedule reconstruction. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} must be linked or marked non-specific first.`, 'warn');
       return;
     }
-    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({ rows: matchedRows, rebuild: Boolean(options.rebuild) });
+    const proceed = window.confirm('Archive schedule reconstruction is separate from Results Import.\n\nThis action may create missing historical fundraiser calendars from the current report batch. It will NOT merge duplicate schedules, refresh existing placements, or replace existing program titles.\n\nClick OK to continue or Cancel to make no schedule changes.');
+    if (!proceed) {
+      setResultBanner('Archive schedule reconstruction cancelled. No schedule changes were made.', 'warn');
+      return;
+    }
+    const summary = await App.schedulingUi?.buildSchedulesFromImportedReports?.({
+      rows: matchedRows,
+      activateFirst: true,
+      allowDuplicateMerges: false,
+      allowCreateMissing: true,
+      allowRefreshPlacements: false,
+      allowTitleUpdates: false,
+      rebuild: false
+    });
     if (summary) {
       const diag = summary.diagnostics || {};
       const extra = summary.skippedRows
         ? ` ${utils.formatCount(summary.skippedRows)} matched row${summary.skippedRows === 1 ? '' : 's'} could not be placed${(diag.noLibraryMatch || diag.badDate || diag.badTime) ? ` (${utils.formatCount(diag.noLibraryMatch || 0)} no library match, ${utils.formatCount(diag.badDate || 0)} bad date, ${utils.formatCount(diag.badTime || 0)} bad time)` : ''}.`
         : '';
-      const quarantineNote = quarantinedCount ? ` ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not used for scheduler creation.` : '';
-      setResultBanner(`Scheduler updated from the current import batch: ${utils.formatCount(summary.placementsCreated)} entries created, ${utils.formatCount(summary.placementsSkipped)} duplicates skipped.${extra}${quarantineNote}`);
+      const quarantineNote = quarantinedCount ? ` ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not used.` : '';
+      setResultBanner(`Archive schedule reconstruction finished: ${utils.formatCount(summary.schedulesCreated || 0)} calendar${Number(summary.schedulesCreated || 0) === 1 ? '' : 's'} created and ${utils.formatCount(summary.placementsCreated || 0)} placement${Number(summary.placementsCreated || 0) === 1 ? '' : 's'} added. Existing schedules were not merged or refreshed.${extra}${quarantineNote}`);
     }
   }
 
@@ -2014,7 +2027,7 @@
     }
     setImportInProgress(true);
     setStatus(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows to Supabase…`);
-    setResultBanner(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} will NOT be written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped.`);
+    setResultBanner(`Importing or reimporting ${utils.formatCount(importableRows.length)} matched/non-specific airing rows. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} will NOT be written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Existing rows from earlier reports will be updated if dollars or pledges changed, otherwise skipped. Results Import never creates, merges, repairs, or changes fundraiser schedules.`);
     try {
       const summary = await App.data.importNormalizedRows({
         airingsRows: importableRows,
@@ -2031,18 +2044,8 @@
       } catch (verifyError) {
         console.warn('Import verification query failed:', verifyError);
       }
-      let scheduleSummary = null;
-      let scheduleError = null;
-      try {
-        if (summary.airings.written > 0 && App.schedulingUi?.buildSchedulesFromImportedReports) {
-          scheduleSummary = await App.schedulingUi.buildSchedulesFromImportedReports({ rows: importableRows, rebuild: false, activateFirst: true });
-        }
-      } catch (error) {
-        scheduleError = error;
-        console.warn('Automatic scheduler/dropdown update after import failed:', error);
-      }
       const updatedDuplicateCount = Number(summary.airings.updatedDuplicates || 0) || 0;
-      let success = `Imported/updated ${utils.formatCount(summary.airings.written)} matched/non-specific airing row${summary.airings.written === 1 ? '' : 's'} in Supabase. ${utils.formatCount(updatedDuplicateCount)} existing row${updatedDuplicateCount === 1 ? '' : 's'} matched a prior report and were updated instead of duplicated. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} unchanged duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}.`;
+      let success = `Imported/updated ${utils.formatCount(summary.airings.written)} matched/non-specific airing row${summary.airings.written === 1 ? '' : 's'} in Supabase. ${utils.formatCount(updatedDuplicateCount)} existing row${updatedDuplicateCount === 1 ? '' : 's'} matched a prior report and were updated instead of duplicated. ${utils.formatCount(summary.airings.skippedDuplicates || 0)} unchanged duplicate row${(summary.airings.skippedDuplicates || 0) === 1 ? '' : 's'} were skipped automatically. ${utils.formatCount(quarantinedCount)} quarantined row${quarantinedCount === 1 ? '' : 's'} were not written${quarantinedDollarTotal > 0 ? ` (${utils.formatMoney(quarantinedDollarTotal)} held out)` : ''}. Results Import did not create, merge, repair, or change any fundraiser schedule.`;
       if (verification && summary.airings.written > 0) {
         const verificationText = ` Verified in Supabase for this batch: ${utils.formatCount(verification.count)} row${verification.count === 1 ? '' : 's'}, ${utils.formatMoney(verification.totalDollars)}, ${utils.formatCount(verification.totalPledges)} pledge${verification.totalPledges === 1 ? '' : 's'}.`;
         success += verificationText;
@@ -2050,40 +2053,10 @@
           success += ` WARNING: ${utils.formatCount(verification.missingDateCount)} imported row${verification.missingDateCount === 1 ? '' : 's'} still lack an air date; check the report parser before using these totals.`;
         }
       }
-      if (scheduleSummary) {
-        const createdSchedules = Number(scheduleSummary.schedulesCreated || 0) || 0;
-        const updatedSchedules = Number(scheduleSummary.schedulesUpdated || 0) || 0;
-        const createdPlacements = Number(scheduleSummary.placementsCreated || 0) || 0;
-        const skippedRows = Number(scheduleSummary.skippedRows || 0) || 0;
-        const fundraiserCount = Number(scheduleSummary.fundraiserCount || 0) || 0;
-        const mergedSchedules = Number(scheduleSummary.mergedDuplicateSchedules || 0) || 0;
-        success += ` Fundraiser dropdown updated: ${utils.formatCount(createdSchedules)} calendar${createdSchedules === 1 ? '' : 's'} created, ${utils.formatCount(updatedSchedules)} updated, ${utils.formatCount(createdPlacements)} placement${createdPlacements === 1 ? '' : 's'} added across ${utils.formatCount(fundraiserCount)} fundraiser${fundraiserCount === 1 ? '' : 's'}.`;
-        if (mergedSchedules > 0) success += ` ${utils.formatCount(mergedSchedules)} duplicate imported fundraiser calendar${mergedSchedules === 1 ? '' : 's'} merged.`;
-        if (skippedRows > 0) {
-          success += ` ${utils.formatCount(skippedRows)} imported row${skippedRows === 1 ? '' : 's'} were analytics-only because they could not be placed on the calendar.`;
-        }
-        const suspiciousGroups = Number(scheduleSummary.suspiciousSpanGroups || 0) || 0;
-        const suspiciousRows = Number(scheduleSummary.suspiciousSpanRows || 0) || 0;
-        if (suspiciousGroups > 0) {
-          success += ` WARNING: ${utils.formatCount(suspiciousGroups)} imported fundraiser cluster${suspiciousGroups === 1 ? '' : 's'} spanning more than 45 days ${suspiciousGroups === 1 ? 'was' : 'were'} not auto-created as ${suspiciousRows ? `${utils.formatCount(suspiciousRows)} ` : ''}schedule placement${suspiciousRows === 1 ? '' : 's'}; review those dates manually instead of creating a fake yearlong fundraiser.`;
-        }
-      } else if (scheduleError) {
-        success += ` WARNING: rows imported, but the fundraiser dropdown/scheduler update failed: ${scheduleError?.message || scheduleError}.`;
-      } else if (summary.airings.written > 0) {
-        success += ' WARNING: rows imported, but no fundraiser calendar/dropdown update was attempted.';
-      }
-      const scheduleConflictCount = Number(scheduleSummary?.scheduleConflicts || 0) || 0;
-      if (scheduleConflictCount > 0) {
-        success += ` WARNING: ${utils.formatCount(scheduleConflictCount)} imported airing${scheduleConflictCount === 1 ? '' : 's'} did not match the existing calendar at the same date/time. Existing scheduled programming was left unchanged.`;
-      }
-      if (scheduleSummary?.scheduleChangesSkipped) {
-        success += ' No scheduler changes from this import were applied because review was requested.';
-      }
-      const finalTone = (verification?.missingDateCount || scheduleError || scheduleConflictCount > 0 || scheduleSummary?.scheduleChangesSkipped) ? 'warn' : 'success';
+      const finalTone = verification?.missingDateCount ? 'warn' : 'success';
       setStatus(success);
       setResultBanner(success, finalTone);
       setNotice(success, finalTone);
-      await App.schedulingUi?.refreshImportedAiringMarkers?.();
       await App.performanceUi?.refreshData({ silent: true });
       App.performanceUi?.renderAll();
       setImportInProgress(false);
@@ -3130,8 +3103,13 @@
       }
     });
     if (els.importBuildScheduleButton) {
+      els.importBuildScheduleButton.textContent = 'Reconstruct archive schedule';
       els.importBuildScheduleButton.disabled = !canBuild;
-      els.importBuildScheduleButton.title = !canEdit ? 'Admin sign-in required for scheduler writes.' : (hasDiffs ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.` : (matchedCount ? '' : 'Load matched imported airings first, then sign in as admin.'));
+      els.importBuildScheduleButton.title = !canEdit
+        ? 'Admin sign-in required for archive schedule reconstruction.'
+        : (hasDiffs
+          ? `Fix the raw CSV reconciliation difference for ${utils.formatCount(unreconciledFiles.length)} file${unreconciledFiles.length === 1 ? '' : 's'} first.`
+          : (matchedCount ? 'Optional archive reconstruction only. Ordinary Results Import never changes schedules.' : 'Load matched imported airings first, then sign in as admin.'));
     }
     document.querySelectorAll('.import-apply-all-trigger').forEach((button) => {
       button.disabled = !pendingMatchCount;
