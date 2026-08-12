@@ -1,0 +1,78 @@
+name: Scoped scheduler totals and comparison update
+
+on:
+  push:
+    paths:
+      - ".github/workflows/scheduler-money-comparison-update-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Scope calendar transformation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/scheduler_money_comparison_update.py')
+          text = p.read_text(encoding='utf-8')
+          old = "sched = replace_once(sched, old_daykeys, new_daykeys, 'calendar imported money load')"
+          new = """grid_start = sched.index('  function renderScheduleGrid() {')
+grid_end = sched.index('\\n\\n  function scheduleDetailHasBreakInfo', grid_start)
+grid_region = sched[grid_start:grid_end]
+if grid_region.count(old_daykeys) != 1:
+    raise SystemExit(f'calendar imported money load in renderScheduleGrid: expected exactly one match, found {grid_region.count(old_daykeys)}')
+grid_region = grid_region.replace(old_daykeys, new_daykeys, 1)
+sched = sched[:grid_start] + grid_region + sched[grid_end:]"""
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one broad day-key replacement, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - run: python tools/scheduler_money_comparison_update.py
+      - name: Validate scheduling source and markup
+        shell: bash
+        run: |
+          node --check assets/js/ui-scheduling.js
+          node --check assets/js/dom.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          html = Path('app-shell.html').read_text(encoding='utf-8')
+          dom = Path('assets/js/dom.js').read_text(encoding='utf-8')
+          sched = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
+          css = Path('assets/styles.css').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert version['appVersion'] == '0.22.63'
+          assert html.count('id="schedule-same-fundraiser-comparison"') == 1
+          assert "scheduleSameFundraiserComparison: document.getElementById('schedule-same-fundraiser-comparison')" in dom
+          for marker in ['function scheduleDailyMoneyMap','function scheduleSameFundraiserComparison','function renderSameFundraiserComparison','schedule-day-total','dailyMoney.get(dateKey)','schedulePartialOnlineMailTotal']:
+              assert marker in sched, marker
+          assert '.schedule-same-fundraiser-comparison {' in css
+          assert '.schedule-day-total {' in css
+          assert 'if (importedDates.length < wantedCount) return null;' in sched
+          assert 'const onlineMail = hasImportedResults ?' in sched
+          assert 'function healImportedSchedulesIfNeeded' not in sched
+          assert 'Admin right-click → Delete scheduled block' in sched
+          assert 'function importedScheduleConflictPrompt' in sched
+          PY
+      - name: Remove temporary harnesses and commit
+        shell: bash
+        run: |
+          rm -f tools/scheduler_money_comparison_update.py
+          rm -f .github/workflows/scheduler-money-comparison-update.yml .github/workflows/scheduler-money-comparison-update-v2.yml
+          rmdir tools 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Show daily fundraiser totals and historical pace comparison"
+          git push origin HEAD:main
