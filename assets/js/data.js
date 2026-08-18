@@ -143,7 +143,7 @@
       throw error;
     });
 
-    return state.nonPledgeLoadPromise;
+    return state.nonPledgeRows;
   }
 
   function buildBaseIndexes(baseRows = []) {
@@ -1341,30 +1341,39 @@
   }
 
 
+  function importedSourceIdentityCode(row = {}) {
+    const raw = row?.raw_payload && typeof row.raw_payload === 'object' ? row.raw_payload : {};
+    return utils.normalizeText(utils.firstNonEmpty(
+      row?.source_report_code,
+      row?.imported_report_code,
+      row?.imported_nola_code,
+      raw?.nola_code,
+      raw?.nola,
+      raw?.program_nola,
+      raw?.program_code,
+      raw?.episode_code,
+      ''
+    ) || '');
+  }
+
+  function importedAiringIdentity(row = {}) {
+    const sourceCode = importedSourceIdentityCode(row);
+    const sourceCodeKey = typeof utils.nolaCodeKey === 'function'
+      ? utils.nolaCodeKey(sourceCode)
+      : utils.normalizeLookupKey(sourceCode).replace(/\s+/g, '');
+    if (sourceCodeKey) return `source_code:${sourceCodeKey}`;
+    const importedTitle = utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || '');
+    return importedTitle ? `source_title:${importedTitle}` : '';
+  }
+
   function importNaturalKey(row = {}) {
-    const canonicalProgramId = String(utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.manual_match_program_id, '') || '').trim();
-    const identity = canonicalProgramId
-      ? `program_id:${canonicalProgramId}`
-      : (utils.nolaIdentityKey(
-          row.nola_code || row.nola || row.program_nola || '',
-          row.imported_program_title || row.program_title || row.title || row.name || ''
-        ) || utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || ''));
+    const identity = importedAiringIdentity(row);
     return [
       utils.normalizeLookupKey(row.station || ''),
       identity,
       utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
       utils.normalizeText(row.air_time)
     ].join('|').toLowerCase();
-  }
-
-  function importedAiringIdentity(row = {}) {
-    const canonicalProgramId = String(utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.manual_match_program_id, '') || '').trim();
-    return canonicalProgramId
-      ? `program_id:${canonicalProgramId}`
-      : (utils.nolaIdentityKey(
-          row.nola_code || row.nola || row.program_nola || '',
-          row.imported_program_title || row.program_title || row.title || row.name || ''
-        ) || utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || ''));
   }
 
   function validatedImportedDateKey(yearValue, monthValue, dayValue) {
