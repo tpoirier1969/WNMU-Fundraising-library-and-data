@@ -143,7 +143,7 @@
       throw error;
     });
 
-    return state.nonPledgeRows;
+    return state.nonPledgeLoadPromise;
   }
 
   function buildBaseIndexes(baseRows = []) {
