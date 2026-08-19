@@ -43,6 +43,25 @@
     .warn { background: #fff7e2; color: #62450b; }
     .bad { background: #fff0ee; color: #681f19; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-bottom: 18px; }
+    .filter-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .filter-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; min-width: 0; }
+    .filter-card.required-card { border-color: #c9b47c; background: #fff8e7; }
+    .filter-card.required-card.exploratory { border-color: #c98e72; background: #fff2e9; }
+    .filter-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 4px; }
+    .filter-card-head h3 { margin: 0; }
+    .filter-card-note { margin: 5px 0 10px; font-size: .88rem; line-height: 1.38; }
+    .filter-status { border-radius: 999px; padding: 4px 8px; background: #eee1ca; color: #584b3b; font-size: .74rem; font-weight: 950; white-space: nowrap; }
+    .filter-status.ready { background: #e6f2e9; color: var(--good); }
+    .filter-status.exploratory { background: #f8ddd1; color: var(--bad); }
+    .filter-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+    .filter-grid .field { flex: 1 1 150px; }
+    .filter-grid .field.grow { flex: 2 1 250px; }
+    .filter-bank { display: none; }
+    .filter-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; }
+    .analysis-guidance { border: 1px solid #d8a185; background: #fff2e9; border-radius: 12px; padding: 10px 11px; margin-bottom: 12px; color: #6c321f; line-height: 1.4; }
+    .analysis-guidance strong { color: #4f2417; }
+    .analysis-caution { border: 1px solid #d9c189; background: #fff8e7; border-radius: 12px; padding: 9px 10px; margin-bottom: 10px; color: #5d4818; line-height: 1.38; }
+    @media (max-width: 900px) { .filter-panels { grid-template-columns: 1fr; } }
     .field { display: grid; gap: 4px; min-width: 138px; }
     .grow { flex: 1 1 220px; }
     label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 900; color: var(--muted); }
@@ -195,90 +214,116 @@
   <div id="notice" class="notice">Loading admin check…</div>
 
   <section id="lab" class="hidden">
-    <div class="toolbar">
-      <div class="field">
+    <div id="filter-panels" class="filter-panels">
+      <section id="required-filter-card" class="filter-card required-card">
+        <div class="filter-card-head">
+          <div><div class="eyebrow">Analysis setup</div><h3>Required filters</h3></div>
+          <span id="required-filter-status" class="filter-status">Checking…</span>
+        </div>
+        <p id="required-filter-note" class="filter-card-note">These controls define the cleanest version of the selected question. Broad values such as All seasons are allowed.</p>
+        <div id="required-filters" class="filter-grid"></div>
+      </section>
+      <section class="filter-card refine-card">
+        <div class="filter-card-head"><div><div class="eyebrow">Optional</div><h3>Refine results</h3></div></div>
+        <p id="refine-filter-note" class="filter-card-note">Use these when you have a reason to narrow the comparison. They remain available for custom exploration.</p>
+        <div id="refine-filters" class="filter-grid"></div>
+      </section>
+    </div>
+
+    <div id="filter-bank" class="filter-bank">
+      <div class="field" data-filter-key="season">
         <label for="season">Pledge season</label>
         <select id="season"></select>
       </div>
-      <div class="field">
-        <label for="year">Year</label>
-        <select id="year"></select>
+      <div class="field" data-filter-key="year">
+        <label>Years included</label>
+        <details id="year-picker" class="topic-picker">
+          <summary id="year-summary">All years</summary>
+          <div id="year-options" class="topic-options"></div>
+        </details>
       </div>
-      <div class="field grow">
+      <div class="field grow" data-filter-key="search">
         <label for="search">Program</label>
         <input id="search" type="search" placeholder="Type a program title or NOLA code">
       </div>
-      <div class="field topic-field">
+      <div class="field topic-field" data-filter-key="topic">
         <label>Primary topic</label>
         <details id="topic-picker" class="topic-picker">
           <summary id="topic-summary">All topics</summary>
           <div id="topic-options" class="topic-options"></div>
         </details>
       </div>
-      <div class="field">
+      <div class="field" data-filter-key="secondary">
         <label for="secondary-topic">Secondary topic</label>
         <select id="secondary-topic"><option value="all">All secondary topics</option></select>
       </div>
-      <div class="field">
+      <div class="field" data-filter-key="duration">
+        <label for="adv-duration">Program length</label>
+        <select id="adv-duration">
+          <option value="all">All lengths</option>
+          <option value="60">60 min or less</option>
+          <option value="61-90">61–90 min</option>
+          <option value="91-120">91–120 min</option>
+          <option value="121+">Over 120 min</option>
+          <option value="unknown">Unknown length</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="evidence">
         <label for="evidence">Evidence filter</label>
-        <select id="evidence" title="Use this only when you want to hide low-sample rows. It does not apply equally to every question, especially live breaks and new comparisons.">
+        <select id="evidence" title="Hide rows with very small samples. This is a sample-size control, not a value judgment.">
           <option value="all">Show all evidence</option>
           <option value="hide">Hide low-sample rows</option>
         </select>
       </div>
-      <button id="reload" type="button">Reload live data</button>
-      <div id="scope-note" class="scope-note"></div>
+      <div class="field" data-filter-key="distributor">
+        <label for="adv-distributor">Distributor</label>
+        <select id="adv-distributor"><option value="all">All distributors</option></select>
+      </div>
+      <div class="field" data-filter-key="metric">
+        <label for="adv-metric">Rank by</label>
+        <select id="adv-metric">
+          <option value="median">Median $ / airing</option>
+          <option value="avg">Average $ / airing</option>
+          <option value="total" selected>Total dollars</option>
+          <option value="pledges">Pledge count</option>
+          <option value="broadcasts">Broadcast count</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="live">
+        <label for="adv-live">Live-break filter</label>
+        <select id="adv-live">
+          <option value="all">All broadcasts</option>
+          <option value="live">Live-break only</option>
+          <option value="nonlive">No live-break flag</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="daypart">
+        <label for="adv-daypart">Daypart</label>
+        <select id="adv-daypart">
+          <option value="all">All dayparts</option>
+          <option value="morning">Morning</option>
+          <option value="afternoon">Afternoon</option>
+          <option value="evening">Evening</option>
+          <option value="overnight">Overnight</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="weekpart">
+        <label for="adv-weekpart">Weekpart</label>
+        <select id="adv-weekpart">
+          <option value="all">All days</option>
+          <option value="weekday">Weekdays</option>
+          <option value="weekend">Weekends</option>
+        </select>
+      </div>
     </div>
+    <div class="filter-actions"><button id="reload" type="button">Reload live data</button></div>
+    <div id="scope-note" class="scope-note"></div>
 
     <div class="season-mix-legend"><strong>Season mix:</strong> M = March · J = June · A = August · D = December. The number after each letter is the number of airings in that pledge season. Example: <strong>[M-0, J-0, A-1, D-0]</strong> = one August airing and none in March, June, or December.</div>
 
     <div class="layout">
       <aside id="cards" class="cards"></aside>
       <section class="detail">
-          <div id="advanced-filters" class="advanced-strip">
-            <div class="adv">
-              <div class="field adv-distributor-field">
-                <label for="adv-distributor">Distributor</label>
-                <select id="adv-distributor"><option value="all">All distributors</option></select>
-              </div>
-              <div class="field adv-metric-field">
-                <label for="adv-metric">Rank by</label>
-                <select id="adv-metric">
-                  <option value="median">Median $ / airing</option>
-                  <option value="avg">Average $ / airing</option>
-                  <option value="total" selected>Total dollars</option>
-                  <option value="pledges">Pledge count</option>
-                  <option value="broadcasts">Broadcast count</option>
-                </select>
-              </div>
-              <div class="field adv-live-field">
-                <label for="adv-live">Live-break filter</label>
-                <select id="adv-live">
-                  <option value="all">All broadcasts</option>
-                  <option value="live">Live-break only</option>
-                  <option value="nonlive">No live-break flag</option>
-                </select>
-              </div>
-              <div class="field adv-daypart-field">
-                <label for="adv-daypart">Daypart</label>
-                <select id="adv-daypart">
-                  <option value="all">All dayparts</option>
-                  <option value="morning">Morning</option>
-                  <option value="afternoon">Afternoon</option>
-                  <option value="evening">Evening</option>
-                  <option value="overnight">Overnight</option>
-                </select>
-              </div>
-              <div class="field adv-weekpart-field">
-                <label for="adv-weekpart">Weekpart</label>
-                <select id="adv-weekpart">
-                  <option value="all">All days</option>
-                  <option value="weekday">Weekdays</option>
-                  <option value="weekend">Weekends</option>
-                </select>
-              </div>
-            </div>
-          </div>
         <div class="dhead">
           <h2 id="dt">Choose a question</h2>
           <p id="ds">Cards choose the question. This side holds the graph, table, and plain-English read.</p>
@@ -365,7 +410,7 @@
     libraryByTitle: new Map(),
     question: 'startTimes',
     season: 'all',
-    year: 'all',
+    yearFilters: null,
     search: '',
     evidence: 'all',
     metric: 'total',
@@ -376,6 +421,7 @@
     advancedLive: 'all',
     advancedDaypart: 'all',
     advancedWeekpart: 'all',
+    advancedDuration: 'all',
     trendRows: new Map(),
     tableSort: { question: '', index: null, direction: 'asc' },
     liveBreakDiagnostics: { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 },
@@ -388,8 +434,9 @@
   const el = (id) => document.getElementById(id);
   const dom = {
     notice: el('notice'), lab: el('lab'), signIn: el('sign-in'), signOut: el('sign-out'),
-    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), rightsScope: el('rights-scope'), reload: el('reload'), scopeNote: el('scope-note'),
-    advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),
+    season: el('season'), yearPicker: el('year-picker'), yearSummary: el('year-summary'), yearOptions: el('year-options'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), rightsScope: el('rights-scope'), reload: el('reload'), scopeNote: el('scope-note'),
+    requiredFilters: el('required-filters'), refineFilters: el('refine-filters'), requiredFilterCard: el('required-filter-card'), requiredFilterStatus: el('required-filter-status'), requiredFilterNote: el('required-filter-note'), refineFilterNote: el('refine-filter-note'), filterBank: el('filter-bank'),
+    advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'), advDuration: el('adv-duration'),
     cards: el('cards'), detail: document.querySelector('.detail'), detailTitle: el('dt'), detailSummary: el('ds'), stats: el('stats'), chartTitle: el('ct'), chartNote: el('cn'),
     chart: el('chart'), read: el('read'), tableTitle: el('tt'), tableNote: el('tn'), table: el('table'),
     trendModal: el('trend-modal'), trendTitle: el('trend-title'), trendSubtitle: el('trend-subtitle'), trendBody: el('trend-body'), trendClose: el('trend-close'),
@@ -1570,11 +1617,13 @@
     const selectedTopics = Array.isArray(state.topicFilters) ? state.topicFilters : [];
     if (searchKey && !lookupKey(`${record.title} ${record.importedTitle} ${record.nola}`).includes(searchKey)) return false;
     if (selectedTopics.length && !selectedTopics.includes(record.topic)) return false;
+    if (state.secondaryTopicFilter !== 'all' && (record.secondaryTopic || '') !== state.secondaryTopicFilter) return false;
     if (state.season !== 'all' && record.season !== state.season) return false;
-    if (state.year !== 'all' && String(record.year) !== String(state.year)) return false;
+    if (!yearFilterMatches(record.year)) return false;
     if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
     if (state.advancedDaypart !== 'all' && record.daypart !== state.advancedDaypart) return false;
     if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;
+    if (!durationFilterMatches(record)) return false;
     return true;
   }
 
@@ -1721,12 +1770,13 @@
       && state.advancedDistributor === 'all'
       && state.advancedLive === 'all'
       && state.advancedDaypart === 'all'
-      && state.advancedWeekpart === 'all';
+      && state.advancedWeekpart === 'all'
+      && state.advancedDuration === 'all';
   }
 
   function seasonOverviewRecords() {
     if (seasonOverviewUsesDriveTotals()) {
-      return (state.driveSeasonRecords || []).filter((record) => state.year === 'all' || String(record.year) === String(state.year));
+      return (state.driveSeasonRecords || []).filter((record) => yearFilterMatches(record.year));
     }
     return filteredRecordsFor('seasonOverview');
   }
@@ -1735,6 +1785,23 @@
     return seasonOverviewUsesDriveTotals()
       ? 'This view is using full fundraiser totals from saved schedules: broadcast dollars plus Online $ and Mail $. Rank-by/evidence filters do not apply to full drive totals.'
       : 'This view is using content-level airing rows because a program/topic/distributor/live/daypart/weekpart filter is active. Online $ and Mail $ cannot be attributed to specific content in this mode.';
+  }
+
+  function yearFilterMatches(year) {
+    if (!Array.isArray(state.yearFilters)) return true;
+    return state.yearFilters.includes(String(year));
+  }
+
+  function durationFilterMatches(record = {}) {
+    const selected = state.advancedDuration || 'all';
+    if (selected === 'all') return true;
+    const minutes = Number(record.durationMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) return selected === 'unknown';
+    if (selected === '60') return minutes <= 60;
+    if (selected === '61-90') return minutes > 60 && minutes <= 90;
+    if (selected === '91-120') return minutes > 90 && minutes <= 120;
+    if (selected === '121+') return minutes > 120;
+    return true;
   }
 
   function supportsCurrentFilter(filterName) {
@@ -1758,11 +1825,12 @@
       if (selectedSecondaryTopic !== 'all' && (record.secondaryTopic || '') !== selectedSecondaryTopic) return false;
       if (!recordWithinBroadcastRights(record)) return false;
       if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
-      if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;
+      if (question.useYear !== false && !yearFilterMatches(record.year)) return false;
       if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
       if (questionId !== 'live' && state.advancedLive !== 'all' && record.liveState !== state.advancedLive) return false;
       if (state.advancedDaypart !== 'all' && record.daypart !== state.advancedDaypart) return false;
       if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;
+      if (!durationFilterMatches(record)) return false;
       return true;
     });
   }
@@ -2321,6 +2389,106 @@
     }
   };
 
+  const FILTER_PLANS = {
+    startTimes: {
+      required: ['season', 'topic'],
+      refine: ['year', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],
+      note: 'Choose exactly one Primary Topic for a clean time-slot comparison. Season belongs in the setup, but All seasons is allowed; when it is used, remember that some topics perform differently in March, June, August, and December.'
+    },
+    programs: {
+      required: [],
+      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],
+      note: 'No setup filter is required. All-history totals answer a lifetime-value question; season and year selections answer a more current planning question.'
+    },
+    topicOverview: {
+      required: [],
+      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'search'],
+      note: 'No setup filter is required. This is intentionally a broad descriptive view; narrow it only when you want to inspect a specific slice of the schedule.'
+    },
+    seasonOverview: {
+      required: [],
+      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'search'],
+      note: 'No setup filter is required. Year checkboxes are especially useful here for excluding known anomaly years. Content filters switch this view from full fundraiser totals to attributable airing dollars only.'
+    },
+    topics: {
+      required: ['season'],
+      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],
+      note: 'Season belongs in the setup because topic strength can change by fundraiser. All seasons is still valid as a broad view, but its ranking reflects the historical season mix as well as topic strength.'
+    },
+    secondaryTopics: {
+      required: ['season', 'topic'],
+      refine: ['year', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],
+      note: 'Choose exactly one Primary Topic so the subtopics stay inside a comparable parent category. All seasons is allowed, but season mix can influence which subtopic appears strongest.'
+    },
+    seasonal: {
+      required: [],
+      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'evidence', 'search'],
+      note: 'No setup filter is required because this question must compare March, June, August, and December. Use year checkboxes to omit unusual years without destroying the cross-season comparison.'
+    },
+    history: {
+      required: [],
+      refine: ['topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'evidence', 'search'],
+      note: 'No setup filter is required. Season and year stay out because fading detection needs the full timeline. Other refinements remain available for deliberate exploration.'
+    },
+    comeback: {
+      required: [],
+      refine: ['topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'evidence', 'search'],
+      note: 'No setup filter is required. Season and year stay out because the analysis needs the full history to detect a long pause.'
+    },
+    live: {
+      required: [],
+      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'daypart', 'distributor', 'search'],
+      note: 'No setup filter is required because the matched comparison already controls for topic, day/time, length, and season/year where possible. Refinements can still test narrower hypotheses.'
+    }
+  };
+
+  function requiredFilterIssues(questionId = state.question) {
+    const plan = FILTER_PLANS[questionId] || { required: [] };
+    const issues = [];
+    if ((plan.required || []).includes('topic')) {
+      const count = Array.isArray(state.topicFilters) ? state.topicFilters.length : 0;
+      if (count === 0) issues.push('choose one Primary Topic');
+      else if (count > 1) issues.push('use one Primary Topic for a clean comparison');
+    }
+    return issues;
+  }
+
+  function seasonMixCaution(questionId = state.question) {
+    const plan = FILTER_PLANS[questionId] || { required: [] };
+    if (!(plan.required || []).includes('season') || state.season !== 'all') return '';
+    return 'All seasons is a valid view, but some topics perform differently by pledge season. Treat the result as a combined-season picture, or choose one season when testing a specific scheduling decision.';
+  }
+
+  function moveFilterControl(key, target) {
+    const node = document.querySelector(`[data-filter-key="${key}"]`);
+    if (node && target) target.appendChild(node);
+  }
+
+  function placeFilterControls() {
+    const plan = FILTER_PLANS[state.question] || FILTER_PLANS.programs;
+    [...document.querySelectorAll('[data-filter-key]')].forEach((node) => dom.filterBank?.appendChild(node));
+    (plan.required || []).forEach((key) => moveFilterControl(key, dom.requiredFilters));
+    (plan.refine || []).forEach((key) => moveFilterControl(key, dom.refineFilters));
+    const issues = requiredFilterIssues();
+    const hasRequired = Boolean((plan.required || []).length);
+    dom.requiredFilterCard?.classList.toggle('exploratory', Boolean(issues.length));
+    if (dom.requiredFilterStatus) {
+      dom.requiredFilterStatus.textContent = !hasRequired ? 'No setup needed' : (issues.length ? 'Exploratory' : 'Ready');
+      dom.requiredFilterStatus.className = `filter-status ${!hasRequired || !issues.length ? 'ready' : 'exploratory'}`;
+    }
+    if (dom.requiredFilterNote) dom.requiredFilterNote.textContent = plan.note || 'These controls define the cleanest version of the selected question.';
+    if (dom.refineFilterNote) dom.refineFilterNote.textContent = 'Optional controls. Use them when you have a reason to narrow the data; the app will not prevent you from building your own analytical path.';
+  }
+
+  function analysisGuidanceHtml() {
+    const issues = requiredFilterIssues();
+    const caution = seasonMixCaution();
+    const parts = [];
+    if (issues.length) parts.push(`<div class="analysis-guidance"><strong>Exploratory result:</strong> ${escapeHtml(issues.join('; '))}. The data is still shown, but do not treat the apparent winner as a clean conclusion until the recommended setup is satisfied.</div>`);
+    if (caution) parts.push(`<div class="analysis-caution"><strong>Season mix:</strong> ${escapeHtml(caution)}</div>`);
+    return parts.join('');
+  }
+
   async function waitForConfig() {
     for (let index = 0; index < 80; index += 1) {
       if (window.PLEDGE_MANAGER_CONFIG) return;
@@ -2459,9 +2627,12 @@
   function rebuildFilterOptions() {
     const years = [...new Set([...(state.records || []), ...(state.driveSeasonRecords || [])].map((record) => record.year).filter(Boolean))].sort((a, b) => b - a);
     dom.season.innerHTML = '<option value="all">All pledge seasons</option>' + SEASONS.map((season) => `<option>${escapeHtml(season)}</option>`).join('');
-    dom.year.innerHTML = '<option value="all">All years</option>' + years.map((year) => `<option>${escapeHtml(year)}</option>`).join('');
     dom.season.value = state.season;
-    dom.year.value = state.year;
+    const availableYearStrings = years.map(String);
+    if (Array.isArray(state.yearFilters)) state.yearFilters = state.yearFilters.filter((year) => availableYearStrings.includes(String(year)));
+    const includedYears = Array.isArray(state.yearFilters) ? state.yearFilters.map(String) : availableYearStrings;
+    dom.yearOptions.innerHTML = years.map((year) => `<label class="topic-option"><input type="checkbox" value="${escapeHtml(year)}" ${includedYears.includes(String(year)) ? 'checked' : ''}> ${escapeHtml(year)}</label>`).join('');
+    updateYearSummary(years);
     const topics = [...new Set(state.records.map((record) => record.topic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     const selectedTopicFilter = Array.isArray(state.topicFilters) ? state.topicFilters : [];
     const secondaryTopicRows = selectedTopicFilter.length ? state.records.filter((record) => selectedTopicFilter.includes(record.topic)) : state.records;
@@ -2480,6 +2651,7 @@
     dom.advLive.value = state.advancedLive;
     dom.advDaypart.value = state.advancedDaypart;
     dom.advWeekpart.value = state.advancedWeekpart;
+    dom.advDuration.value = state.advancedDuration;
   }
 
 
@@ -2491,32 +2663,46 @@
     else dom.topicSummary.textContent = `${topics.length} topics selected`;
   }
 
+  function updateYearSummary(years = null) {
+    if (!dom.yearSummary || !dom.yearOptions) return;
+    const available = Array.isArray(years) ? years.map(String) : [...dom.yearOptions.querySelectorAll('input[type="checkbox"]')].map((item) => item.value);
+    const checked = [...dom.yearOptions.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value);
+    if (!available.length || checked.length === available.length) {
+      dom.yearSummary.textContent = 'All years';
+      return;
+    }
+    if (!checked.length) {
+      dom.yearSummary.textContent = 'No years selected';
+      return;
+    }
+    const omitted = available.filter((year) => !checked.includes(year));
+    if (omitted.length <= 2 && checked.length > omitted.length) {
+      dom.yearSummary.textContent = `All except ${omitted.join(', ')}`;
+      return;
+    }
+    dom.yearSummary.textContent = checked.length <= 3 ? checked.join(', ') : `${checked.length} years included`;
+  }
+
   function updateFilterState() {
     const question = QUESTIONS[state.question] || QUESTIONS.programs;
     const liveComparison = state.question === 'live';
     dom.season.disabled = question.useSeason === false;
-    dom.year.disabled = question.useYear === false;
+    const yearDisabled = question.useYear === false;
+    if (dom.yearPicker) {
+      dom.yearPicker.open = yearDisabled ? false : dom.yearPicker.open;
+      dom.yearPicker.style.pointerEvents = yearDisabled ? 'none' : '';
+    }
     dom.advLive.disabled = liveComparison;
-    dom.advLive.parentElement?.classList.toggle('disabled-by-question', liveComparison);
-    const metricDisabled = question.useMetric === false;
-    const evidenceDisabled = question.useEvidence === false || question.hideWeakStats === true;
-    dom.advMetric.disabled = metricDisabled;
-    dom.advMetric.parentElement?.classList.toggle('disabled-by-question', metricDisabled);
-    dom.evidence.disabled = evidenceDisabled;
-    dom.evidence.parentElement?.classList.toggle('disabled-by-question', evidenceDisabled);
-    const disabled = [];
-    if (question.useSeason === false) disabled.push('season');
-    if (question.useYear === false) disabled.push('year');
-    if (liveComparison) disabled.push('live-break filter');
-    if (metricDisabled) disabled.push('rank by');
-    if (evidenceDisabled) disabled.push('evidence filter');
+    dom.advMetric.disabled = question.useMetric === false;
+    dom.evidence.disabled = question.useEvidence === false || question.hideWeakStats === true;
+    placeFilterControls();
     if (state.question === 'seasonOverview') {
-      setScopeNote(`${disabled.length ? `Disabled or ignored for this question: ${disabled.join(', ')}. ` : ''}${seasonOverviewModeText()}`);
+      setScopeNote(`${seasonOverviewModeText()} Year checkboxes change which fundraiser years are compared without forcing content-level mode.`);
       return;
     }
-    setScopeNote(disabled.length
-      ? `Disabled or ignored for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`
-      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, not-yet-in-rights, and unknown-library titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`);
+    const issues = requiredFilterIssues();
+    const caution = seasonMixCaution();
+    setScopeNote(`${issues.length ? 'Recommended setup is incomplete, so the result is exploratory. ' : 'Recommended setup is satisfied. '}${caution ? 'All seasons is currently combining potentially different seasonal behavior. ' : ''}${currentRightsOnly() ? 'Broadcast-rights filtering is active. ' : ''}You can still use Refine results to test your own path through the data.`);
   }
 
   function render() {
@@ -2579,8 +2765,8 @@
     dom.tableNote.textContent = question.tableNote || 'The table follows the selected question so the graph and rows tell the same story.';
     dom.chartNote.textContent = state.question === 'seasonOverview'
       ? 'Graph uses fundraiser total dollars from saved schedules when no content filters are active.'
-      : (question.metricDriven ? `Graph uses ${metricLabel()} from Advanced filters.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.'));
-    dom.read.innerHTML = question.read(rows);
+      : (question.metricDriven ? `Graph uses ${metricLabel()} from Refine results.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.'));
+    dom.read.innerHTML = `${analysisGuidanceHtml()}${question.read(rows)}`;
     renderStats(rows, question);
     renderChart(rows, question);
     renderTable(rows, question.columns);
@@ -2868,7 +3054,13 @@
     });
     dom.reload.addEventListener('click', () => load().catch((error) => note(error.message || 'Could not reload data.', 'bad')));
     dom.season.addEventListener('change', () => { state.season = dom.season.value; render(); });
-    dom.year.addEventListener('change', () => { state.year = dom.year.value; render(); });
+    dom.yearOptions.addEventListener('change', () => {
+      const allValues = [...dom.yearOptions.querySelectorAll('input[type="checkbox"]')].map((item) => item.value);
+      const checked = [...dom.yearOptions.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value);
+      state.yearFilters = checked.length === allValues.length ? null : checked;
+      updateYearSummary();
+      render();
+    });
     dom.search.addEventListener('input', () => { state.search = dom.search.value; render(); });
     dom.evidence.addEventListener('change', () => { state.evidence = dom.evidence.value; render(); });
     dom.secondaryTopic.addEventListener('change', () => { state.secondaryTopicFilter = dom.secondaryTopic.value || 'all'; render(); });
@@ -2890,6 +3082,7 @@
     dom.advLive.addEventListener('change', () => { state.advancedLive = dom.advLive.value; render(); });
     dom.advDaypart.addEventListener('change', () => { state.advancedDaypart = dom.advDaypart.value; render(); });
     dom.advWeekpart.addEventListener('change', () => { state.advancedWeekpart = dom.advWeekpart.value; render(); });
+    dom.advDuration.addEventListener('change', () => { state.advancedDuration = dom.advDuration.value; render(); });
     dom.trendClose.addEventListener('click', () => dom.trendModal.classList.add('hidden'));
     dom.trendModal.addEventListener('click', (event) => { if (event.target === dom.trendModal) dom.trendModal.classList.add('hidden'); });
     dom.programModalClose.addEventListener('click', closeProgramDetail);
