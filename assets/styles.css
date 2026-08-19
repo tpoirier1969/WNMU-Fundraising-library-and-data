@@ -6141,3 +6141,64 @@ input.goal-difference-negative {
     max-width: none;
   }
 }
+
+
+/* manual schedule results v0.22.71 */
+.schedule-manual-result-panel {
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f7fbf8;
+}
+.schedule-manual-result-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px; }
+.schedule-manual-result-head strong { color: var(--heading); }
+.schedule-manual-result-fields { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
+.schedule-manual-result-fields .filter-field { min-width:110px; }
+.schedule-manual-result-fields input { width:100%; padding:7px 8px; border:1px solid var(--border); border-radius:9px; background:#fff; }
+.schedule-manual-result-actions { display:flex; gap:7px; align-items:center; padding-bottom:1px; }
+.schedule-placement.manual-data {
+  background: linear-gradient(180deg, #77b98f, #5f9d79) !important;
+  color: #102c1d !important;
+  border: 1px solid rgba(56,115,82,.38);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), 0 1px 4px rgba(20,92,49,.14) !important;
+}
+.schedule-placement.manual-data::after {
+  content: "MANUAL";
+  display: inline-flex;
+  width: fit-content;
+  max-width: calc(100% - 8px);
+  margin-top: 2px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.72);
+  color: #24583a;
+  font-size: clamp(.38rem,.42vw,.48rem);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+.schedule-placement.manual-data.live-break,
+.schedule-placement.manual-data[data-live-break="true"] {
+  background: linear-gradient(180deg, #77b98f, #5f9d79) !important;
+  color: #102c1d !important;
+  border: 3px solid #c1122f !important;
+}
+.schedule-placement-manual-result {
+  position:absolute;
+  top:3px;
+  right:19px;
+  z-index:4;
+  display:inline-flex;
+  align-items:center;
+  min-height:13px;
+  padding:1px 4px;
+  border-radius:5px;
+  background:rgba(255,255,255,.80);
+  color:#174b2d;
+  border:1px solid rgba(23,75,45,.18);
+  font-size:clamp(.42rem,.46vw,.54rem) !important;
+  line-height:1 !important;
+  font-weight:800 !important;
+  opacity:1 !important;
+}

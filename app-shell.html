@@ -426,6 +426,28 @@
               <span>Mark this scheduled slot as a live-break night</span>
             </label>
           </div>
+          <section id="schedule-manual-result-panel" class="schedule-manual-result-panel hidden" aria-label="Manual pledge result">
+            <div class="schedule-manual-result-head">
+              <div>
+                <strong>Manual result</strong>
+                <div id="schedule-manual-result-status" class="muted">Use this when no pledge report result is available for this airing.</div>
+              </div>
+            </div>
+            <div class="schedule-manual-result-fields">
+              <label class="filter-field narrow">
+                <span class="filter-label">Broadcast $</span>
+                <input id="schedule-manual-result-dollars" type="number" min="0" step="0.01" inputmode="decimal" value="0">
+              </label>
+              <label class="filter-field narrow">
+                <span class="filter-label">Pledges</span>
+                <input id="schedule-manual-result-pledges" type="number" min="0" step="1" inputmode="numeric" value="0">
+              </label>
+              <div class="schedule-manual-result-actions">
+                <button type="button" class="primary" id="schedule-manual-result-save-button">Save result</button>
+                <button type="button" class="ghost" id="schedule-manual-result-clear-button">Clear manual result</button>
+              </div>
+            </div>
+          </section>
           <div class="schedule-picker-actions">
             <div class="toolbar-actions wrap">
               <button type="button" class="ghost" id="schedule-copy-placement-button">Copy program</button>

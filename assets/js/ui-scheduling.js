@@ -195,6 +195,10 @@
       liveBreakNotes: utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''),
       isNonPledge: normalizePlacementBoolean(placement?.isNonPledge, Boolean(placement?.isNonPledge)),
       importedFromReport: normalizePlacementBoolean(placement?.importedFromReport, Boolean(placement?.importedFromReport)),
+      manualResultRecorded: normalizePlacementBoolean(placement?.manualResultRecorded, Boolean(placement?.manualResultRecorded)),
+      manualBroadcastDollars: Number.isFinite(Number(placement?.manualBroadcastDollars)) ? Number(placement.manualBroadcastDollars) : 0,
+      manualPledgeCount: Number.isFinite(Number(placement?.manualPledgeCount)) ? Math.max(0, Math.trunc(Number(placement.manualPledgeCount))) : 0,
+      manualResultUpdatedAt: utils.normalizeText(placement?.manualResultUpdatedAt || ''),
       transferredToStation: normalizePlacementBoolean(placement?.transferredToStation, Boolean(placement?.transferredToStation))
     }));
     return next;
@@ -559,6 +563,28 @@
     return task;
   }
 
+  function placementHasManualResult(placement = {}) {
+    return Boolean(placement && !placement.isNonPledge && normalizePlacementBoolean(placement?.manualResultRecorded, false));
+  }
+
+  function placementManualResultDollars(placement = {}) {
+    if (!placementHasManualResult(placement)) return 0;
+    const value = Number(placement?.manualBroadcastDollars);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function scheduleManualBroadcastTotal(schedule = {}) {
+    return (schedule?.placements || []).reduce((sum, placement) => sum + placementManualResultDollars(placement), 0);
+  }
+
+  function scheduleManualPledgesTotal(schedule = {}) {
+    return (schedule?.placements || []).reduce((sum, placement) => {
+      if (!placementHasManualResult(placement)) return sum;
+      const value = Number(placement?.manualPledgeCount);
+      return sum + (Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0);
+    }, 0);
+  }
+
   function placementBroadcastTotal(schedule = {}) {
     return (schedule?.placements || []).reduce((sum, placement) => {
       const value = Number(placement?.importedBroadcastDollars);
@@ -604,6 +630,10 @@
     return Number.isFinite(metaTotal) && metaTotal > 0 ? metaTotal : 0;
   }
 
+  function schedulePledgesTotal(schedule = {}) {
+    return scheduleImportedPledgesTotal(schedule) + scheduleManualPledgesTotal(schedule);
+  }
+
   function scheduleReportedBroadcastTotal(schedule = {}) {
     const reportTotal = Number(schedule?.meta?.reportedBroadcastTotalDollars);
     return Number.isFinite(reportTotal) && reportTotal > 0 ? reportTotal : 0;
@@ -632,8 +662,8 @@
 
   function scheduleBroadcastTotal(schedule = {}) {
     const reported = scheduleReportedBroadcastTotal(schedule);
-    if (reported > 0) return reported;
-    return scheduleImportedAiringTotal(schedule);
+    const importedBase = reported > 0 ? reported : scheduleImportedAiringTotal(schedule);
+    return importedBase + scheduleManualBroadcastTotal(schedule);
   }
 
   function scheduleBroadcastDifference(schedule = {}) {
@@ -885,7 +915,7 @@
     if (!total) return { total: 0, updated: 0, loading: false, label: '0 of 0 broadcasts updated' };
     if (!loaded) return { total, updated: 0, loading: true, label: 'checking broadcast updates…' };
     const updated = counted.reduce((sum, placement) => {
-      return sum + (placementHasImportedAiring(placement, placement.dateKey, placement.startMinutes) ? 1 : 0);
+      return sum + (placementHasRecordedResult(placement, placement.dateKey, placement.startMinutes) ? 1 : 0);
     }, 0);
     return { total, updated, loading: false, label: `${utils.formatCount(updated)} of ${utils.formatCount(total)} broadcasts updated` };
   }
@@ -919,7 +949,7 @@
     return schedules.reduce((summary, schedule) => {
       summary.count += 1;
       summary.broadcast += scheduleBroadcastTotal(schedule);
-      summary.pledges += scheduleImportedPledgesTotal(schedule);
+      summary.pledges += schedulePledgesTotal(schedule);
       summary.online += Number(schedule?.onlineDollars || 0) || 0;
       summary.mail += Number(schedule?.mailDollars || 0) || 0;
       summary.nonSpecific += scheduleImportedNonSpecificTotal(schedule);
@@ -944,7 +974,7 @@
     const goalDifference = scheduleGoalDifference(schedule);
     const values = [
       { label: 'Broadcast $', value: utils.formatMoney(scheduleBroadcastTotal(schedule)) },
-      { label: 'Pledges', value: utils.formatCount(scheduleImportedPledgesTotal(schedule)) },
+      { label: 'Pledges', value: utils.formatCount(schedulePledgesTotal(schedule)) },
       { label: 'Online $', value: utils.formatMoney(Number(schedule.onlineDollars || 0) || 0) },
       { label: 'Mail $', value: utils.formatMoney(Number(schedule.mailDollars || 0) || 0) },
       { label: 'Non-Specific $', value: utils.formatMoney(scheduleImportedNonSpecificTotal(schedule)) },
@@ -1630,6 +1660,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       sourceLabel: sourceRow ? 'Imported report' : 'Imported report (title-only)',
       transferredToStation: false,
       importedFromReport: true,
+      manualResultRecorded: false,
+      manualBroadcastDollars: 0,
+      manualPledgeCount: 0,
+      manualResultUpdatedAt: '',
       importedBroadcastDollars: Number(row.dollars || 0) || 0,
       sourceAiringHash: row.row_hash || '',
       sourceImportBatchId: row.import_batch_id || '',
@@ -1899,6 +1933,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           // its calendar identity, but it can safely inherit the report evidence attached
           // to that exact slot. This never replaces a different scheduled program.
           existingAtSlot.importedFromReport = true;
+          existingAtSlot.manualResultRecorded = false;
+          existingAtSlot.manualBroadcastDollars = 0;
+          existingAtSlot.manualPledgeCount = 0;
+          existingAtSlot.manualResultUpdatedAt = '';
           existingAtSlot.importedBroadcastDollars = Number(placement.importedBroadcastDollars || 0) || 0;
           if (placement.sourceAiringHash) existingAtSlot.sourceAiringHash = placement.sourceAiringHash;
           if (placement.sourceImportBatchId) existingAtSlot.sourceImportBatchId = placement.sourceImportBatchId;
@@ -2551,6 +2589,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     });
   }
 
+  function placementHasRecordedResult(placement = {}, dateKey = '', startMinutes = null) {
+    return placementHasManualResult(placement) || placementHasImportedAiring(placement, dateKey, startMinutes);
+  }
+
   async function ensureScheduleAiringHistoryLoaded() {
     if (state.scheduleAiringHistoryLoading || state.scheduleAiringHistoryLoaded) return;
     state.scheduleAiringHistoryLoading = true;
@@ -3105,7 +3147,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const importedProgramSpecific = scheduleImportedProgramSpecificTotal(working);
     const importedNonSpecific = scheduleImportedNonSpecificTotal(working);
     const diff = scheduleBroadcastDifference(working);
-    const importedPledges = scheduleImportedPledgesTotal(working);
+    const importedPledges = schedulePledgesTotal(working);
     if (els.fundraiserBroadcastTotal) els.fundraiserBroadcastTotal.value = utils.formatMoney(broadcast);
     if (els.fundraiserPledgesTotal) els.fundraiserPledgesTotal.value = utils.formatCount(importedPledges);
     if (els.fundraiserImportTotal) els.fundraiserImportTotal.value = utils.formatMoney(imported);
@@ -3603,10 +3645,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
+        const hasManualData = isStart && !hasImportedData && placementHasManualResult(placement);
         const isPlaceholder = isPlaceholderPlacement(placement);
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', isPlaceholder ? 'placeholder' : '', calendarPlacementIsLive(schedule, placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : ''].filter(Boolean).join(' ');
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', isPlaceholder ? 'placeholder' : '', calendarPlacementIsLive(schedule, placement) ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')].filter(Boolean).join(' ');
         const expectationBadge = isStart && !isPlaceholder ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const breakWarning = isStart && !isPlaceholder ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
+        const manualResultBadge = hasManualData ? `<span class="schedule-placement-manual-result" title="Manual pledge result">${utils.escapeHtml(utils.formatMoney(placementManualResultDollars(placement)))}</span>` : '';
         const subtitleBits = [];
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
@@ -3625,7 +3669,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}">
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${calendarPlacementIsLive(schedule, placement) ? 'true' : 'false'}" style="${style}">${isPlaceholder ? '' : transferToggle}${liveCalendarBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${breakWarning}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${calendarPlacementIsLive(schedule, placement) ? 'true' : 'false'}" style="${style}">${isPlaceholder ? '' : transferToggle}${liveCalendarBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${manualResultBadge}${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -3933,6 +3977,105 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     host.innerHTML = renderPlaceholderControls(currentPlacement, editable);
   }
 
+  function placementHasConfirmedImportedResult(placement = {}) {
+    if (!placement) return false;
+    if (placementHasImportedAiring(placement, placement.dateKey, placement.startMinutes)) return true;
+    return Boolean(placement?.importedFromReport && utils.normalizeText(placement?.sourceAiringHash || ''));
+  }
+
+  function renderManualResultControls(currentPlacement = null, editable = false) {
+    const panel = els.scheduleManualResultPanel;
+    if (!panel) return;
+    const eligible = Boolean(currentPlacement && !currentPlacement.isNonPledge && !isPlaceholderPlacement(currentPlacement));
+    panel.classList.toggle('hidden', !eligible);
+    if (!eligible) return;
+    const imported = placementHasConfirmedImportedResult(currentPlacement);
+    const manual = placementHasManualResult(currentPlacement);
+    if (els.scheduleManualResultDollars) {
+      els.scheduleManualResultDollars.value = manual ? String(placementManualResultDollars(currentPlacement)) : '0';
+      els.scheduleManualResultDollars.disabled = !editable || imported;
+    }
+    if (els.scheduleManualResultPledges) {
+      els.scheduleManualResultPledges.value = manual ? String(Number(currentPlacement.manualPledgeCount || 0) || 0) : '0';
+      els.scheduleManualResultPledges.disabled = !editable || imported;
+    }
+    if (els.scheduleManualResultSaveButton) els.scheduleManualResultSaveButton.disabled = !editable || imported;
+    if (els.scheduleManualResultClearButton) {
+      els.scheduleManualResultClearButton.disabled = !editable || !manual || imported;
+      els.scheduleManualResultClearButton.classList.toggle('hidden', !manual || imported);
+    }
+    if (els.scheduleManualResultStatus) {
+      if (imported) {
+        els.scheduleManualResultStatus.textContent = 'A pledge-report result is already attached to this airing. Imported results are authoritative.';
+      } else if (manual) {
+        els.scheduleManualResultStatus.textContent = `Manual result saved: ${utils.formatMoney(placementManualResultDollars(currentPlacement))}, ${utils.formatCount(Number(currentPlacement.manualPledgeCount || 0) || 0)} pledge${Number(currentPlacement.manualPledgeCount || 0) === 1 ? '' : 's'}.`;
+      } else {
+        els.scheduleManualResultStatus.textContent = 'No pledge-report result is attached to this airing. $0 and 0 pledges are valid completed results.';
+      }
+    }
+  }
+
+  async function saveManualResultToSelectedPlacement() {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to enter results.', 'bad'); return false; }
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) {
+      showScheduleModalWarning('Select a scheduled pledge program before entering a manual result.', 'warn');
+      return false;
+    }
+    if (placementHasConfirmedImportedResult(placement)) {
+      showScheduleModalWarning('This airing already has a pledge-report result. The imported result remains authoritative.', 'warn');
+      return false;
+    }
+    const dollars = Number(els.scheduleManualResultDollars?.value);
+    const pledges = Number(els.scheduleManualResultPledges?.value);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      showScheduleModalWarning('Broadcast dollars must be zero or greater.', 'warn');
+      els.scheduleManualResultDollars?.focus?.();
+      return false;
+    }
+    if (!Number.isFinite(pledges) || pledges < 0 || !Number.isInteger(pledges)) {
+      showScheduleModalWarning('Pledges must be a whole number zero or greater.', 'warn');
+      els.scheduleManualResultPledges?.focus?.();
+      return false;
+    }
+    placement.manualResultRecorded = true;
+    placement.manualBroadcastDollars = Math.round(dollars * 100) / 100;
+    placement.manualPledgeCount = Math.trunc(pledges);
+    placement.manualResultUpdatedAt = new Date().toISOString();
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderScheduleForm();
+    renderHomeDriveSummary();
+    renderScheduledProgramDetails();
+    renderProgramPicker();
+    setNotice(`Saved manual result for ${placement.programTitle}: ${utils.formatMoney(placement.manualBroadcastDollars)}, ${utils.formatCount(placement.manualPledgeCount)} pledge${placement.manualPledgeCount === 1 ? '' : 's'}.`);
+    showScheduleModalWarning('Manual result saved. This airing now counts as updated.', 'ok');
+    return true;
+  }
+
+  async function clearManualResultFromSelectedPlacement() {
+    if (!canScheduleEdit()) return false;
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
+    if (!placement || !placementHasManualResult(placement)) return false;
+    placement.manualResultRecorded = false;
+    placement.manualBroadcastDollars = 0;
+    placement.manualPledgeCount = 0;
+    placement.manualResultUpdatedAt = '';
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderScheduleForm();
+    renderHomeDriveSummary();
+    renderScheduledProgramDetails();
+    renderProgramPicker();
+    setNotice(`Cleared the manual result for ${placement.programTitle}.`);
+    showScheduleModalWarning('Manual result cleared. This airing is waiting for a result again.', 'warn');
+    return true;
+  }
+
   function renderProgramPicker() {
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
@@ -3970,6 +4113,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     syncPlaceholderControls(currentPlacement, editable);
+    renderManualResultControls(currentPlacement, editable);
     renderScheduleSlotRescue(schedule, slot, currentPlacement, editable);
 
     if (!editable) {
@@ -5940,6 +6084,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleFilterRightsStartYear?.addEventListener('change', (event) => { state.scheduleFilterRightsStartYear = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterTopEarner?.addEventListener('change', (event) => { state.scheduleFilterTopEarner = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleLiveBreakFlag?.addEventListener('change', () => { void updateLiveBreakFlag().catch((error) => setNotice(error?.message || 'Could not update live-break flag.', 'warn')); });
+    els.scheduleManualResultSaveButton?.addEventListener('click', () => { void saveManualResultToSelectedPlacement(); });
+    els.scheduleManualResultClearButton?.addEventListener('click', () => { void clearManualResultFromSelectedPlacement(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
       const btn = event.target.closest('.schedule-program-assign-button');
       if (!btn) return;
