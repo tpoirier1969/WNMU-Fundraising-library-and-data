@@ -1,0 +1,76 @@
+name: Analytics start-time fixes
+
+on:
+  push:
+    paths:
+      - ".github/workflows/analytics-starttime-totals.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply analytics and scheduler updates
+        run: python tools/analytics_starttime_totals.py
+
+      - name: Validate source and intended math
+        shell: bash
+        run: |
+          node --check assets/js/ui-scheduling.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          analytics = Path('pledge-performance-lab-shell.html').read_text(encoding='utf-8')
+          scheduler = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
+          styles = Path('assets/styles.css').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+
+          assert version.get('appVersion') == '0.22.72'
+          assert 'Season mix key:' in analytics
+          assert 'Completed <b>$0 broadcasts still count as airings</b>' in analytics
+          assert "graphTitle: 'Start time buckets'" in analytics
+          assert 'metricValue(b) - metricValue(a)' in analytics
+          assert 'const resultKnown = explicitDollars != null' in analytics
+          assert 'Number(record.dollars) >= 0' in analytics
+          assert 'scheduleStartBucketMoneyMap' in scheduler
+          assert 'startBucketMoney.get(normalizedMinutes)' in scheduler
+          assert 'schedule-time-row-total' in scheduler
+          assert '.schedule-time-row-total' in styles
+
+          # Extract the large inline analytics script and let Node syntax-check it.
+          scripts = re.findall(r'<script>(.*?)</script>', analytics, flags=re.S)
+          assert scripts, 'No inline analytics script found'
+          Path('/tmp/analytics-inline.js').write_text(scripts[-1], encoding='utf-8')
+
+          # Sanity-check the intended bucket arithmetic from the August example.
+          samples = {20 * 60 + 30: [0], 21 * 60: [840, 0], 17 * 60: [240]}
+          totals = {minute: sum(values) for minute, values in samples.items()}
+          assert totals[20 * 60 + 30] == 0
+          assert totals[21 * 60] == 840
+          assert totals[17 * 60] == 240
+          PY
+          node --check /tmp/analytics-inline.js
+
+      - name: Commit originals and remove temporary harness
+        shell: bash
+        run: |
+          rm -f tools/analytics_starttime_totals.py .github/workflows/analytics-starttime-totals.yml
+          rmdir tools 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Fix start-time analytics and add scheduler row totals"
+          git push origin HEAD:main
