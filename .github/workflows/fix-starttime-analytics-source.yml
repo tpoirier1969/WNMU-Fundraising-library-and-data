@@ -1,0 +1,123 @@
+name: Fix start-time analytics source
+
+on:
+  push:
+    paths:
+      - ".github/workflows/fix-starttime-analytics-source.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Update original analytics source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          analytics = Path('pledge-performance-lab-shell.html')
+          version = Path('version.json')
+
+          def replace_once(old, new, label):
+              text = analytics.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              analytics.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace_once(
+              '    .season-mix-key { margin-top: 6px; }',
+              '''    .season-mix-legend {\n      margin: -8px 0 16px;\n      padding: 9px 12px;\n      border: 1px solid var(--line);\n      border-radius: 12px;\n      background: #fffdf8;\n      color: var(--muted);\n      font-size: .88rem;\n      line-height: 1.35;\n    }\n    .season-mix-legend strong { color: var(--ink); }''',
+              'static season mix legend styles'
+          )
+
+          replace_once(
+              '''      <div id="scope-note" class="scope-note"></div>\n    </div>\n\n    <div class="layout">''',
+              '''      <div id="scope-note" class="scope-note"></div>\n    </div>\n\n    <div class="season-mix-legend"><strong>Season mix:</strong> M = March · J = June · A = August · D = December. The number after each letter is the number of airings in that pledge season. Example: <strong>[M-0, J-0, A-1, D-0]</strong> = one August airing and none in March, June, or December.</div>\n\n    <div class="layout">''',
+              'static season mix legend markup'
+          )
+
+          replace_once(
+              '''    const cohort = cohortScopePrefix();\n    const messageHtml = message ? escapeHtml(message) : '';\n    const seasonMixKey = '<div class="season-mix-key"><strong>Season mix key:</strong> M = March · J = June · A = August · D = December. The number after each letter is the number of airings in that pledge season. Example: [M-0, J-0, A-1, D-0] means one August airing and none in the other three seasons.</div>';\n    dom.scopeNote.innerHTML = `${cohort}${cohort && messageHtml ? '<div style="margin-top:6px"></div>' : ''}${messageHtml}${seasonMixKey}`;''',
+              '''    const cohort = cohortScopePrefix();\n    const messageHtml = message ? escapeHtml(message) : '';\n    dom.scopeNote.innerHTML = `${cohort}${cohort && messageHtml ? '<div style="margin-top:6px"></div>' : ''}${messageHtml}`;''',
+              'remove dynamic season legend'
+          )
+
+          replace_once(
+              '''                  <option value="median" selected>Median $ / airing</option>\n                  <option value="avg">Average $ / airing</option>\n                  <option value="total">Total dollars</option>''',
+              '''                  <option value="median">Median $ / airing</option>\n                  <option value="avg">Average $ / airing</option>\n                  <option value="total" selected>Total dollars</option>''',
+              'default total dollars select'
+          )
+
+          replace_once(
+              "    metric: 'median',",
+              "    metric: 'total',",
+              'default total dollars state'
+          )
+
+          replace_once(
+              '''    startTimes: {\n      title: 'Start time performance',\n      summary: 'Median and average income by 30-minute program start bucket.',\n      graphTitle: 'Start time buckets',\n      tableTitle: 'Start time performance',\n      tableNote: 'Grouped in exact 30-minute start buckets. Completed $0 broadcasts count as airings and remain in median/average denominators. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',\n      rows: rowsStartTimes,''',
+              '''    startTimes: {\n      title: 'Start time performance',\n      summary: 'Broadcast proceeds by actual 30-minute program start bucket from saved fundraiser schedules.',\n      graphTitle: 'Start time buckets',\n      tableTitle: 'Start time performance',\n      tableNote: 'Uses saved Scheduling placements for the actual program start time, then attaches the imported or manual broadcast result for that airing. Completed $0 broadcasts count as airings. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',\n      source: 'schedule',\n      rows: rowsStartTimes,''',
+              'use scheduler placements for start times'
+          )
+
+          replace_once(
+              '''    return `Start-time performance is grouped in <b>30-minute start buckets</b>, not rounded to the hour. Completed <b>$0 broadcasts still count as airings</b>, so median and average dollars per airing use the real denominator.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best current bucket with useful sample size: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; median <b>${formatMoney(bestUseful.median || 0)}</b>, average <b>${formatMoney(bestUseful.avg || 0)}</b>, total <b>${formatMoney(bestUseful.dollars || 0)}</b>, across <b>${formatNumber(bestUseful.broadcasts || 0)}</b> airing(s).<br><br>Use Pledge season = March/June/August/December, plus Primary and Secondary topic, to test specific arguments like <b>August Music at 8:00 vs 9:30 vs 10:30</b>, or afternoon blocks like <b>1:00 vs 3:00</b>.`;''',
+              '''    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b> from the saved fundraiser schedules, not from pledge-report timestamps. Each scheduled airing carries its attached imported or manual broadcast result. Completed <b>$0 broadcasts still count as airings</b>.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best current bucket with useful sample size: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; median <b>${formatMoney(bestUseful.median || 0)}</b>, average <b>${formatMoney(bestUseful.avg || 0)}</b>, total <b>${formatMoney(bestUseful.dollars || 0)}</b>, across <b>${formatNumber(bestUseful.broadcasts || 0)}</b> airing(s).<br><br>Use Pledge season = March/June/August/December, plus Primary and Secondary topic, to test specific scheduling arguments.`;''',
+              'start time explanation'
+          )
+
+          data = json.loads(version.read_text(encoding='utf-8'))
+          if data.get('appVersion') != '0.22.72':
+              raise SystemExit(f"Unexpected starting version {data.get('appVersion')}; refusing to overwrite newer work")
+          data['appVersion'] = '0.22.73'
+          data['releasedAt'] = '2026-08-19'
+          version.write_text(json.dumps(data, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate source
+        shell: bash
+        run: |
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          text = Path('pledge-performance-lab-shell.html').read_text(encoding='utf-8')
+          v = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert v['appVersion'] == '0.22.73'
+          assert '<div class="season-mix-legend">' in text
+          assert 'season-mix-key' not in text
+          assert '<option value="total" selected>Total dollars</option>' in text
+          assert "metric: 'total'" in text
+          assert "source: 'schedule'" in text
+          assert 'actual program start time' in text
+          assert 'not from pledge-report timestamps' in text
+          scripts = re.findall(r'<script>(.*?)</script>', text, flags=re.S)
+          Path('/tmp/analytics-inline.js').write_text(scripts[-1], encoding='utf-8')
+          PY
+          node --check /tmp/analytics-inline.js
+
+      - name: Commit original source changes and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-starttime-analytics-source.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Use scheduled starts for performance analytics"
+          git push origin HEAD:main
