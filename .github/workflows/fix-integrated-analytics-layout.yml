@@ -1,3 +1,4 @@
+# trigger after workflow registration
 name: Fix integrated analytics layout
 
 on:
@@ -55,7 +56,6 @@ jobs:
               raise SystemExit('Palette anchor not found')
           text = text.replace(old_palette, new_palette, 1)
 
-          # Bring the remaining lab surfaces into the main Pledge palette.
           color_map = {
               '#fffdf8': '#ffffff',
               '#fff7e8': '#f2f8fa',
@@ -169,7 +169,6 @@ jobs:
               raise SystemExit('Detail layout anchor not found')
           text = text.replace(old_detail, new_detail, 1)
 
-          # A few remaining fixed colors from the lab are better expressed in the main app palette.
           text = text.replace('box-shadow: 0 16px 38px rgba(56, 41, 23, .13)', 'box-shadow: 0 10px 22px rgba(22, 53, 83, .07)')
           text = text.replace('box-shadow: 0 14px 38px rgba(56, 41, 23, .22)', 'box-shadow: 0 14px 34px rgba(22, 53, 83, .16)')
 
