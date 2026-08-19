@@ -1420,7 +1420,11 @@
 
   function seasonOverviewRecords() {
     if (seasonOverviewUsesDriveTotals()) {
-      return (state.driveSeasonRecords || []).filter((record) => yearFilterMatches(record.year));
+      return (state.driveSeasonRecords || []).filter((record) => {
+        if (!yearFilterMatches(record.year)) return false;
+        if (state.season !== 'all' && record.season !== state.season) return false;
+        return true;
+      });
     }
     return filteredRecordsFor('seasonOverview');
   }
@@ -1886,13 +1890,12 @@
       graphTitle: 'Pledge season totals',
       tableTitle: 'Season / fundraiser detail',
       tableNote: 'Full mode shows one row per saved fundraiser schedule, including Broadcast, Online, and Mail. Content-filter mode shows airing-row totals only because Online/Mail cannot be assigned to a specific title/topic.',
-      useSeason: false,
       useEvidence: false,
       useMetric: false,
       rows: rowsSeasonOverview,
       chartValue: (row) => row.dollars,
       chartLabel: (row) => formatMoney(row.dollars),
-      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} season/year row(s) match. The line graph compares March, June, August, and December across selected years; missing seasons are not treated as $0.` : 'No season records match.',
+      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} season/year row(s) match. ${state.season === 'all' ? 'The line graph compares March, June, August, and December across selected years' : `The line graph compares ${state.season} fundraisers across selected years`}; missing seasons are not treated as $0.` : 'No season records match.',
       columns: [
         ['Season', (row) => `${escapeHtml(row.season || row.title || '')}<br><span class="mix">${escapeHtml(row.year || '')}</span>`, '', (row) => (Number(row.year || 0) * 10) + SEASONS.indexOf(row.season || row.title || '')],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
@@ -2051,8 +2054,8 @@
     },
     seasonOverview: {
       required: [],
-      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'search'],
-      note: 'No setup filter is required. Year checkboxes are especially useful here for excluding known anomaly years. Content filters switch this view from full fundraiser totals to attributable airing dollars only.'
+      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'search'],
+      note: 'No setup filter is required. Use Pledge season to compare August-to-August, March-to-March, June-to-June, or December-to-December across selected years. Content filters switch this view from full fundraiser totals to attributable airing dollars only.'
     },
     topics: {
       required: ['season'],
@@ -2304,7 +2307,8 @@
     dom.evidence.disabled = question.useEvidence === false || question.hideWeakStats === true;
     placeFilterControls();
     if (state.question === 'seasonOverview') {
-      setScopeNote(`${seasonOverviewModeText()} Year checkboxes change which fundraiser years are compared without forcing content-level mode.`);
+      const seasonScope = state.season === 'all' ? 'All four pledge seasons are included.' : `Only ${state.season} fundraisers are included.`;
+      setScopeNote(`${seasonOverviewModeText()} ${seasonScope} Year checkboxes change which fundraiser years are compared without forcing content-level mode.`);
       return;
     }
     const issues = requiredFilterIssues();

@@ -23,6 +23,7 @@
   <script defer src="assets/js/ui-workspace.js"></script>
   <script defer src="assets/js/ui-scheduling.js"></script>
   <script defer src="assets/js/ui-analytics.js"></script>
+  <script defer src="assets/js/ui-fundraiser-comparison.js"></script>
   <script defer src="assets/js/ui-imports.js"></script>
   <script defer src="assets/js/auth.js"></script>
   <script defer src="assets/js/ui-detail.js"></script>
@@ -107,6 +108,7 @@
         <button type="button" class="workspace-tab" data-workspace-button="scheduling" aria-pressed="false">Pledge Scheduling</button>
         <button type="button" class="workspace-tab" data-workspace-button="imports" aria-pressed="false">Import Pledge Report</button>
         <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Performance Analytics</button>
+        <button type="button" class="workspace-tab hidden" data-admin-only="true" data-workspace-button="comparison" aria-pressed="false">Fundraiser Comparison Lab</button>
       </div>
       <div id="home-drive-summary" class="home-drive-summary hidden" aria-live="polite"></div>
     </section>
@@ -822,6 +824,10 @@
 
     <section class="workspace-pane hidden analytics-workspace-pane" data-workspace-pane="performance">
       <div id="performance-analytics-root" class="performance-analytics-root" aria-live="polite"></div>
+    </section>
+
+    <section class="workspace-pane hidden" data-workspace-pane="comparison">
+      <div id="fundraiser-comparison-root" aria-live="polite"></div>
     </section>
 
 <div id="detail-backdrop" class="detail-backdrop hidden"></div>

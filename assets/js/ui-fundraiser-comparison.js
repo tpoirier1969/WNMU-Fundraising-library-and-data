@@ -387,7 +387,10 @@
   }
 
   function selectedAnalyses() {
-    return state.schedules.filter((schedule) => state.selectedIds.has(schedule.id)).map(analyzeSchedule);
+    return [...state.selectedIds]
+      .map((id) => state.schedules.find((schedule) => schedule.id === id))
+      .filter(Boolean)
+      .map(analyzeSchedule);
   }
 
   function filteredSchedules() {

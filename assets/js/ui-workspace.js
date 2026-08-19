@@ -214,6 +214,10 @@
 
   function setWorkspace(workspaceId) {
     const workspace = workspaceById(workspaceId);
+    if (workspace.adminOnly && !App.auth?.canEdit?.()) {
+      setNotice(`${workspace.label} is available to Admin users only.`);
+      return;
+    }
     state.activeWorkspace = workspace.id;
 
     els.workspaceButtons.forEach((button) => {
@@ -234,6 +238,7 @@
     }
     if (workspace.id === 'imports') void App.importsUi?.ensureReady();
     if (workspace.id === 'performance') void App.analyticsUi?.ensureReady();
+    if (workspace.id === 'comparison') void App.fundraiserComparisonUi?.ensureReady();
   }
 
   function refreshScaffoldSummary() {
