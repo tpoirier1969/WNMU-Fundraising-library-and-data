@@ -18,152 +18,8 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Update analytics filter UX
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json
-          import re
-
-          path = Path('pledge-performance-lab-shell.html')
-          version = Path('version.json')
-          text = path.read_text(encoding='utf-8')
-
-          def replace_once(old, new, label):
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
-              text = text.replace(old, new, 1)
-
-          def regex_once(pattern, replacement, label, flags=0):
-              global text
-              text2, count = re.subn(pattern, replacement, text, count=1, flags=flags)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one regex match, found {count}')
-              text = text2
-
-          replace_once(
-              '    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-bottom: 18px; }',
-              '''    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-bottom: 18px; }\n    .filter-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }\n    .filter-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; min-width: 0; }\n    .filter-card.required-card { border-color: #c9b47c; background: #fff8e7; }\n    .filter-card.required-card.exploratory { border-color: #c98e72; background: #fff2e9; }\n    .filter-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 4px; }\n    .filter-card-head h3 { margin: 0; }\n    .filter-card-note { margin: 5px 0 10px; font-size: .88rem; line-height: 1.35; }\n    .filter-status { border-radius: 999px; padding: 4px 8px; background: #eee1ca; color: #584b3b; font-size: .74rem; font-weight: 950; white-space: nowrap; }\n    .filter-status.ready { background: #e6f2e9; color: var(--good); }\n    .filter-status.exploratory { background: #f8ddd1; color: var(--bad); }\n    .filter-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }\n    .filter-grid .field { flex: 1 1 150px; }\n    .filter-grid .field.grow { flex: 2 1 250px; }\n    .filter-bank { display: none; }\n    .filter-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; }\n    .analysis-guidance { border: 1px solid #d8a185; background: #fff2e9; border-radius: 12px; padding: 10px 11px; margin-bottom: 12px; color: #6c321f; line-height: 1.4; }\n    .analysis-guidance strong { color: #4f2417; }\n    @media (max-width: 900px) { .filter-panels { grid-template-columns: 1fr; } }''',
-              'filter card styles'
-          )
-
-          old_toolbar = '''    <div class="toolbar">\n      <div class="field">\n        <label for="season">Pledge season</label>\n        <select id="season"></select>\n      </div>\n      <div class="field">\n        <label for="year">Year</label>\n        <select id="year"></select>\n      </div>\n      <div class="field grow">\n        <label for="search">Program</label>\n        <input id="search" type="search" placeholder="Type a program title or NOLA code">\n      </div>\n      <div class="field topic-field">\n        <label>Primary topic</label>\n        <details id="topic-picker" class="topic-picker">\n          <summary id="topic-summary">All topics</summary>\n          <div id="topic-options" class="topic-options"></div>\n        </details>\n      </div>\n      <div class="field">\n        <label for="secondary-topic">Secondary topic</label>\n        <select id="secondary-topic"><option value="all">All secondary topics</option></select>\n      </div>\n      <div class="field">\n        <label for="evidence">Evidence filter</label>\n        <select id="evidence" title="Use this only when you want to hide low-sample rows. It does not apply equally to every question, especially live breaks and new comparisons.">\n          <option value="all">Show all evidence</option>\n          <option value="hide">Hide low-sample rows</option>\n        </select>\n      </div>\n      <button id="reload" type="button">Reload live data</button>\n      <div id="scope-note" class="scope-note"></div>\n    </div>'''
-
-          new_toolbar = '''    <div id="filter-panels" class="filter-panels">\n      <section id="required-filter-card" class="filter-card required-card">\n        <div class="filter-card-head">\n          <div><div class="eyebrow">Analysis setup</div><h3>Required filters</h3></div>\n          <span id="required-filter-status" class="filter-status">Checking…</span>\n        </div>\n        <p id="required-filter-note" class="filter-card-note">These are required for a clean comparison, not to access the data.</p>\n        <div id="required-filters" class="filter-grid"></div>\n      </section>\n      <section class="filter-card refine-card">\n        <div class="filter-card-head"><div><div class="eyebrow">Optional</div><h3>Refine results</h3></div></div>\n        <p id="refine-filter-note" class="filter-card-note">Use these when you have a reason to narrow the comparison. They are optional and remain available for custom exploration.</p>\n        <div id="refine-filters" class="filter-grid"></div>\n      </section>\n    </div>\n\n    <div id="filter-bank" class="filter-bank">\n      <div class="field" data-filter-key="season">\n        <label for="season">Pledge season</label>\n        <select id="season"></select>\n      </div>\n      <div class="field" data-filter-key="year">\n        <label>Years included</label>\n        <details id="year-picker" class="topic-picker">\n          <summary id="year-summary">All years</summary>\n          <div id="year-options" class="topic-options"></div>\n        </details>\n      </div>\n      <div class="field grow" data-filter-key="search">\n        <label for="search">Program</label>\n        <input id="search" type="search" placeholder="Type a program title or NOLA code">\n      </div>\n      <div class="field topic-field" data-filter-key="topic">\n        <label>Primary topic</label>\n        <details id="topic-picker" class="topic-picker">\n          <summary id="topic-summary">All topics</summary>\n          <div id="topic-options" class="topic-options"></div>\n        </details>\n      </div>\n      <div class="field" data-filter-key="secondary">\n        <label for="secondary-topic">Secondary topic</label>\n        <select id="secondary-topic"><option value="all">All secondary topics</option></select>\n      </div>\n      <div class="field" data-filter-key="duration">\n        <label for="adv-duration">Program length</label>\n        <select id="adv-duration">\n          <option value="all">All lengths</option>\n          <option value="60">60 min or less</option>\n          <option value="61-90">61–90 min</option>\n          <option value="91-120">91–120 min</option>\n          <option value="121+">Over 120 min</option>\n          <option value="unknown">Unknown length</option>\n        </select>\n      </div>\n      <div class="field" data-filter-key="evidence">\n        <label for="evidence">Evidence filter</label>\n        <select id="evidence" title="Use this only when you want to hide low-sample rows. It does not apply equally to every question, especially live breaks and new comparisons.">\n          <option value="all">Show all evidence</option>\n          <option value="hide">Hide low-sample rows</option>\n        </select>\n      </div>\n      <div class="field" data-filter-key="distributor">\n        <label for="adv-distributor">Distributor</label>\n        <select id="adv-distributor"><option value="all">All distributors</option></select>\n      </div>\n      <div class="field" data-filter-key="metric">\n        <label for="adv-metric">Rank by</label>\n        <select id="adv-metric">\n          <option value="median">Median $ / airing</option>\n          <option value="avg">Average $ / airing</option>\n          <option value="total" selected>Total dollars</option>\n          <option value="pledges">Pledge count</option>\n          <option value="broadcasts">Broadcast count</option>\n        </select>\n      </div>\n      <div class="field" data-filter-key="live">\n        <label for="adv-live">Live-break filter</label>\n        <select id="adv-live">\n          <option value="all">All broadcasts</option>\n          <option value="live">Live-break only</option>\n          <option value="nonlive">No live-break flag</option>\n        </select>\n      </div>\n      <div class="field" data-filter-key="daypart">\n        <label for="adv-daypart">Daypart</label>\n        <select id="adv-daypart">\n          <option value="all">All dayparts</option>\n          <option value="morning">Morning</option>\n          <option value="afternoon">Afternoon</option>\n          <option value="evening">Evening</option>\n          <option value="overnight">Overnight</option>\n        </select>\n      </div>\n      <div class="field" data-filter-key="weekpart">\n        <label for="adv-weekpart">Weekpart</label>\n        <select id="adv-weekpart">\n          <option value="all">All days</option>\n          <option value="weekday">Weekdays</option>\n          <option value="weekend">Weekends</option>\n        </select>\n      </div>\n    </div>\n    <div class="filter-actions"><button id="reload" type="button">Reload live data</button></div>\n    <div id="scope-note" class="scope-note"></div>'''
-          replace_once(old_toolbar, new_toolbar, 'filter toolbar markup')
-
-          old_advanced = '''          <div id="advanced-filters" class="advanced-strip">\n            <div class="adv">\n              <div class="field adv-distributor-field">\n                <label for="adv-distributor">Distributor</label>\n                <select id="adv-distributor"><option value="all">All distributors</option></select>\n              </div>\n              <div class="field adv-metric-field">\n                <label for="adv-metric">Rank by</label>\n                <select id="adv-metric">\n                  <option value="median">Median $ / airing</option>\n                  <option value="avg">Average $ / airing</option>\n                  <option value="total" selected>Total dollars</option>\n                  <option value="pledges">Pledge count</option>\n                  <option value="broadcasts">Broadcast count</option>\n                </select>\n              </div>\n              <div class="field adv-live-field">\n                <label for="adv-live">Live-break filter</label>\n                <select id="adv-live">\n                  <option value="all">All broadcasts</option>\n                  <option value="live">Live-break only</option>\n                  <option value="nonlive">No live-break flag</option>\n                </select>\n              </div>\n              <div class="field adv-daypart-field">\n                <label for="adv-daypart">Daypart</label>\n                <select id="adv-daypart">\n                  <option value="all">All dayparts</option>\n                  <option value="morning">Morning</option>\n                  <option value="afternoon">Afternoon</option>\n                  <option value="evening">Evening</option>\n                  <option value="overnight">Overnight</option>\n                </select>\n              </div>\n              <div class="field adv-weekpart-field">\n                <label for="adv-weekpart">Weekpart</label>\n                <select id="adv-weekpart">\n                  <option value="all">All days</option>\n                  <option value="weekday">Weekdays</option>\n                  <option value="weekend">Weekends</option>\n                </select>\n              </div>\n            </div>\n          </div>\n'''
-          replace_once(old_advanced, '', 'remove old advanced strip')
-
-          replace_once("    year: 'all',", "    yearFilters: null,", 'multi-year state')
-          replace_once("    advancedWeekpart: 'all',", "    advancedWeekpart: 'all',\n    advancedDuration: 'all',", 'duration state')
-
-          old_dom = "    season: el('season'), year: el('year'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), rightsScope: el('rights-scope'), reload: el('reload'), scopeNote: el('scope-note'),\n    advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'),"
-          new_dom = "    season: el('season'), yearPicker: el('year-picker'), yearSummary: el('year-summary'), yearOptions: el('year-options'), search: el('search'), evidence: el('evidence'), topicPicker: el('topic-picker'), topicSummary: el('topic-summary'), topicOptions: el('topic-options'), secondaryTopic: el('secondary-topic'), rightsScope: el('rights-scope'), reload: el('reload'), scopeNote: el('scope-note'),\n    requiredFilters: el('required-filters'), refineFilters: el('refine-filters'), requiredFilterCard: el('required-filter-card'), requiredFilterStatus: el('required-filter-status'), requiredFilterNote: el('required-filter-note'), refineFilterNote: el('refine-filter-note'), filterBank: el('filter-bank'),\n    advDistributor: el('adv-distributor'), advMetric: el('adv-metric'), advLive: el('adv-live'), advDaypart: el('adv-daypart'), advWeekpart: el('adv-weekpart'), advDuration: el('adv-duration'),"
-          replace_once(old_dom, new_dom, 'dom filter references')
-
-          replace_once(
-              "      return (state.driveSeasonRecords || []).filter((record) => state.year === 'all' || String(record.year) === String(state.year));",
-              "      return (state.driveSeasonRecords || []).filter((record) => yearFilterMatches(record.year));",
-              'season overview year matching'
-          )
-
-          replace_once(
-              "      && state.advancedWeekpart === 'all';",
-              "      && state.advancedWeekpart === 'all'\n      && state.advancedDuration === 'all';",
-              'season overview duration mode'
-          )
-
-          replace_once(
-              "      if (question.useYear !== false && state.year !== 'all' && String(record.year) !== String(state.year)) return false;",
-              "      if (question.useYear !== false && !yearFilterMatches(record.year)) return false;",
-              'filtered record year matching'
-          )
-
-          replace_once(
-              "      if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;\n      return true;",
-              "      if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;\n      if (!durationFilterMatches(record)) return false;\n      return true;",
-              'duration filtering'
-          )
-
-          helper_anchor = "  function supportsCurrentFilter(filterName) {"
-          helpers = '''  function yearFilterMatches(year) {\n    if (!Array.isArray(state.yearFilters)) return true;\n    return state.yearFilters.includes(String(year));\n  }\n\n  function durationFilterMatches(record = {}) {\n    const selected = state.advancedDuration || 'all';\n    if (selected === 'all') return true;\n    const minutes = Number(record.durationMinutes);\n    if (!Number.isFinite(minutes) || minutes <= 0) return selected === 'unknown';\n    if (selected === '60') return minutes <= 60;\n    if (selected === '61-90') return minutes > 60 && minutes <= 90;\n    if (selected === '91-120') return minutes > 90 && minutes <= 120;\n    if (selected === '121+') return minutes > 120;\n    return true;\n  }\n\n'''
-          replace_once(helper_anchor, helpers + helper_anchor, 'year and duration helpers')
-
-          replace_once(
-              "    dom.season.innerHTML = '<option value=\"all\">All pledge seasons</option>' + SEASONS.map((season) => `<option>${escapeHtml(season)}</option>`).join('');\n    dom.year.innerHTML = '<option value=\"all\">All years</option>' + years.map((year) => `<option>${escapeHtml(year)}</option>`).join('');\n    dom.season.value = state.season;\n    dom.year.value = state.year;",
-              "    dom.season.innerHTML = '<option value=\"all\">All pledge seasons</option>' + SEASONS.map((season) => `<option>${escapeHtml(season)}</option>`).join('');\n    dom.season.value = state.season;\n    const availableYearStrings = years.map(String);\n    if (Array.isArray(state.yearFilters)) state.yearFilters = state.yearFilters.filter((year) => availableYearStrings.includes(String(year)));\n    const includedYears = Array.isArray(state.yearFilters) ? state.yearFilters.map(String) : availableYearStrings;\n    dom.yearOptions.innerHTML = years.map((year) => `<label class=\"topic-option\"><input type=\"checkbox\" value=\"${escapeHtml(year)}\" ${includedYears.includes(String(year)) ? 'checked' : ''}> ${escapeHtml(year)}</label>`).join('');\n    updateYearSummary(years);",
-              'year checkbox options'
-          )
-
-          replace_once(
-              "    dom.advWeekpart.value = state.advancedWeekpart;",
-              "    dom.advWeekpart.value = state.advancedWeekpart;\n    dom.advDuration.value = state.advancedDuration;",
-              'duration control value'
-          )
-
-          topic_summary_end = '''  function updateTopicSummary() {\n    const topics = Array.isArray(state.topicFilters) ? state.topicFilters : [];\n    if (!dom.topicSummary) return;\n    if (!topics.length) dom.topicSummary.textContent = 'All topics';\n    else if (topics.length === 1) dom.topicSummary.textContent = topics[0];\n    else dom.topicSummary.textContent = `${topics.length} topics selected`;\n  }\n'''
-          year_summary = topic_summary_end + '''\n  function updateYearSummary(years = null) {\n    if (!dom.yearSummary || !dom.yearOptions) return;\n    const available = Array.isArray(years) ? years.map(String) : [...dom.yearOptions.querySelectorAll('input[type="checkbox"]')].map((item) => item.value);\n    const checked = [...dom.yearOptions.querySelectorAll('input[type="checkbox"]:checked')].map((item) => item.value);\n    if (!available.length || checked.length === available.length) {\n      dom.yearSummary.textContent = 'All years';\n      return;\n    }\n    if (!checked.length) {\n      dom.yearSummary.textContent = 'No years selected';\n      return;\n    }\n    const omitted = available.filter((year) => !checked.includes(year));\n    if (omitted.length <= 2 && checked.length > omitted.length) {\n      dom.yearSummary.textContent = `All except ${omitted.join(', ')}`;\n      return;\n    }\n    dom.yearSummary.textContent = checked.length <= 3 ? checked.join(', ') : `${checked.length} years included`;\n  }\n'''
-          replace_once(topic_summary_end, year_summary, 'year summary helper')
-
-          # Mark filters that have no effect on specific questions.
-          replace_once("    topicOverview: {\n      title: 'Topic overview',", "    topicOverview: {\n      title: 'Topic overview',\n      useEvidence: false,", 'topic overview evidence setting')
-          replace_once("    seasonal: {\n      title: 'When do topics work best?',", "    seasonal: {\n      title: 'When do topics work best?',\n      useMetric: false,", 'seasonal metric setting')
-          replace_once("    history: {\n      title: 'Is an old favorite fading?',", "    history: {\n      title: 'Is an old favorite fading?',\n      useMetric: false,", 'history metric setting')
-          replace_once("    comeback: {\n      title: 'What happens after a long pause?',", "    comeback: {\n      title: 'What happens after a long pause?',\n      useMetric: false,", 'comeback metric setting')
-          replace_once("    live: {\n      title: 'Are live breaks helping?',", "    live: {\n      title: 'Are live breaks helping?',\n      useMetric: false,", 'live metric setting')
-
-          questions_end = "  };\n\n  async function waitForConfig() {"
-          filter_plans = '''  };\n\n  const FILTER_PLANS = {\n    startTimes: {\n      required: ['season', 'topic'],\n      refine: ['year', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],\n      note: 'For a clean start-time comparison, choose one pledge season and exactly one Primary Topic. Skipping either is allowed, but the result is descriptive of the historical program mix rather than a clean time-slot test.'\n    },\n    programs: {\n      required: [],\n      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],\n      note: 'No filter is required. All-history totals answer a lifetime-value question; season and year selections answer a more current planning question.'\n    },\n    topicOverview: {\n      required: [],\n      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'search'],\n      note: 'No filter is required. This is intentionally a broad descriptive view; narrow it only when you want to inspect a specific slice of the schedule.'\n    },\n    seasonOverview: {\n      required: [],\n      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'search'],\n      note: 'No filter is required. Year checkboxes are especially useful here for excluding known anomaly years. Content filters switch this view from full fundraiser totals to attributable airing dollars only.'\n    },\n    topics: {\n      required: ['season'],\n      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],\n      note: 'Choose one pledge season for the cleanest topic comparison. All-season results remain available, but season mix can make a topic look stronger or weaker than it really is for a specific drive.'\n    },\n    secondaryTopics: {\n      required: ['season', 'topic'],\n      refine: ['year', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'metric', 'evidence', 'search'],\n      note: 'Choose one pledge season and exactly one Primary Topic. That keeps the subtopics inside a comparable parent category and fundraiser season.'\n    },\n    seasonal: {\n      required: [],\n      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'evidence', 'search'],\n      note: 'No filter is required because this question must compare March, June, August, and December. Use year checkboxes to omit unusual years without destroying the cross-season comparison.'\n    },\n    history: {\n      required: [],\n      refine: ['topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'evidence', 'search'],\n      note: 'No filter is required. Season and year stay out of this question because fading detection needs the full timeline. Other refinements remain available for deliberate exploration.'\n    },\n    comeback: {\n      required: [],\n      refine: ['topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'evidence', 'search'],\n      note: 'No filter is required. Season and year stay out because the analysis needs the full history to detect a long pause.'\n    },\n    live: {\n      required: [],\n      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'daypart', 'distributor', 'search'],\n      note: 'No filter is required because the 1:1 comparison already matches on topic, day/time, length, and season/year where possible. Refinements can still test narrower hypotheses.'\n    }\n  };\n\n  const FILTER_LABELS = {\n    season: 'Pledge season',\n    topic: 'one Primary Topic'\n  };\n\n  function requiredFilterIssues(questionId = state.question) {\n    const plan = FILTER_PLANS[questionId] || { required: [] };\n    const issues = [];\n    (plan.required || []).forEach((key) => {\n      if (key === 'season' && state.season === 'all') issues.push('choose one pledge season');\n      if (key === 'topic') {\n        const count = Array.isArray(state.topicFilters) ? state.topicFilters.length : 0;\n        if (count === 0) issues.push('choose one Primary Topic');\n        else if (count > 1) issues.push('use one Primary Topic for a clean comparison (multiple topics are still allowed for exploration)');\n      }\n    });\n    return issues;\n  }\n\n  function moveFilterControl(key, target) {\n    const node = document.querySelector(`[data-filter-key="${key}"]`);\n    if (node && target) target.appendChild(node);\n  }\n\n  function placeFilterControls() {\n    const plan = FILTER_PLANS[state.question] || FILTER_PLANS.programs;\n    const allControls = [...document.querySelectorAll('[data-filter-key]')];\n    allControls.forEach((node) => dom.filterBank?.appendChild(node));\n    (plan.required || []).forEach((key) => moveFilterControl(key, dom.requiredFilters));\n    (plan.refine || []).forEach((key) => moveFilterControl(key, dom.refineFilters));\n    const issues = requiredFilterIssues();\n    const hasRequired = Boolean((plan.required || []).length);\n    dom.requiredFilterCard?.classList.toggle('exploratory', Boolean(issues.length));\n    if (dom.requiredFilterStatus) {\n      dom.requiredFilterStatus.textContent = !hasRequired ? 'No setup needed' : (issues.length ? 'Exploratory' : 'Ready');\n      dom.requiredFilterStatus.className = `filter-status ${!hasRequired || !issues.length ? 'ready' : 'exploratory'}`;\n    }\n    if (dom.requiredFilterNote) dom.requiredFilterNote.textContent = plan.note || 'These are required for a clean comparison, not to access the data.';\n    if (dom.refineFilterNote) dom.refineFilterNote.textContent = 'Optional controls. Use them when you have a reason to narrow the data; the app will not prevent you from building your own analytical path.';\n  }\n\n  function analysisGuidanceHtml() {\n    const issues = requiredFilterIssues();\n    if (!issues.length) return '';\n    return `<div class="analysis-guidance"><strong>Exploratory result:</strong> ${escapeHtml(issues.join('; '))}. The data is still shown, but do not treat the apparent winner as a clean scheduling conclusion until the recommended setup is satisfied.</div>`;\n  }\n\n  async function waitForConfig() {'''
-          replace_once(questions_end, filter_plans, 'filter plans')
-
-          old_update = '''  function updateFilterState() {\n    const question = QUESTIONS[state.question] || QUESTIONS.programs;\n    const liveComparison = state.question === 'live';\n    dom.season.disabled = question.useSeason === false;\n    dom.year.disabled = question.useYear === false;\n    dom.advLive.disabled = liveComparison;\n    dom.advLive.parentElement?.classList.toggle('disabled-by-question', liveComparison);\n    const metricDisabled = question.useMetric === false;\n    const evidenceDisabled = question.useEvidence === false || question.hideWeakStats === true;\n    dom.advMetric.disabled = metricDisabled;\n    dom.advMetric.parentElement?.classList.toggle('disabled-by-question', metricDisabled);\n    dom.evidence.disabled = evidenceDisabled;\n    dom.evidence.parentElement?.classList.toggle('disabled-by-question', evidenceDisabled);\n    const disabled = [];\n    if (question.useSeason === false) disabled.push('season');\n    if (question.useYear === false) disabled.push('year');\n    if (liveComparison) disabled.push('live-break filter');\n    if (metricDisabled) disabled.push('rank by');\n    if (evidenceDisabled) disabled.push('evidence filter');\n    if (state.question === 'seasonOverview') {\n      setScopeNote(`${disabled.length ? `Disabled or ignored for this question: ${disabled.join(', ')}. ` : ''}${seasonOverviewModeText()}`);\n      return;\n    }\n    setScopeNote(disabled.length\n      ? `Disabled or ignored for this question: ${disabled.join(', ')}. The live-break comparison must see both live and non-live scheduled airings; it cannot use the live-break filter without breaking the answer.`\n      : `Filters are active for this question.${currentRightsOnly() ? ' Broadcast-rights filter is hiding expired, not-yet-in-rights, and unknown-library titles.' : ''} Evidence filter only hides low-sample rows; it is not a warning, score, or value judgment, and some views ignore the idea entirely.`);\n  }'''
-
-          new_update = '''  function updateFilterState() {\n    const question = QUESTIONS[state.question] || QUESTIONS.programs;\n    const liveComparison = state.question === 'live';\n    dom.season.disabled = question.useSeason === false;\n    const yearDisabled = question.useYear === false;\n    if (dom.yearPicker) {\n      dom.yearPicker.open = yearDisabled ? false : dom.yearPicker.open;\n      dom.yearPicker.style.pointerEvents = yearDisabled ? 'none' : '';\n    }\n    dom.advLive.disabled = liveComparison;\n    const metricDisabled = question.useMetric === false;\n    const evidenceDisabled = question.useEvidence === false || question.hideWeakStats === true;\n    dom.advMetric.disabled = metricDisabled;\n    dom.evidence.disabled = evidenceDisabled;\n    placeFilterControls();\n    if (state.question === 'seasonOverview') {\n      setScopeNote(`${seasonOverviewModeText()} Year checkboxes change which fundraiser years are compared without forcing content-level mode.`);\n      return;\n    }\n    const issues = requiredFilterIssues();\n    setScopeNote(`${issues.length ? 'Recommended setup is incomplete, so the result is exploratory. ' : 'Recommended setup is satisfied. '}${currentRightsOnly() ? 'Broadcast-rights filtering is active. ' : ''}You can still use Refine results to test your own path through the data.`);\n  }'''
-          replace_once(old_update, new_update, 'guided filter state')
-
-          replace_once(
-              "    dom.read.innerHTML = question.read(rows);",
-              "    dom.read.innerHTML = `${analysisGuidanceHtml()}${question.read(rows)}`;",
-              'exploratory guidance in result'
-          )
-
-          replace_once(
-              "    dom.chartNote.textContent = state.question === 'seasonOverview'\n      ? 'Graph uses fundraiser total dollars from saved schedules when no content filters are active.'\n      : (question.metricDriven ? `Graph uses ${metricLabel()} from Advanced filters.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.'));",
-              "    dom.chartNote.textContent = state.question === 'seasonOverview'\n      ? 'Graph uses fundraiser total dollars from saved schedules when no content filters are active.'\n      : (question.metricDriven ? `Graph uses ${metricLabel()} from Refine results.` : (rows.length > 12 ? 'Graph shows the first 12 rows. The table below shows everything that matches.' : 'Graph follows the selected question and filters.'));",
-              'rename advanced filters chart note'
-          )
-
-          replace_once(
-              "    dom.year.addEventListener('change', () => { state.year = dom.year.value; render(); });",
-              "    dom.yearOptions.addEventListener('change', () => {\n      const allValues = [...dom.yearOptions.querySelectorAll('input[type=\"checkbox\"]')].map((item) => item.value);\n      const checked = [...dom.yearOptions.querySelectorAll('input[type=\"checkbox\"]:checked')].map((item) => item.value);\n      state.yearFilters = checked.length === allValues.length ? null : checked;\n      updateYearSummary();\n      render();\n    });",
-              'multi-year event'
-          )
-
-          replace_once(
-              "    dom.advWeekpart.addEventListener('change', () => { state.advancedWeekpart = dom.advWeekpart.value; render(); });",
-              "    dom.advWeekpart.addEventListener('change', () => { state.advancedWeekpart = dom.advWeekpart.value; render(); });\n    dom.advDuration.addEventListener('change', () => { state.advancedDuration = dom.advDuration.value; render(); });",
-              'duration event'
-          )
-
-          # Make sure no old single-year state survives.
-          if re.search(r'state\.year\b', text):
-              raise SystemExit('Old state.year reference remains after multi-year conversion')
-          if re.search(r'dom\.year\b', text):
-              raise SystemExit('Old dom.year reference remains after multi-year conversion')
-
-          path.write_text(text, encoding='utf-8')
-
-          data = json.loads(version.read_text(encoding='utf-8'))
-          if data.get('appVersion') != '0.22.73':
-              raise SystemExit(f"Unexpected starting version {data.get('appVersion')}; refusing to overwrite newer work")
-          data['appVersion'] = '0.22.74'
-          data['releasedAt'] = '2026-08-19'
-          version.write_text(json.dumps(data, separators=(',', ':')) + '\n', encoding='utf-8')
-          PY
+      - name: Apply analytics filter redesign
+        run: python .github/scripts/apply_analytics_filter_redesign.py
 
       - name: Validate source
         shell: bash
@@ -183,18 +39,21 @@ jobs:
           assert 'id="adv-duration"' in text
           assert 'const FILTER_PLANS = {' in text
           assert "startTimes: {\n      required: ['season', 'topic']" in text
-          assert "topics: {\n      required: ['season']" in text
-          assert "secondaryTopics: {\n      required: ['season', 'topic']" in text
+          assert 'All seasons is a valid view' in text
           assert 'Exploratory result:' in text
+          assert not re.search(r'state\.year\b', text)
           scripts = re.findall(r'<script>(.*?)</script>', text, flags=re.S)
           Path('/tmp/analytics-inline.js').write_text(scripts[-1], encoding='utf-8')
           PY
           node --check /tmp/analytics-inline.js
 
-      - name: Commit original source changes and remove temporary workflow
+      - name: Commit source and remove temporary tooling
         shell: bash
         run: |
           rm -f .github/workflows/setup-analytics-filter-cards.yml
+          rm -f .github/workflows/live-starttime-audit.yml
+          rm -f .github/scripts/apply_analytics_filter_redesign.py
+          rmdir .github/scripts 2>/dev/null || true
           rmdir .github/workflows 2>/dev/null || true
           rmdir .github 2>/dev/null || true
           git config user.name "OpenAI"
