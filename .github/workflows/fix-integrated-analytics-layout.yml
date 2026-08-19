@@ -1,4 +1,4 @@
-# trigger after workflow registration
+# trigger through merged PR
 name: Fix integrated analytics layout
 
 on:
