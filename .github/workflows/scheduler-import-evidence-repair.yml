@@ -1,0 +1,57 @@
+name: Scheduler imported airing evidence repair
+
+on:
+  push:
+    paths:
+      - ".github/workflows/scheduler-import-evidence-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply scheduler/import repair
+        run: python tools/scheduler_import_evidence_repair.py
+
+      - name: Validate source
+        shell: bash
+        run: |
+          node --check assets/js/ui-scheduling.js
+          node --check assets/js/ui-imports.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          sched = Path('assets/js/ui-scheduling.js').read_text(encoding='utf-8')
+          imports = Path('assets/js/ui-imports.js').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert version.get('appVersion') == '0.22.70'
+          assert "['imported', placement.programTitle || derive.title(row)]" in sched
+          assert 'function importedSourceIdentityCode' in sched
+          assert 'function importedSourceIdentity(row = {})' in sched
+          assert "utils.normalizeLookupKey(row.station || '')" in sched
+          assert 'existingAtSlot.importedFromReport = true;' in sched
+          assert 'await App.schedulingUi?.refreshImportedAiringMarkers?.();' in imports
+          assert "schedule.placements = (schedule.placements || []).filter((item) => !item.importedFromReport)" not in sched
+          PY
+
+      - name: Commit repaired originals and remove temporary harness
+        shell: bash
+        run: |
+          rm -f tools/scheduler_import_evidence_repair.py .github/workflows/scheduler-import-evidence-repair.yml
+          rmdir tools 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Fix scheduler imported airing evidence matching"
+          git push origin HEAD:main
