@@ -1,15 +1,15 @@
 name: Configure analytics filter cards
 
 on:
-  push:
-    paths:
-      - ".github/workflows/setup-analytics-filter-cards.yml"
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   update:
+    if: startsWith(github.event.issue.title, '[internal] apply analytics filter redesign')
     runs-on: ubuntu-latest
     steps:
       - name: Check out main
