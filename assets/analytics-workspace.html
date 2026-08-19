@@ -56,7 +56,7 @@
     .filter-grid .field.grow { grid-column: 1 / -1; min-width: 0; }
     .filter-grid input, .filter-grid select, .filter-grid details { width: 100%; min-width: 0; max-width: 100%; }
     .filter-bank { display: none; }
-    .filter-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; }
+    .filter-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 5px; }
     .analysis-guidance { border: 1px solid #e8b5bd; background: #fff5f6; border-radius: 12px; padding: 10px 11px; margin-bottom: 12px; color: #8d2133; line-height: 1.4; }
     .analysis-guidance strong { color: #671827; }
     .analysis-caution { border: 1px solid #e3cf9a; background: #fff9e9; border-radius: 12px; padding: 9px 10px; margin-bottom: 10px; color: #665019; line-height: 1.38; }
@@ -65,16 +65,16 @@
     .grow { min-width: 0; }
     label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 900; color: var(--muted); overflow-wrap: anywhere; }
     input, select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; background: #fff; color: var(--ink); }
-    .scope-note { display: block; color: var(--muted); font-size: .9rem; line-height: 1.4; margin: 8px 0 10px; }
+    .scope-note { display: block; color: var(--muted); font-size: .8rem; line-height: 1.3; margin: 4px 0 7px; }
     .season-mix-legend {
-      margin: 0 0 16px;
-      padding: 9px 12px;
+      margin: 0 0 10px;
+      padding: 6px 9px;
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 10px;
       background: #fff;
       color: var(--muted);
-      font-size: .88rem;
-      line-height: 1.35;
+      font-size: .8rem;
+      line-height: 1.3;
     }
     .season-mix-legend strong { color: var(--ink); }
     .cohort-note { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 10px; border:1px solid #c7dce5; border-radius:12px; background:#f4fafc; color:#29465b; }
@@ -82,26 +82,30 @@
     .cohort-clear { padding:4px 8px; border-radius:999px; font-size:.78rem; }
     .layout { display: block; }
     .badge { display: inline-block; border-radius: 999px; background: #e8f1f4; padding: 4px 8px; font-size: .78rem; font-weight: 900; color: #103a66; }
-    .detail { background: var(--card); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; box-shadow: 0 10px 22px rgba(22, 53, 83, .07); }
-    .dhead { padding: 18px; background: var(--soft); border-bottom: 1px solid var(--line); }
-    .dhead h2 { margin: 0 0 5px; }
-    .inside { padding: 18px; display: grid; gap: 16px; }
-    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-    .stat { background: #f2f8fa; border: 1px solid var(--line); border-radius: 14px; padding: 11px; }
-    .stat .v { font-size: 1.2rem; font-weight: 950; color: var(--accent); }
-    .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 16px; }
+    .detail { background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; box-shadow: 0 10px 22px rgba(22, 53, 83, .07); }
+    .dhead { padding: 10px 14px 9px; background: var(--soft); border-bottom: 1px solid var(--line); }
+    .dhead h2 { margin: 0 0 2px; font-size: 1.15rem; line-height: 1.2; }
+    .dhead p { margin: 0; font-size: .82rem; line-height: 1.3; }
+    .inside { padding: 11px 14px 14px; display: grid; gap: 10px; }
+    .stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .stat { background: #f2f8fa; border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+    .stat .v { font-size: .96rem; line-height: 1; font-weight: 950; color: var(--accent); }
+    .stat > div:last-child { font-size: .76rem; line-height: 1.1; color: var(--muted); }
+    .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 12px; }
     .detail.seasonal-view .split { grid-template-columns: 1fr; }
-    .detail.seasonal-view .split .panel + .panel { margin-top: 16px; }
+    .detail.seasonal-view .split .panel + .panel { margin-top: 12px; }
     .detail.seasonal-view #chart { overflow-x: auto; padding-bottom: 2px; }
     .detail.seasonal-view .seasonal-chart { min-width: 840px; }
     .field.disabled-by-question { opacity: .58; }
     .field.disabled-by-question label::after { content: " (disabled here)"; font-weight: 900; color: var(--accent); }
-    .panel { border: 1px solid var(--line); border-radius: 18px; background: #fff; padding: 14px; min-width: 0; }
+    .panel { border: 1px solid var(--line); border-radius: 14px; background: #fff; padding: 11px; min-width: 0; }
+    .panel h3 { margin-bottom: 5px; }
+    .panel > p { margin-top: 0; }
     .bar { display: grid; grid-template-columns: minmax(170px, 1.25fr) minmax(90px, .85fr) auto; gap: 10px; align-items: center; margin: 9px 0; }
     .blabel { font-weight: 850; font-size: calc(1rem - 2px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
     .chart-title-label { display: block; }
     .chart-season-mix { display: block; color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; margin-top: 2px; }
-    .chart-mode-note { margin: 0 0 10px; color: var(--muted); font-size: .88rem; line-height: 1.35; }
+    .chart-mode-note { margin: 0 0 6px; color: var(--muted); font-size: .78rem; line-height: 1.3; }
     .mix { color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; }
     .muted-cell { color: var(--muted); }
     .track { height: 18px; background: #dbe9ee; border-radius: 999px; overflow: hidden; }
@@ -124,7 +128,7 @@
     .seasonal-value strong { color: var(--accent); font-size: 1.08rem; }
     .seasonal-value span:not(.value-kicker) { color: var(--muted); font-size: .82rem; font-weight: 900; }
     .topic-label-cell { display: grid; gap: 2px; }
-    .read { border-left: 5px solid var(--accent-2); background: #eef8f7; border-radius: 14px; padding: 12px; color: #0c5f5a; }
+    .read { border-left: 4px solid var(--accent-2); background: #eef8f7; border-radius: 12px; padding: 9px 10px; color: #0c5f5a; font-size: .88rem; line-height: 1.35; }
     .tablewrap { max-height: none; overflow: visible; border: 1px solid var(--line); border-radius: 14px; }
     table { width: 100%; border-collapse: collapse; font-size: .92rem; }
     th, td { border-bottom: 1px solid var(--line); text-align: left; padding: 9px 8px; vertical-align: top; }
