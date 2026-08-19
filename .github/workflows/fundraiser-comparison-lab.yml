@@ -1,0 +1,158 @@
+name: Admin fundraiser comparison workspace
+
+on:
+  push:
+    paths:
+      - ".github/workflows/fundraiser-comparison-lab.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Integrate admin comparison workspace and season filter
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path, old, new, label):
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          shell = Path('app-shell.html')
+          core = Path('assets/js/core.js')
+          auth = Path('assets/js/auth.js')
+          workspace = Path('assets/js/ui-workspace.js')
+          analytics = Path('assets/js/ui-analytics.js')
+          comparison = Path('assets/js/ui-fundraiser-comparison.js')
+          version = Path('version.json')
+
+          replace_once(shell,
+          '''  <script defer src="assets/js/ui-analytics.js"></script>\n  <script defer src="assets/js/ui-imports.js"></script>''',
+          '''  <script defer src="assets/js/ui-analytics.js"></script>\n  <script defer src="assets/js/ui-fundraiser-comparison.js"></script>\n  <script defer src="assets/js/ui-imports.js"></script>''',
+          'comparison script include')
+
+          replace_once(shell,
+          '''        <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Performance Analytics</button>''',
+          '''        <button type="button" class="workspace-tab" data-workspace-button="performance" aria-pressed="false">Performance Analytics</button>\n        <button type="button" class="workspace-tab hidden" data-admin-only="true" data-workspace-button="comparison" aria-pressed="false">Fundraiser Comparison Lab</button>''',
+          'admin comparison tab')
+
+          replace_once(shell,
+          '''    <section class="workspace-pane hidden analytics-workspace-pane" data-workspace-pane="performance">\n      <div id="performance-analytics-root" class="performance-analytics-root" aria-live="polite"></div>\n    </section>\n\n<div id="detail-backdrop"''',
+          '''    <section class="workspace-pane hidden analytics-workspace-pane" data-workspace-pane="performance">\n      <div id="performance-analytics-root" class="performance-analytics-root" aria-live="polite"></div>\n    </section>\n\n    <section class="workspace-pane hidden" data-workspace-pane="comparison">\n      <div id="fundraiser-comparison-root" aria-live="polite"></div>\n    </section>\n\n<div id="detail-backdrop"''',
+          'comparison workspace pane')
+
+          replace_once(core,
+          '''      { id: 'imports', label: 'Import Pledge Report', live: true },\n      { id: 'performance', label: 'Performance Analytics', live: true }''',
+          '''      { id: 'imports', label: 'Import Pledge Report', live: true },\n      { id: 'performance', label: 'Performance Analytics', live: true },\n      { id: 'comparison', label: 'Fundraiser Comparison Lab', live: false, adminOnly: true }''',
+          'comparison workspace constant')
+
+          replace_once(auth,
+          '''    els.addProgramButton?.classList.toggle('hidden', !canEdit());\n    if (canEdit()) {''',
+          '''    els.addProgramButton?.classList.toggle('hidden', !canEdit());\n    document.querySelectorAll('[data-admin-only="true"]').forEach((node) => node.classList.toggle('hidden', !canEdit()));\n    if (!canEdit() && state.activeWorkspace === 'comparison') App.workspaceUi?.setWorkspace?.('library');\n    if (canEdit()) {''',
+          'admin-only workspace visibility')
+
+          replace_once(workspace,
+          '''  function setWorkspace(workspaceId) {\n    const workspace = workspaceById(workspaceId);\n    state.activeWorkspace = workspace.id;''',
+          '''  function setWorkspace(workspaceId) {\n    const workspace = workspaceById(workspaceId);\n    if (workspace.adminOnly && !App.auth?.canEdit?.()) {\n      setNotice(`${workspace.label} is available to Admin users only.`);\n      return;\n    }\n    state.activeWorkspace = workspace.id;''',
+          'admin workspace guard')
+
+          replace_once(workspace,
+          '''    if (workspace.id === 'imports') void App.importsUi?.ensureReady();\n    if (workspace.id === 'performance') void App.analyticsUi?.ensureReady();''',
+          '''    if (workspace.id === 'imports') void App.importsUi?.ensureReady();\n    if (workspace.id === 'performance') void App.analyticsUi?.ensureReady();\n    if (workspace.id === 'comparison') void App.fundraiserComparisonUi?.ensureReady();''',
+          'comparison workspace loader')
+
+          replace_once(analytics,
+          '''      useSeason: false,\n      useEvidence: false,''',
+          '''      useEvidence: false,''',
+          'enable season filter in season overview')
+
+          replace_once(analytics,
+          '''      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} season/year row(s) match. The line graph compares March, June, August, and December across selected years; missing seasons are not treated as $0.` : 'No season records match.',''',
+          '''      read: (rows) => rows.length ? `${seasonOverviewModeText()}<br><br>${formatNumber(rows.length)} season/year row(s) match. ${state.season === 'all' ? 'The line graph compares March, June, August, and December across selected years' : `The line graph compares ${state.season} fundraisers across selected years`}; missing seasons are not treated as $0.` : 'No season records match.',''',
+          'season overview read')
+
+          replace_once(analytics,
+          '''  function seasonOverviewRecords() {\n    if (seasonOverviewUsesDriveTotals()) {\n      return (state.driveSeasonRecords || []).filter((record) => yearFilterMatches(record.year));\n    }\n    return filteredRecordsFor('seasonOverview');\n  }''',
+          '''  function seasonOverviewRecords() {\n    if (seasonOverviewUsesDriveTotals()) {\n      return (state.driveSeasonRecords || []).filter((record) => {\n        if (!yearFilterMatches(record.year)) return false;\n        if (state.season !== 'all' && record.season !== state.season) return false;\n        return true;\n      });\n    }\n    return filteredRecordsFor('seasonOverview');\n  }''',
+          'season overview full-total filter')
+
+          replace_once(analytics,
+          '''    seasonOverview: {\n      required: [],\n      refine: ['year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'search'],\n      note: 'No setup filter is required. Year checkboxes are especially useful here for excluding known anomaly years. Content filters switch this view from full fundraiser totals to attributable airing dollars only.'\n    },''',
+          '''    seasonOverview: {\n      required: [],\n      refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'live', 'daypart', 'distributor', 'search'],\n      note: 'No setup filter is required. Use Pledge season to compare August-to-August, March-to-March, June-to-June, or December-to-December across selected years. Content filters switch this view from full fundraiser totals to attributable airing dollars only.'\n    },''',
+          'season overview filter plan')
+
+          replace_once(analytics,
+          '''    if (state.question === 'seasonOverview') {\n      setScopeNote(`${seasonOverviewModeText()} Year checkboxes change which fundraiser years are compared without forcing content-level mode.`);\n      return;\n    }''',
+          '''    if (state.question === 'seasonOverview') {\n      const seasonScope = state.season === 'all' ? 'All four pledge seasons are included.' : `Only ${state.season} fundraisers are included.`;\n      setScopeNote(`${seasonOverviewModeText()} ${seasonScope} Year checkboxes change which fundraiser years are compared without forcing content-level mode.`);\n      return;\n    }''',
+          'season overview scope note')
+
+          replace_once(comparison,
+          '''  function selectedAnalyses() {\n    return state.schedules.filter((schedule) => state.selectedIds.has(schedule.id)).map(analyzeSchedule);\n  }''',
+          '''  function selectedAnalyses() {\n    return [...state.selectedIds]\n      .map((id) => state.schedules.find((schedule) => schedule.id === id))\n      .filter(Boolean)\n      .map(analyzeSchedule);\n  }''',
+          'comparison baseline selection order')
+
+          info = json.loads(version.read_text(encoding='utf-8'))
+          if info.get('appVersion') != '0.22.78':
+              raise SystemExit(f"Expected v0.22.78, found {info.get('appVersion')}")
+          info['appVersion'] = '0.22.79'
+          info['releasedAt'] = '2026-08-19'
+          version.write_text(json.dumps(info, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate integration
+        shell: bash
+        run: |
+          node --check assets/js/core.js
+          node --check assets/js/auth.js
+          node --check assets/js/ui-workspace.js
+          node --check assets/js/ui-analytics.js
+          node --check assets/js/ui-fundraiser-comparison.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          shell = Path('app-shell.html').read_text(encoding='utf-8')
+          core = Path('assets/js/core.js').read_text(encoding='utf-8')
+          auth = Path('assets/js/auth.js').read_text(encoding='utf-8')
+          workspace = Path('assets/js/ui-workspace.js').read_text(encoding='utf-8')
+          analytics = Path('assets/js/ui-analytics.js').read_text(encoding='utf-8')
+          comparison = Path('assets/js/ui-fundraiser-comparison.js').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert version['appVersion'] == '0.22.79'
+          assert 'ui-fundraiser-comparison.js' in shell
+          assert 'data-workspace-button="comparison"' in shell
+          assert 'data-admin-only="true"' in shell
+          assert "adminOnly: true" in core
+          assert "workspace.adminOnly && !App.auth?.canEdit?.()" in workspace
+          assert "workspace.id === 'comparison'" in workspace
+          assert "refine: ['season', 'year', 'topic'" in analytics
+          assert "state.season !== 'all' && record.season !== state.season" in analytics
+          assert "Fundraiser Comparison Lab" in comparison
+          assert "Weather is not wired in yet" in comparison
+          PY
+
+      - name: Commit originals and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/fundraiser-comparison-lab.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Add admin fundraiser comparison lab and season filter"
+          git push origin HEAD:main
