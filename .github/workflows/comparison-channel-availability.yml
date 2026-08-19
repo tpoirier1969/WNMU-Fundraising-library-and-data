@@ -1,0 +1,93 @@
+name: Comparison channel availability rule
+
+on:
+  push:
+    paths:
+      - ".github/workflows/comparison-channel-availability.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Apply comparison channel rule
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          path = Path('assets/js/ui-fundraiser-comparison.js')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+          """    const onlineMail = Number(schedule.onlineDollars || 0) + Number(schedule.mailDollars || 0);\n    const grandTotal = broadcastDollars + onlineMail;\n    return {\n      schedule,\n      scheduled,\n      completed,\n      scheduledMinutes,\n      attributableDollars,\n      attributablePledges,\n      broadcastDollars,\n      unattributedBroadcast: broadcastDollars - attributableDollars,\n      onlineMail,\n      grandTotal,\n      topics,\n      times\n    };""",
+          """    const onlineDollars = Number(schedule.onlineDollars || 0) || 0;\n    const mailDollars = Number(schedule.mailDollars || 0) || 0;\n    const onlineTracked = onlineDollars > 0;\n    const mailTracked = mailDollars > 0;\n    const recordedTotal = broadcastDollars + onlineDollars + mailDollars;\n    return {\n      schedule,\n      scheduled,\n      completed,\n      scheduledMinutes,\n      attributableDollars,\n      attributablePledges,\n      broadcastDollars,\n      unattributedBroadcast: broadcastDollars - attributableDollars,\n      onlineDollars,\n      mailDollars,\n      onlineTracked,\n      mailTracked,\n      recordedTotal,\n      topics,\n      times\n    };""",
+          'analysis channel fields')
+
+          replace_once(
+          """  function summaryRead(base, current) {\n    const difference = current.grandTotal - base.grandTotal;\n    const attributableDifference = current.attributableDollars - base.attributableDollars;\n    const otherDifference = difference - attributableDifference;\n    const similarity = comparisonSimilarity(base, current);""",
+          """  function comparableChannels(base, current) {\n    const includeOnline = Boolean(base.onlineTracked && current.onlineTracked);\n    const includeMail = Boolean(base.mailTracked && current.mailTracked);\n    const baseComparableTotal = base.broadcastDollars\n      + (includeOnline ? base.onlineDollars : 0)\n      + (includeMail ? base.mailDollars : 0);\n    const currentComparableTotal = current.broadcastDollars\n      + (includeOnline ? current.onlineDollars : 0)\n      + (includeMail ? current.mailDollars : 0);\n    return { includeOnline, includeMail, baseComparableTotal, currentComparableTotal };\n  }\n\n  function supplementalComparisonRead(base, current, comparable) {\n    const parts = [];\n    if (comparable.includeOnline) parts.push(`Online ${signedMoney(current.onlineDollars - base.onlineDollars)}`);\n    else parts.push('Online excluded: at least one selected fundraiser has no tracked Online value');\n    if (comparable.includeMail) parts.push(`Mail ${signedMoney(current.mailDollars - base.mailDollars)}`);\n    else parts.push('Mail excluded: at least one selected fundraiser has no tracked Mail value');\n    return parts.join('; ');\n  }\n\n  function summaryRead(base, current) {\n    const comparable = comparableChannels(base, current);\n    const difference = comparable.currentComparableTotal - comparable.baseComparableTotal;\n    const broadcastDifference = current.broadcastDollars - base.broadcastDollars;\n    const attributableDifference = current.attributableDollars - base.attributableDollars;\n    const otherBroadcastDifference = broadcastDifference - attributableDifference;\n    const similarity = comparisonSimilarity(base, current);""",
+          'pairwise channel comparison')
+
+          replace_once(
+          """    return `<article class=\"fc-read\"><h3>${escapeHtml(current.schedule.title)} vs ${escapeHtml(base.schedule.title)}</h3>\n      <p><strong>Total difference:</strong> ${signedMoney(difference)}. <strong>Program-attributable broadcast difference:</strong> ${signedMoney(attributableDifference)}. <strong>Everything not assigned to individual scheduled programs:</strong> ${signedMoney(otherDifference)}.</p>\n      <p><strong>Schedule similarity:</strong> ${escapeHtml(similarityText)}. ${escapeHtml(scheduleRead)}</p>""",
+          """    const includedChannels = ['Broadcast', comparable.includeOnline ? 'Online' : '', comparable.includeMail ? 'Mail' : ''].filter(Boolean).join(' + ');\n    return `<article class=\"fc-read\"><h3>${escapeHtml(current.schedule.title)} vs ${escapeHtml(base.schedule.title)}</h3>\n      <p><strong>Comparable income difference:</strong> ${signedMoney(difference)} using <strong>${escapeHtml(includedChannels)}</strong>. Broadcast difference alone: ${signedMoney(broadcastDifference)}.</p>\n      <p><strong>Supplemental channels:</strong> ${escapeHtml(supplementalComparisonRead(base, current, comparable))}.</p>\n      <p><strong>Program-attributable broadcast difference:</strong> ${signedMoney(attributableDifference)}. <strong>Remaining broadcast difference not assigned to individual scheduled programs:</strong> ${signedMoney(otherBroadcastDifference)}.</p>\n      <p><strong>Schedule similarity:</strong> ${escapeHtml(similarityText)}. ${escapeHtml(scheduleRead)}</p>""",
+          'comparison read')
+
+          replace_once(
+          """    const cards = analyses.map((analysis, index) => `<article class=\"fc-summary-card ${index === 0 ? 'baseline' : ''}\"><div class=\"fc-card-kicker\">${index === 0 ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class=\"fc-total\">${money(analysis.grandTotal)}</div><div class=\"fc-mini\"><span>Broadcast ${money(analysis.broadcastDollars)}</span><span>Online + mail ${money(analysis.onlineMail)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`).join('');""",
+          """    const cards = analyses.map((analysis, index) => `<article class=\"fc-summary-card ${index === 0 ? 'baseline' : ''}\"><div class=\"fc-card-kicker\">${index === 0 ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class=\"fc-total\">${money(analysis.broadcastDollars)}</div><div class=\"fc-mini\"><span>Broadcast $ · common comparison base</span><span>Online ${analysis.onlineTracked ? money(analysis.onlineDollars) : 'not tracked'}</span><span>Mail ${analysis.mailTracked ? money(analysis.mailDollars) : 'not tracked'}</span><span>Recorded total ${money(analysis.recordedTotal)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`).join('');""",
+          'comparison cards')
+
+          replace_once(
+          """      ${topicTable}${timeTable}\n      <section class=\"fc-weather\"><h3>External factors</h3><p><strong>Weather is not wired in yet.</strong> This first pass deliberately leaves it out until the programming/result decomposition is trustworthy. Weather and other contextual data will be added as a separate explanatory layer, not treated as automatic causation.</p></section>`;""",
+          """      ${topicTable}${timeTable}\n      <section class=\"fc-weather\"><h3>Channel availability rule</h3><p><strong>Online $0 and Mail $0 mean not tracked in this comparison lab.</strong> Broadcast dollars are always the common comparison base. Online and Mail are added to a pairwise comparison only when both fundraisers have a tracked value above $0 for that channel.</p></section>\n      <section class=\"fc-weather\"><h3>External factors</h3><p><strong>Weather is not wired in yet.</strong> This first pass deliberately leaves it out until the programming/result decomposition is trustworthy. Weather and other contextual data will be added as a separate explanatory layer, not treated as automatic causation.</p></section>`;""",
+          'channel rule note')
+
+          path.write_text(text, encoding='utf-8')
+
+          version_path = Path('version.json')
+          info = json.loads(version_path.read_text(encoding='utf-8'))
+          if info.get('appVersion') != '0.22.79':
+              raise SystemExit(f"Expected v0.22.79, found {info.get('appVersion')}")
+          info['appVersion'] = '0.22.80'
+          info['releasedAt'] = '2026-08-19'
+          version_path.write_text(json.dumps(info, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate
+        shell: bash
+        run: |
+          node --check assets/js/ui-fundraiser-comparison.js
+          git diff --check
+          grep -q "Online \\\${analysis.onlineTracked ? money(analysis.onlineDollars) : 'not tracked'}" assets/js/ui-fundraiser-comparison.js
+          grep -q "Online \\\$0 and Mail \\\$0 mean not tracked" assets/js/ui-fundraiser-comparison.js
+          grep -q '"appVersion":"0.22.80"' version.json
+
+      - name: Commit originals and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/comparison-channel-availability.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Treat untracked online and mail as unavailable in comparisons"
+          git push origin HEAD:main
