@@ -57,7 +57,7 @@ window.PledgeLib = window.PledgeLib || {};
       { id: 'library', label: 'Program Library', live: true },
       { id: 'scheduling', label: 'Pledge Scheduling', live: true },
       { id: 'imports', label: 'Import Pledge Report', live: true },
-      { id: 'performance', label: 'Pledge Performance', live: true }
+      { id: 'performance', label: 'Performance Analytics', live: true }
     ],
     SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV2',
     IMPORT_MATCH_RULES_STORAGE_KEY: 'wnmuPledgeImportMatchRulesV1',

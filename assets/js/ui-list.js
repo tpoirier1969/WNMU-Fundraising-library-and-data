@@ -440,7 +440,8 @@
     try {
       window.sessionStorage.setItem(constants.ANALYTICS_COHORT_STORAGE_KEY, JSON.stringify(payload));
       setNotice(`Opening analytics for ${utils.formatCount(rows.length)} current-list title${rows.length === 1 ? '' : 's'}…`);
-      window.location.href = 'pledge-performance-lab.html?cohort=current-list';
+      App.workspaceUi?.setWorkspace?.('performance');
+      void App.analyticsUi?.openCohort?.();
     } catch (error) {
       console.error(error);
       setNotice('Could not hand this list to Analytics. Browser storage may be blocked.', 'warn');

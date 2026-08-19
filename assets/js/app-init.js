@@ -196,6 +196,21 @@
     }
   }
 
+
+  function openWorkspaceFromQuery() {
+    try {
+      const url = new URL(window.location.href);
+      const workspaceId = (url.searchParams.get('workspace') || '').trim();
+      if (!workspaceId) return;
+      const exists = (constants.WORKSPACES || []).some((workspace) => workspace.id === workspaceId);
+      if (!exists) return;
+      state.activeWorkspace = workspaceId;
+      App.workspaceUi?.setWorkspace?.(workspaceId);
+    } catch (error) {
+      console.warn('Could not open linked workspace.', error);
+    }
+  }
+
   async function init() {
     App.auth.setRoleUi();
     App.workspaceUi?.setWorkspace(state.activeWorkspace);
@@ -235,6 +250,7 @@
 
     await App.libraryLoader.refreshAll({ workspace: 'library' });
     openProgramFromQuery();
+    openWorkspaceFromQuery();
 
     void App.schedulingUi?.warmup?.({ defer: true, renderHidden: true }).catch((error) => {
       console.warn('Background fundraiser warmup failed.', error);

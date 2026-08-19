@@ -233,7 +233,7 @@
         .then(() => refreshScheduleBroadcastResults(true));
     }
     if (workspace.id === 'imports') void App.importsUi?.ensureReady();
-    if (workspace.id === 'performance') void App.performanceUi?.ensureReady();
+    if (workspace.id === 'performance') void App.analyticsUi?.ensureReady();
   }
 
   function refreshScaffoldSummary() {
