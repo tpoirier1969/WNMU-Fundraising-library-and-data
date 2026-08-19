@@ -305,8 +305,11 @@
     const meta = schedule.meta || {};
     const reportedBroadcast = Number(meta.reportedBroadcastTotalDollars ?? meta.importedBroadcastTotalDollars ?? meta.importedProgramSpecificBroadcastTotalDollars);
     const broadcastDollars = Number.isFinite(reportedBroadcast) && reportedBroadcast > 0 ? reportedBroadcast : attributableDollars;
-    const onlineMail = Number(schedule.onlineDollars || 0) + Number(schedule.mailDollars || 0);
-    const grandTotal = broadcastDollars + onlineMail;
+    const onlineDollars = Number(schedule.onlineDollars || 0) || 0;
+    const mailDollars = Number(schedule.mailDollars || 0) || 0;
+    const onlineTracked = onlineDollars > 0;
+    const mailTracked = mailDollars > 0;
+    const recordedTotal = broadcastDollars + onlineDollars + mailDollars;
     return {
       schedule,
       scheduled,
@@ -316,8 +319,11 @@
       attributablePledges,
       broadcastDollars,
       unattributedBroadcast: broadcastDollars - attributableDollars,
-      onlineMail,
-      grandTotal,
+      onlineDollars,
+      mailDollars,
+      onlineTracked,
+      mailTracked,
+      recordedTotal,
       topics,
       times
     };
@@ -365,10 +371,33 @@
     return { positive, negative };
   }
 
+  function comparableChannels(base, current) {
+    const includeOnline = Boolean(base.onlineTracked && current.onlineTracked);
+    const includeMail = Boolean(base.mailTracked && current.mailTracked);
+    const baseComparableTotal = base.broadcastDollars
+      + (includeOnline ? base.onlineDollars : 0)
+      + (includeMail ? base.mailDollars : 0);
+    const currentComparableTotal = current.broadcastDollars
+      + (includeOnline ? current.onlineDollars : 0)
+      + (includeMail ? current.mailDollars : 0);
+    return { includeOnline, includeMail, baseComparableTotal, currentComparableTotal };
+  }
+
+  function supplementalComparisonRead(base, current, comparable) {
+    const parts = [];
+    if (comparable.includeOnline) parts.push(`Online ${signedMoney(current.onlineDollars - base.onlineDollars)}`);
+    else parts.push('Online excluded: at least one selected fundraiser has no tracked Online value');
+    if (comparable.includeMail) parts.push(`Mail ${signedMoney(current.mailDollars - base.mailDollars)}`);
+    else parts.push('Mail excluded: at least one selected fundraiser has no tracked Mail value');
+    return parts.join('; ');
+  }
+
   function summaryRead(base, current) {
-    const difference = current.grandTotal - base.grandTotal;
+    const comparable = comparableChannels(base, current);
+    const difference = comparable.currentComparableTotal - comparable.baseComparableTotal;
+    const broadcastDifference = current.broadcastDollars - base.broadcastDollars;
     const attributableDifference = current.attributableDollars - base.attributableDollars;
-    const otherDifference = difference - attributableDifference;
+    const otherBroadcastDifference = broadcastDifference - attributableDifference;
     const similarity = comparisonSimilarity(base, current);
     const topic = biggestDifference(base, current, 'topics');
     const time = biggestDifference(base, current, 'times');
@@ -378,8 +407,11 @@
       : Number.isFinite(similarity) && similarity < 0.65
         ? 'The schedule mix changed substantially, so programming mix is a plausible contributor to the result difference.'
         : 'The schedule mix is moderately similar; both scheduling choices and within-slot performance may be contributing.';
+    const includedChannels = ['Broadcast', comparable.includeOnline ? 'Online' : '', comparable.includeMail ? 'Mail' : ''].filter(Boolean).join(' + ');
     return `<article class="fc-read"><h3>${escapeHtml(current.schedule.title)} vs ${escapeHtml(base.schedule.title)}</h3>
-      <p><strong>Total difference:</strong> ${signedMoney(difference)}. <strong>Program-attributable broadcast difference:</strong> ${signedMoney(attributableDifference)}. <strong>Everything not assigned to individual scheduled programs:</strong> ${signedMoney(otherDifference)}.</p>
+      <p><strong>Comparable income difference:</strong> ${signedMoney(difference)} using <strong>${escapeHtml(includedChannels)}</strong>. Broadcast difference alone: ${signedMoney(broadcastDifference)}.</p>
+      <p><strong>Supplemental channels:</strong> ${escapeHtml(supplementalComparisonRead(base, current, comparable))}.</p>
+      <p><strong>Program-attributable broadcast difference:</strong> ${signedMoney(attributableDifference)}. <strong>Remaining broadcast difference not assigned to individual scheduled programs:</strong> ${signedMoney(otherBroadcastDifference)}.</p>
       <p><strong>Schedule similarity:</strong> ${escapeHtml(similarityText)}. ${escapeHtml(scheduleRead)}</p>
       <p><strong>Largest topic swing:</strong> ${escapeHtml(topic.positive?.key || '—')} ${topic.positive ? signedMoney(topic.positive.difference) : '—'}${topic.negative && topic.negative.key !== topic.positive?.key ? `; weakest swing: ${escapeHtml(topic.negative.key)} ${signedMoney(topic.negative.difference)}` : ''}.</p>
       <p><strong>Largest start-time swing:</strong> ${escapeHtml(time.positive?.key || '—')} ${time.positive ? signedMoney(time.positive.difference) : '—'}${time.negative && time.negative.key !== time.positive?.key ? `; weakest swing: ${escapeHtml(time.negative.key)} ${signedMoney(time.negative.difference)}` : ''}.</p>
@@ -428,7 +460,7 @@
 
   function renderComparison(analyses) {
     const base = analyses[0];
-    const cards = analyses.map((analysis, index) => `<article class="fc-summary-card ${index === 0 ? 'baseline' : ''}"><div class="fc-card-kicker">${index === 0 ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class="fc-total">${money(analysis.grandTotal)}</div><div class="fc-mini"><span>Broadcast ${money(analysis.broadcastDollars)}</span><span>Online + mail ${money(analysis.onlineMail)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`).join('');
+    const cards = analyses.map((analysis, index) => `<article class="fc-summary-card ${index === 0 ? 'baseline' : ''}"><div class="fc-card-kicker">${index === 0 ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class="fc-total">${money(analysis.broadcastDollars)}</div><div class="fc-mini"><span>Broadcast $ · common comparison base</span><span>Online ${analysis.onlineTracked ? money(analysis.onlineDollars) : 'not tracked'}</span><span>Mail ${analysis.mailTracked ? money(analysis.mailDollars) : 'not tracked'}</span><span>Recorded total ${money(analysis.recordedTotal)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`).join('');
     const reads = analyses.slice(1).map((analysis) => summaryRead(base, analysis)).join('');
     const topicTable = comparisonTable(analyses, 'topics', 'Topic contribution', (a, b) => Math.max(...b.values.map((value) => value.dollars)) - Math.max(...a.values.map((value) => value.dollars)) || a.key.localeCompare(b.key));
     const timeTable = comparisonTable(analyses, 'times', 'Start-time contribution', (a, b) => {
@@ -444,6 +476,7 @@
     return `<div class="fc-summary-grid">${cards}</div>
       <section class="fc-explainer"><h3>What appears to be driving the difference?</h3>${reads}</section>
       ${topicTable}${timeTable}
+      <section class="fc-weather"><h3>Channel availability rule</h3><p><strong>Online $0 and Mail $0 mean not tracked in this comparison lab.</strong> Broadcast dollars are always the common comparison base. Online and Mail are added to a pairwise comparison only when both fundraisers have a tracked value above $0 for that channel.</p></section>
       <section class="fc-weather"><h3>External factors</h3><p><strong>Weather is not wired in yet.</strong> This first pass deliberately leaves it out until the programming/result decomposition is trustworthy. Weather and other contextual data will be added as a separate explanatory layer, not treated as automatic causation.</p></section>`;
   }
 
