@@ -1,0 +1,222 @@
+name: One-off live start-time audit
+
+on:
+  push:
+    paths:
+      - ".github/workflows/live-starttime-audit.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Audit 8 PM vs 9 PM from live Supabase data
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const cfg = fs.readFileSync('config.js', 'utf8');
+          const base = cfg.match(/SUPABASE_URL:\s*'([^']+)'/)?.[1];
+          const key = cfg.match(/SUPABASE_ANON_KEY:\s*'([^']+)'/)?.[1];
+          if (!base || !key) throw new Error('Could not read Supabase config');
+
+          async function fetchAll(table, select) {
+            const out = [];
+            for (let offset = 0; ; offset += 1000) {
+              const url = `${base}/rest/v1/${table}?select=${encodeURIComponent(select)}&limit=1000&offset=${offset}`;
+              const res = await fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+              if (!res.ok) throw new Error(`${table} ${res.status}: ${await res.text()}`);
+              const rows = await res.json();
+              out.push(...rows);
+              if (rows.length < 1000) break;
+            }
+            return out;
+          }
+
+          const text = v => String(v ?? '').trim();
+          const truthy = v => v === true || ['true','yes','1','y'].includes(text(v).toLowerCase());
+          const titleKey = v => text(v).toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').trim();
+          const firstValue = (obj, fields) => {
+            for (const f of fields) {
+              if (Object.prototype.hasOwnProperty.call(obj || {}, f) && obj[f] !== null && obj[f] !== '') return obj[f];
+            }
+            return null;
+          };
+          const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+          const fmt = v => `$${Math.round(Number(v)||0).toLocaleString('en-US')}`;
+          const median = arr => {
+            const a = arr.map(Number).filter(Number.isFinite).sort((x,y)=>x-y);
+            if (!a.length) return 0;
+            const m = Math.floor(a.length/2);
+            return a.length % 2 ? a[m] : (a[m-1]+a[m])/2;
+          };
+          const quantile = (arr, q) => {
+            const a = arr.map(Number).filter(Number.isFinite).sort((x,y)=>x-y);
+            if (!a.length) return 0;
+            const p = (a.length - 1) * q, b = Math.floor(p), r = p-b;
+            return a[b+1] == null ? a[b] : a[b] + r*(a[b+1]-a[b]);
+          };
+          const seasonFor = dateKey => {
+            const m = Number(String(dateKey||'').slice(5,7));
+            if (m===2 || m===3) return 'March';
+            if (m===5 || m===6) return 'June';
+            if (m===8 || m===9) return 'August';
+            if (m===11 || m===12) return 'December';
+            return 'Other';
+          };
+          const yearFor = dateKey => String(dateKey||'').slice(0,4) || 'Unknown';
+          const weekpartFor = dateKey => {
+            const d = new Date(`${dateKey}T12:00:00Z`);
+            const day = d.getUTCDay();
+            return day===0 || day===6 ? 'Weekend' : 'Weekday';
+          };
+          const durationBucket = m => m <= 60 ? '<=60 min' : m <= 90 ? '61-90 min' : m <= 120 ? '91-120 min' : '>120 min';
+
+          function scoreSchedule(s) {
+            let score = 0;
+            const data = s.schedule_data || {};
+            const money = num(data.onlineDollars)+num(data.mailDollars)+num(data.goalDollars);
+            if (money>0) score += 1000000 + Math.min(999999,Math.round(money));
+            const title = titleKey(s.title || data.title);
+            const auto = title.startsWith('imported pledge') || !!data.meta?.importedFromReports || !!text(data.meta?.importedFundraiserKey);
+            if (!auto) score += 100000;
+            const ps = Array.isArray(data.placements) ? data.placements : [];
+            if (ps.some(p=>!p?.importedFromReport)) score += 50000;
+            if (ps.some(p=>p?.importedFromReport)) score += 10000;
+            if (data.meta?.importedTotalsHydratedFromAirings) score += 5000;
+            const stamp = Date.parse(s.updated_at || s.created_at || '');
+            if (Number.isFinite(stamp)) score += Math.floor(stamp/1e9);
+            return score;
+          }
+
+          const schedulesRaw = await fetchAll('pledge_fundraiser_schedules','id,title,start_date,end_date,created_at,updated_at,schedule_data');
+          const airings = await fetchAll('pledge_program_airings_v2','id,row_hash,air_date,air_time,dollars,pledge_count,program_id,pledge_program_id,manual_match_program_id,matched_library_title,program_title,imported_program_title,nola_code');
+          const airingByHash = new Map(airings.filter(r=>text(r.row_hash)).map(r=>[text(r.row_hash),r]));
+
+          const buckets = new Map();
+          for (const s of schedulesRaw) {
+            const data = s.schedule_data || {};
+            const start = text(s.start_date || data.startDate);
+            const end = text(s.end_date || data.endDate);
+            const k = start && end ? `${start}|${end}` : `id:${s.id}`;
+            if (!buckets.has(k)) buckets.set(k, []);
+            buckets.get(k).push(s);
+          }
+          const schedules = [...buckets.values()].map(group => [...group].sort((a,b)=>scoreSchedule(b)-scoreSchedule(a))[0]);
+
+          const rows = [];
+          let missingResult = 0, invalidStart = 0;
+          for (const s of schedules) {
+            const data = s.schedule_data || {};
+            for (const p of (Array.isArray(data.placements) ? data.placements : [])) {
+              if (truthy(p?.isNonPledge)) continue;
+              const start = Number(p.startMinutes ?? p.start_minutes ?? p.start);
+              if (!Number.isFinite(start)) { invalidStart++; continue; }
+              let known = false, dollars = 0, pledges = 0, source = '';
+              if (truthy(p.manualResultRecorded)) {
+                known = true; dollars = num(p.manualBroadcastDollars); pledges = num(p.manualPledgeCount); source='manual';
+              } else {
+                const explicit = firstValue(p,['importedBroadcastDollars','actualDollars','broadcastDollars','dollars','pledgeDollars']);
+                const explicitP = firstValue(p,['importedPledges','importedBroadcastPledges','pledges','pledgeCount']);
+                if (explicit !== null) { known = true; dollars = num(explicit); pledges = num(explicitP); source='placement'; }
+                else {
+                  const a = airingByHash.get(text(p.sourceAiringHash || p.source_airing_hash));
+                  if (a) { known = true; dollars = num(a.dollars); pledges = num(a.pledge_count); source='hash'; }
+                }
+              }
+              if (!known) { missingResult++; continue; }
+              const dateKey = text(p.dateKey || p.date_key);
+              const end = Number(p.endMinutes ?? p.end_minutes ?? p.end);
+              const len = num(firstValue(p,['lengthMinutes','programMinutes','program_minutes','durationMinutes','duration_minutes'])) || (Number.isFinite(end) ? Math.max(0,end-start) : 0);
+              rows.push({
+                start, dollars, pledges, source, dateKey,
+                season: seasonFor(dateKey), year: yearFor(dateKey), weekpart: weekpartFor(dateKey),
+                title: text(p.programTitle || p.program_title || p.title || p.name || 'Untitled'),
+                titleKey: titleKey(p.programTitle || p.program_title || p.title || p.name || 'Untitled'),
+                duration: len, durationBucket: durationBucket(len), live: truthy(p.liveBreakFlag || p.live_break_flag || p.liveBreak || p.live_break || p.hasLiveBreak || p.has_live_break) || !!text(p.liveBreakNotes || p.live_break_notes)
+              });
+            }
+          }
+
+          function stats(list) {
+            const vals = list.map(r=>r.dollars);
+            const pledges = list.reduce((s,r)=>s+r.pledges,0);
+            const total = vals.reduce((s,v)=>s+v,0);
+            return { n:list.length, total, avg:list.length?total/list.length:0, median:median(vals), q1:quantile(vals,.25), q3:quantile(vals,.75), zeros:list.filter(r=>r.dollars===0).length, pledges, avgGift: pledges?total/pledges:0 };
+          }
+          function groupStats(list, keyFn) {
+            const m = new Map();
+            for (const r of list) { const k=keyFn(r); if(!m.has(k))m.set(k,[]);m.get(k).push(r); }
+            return [...m.entries()].map(([k,v])=>[k,stats(v)]).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
+          }
+          const eight = rows.filter(r=>r.start===1200);
+          const nine = rows.filter(r=>r.start===1260);
+          const s8 = stats(eight), s9 = stats(nine);
+
+          const both = new Map();
+          for (const r of [...eight,...nine]) {
+            if (!r.titleKey) continue;
+            if (!both.has(r.titleKey)) both.set(r.titleKey,{title:r.title,eight:[],nine:[]});
+            both.get(r.titleKey)[r.start===1200?'eight':'nine'].push(r);
+          }
+          const sameTitles = [...both.values()].filter(x=>x.eight.length && x.nine.length).map(x=>({
+            title:x.title, n8:x.eight.length, n9:x.nine.length,
+            avg8:stats(x.eight).avg, avg9:stats(x.nine).avg,
+            med8:stats(x.eight).median, med9:stats(x.nine).median
+          })).sort((a,b)=>Math.abs(b.avg9-b.avg8)-Math.abs(a.avg9-a.avg8));
+
+          const top = list => [...list].sort((a,b)=>b.dollars-a.dollars).slice(0,12);
+          const lines = [];
+          lines.push(`# Live 8 PM vs 9 PM audit`);
+          lines.push(`Generated: ${new Date().toISOString()}`);
+          lines.push(`Schedules raw ${schedulesRaw.length}; deduped date ranges ${schedules.length}; analyzed result-bearing placements ${rows.length}; placements missing a usable result ${missingResult}; invalid starts ${invalidStart}.`);
+          const statLine=(label,s)=>`${label}: n=${s.n}, total=${fmt(s.total)}, avg=${fmt(s.avg)}, median=${fmt(s.median)}, Q1=${fmt(s.q1)}, Q3=${fmt(s.q3)}, zero-airings=${s.zeros}, pledges=${s.pledges}, avg gift=${fmt(s.avgGift)}`;
+          lines.push(statLine('8:00 PM',s8));
+          lines.push(statLine('9:00 PM',s9));
+          lines.push(`9-minus-8: total ${fmt(s9.total-s8.total)}; avg ${fmt(s9.avg-s8.avg)}; median ${fmt(s9.median-s8.median)}.`);
+          lines.push('');
+          lines.push('## By pledge season');
+          for (const season of ['March','June','August','December']) {
+            lines.push(`${season} | ${statLine('8',stats(eight.filter(r=>r.season===season)))} | ${statLine('9',stats(nine.filter(r=>r.season===season)))}`);
+          }
+          lines.push('');
+          lines.push('## By year');
+          const years=[...new Set([...eight,...nine].map(r=>r.year))].sort();
+          for(const y of years) lines.push(`${y} | ${statLine('8',stats(eight.filter(r=>r.year===y)))} | ${statLine('9',stats(nine.filter(r=>r.year===y)))}`);
+          lines.push('');
+          lines.push('## By program length');
+          for(const d of ['<=60 min','61-90 min','91-120 min','>120 min']) lines.push(`${d} | ${statLine('8',stats(eight.filter(r=>r.durationBucket===d)))} | ${statLine('9',stats(nine.filter(r=>r.durationBucket===d)))}`);
+          lines.push('');
+          lines.push('## Weekday vs weekend');
+          for(const w of ['Weekday','Weekend']) lines.push(`${w} | ${statLine('8',stats(eight.filter(r=>r.weekpart===w)))} | ${statLine('9',stats(nine.filter(r=>r.weekpart===w)))}`);
+          lines.push('');
+          lines.push('## Live-break flag');
+          for(const live of [false,true]) lines.push(`${live?'Live':'Non-live'} | ${statLine('8',stats(eight.filter(r=>r.live===live)))} | ${statLine('9',stats(nine.filter(r=>r.live===live)))}`);
+          lines.push('');
+          lines.push(`## Same titles appearing at both 8 and 9 (${sameTitles.length})`);
+          for(const x of sameTitles.slice(0,30)) lines.push(`${x.title}: 8 n=${x.n8} avg=${fmt(x.avg8)} med=${fmt(x.med8)}; 9 n=${x.n9} avg=${fmt(x.avg9)} med=${fmt(x.med9)}; avg diff=${fmt(x.avg9-x.avg8)}`);
+          lines.push('');
+          lines.push('## Top 8 PM airings');
+          top(eight).forEach(r=>lines.push(`${r.dateKey} | ${r.title} | ${fmt(r.dollars)} | ${r.duration} min | ${r.season} ${r.year} | ${r.weekpart}${r.live?' | LIVE':''}`));
+          lines.push('');
+          lines.push('## Top 9 PM airings');
+          top(nine).forEach(r=>lines.push(`${r.dateKey} | ${r.title} | ${fmt(r.dollars)} | ${r.duration} min | ${r.season} ${r.year} | ${r.weekpart}${r.live?' | LIVE':''}`));
+
+          fs.writeFileSync('STARTTIME_AUDIT.md', lines.join('\n')+'\n');
+          NODE
+
+      - name: Commit audit report
+        shell: bash
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add STARTTIME_AUDIT.md
+          git commit -m "Record one-off live 8pm vs 9pm audit"
+          git push origin HEAD:main
