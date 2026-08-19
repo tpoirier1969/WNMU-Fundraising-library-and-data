@@ -8,26 +8,6 @@
   }
 
 
-  function ensurePerformanceLabButton() {
-    const topbarActions = document.querySelector('.topbar-actions');
-    if (!topbarActions) return null;
-    let button = document.getElementById('performance-lab-button');
-    if (!button) {
-      button = document.createElement('button');
-      button.type = 'button';
-      button.id = 'performance-lab-button';
-      button.className = 'ghost hidden';
-      button.textContent = 'Performance Analytics';
-      button.addEventListener('click', () => {
-        window.location.href = 'pledge-performance-lab.html';
-      });
-      const logoutButton = els.logoutButton || document.getElementById('logout-button');
-      if (logoutButton && logoutButton.parentNode === topbarActions) topbarActions.insertBefore(button, logoutButton);
-      else topbarActions.appendChild(button);
-    }
-    return button;
-  }
-
   function computeAdmin(session) {
     const email = session?.user?.email ? String(session.user.email).toLowerCase() : null;
     if (!session) return { userEmail: null, isAdmin: false };
@@ -42,7 +22,6 @@
     els.detailEditButton.classList.toggle('hidden', !canEdit());
     els.detailDeleteButton?.classList.toggle('hidden', !canEdit() || Boolean(state.detailCreateMode) || !state.selectedProgramId);
     els.addProgramButton?.classList.toggle('hidden', !canEdit());
-    ensurePerformanceLabButton()?.classList.toggle('hidden', !canEdit());
     if (canEdit()) {
       els.roleChip.textContent = state.userEmail ? `Admin · ${state.userEmail}` : 'Admin';
       els.roleChip.classList.add('admin');

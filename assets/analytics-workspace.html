@@ -1,0 +1,361 @@
+<style>
+:host {
+      --bg: #f4f0e8;
+      --card: #fffaf1;
+      --ink: #272019;
+      --muted: #6d6255;
+      --line: #d7c8ae;
+      --accent: #7b341e;
+      --accent-2: #2f5d62;
+      --bad: #8b2d20;
+      --good: #245d39;
+      --soft: #fff4dd;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    :host { display: block; background: var(--bg); color: var(--ink); }
+    button, input, select { font: inherit; }
+    button { border: 1px solid var(--line); border-radius: 999px; padding: 10px 13px; background: #fffdf8; font-weight: 800; cursor: pointer; }
+    button:disabled, select:disabled, input:disabled { opacity: .48; cursor: not-allowed; }
+    .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ghost { background: transparent; }
+    .hidden { display: none !important; }
+    .shell { max-width: 1380px; margin: auto; padding: 24px; }
+    .top { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 16px; }
+    .brand { display: flex; gap: 13px; align-items: center; }
+    .brand img { width: 72px; }
+    .eyebrow { text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-size: .75rem; font-weight: 900; }
+    h1 { margin: 0; font-size: clamp(1.7rem, 3vw, 2.6rem); }
+    h2, h3 { margin-top: 0; }
+    p { color: var(--muted); }
+    .notice { border: 1px solid var(--line); border-radius: 16px; background: #fffdf8; padding: 13px 15px; margin: 12px 0; }
+    .warn { background: #fff7e2; color: #62450b; }
+    .bad { background: #fff0ee; color: #681f19; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px; margin-bottom: 18px; }
+    .filter-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .filter-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; min-width: 0; }
+    .filter-card.required-card { border-color: #c9b47c; background: #fff8e7; }
+    .filter-card.required-card.exploratory { border-color: #c98e72; background: #fff2e9; }
+    .filter-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 4px; }
+    .filter-card-head h3 { margin: 0; }
+    .filter-card-note { margin: 5px 0 10px; font-size: .88rem; line-height: 1.38; }
+    .filter-status { border-radius: 999px; padding: 4px 8px; background: #eee1ca; color: #584b3b; font-size: .74rem; font-weight: 950; white-space: nowrap; }
+    .filter-status.ready { background: #e6f2e9; color: var(--good); }
+    .filter-status.exploratory { background: #f8ddd1; color: var(--bad); }
+    .filter-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+    .filter-grid .field { flex: 1 1 150px; }
+    .filter-grid .field.grow { flex: 2 1 250px; }
+    .filter-bank { display: none; }
+    .filter-actions { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; }
+    .analysis-guidance { border: 1px solid #d8a185; background: #fff2e9; border-radius: 12px; padding: 10px 11px; margin-bottom: 12px; color: #6c321f; line-height: 1.4; }
+    .analysis-guidance strong { color: #4f2417; }
+    .analysis-caution { border: 1px solid #d9c189; background: #fff8e7; border-radius: 12px; padding: 9px 10px; margin-bottom: 10px; color: #5d4818; line-height: 1.38; }
+    @media (max-width: 900px) { .filter-panels { grid-template-columns: 1fr; } }
+    .field { display: grid; gap: 4px; min-width: 138px; }
+    .grow { flex: 1 1 220px; }
+    label { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 900; color: var(--muted); }
+    input, select { border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; background: #fffdf8; }
+    .scope-note { flex: 1 1 100%; color: var(--muted); font-size: .9rem; }
+    .season-mix-legend {
+      margin: -8px 0 16px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fffdf8;
+      color: var(--muted);
+      font-size: .88rem;
+      line-height: 1.35;
+    }
+    .season-mix-legend strong { color: var(--ink); }
+    .cohort-note { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 10px; border:1px solid #d9c189; border-radius:12px; background:#fff8e7; color:#4d3b14; }
+    .cohort-note strong { color:#2e2108; }
+    .cohort-clear { padding:4px 8px; border-radius:999px; font-size:.78rem; }
+    .layout { display: grid; grid-template-columns: 360px 1fr; gap: 18px; align-items: start; }
+    .cards { display: grid; gap: 12px; position: sticky; top: 14px; }
+    .qcard { text-align: left; border-radius: 18px; background: var(--card); border: 1px solid var(--line); padding: 16px; display: grid; gap: 7px; }
+    .qcard.active { outline: 3px solid rgba(47, 93, 98, .25); border-color: var(--accent-2); }
+    .qtitle { font-size: 1.05rem; font-weight: 950; }
+    .qsum { color: var(--muted); font-size: .92rem; line-height: 1.35; }
+    .badge { display: inline-block; border-radius: 999px; background: #efe3d2; padding: 4px 8px; font-size: .78rem; font-weight: 900; color: #584b3b; }
+    .detail { background: var(--card); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; box-shadow: 0 16px 38px rgba(56, 41, 23, .13); }
+    .dhead { padding: 18px; background: var(--soft); border-bottom: 1px solid var(--line); }
+    .dhead h2 { margin: 0 0 5px; }
+    .inside { padding: 18px; display: grid; gap: 16px; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .stat { background: #fff7e8; border: 1px solid var(--line); border-radius: 14px; padding: 11px; }
+    .stat .v { font-size: 1.2rem; font-weight: 950; color: var(--accent); }
+    .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 16px; }
+    .detail.seasonal-view .split { grid-template-columns: 1fr; }
+    .detail.seasonal-view .split .panel + .panel { margin-top: 16px; }
+    .detail.seasonal-view #chart { overflow-x: auto; padding-bottom: 2px; }
+    .detail.seasonal-view .seasonal-chart { min-width: 840px; }
+    .field.disabled-by-question { opacity: .58; }
+    .field.disabled-by-question label::after { content: " (disabled here)"; font-weight: 900; color: var(--accent); }
+    .panel { border: 1px solid var(--line); border-radius: 18px; background: #fffdf8; padding: 14px; min-width: 0; }
+    .bar { display: grid; grid-template-columns: minmax(170px, 1.25fr) minmax(90px, .85fr) auto; gap: 10px; align-items: center; margin: 9px 0; }
+    .blabel { font-weight: 850; font-size: calc(1rem - 2px); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; overflow-wrap: anywhere; }
+    .chart-title-label { display: block; }
+    .chart-season-mix { display: block; color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; margin-top: 2px; }
+    .chart-mode-note { margin: 0 0 10px; color: var(--muted); font-size: .88rem; line-height: 1.35; }
+    .mix { color: var(--muted); font-size: calc(.82rem - 1px); font-weight: 800; }
+    .muted-cell { color: var(--muted); }
+    .track { height: 18px; background: #f0e4d3; border-radius: 999px; overflow: hidden; }
+    .fill { height: 100%; background: linear-gradient(90deg, var(--accent-2), #83a9aa); border-radius: 999px; min-width: 2px; }
+     .bval { font-weight: 950; color: var(--accent); white-space: nowrap; }
+    .seasonal-chart { display: grid; gap: 8px; }
+    .seasonal-row { display: grid; grid-template-columns: minmax(190px, 1.05fr) minmax(360px, 1.9fr) minmax(130px, .72fr); gap: 10px; align-items: center; margin: 8px 0; }
+    .season-cells { display: grid; grid-template-columns: repeat(4, minmax(76px, 1fr)); gap: 6px; }
+    .season-cell { border: 1px solid #eadcc8; background: #f7ead8; border-radius: 12px; padding: 6px 7px; min-height: 58px; display: grid; gap: 2px; align-content: center; }
+    .season-cell.baseline { border-color: var(--accent-2); background: #edf5f4; }
+    .season-cell.no-data { opacity: .55; background: #f3eee5; }
+    .season-code { font-weight: 950; color: var(--accent); font-size: .82rem; }
+    .season-avg { font-weight: 950; color: var(--ink); font-size: .88rem; }
+    .season-lift { font-weight: 900; font-size: .8rem; }
+    .season-lift.up { color: var(--good); }
+    .season-lift.down { color: var(--bad); }
+    .season-lift.flat { color: var(--muted); }
+    .seasonal-value { text-align: right; display: grid; gap: 2px; justify-items: end; line-height: 1.12; }
+    .seasonal-value .value-kicker { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 950; }
+    .seasonal-value strong { color: var(--accent); font-size: 1.08rem; }
+    .seasonal-value span:not(.value-kicker) { color: var(--muted); font-size: .82rem; font-weight: 900; }
+    .topic-label-cell { display: grid; gap: 2px; }
+    .read { border-left: 5px solid var(--accent-2); background: #edf5f4; border-radius: 14px; padding: 12px; color: #24494d; }
+    .tablewrap { max-height: none; overflow: visible; border: 1px solid var(--line); border-radius: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    th, td { border-bottom: 1px solid #eadcc8; text-align: left; padding: 9px 8px; vertical-align: top; }
+    th { background: #f7ead8; color: #584b3b; position: sticky; top: 0; z-index: 1; }
+    .sort-th-button { width: 100%; border: 0; border-radius: 0; padding: 0; background: transparent; color: inherit; display: inline-flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 950; text-align: left; cursor: pointer; }
+    .sort-th-button:hover { color: var(--accent); }
+    .sort-arrow { color: var(--accent); font-size: .8rem; white-space: nowrap; }
+    .money, .num { text-align: right; white-space: nowrap; }
+    .emphasis { font-weight: 950; color: var(--accent); }
+    .program-link { color: var(--accent-2); font-weight: 900; text-decoration: underline; text-underline-offset: 2px; }
+    .program-link:hover { color: var(--accent); }
+    .program-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .program-detail-item { border: 1px solid var(--line); border-radius: 12px; background: #fff7e8; padding: 10px; }
+    .program-detail-label { display: block; color: var(--muted); font-size: .73rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+    .program-detail-value { font-weight: 900; overflow-wrap: anywhere; }
+    .program-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 16px 0; }
+    .program-detail-summary .stat { background: #fff7e8; }
+    .program-detail-table-wrap { max-height: 330px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; }
+    .program-detail-note { color: var(--muted); font-size: .9rem; margin-top: 10px; }
+    .empty { padding: 34px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; }
+    .risk { color: var(--bad); font-weight: 900; }
+    .ok { color: var(--good); font-weight: 900; }
+    details { border: 1px solid var(--line); background: #fffdf8; border-radius: 16px; padding: 11px 13px; }
+    summary { cursor: pointer; font-weight: 950; color: var(--accent); }
+    .advanced-strip { border: 1px solid var(--line); border-width: 0 0 1px; background: #fffdf8; border-radius: 22px 22px 0 0; padding: 10px 12px; }
+    .adv { display: grid; grid-template-columns: minmax(118px, 1fr) minmax(128px, 1fr) minmax(128px, 1fr) minmax(138px, 1fr) minmax(90px, .8fr) minmax(74px, .65fr); gap: 6px; align-items: end; color: var(--muted); }
+    .adv .field { min-width: 0; }
+    .adv select { width: 100%; }
+    .adv-help { grid-column: 1 / -1; color: var(--muted); font-size: .86rem; }
+    .topic-picker { position: relative; min-width: 190px; }
+    .topic-picker summary { list-style: none; border: 1px solid var(--line); border-radius: 11px; padding: 9px 10px; background: #fffdf8; color: var(--ink); font-weight: 700; cursor: pointer; }
+    .topic-picker summary::-webkit-details-marker { display: none; }
+    .topic-options { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 260px; max-height: 320px; overflow: auto; background: #fffdf8; border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: 0 14px 38px rgba(56, 41, 23, .22); }
+    .topic-option { display: flex; align-items: center; gap: 7px; padding: 6px 4px; font-size: .92rem; color: var(--ink); text-transform: none; letter-spacing: 0; font-weight: 700; }
+    .topic-option input { width: auto; }
+    .mini-spark { display: inline-block; width: 150px; height: 32px; vertical-align: middle; }
+    .trend-button { padding: 5px 9px; font-size: .8rem; margin-left: 6px; }
+    .modal { position: fixed; inset: 0; background: rgba(32, 24, 18, .62); display: grid; place-items: center; z-index: 1000; padding: 18px; }
+    .modal-card { width: min(980px, 96vw); max-height: 92vh; overflow: auto; background: #fffdf8; border-radius: 20px; border: 1px solid var(--line); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+    .modal-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px; border-bottom: 1px solid var(--line); background: var(--soft); }
+    .modal-body { padding: 18px; }
+    .trend-svg { width: 100%; min-height: 360px; }
+    .matched-section { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .matched-section h4 { margin: 0 0 6px; font-size: 1rem; }
+    .matched-note { color: var(--muted); margin: 0 0 10px; line-height: 1.38; }
+    .matched-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+    .matched-summary .stat { background: #fff7e8; }
+    .match-basis { color: var(--muted); font-size: .84rem; line-height: 1.3; }
+    @media (max-width: 960px) { .matched-summary { grid-template-columns: 1fr; } }
+    @media (max-width: 960px) {
+      .layout, .split { grid-template-columns: 1fr; }
+      .cards { position: static; }
+      .stats, .adv { grid-template-columns: 1fr; }
+      .topic-options { position: static; box-shadow: none; min-width: 0; }
+      .bar, .seasonal-row { grid-template-columns: 1fr; }
+      .season-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .seasonal-value { text-align: left; justify-items: start; }
+      .program-detail-grid, .program-detail-summary { grid-template-columns: 1fr; }
+      .brand img { width: 56px; }
+    }
+    .analytics-root { display: block; padding: 4px 0 30px; }
+    .analytics-workspace-intro { margin: 0 0 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+    .analytics-workspace-intro h2 { margin: 2px 0 4px; }
+    .analytics-workspace-intro p { margin: 0; }
+
+</style>
+<div class="analytics-root">
+  <div class="analytics-workspace-intro">
+    <div class="eyebrow">Pledge Program Library</div>
+    <h2>Performance Analytics</h2>
+    <p>Explore pledge performance without leaving the main Pledge Program Library workspace.</p>
+  </div>
+  <div id="notice" class="notice">Performance Analytics loads when this workspace opens.</div>
+  <section id="lab">
+<div id="filter-panels" class="filter-panels">
+      <section id="required-filter-card" class="filter-card required-card">
+        <div class="filter-card-head">
+          <div><div class="eyebrow">Analysis setup</div><h3>Required filters</h3></div>
+          <span id="required-filter-status" class="filter-status">Checking…</span>
+        </div>
+        <p id="required-filter-note" class="filter-card-note">These controls define the cleanest version of the selected question. Broad values such as All seasons are allowed.</p>
+        <div id="required-filters" class="filter-grid"></div>
+      </section>
+      <section class="filter-card refine-card">
+        <div class="filter-card-head"><div><div class="eyebrow">Optional</div><h3>Refine results</h3></div></div>
+        <p id="refine-filter-note" class="filter-card-note">Use these when you have a reason to narrow the comparison. They remain available for custom exploration.</p>
+        <div id="refine-filters" class="filter-grid"></div>
+      </section>
+    </div>
+
+    <div id="filter-bank" class="filter-bank">
+      <div class="field" data-filter-key="season">
+        <label for="season">Pledge season</label>
+        <select id="season"></select>
+      </div>
+      <div class="field" data-filter-key="year">
+        <label>Years included</label>
+        <details id="year-picker" class="topic-picker">
+          <summary id="year-summary">All years</summary>
+          <div id="year-options" class="topic-options"></div>
+        </details>
+      </div>
+      <div class="field grow" data-filter-key="search">
+        <label for="search">Program</label>
+        <input id="search" type="search" placeholder="Type a program title or NOLA code">
+      </div>
+      <div class="field topic-field" data-filter-key="topic">
+        <label>Primary topic</label>
+        <details id="topic-picker" class="topic-picker">
+          <summary id="topic-summary">All topics</summary>
+          <div id="topic-options" class="topic-options"></div>
+        </details>
+      </div>
+      <div class="field" data-filter-key="secondary">
+        <label for="secondary-topic">Secondary topic</label>
+        <select id="secondary-topic"><option value="all">All secondary topics</option></select>
+      </div>
+      <div class="field" data-filter-key="duration">
+        <label for="adv-duration">Program length</label>
+        <select id="adv-duration">
+          <option value="all">All lengths</option>
+          <option value="60">60 min or less</option>
+          <option value="61-90">61–90 min</option>
+          <option value="91-120">91–120 min</option>
+          <option value="121+">Over 120 min</option>
+          <option value="unknown">Unknown length</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="evidence">
+        <label for="evidence">Evidence filter</label>
+        <select id="evidence" title="Hide rows with very small samples. This is a sample-size control, not a value judgment.">
+          <option value="all">Show all evidence</option>
+          <option value="hide">Hide low-sample rows</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="distributor">
+        <label for="adv-distributor">Distributor</label>
+        <select id="adv-distributor"><option value="all">All distributors</option></select>
+      </div>
+      <div class="field" data-filter-key="metric">
+        <label for="adv-metric">Rank by</label>
+        <select id="adv-metric">
+          <option value="median">Median $ / airing</option>
+          <option value="avg">Average $ / airing</option>
+          <option value="total" selected>Total dollars</option>
+          <option value="pledges">Pledge count</option>
+          <option value="broadcasts">Broadcast count</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="live">
+        <label for="adv-live">Live-break filter</label>
+        <select id="adv-live">
+          <option value="all">All broadcasts</option>
+          <option value="live">Live-break only</option>
+          <option value="nonlive">No live-break flag</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="daypart">
+        <label for="adv-daypart">Daypart</label>
+        <select id="adv-daypart">
+          <option value="all">All dayparts</option>
+          <option value="morning">Morning</option>
+          <option value="afternoon">Afternoon</option>
+          <option value="evening">Evening</option>
+          <option value="overnight">Overnight</option>
+        </select>
+      </div>
+      <div class="field" data-filter-key="weekpart">
+        <label for="adv-weekpart">Weekpart</label>
+        <select id="adv-weekpart">
+          <option value="all">All days</option>
+          <option value="weekday">Weekdays</option>
+          <option value="weekend">Weekends</option>
+        </select>
+      </div>
+    </div>
+    <div class="filter-actions"><button id="reload" type="button">Reload live data</button></div>
+    <div id="scope-note" class="scope-note"></div>
+
+    <div class="season-mix-legend"><strong>Season mix:</strong> M = March · J = June · A = August · D = December. The number after each letter is the number of airings in that pledge season. Example: <strong>[M-0, J-0, A-1, D-0]</strong> = one August airing and none in March, June, or December.</div>
+
+    <div class="layout">
+      <aside id="cards" class="cards"></aside>
+      <section class="detail">
+        <div class="dhead">
+          <h2 id="dt">Choose a question</h2>
+          <p id="ds">Cards choose the question. This side holds the graph, table, and plain-English read.</p>
+        </div>
+        <div class="inside">
+          <div id="stats" class="stats"></div>
+          <div class="split">
+            <div class="panel">
+              <h3 id="ct">Graph</h3>
+              <p id="cn">Graphs live here, not on every card.</p>
+              <div id="chart"></div>
+            </div>
+            <div class="panel">
+              <h3>Plain-English read</h3>
+              <div id="read" class="read"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3 id="tt">Detail table</h3>
+            <p id="tn">The table follows the selected question so the graph and rows tell the same story.</p>
+            <div id="table" class="tablewrap"></div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  </section>
+<div id="trend-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trend-title">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">Fundraiser trend</div>
+        <h2 id="trend-title">Program trend</h2>
+        <p id="trend-subtitle">Totals by fundraiser season.</p>
+      </div>
+      <button type="button" id="trend-close" class="ghost">Close</button>
+    </div>
+    <div id="trend-body" class="modal-body"></div>
+  </div>
+</div>
+
+<div id="program-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="program-modal-title">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <div class="eyebrow">Program detail</div>
+        <h2 id="program-modal-title">Program</h2>
+        <p id="program-modal-subtitle">Analytics detail for this title.</p>
+      </div>
+      <button type="button" id="program-modal-close" class="ghost">Close</button>
+    </div>
+    <div id="program-modal-body" class="modal-body"></div>
+  </div>
+</div>
+</div>
