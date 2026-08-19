@@ -3436,6 +3436,34 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return result;
   }
 
+  function scheduleStartBucketMoneyMap(schedule = {}, importedRows = []) {
+    const result = new Map();
+    const add = (minutesValue, dollarsValue) => {
+      const minutes = Number(minutesValue);
+      if (!Number.isFinite(minutes)) return;
+      const normalized = ((minutes % 1440) + 1440) % 1440;
+      const bucket = Math.floor(normalized / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES;
+      const current = result.get(bucket) || { dollars: 0, starts: 0 };
+      current.dollars += Number(dollarsValue || 0) || 0;
+      current.starts += 1;
+      result.set(bucket, current);
+    };
+
+    importedRowsForSchedule(schedule, importedRows).forEach((row) => {
+      if (importedRowIsNonSpecific(row)) return;
+      const minutes = importedRowStartMinutes(row);
+      if (!Number.isFinite(minutes)) return;
+      add(minutes, Number(row?.dollars || 0) || 0);
+    });
+
+    (schedule?.placements || []).forEach((placement) => {
+      if (!placementHasManualResult(placement)) return;
+      add(placement?.startMinutes, placementManualResultDollars(placement));
+    });
+
+    return result;
+  }
+
   function schedulePartialOnlineMailTotal(schedule = {}, dayCount = 0) {
     const days = scheduleFundraiserDayKeys(schedule);
     const count = Math.max(0, Math.min(days.length, Math.trunc(Number(dayCount) || 0)));
@@ -3576,6 +3604,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       });
     }
     const dailyMoney = scheduleDailyMoneyMap(schedule, importedRows);
+    const startBucketMoney = scheduleStartBucketMoneyMap(schedule, importedRows);
     renderSameFundraiserComparison(schedule, importedRows, importedRowsReady);
     const windowConfig = getScheduleWindow(state.scheduleView);
     const visibleStartMin = windowConfig.startMinutes;
@@ -3629,13 +3658,21 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const body = [];
     times.forEach((minutes) => {
       const normalizedMinutes = ((minutes % 1440) + 1440) % 1440;
+      const rowMoney = startBucketMoney.get(normalizedMinutes) || null;
+      const hasRowMoney = Boolean(rowMoney && Number(rowMoney.starts || 0) > 0);
       const isHighlightedRow = Number(state.scheduleHighlightedRowMinutes) === minutes;
-      const showTimeLabel = isHighlightedRow || !compactTimeLabels || (ultraCompactTimeLabels ? (normalizedMinutes % 120 === 0) : (normalizedMinutes % 60 === 0));
+      const showTimeLabel = isHighlightedRow || hasRowMoney || !compactTimeLabels || (ultraCompactTimeLabels ? (normalizedMinutes % 120 === 0) : (normalizedMinutes % 60 === 0));
       const guideClass = guideMinutes.has(minutes) || guideMinutes.has(normalizedMinutes) ? ' guide-line-red' : '';
       const rowHighlightClass = isHighlightedRow ? ' row-highlighted' : '';
       const timeLabel = utils.minutesToLabel(minutes);
       const timeLabelHelp = isHighlightedRow ? `Clear ${timeLabel} row highlight` : `Highlight ${timeLabel} row across the calendar`;
-      body.push(`<button type="button" class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}${guideClass}${rowHighlightClass}" data-schedule-row-minutes="${minutes}" aria-pressed="${isHighlightedRow ? 'true' : 'false'}" aria-label="${utils.escapeHtml(timeLabelHelp)}" title="${utils.escapeHtml(timeLabelHelp)}"><span>${showTimeLabel ? utils.escapeHtml(timeLabel) : ''}</span></button>`);
+      const rowMoneyTitle = hasRowMoney
+        ? `${utils.formatCount(rowMoney.starts)} program${Number(rowMoney.starts) === 1 ? '' : 's'} started in this 30-minute bucket; broadcast proceeds ${utils.formatMoney(rowMoney.dollars)}`
+        : '';
+      const rowMoneyHtml = hasRowMoney
+        ? `<span class="schedule-time-row-total" title="${utils.escapeHtml(rowMoneyTitle)}">${utils.escapeHtml(utils.formatMoney(rowMoney.dollars))}</span>`
+        : '';
+      body.push(`<button type="button" class="schedule-time-label ${showTimeLabel ? '' : 'quiet'}${guideClass}${rowHighlightClass}" data-schedule-row-minutes="${minutes}" aria-pressed="${isHighlightedRow ? 'true' : 'false'}" aria-label="${utils.escapeHtml(timeLabelHelp)}" title="${utils.escapeHtml(timeLabelHelp)}"><span><span class="schedule-time-clock">${showTimeLabel ? utils.escapeHtml(timeLabel) : ''}</span>${rowMoneyHtml}</span></button>`);
       dayKeys.forEach((displayDateKey) => {
         const actualDateKey = minutes >= 1440 ? utils.plusDays(displayDateKey, 1) : displayDateKey;
         const actualMinutes = minutes >= 1440 ? minutes - 1440 : minutes;

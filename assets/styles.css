@@ -1013,6 +1013,17 @@ button:disabled {
   top: 0;
   line-height: 1;
   white-space: nowrap;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.schedule-time-clock { white-space: nowrap; }
+.schedule-time-row-total {
+  color: var(--teal-dark);
+  font-size: .66rem;
+  font-weight: 900;
+  letter-spacing: -.01em;
+  white-space: nowrap;
 }
 .schedule-time-label.quiet > span { display: none; }
 .schedule-time-label:hover,
