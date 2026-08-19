@@ -1065,20 +1065,35 @@
     return utils.normalizeText(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
+  function importedSourceIdentityCode(row = {}) {
+    const raw = row?.raw_payload && typeof row.raw_payload === 'object' ? row.raw_payload : {};
+    return utils.normalizeText(utils.firstNonEmpty(
+      row?.source_report_code,
+      row?.imported_report_code,
+      row?.imported_nola_code,
+      raw?.nola_code,
+      raw?.nola,
+      raw?.program_nola,
+      raw?.program_code,
+      raw?.episode_code,
+      ''
+    ) || '');
+  }
+
+  function importedSourceIdentity(row = {}) {
+    const sourceCodeKey = importedNolaCodeKey(importedSourceIdentityCode(row));
+    if (sourceCodeKey) return `source_code:${sourceCodeKey}`;
+    const importedTitle = utils.normalizeLookupKey(row.imported_program_title || row.program_title || row.title || row.name || '');
+    return importedTitle ? `source_title:${importedTitle}` : '';
+  }
+
   function importedNaturalKey(row = {}) {
-    const canonicalProgramId = String(utils.firstNonEmpty(row.program_id, row.pledge_program_id, row.manual_match_program_id, '') || '').trim();
-    const identity = canonicalProgramId
-      ? `program_id:${canonicalProgramId}`
-      : (utils.nolaIdentityKey(
-          row.nola_code || row.nola || row.program_nola || '',
-          row.program_title || row.imported_program_title || row.title || row.name || ''
-        ) || utils.normalizeLookupKey(row.program_title || row.imported_program_title || row.title || row.name || ''));
+    const identity = importedSourceIdentity(row);
     return [
+      utils.normalizeLookupKey(row.station || ''),
       identity,
       utils.normalizeText(row.air_date) || utils.dateKeyFromDate(row.aired_at) || '',
-      utils.normalizeText(row.air_time) || '',
-      utils.normalizeText(row.drive_start_date) || '',
-      utils.normalizeText(row.drive_end_date) || ''
+      utils.normalizeText(row.air_time) || ''
     ].join('|').toLowerCase();
   }
 
@@ -1880,9 +1895,17 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         }
         const existingAtSlot = findPlacementForSlot(schedule, placement.startSlotKey);
         if (existingAtSlot && scheduledPlacementMatchesImported(existingAtSlot, placement)) {
+          // A manually restored block that exactly matches an imported airing should keep
+          // its calendar identity, but it can safely inherit the report evidence attached
+          // to that exact slot. This never replaces a different scheduled program.
+          existingAtSlot.importedFromReport = true;
           existingAtSlot.importedBroadcastDollars = Number(placement.importedBroadcastDollars || 0) || 0;
           if (placement.sourceAiringHash) existingAtSlot.sourceAiringHash = placement.sourceAiringHash;
           if (placement.sourceImportBatchId) existingAtSlot.sourceImportBatchId = placement.sourceImportBatchId;
+          if (placement.importedFundraiserKey) existingAtSlot.importedFundraiserKey = placement.importedFundraiserKey;
+          if (placement.sourceName) existingAtSlot.sourceName = placement.sourceName;
+          existingAtSlot.sourceLabel = placement.sourceLabel || existingAtSlot.sourceLabel || 'Imported report';
+          existingAtSlot.nolaCode = placement.nolaCode || existingAtSlot.nolaCode || '';
           existingAtSlot.importMatchMethod = placement.importMatchMethod || existingAtSlot.importMatchMethod || '';
           existingAtSlot.importMatchReason = placement.importMatchReason || existingAtSlot.importMatchReason || '';
           skippedPlacements += 1;
@@ -2516,7 +2539,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const candidates = [
       ['id', placement.programId || derive.programId(row)],
       ['nola', placement.nolaCode || placement.nola || derive.nola(row)],
-      ['title', placement.programTitle || derive.title(row)]
+      ['title', placement.programTitle || derive.title(row)],
+      // The slot map deliberately keeps the original imported title separately from the
+      // library title. Exact day/time + imported title is valid airing evidence even when
+      // a library match was corrected after the report was first loaded.
+      ['imported', placement.programTitle || derive.title(row)]
     ];
     return candidates.some(([kind, value]) => {
       const normalizedValue = kind === 'nola' ? importedNolaCodeKey(value) : utils.normalizeLookupKey(value);

@@ -2030,6 +2030,10 @@
       imp().lastImportedAt = new Date().toISOString();
       await refreshTableStatus({ silent: true });
       await refreshExistingUnlinkedRows({ silent: true });
+      // Results Import changes the exact airing evidence used by scheduler green/blue
+      // markers. Invalidate and rebuild those caches immediately so calendar state does
+      // not lag behind the dollars that were just written.
+      await App.schedulingUi?.refreshImportedAiringMarkers?.();
       renderAll();
       let verification = null;
       try {
