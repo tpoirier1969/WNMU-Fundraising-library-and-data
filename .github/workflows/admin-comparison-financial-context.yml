@@ -1,0 +1,263 @@
+name: Admin comparison financial context
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/admin-comparison-financial-context.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add financial context to comparison graphs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          path = Path('assets/js/ui-fundraiser-comparison.js')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_function(source, name, next_name, replacement):
+              pattern = rf"  function {re.escape(name)}\([^\n]*\) \{{.*?(?=\n  function {re.escape(next_name)}\()"
+              updated, count = re.subn(pattern, replacement.rstrip() + '\n', source, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{name}: expected one function block, found {count}')
+              return updated
+
+          old = '''  function hoursLabel(minutes = 0) {
+    const value = Number(minutes || 0) / 60;
+    if (!Number.isFinite(value) || value <= 0) return '0 hr';
+    return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10} hr`;
+  }
+'''
+          new = '''  function hoursLabel(minutes = 0) {
+    const value = Number(minutes || 0) / 60;
+    if (!Number.isFinite(value) || value <= 0) return '0 hr';
+    return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10} hr`;
+  }
+
+  function dollarsPerHour(dollars = 0, minutes = 0) {
+    const hours = Number(minutes || 0) / 60;
+    return hours > 0 ? Number(dollars || 0) / hours : 0;
+  }
+
+  function percentChange(current = 0, baseline = 0) {
+    const base = Number(baseline || 0);
+    const value = Number(current || 0);
+    if (!(base > 0)) return null;
+    return ((value - base) / base) * 100;
+  }
+
+  function signedPercent(value) {
+    if (!Number.isFinite(Number(value))) return '—';
+    const rounded = Math.round(Number(value));
+    return `${rounded > 0 ? '+' : ''}${rounded}%`;
+  }
+'''
+          if old not in text:
+              raise SystemExit('hoursLabel helper block not found')
+          text = text.replace(old, new, 1)
+
+          text = replace_function(text, 'renderTopicScheduleMix', 'renderTimeScheduleMix', r'''  function renderTopicScheduleMix(analyses = []) {
+    const rows = unionRows(analyses, 'topics')
+      .map((row) => ({
+        ...row,
+        totalMinutes: row.values.reduce((sum, value) => sum + Number(value.minutes || 0), 0),
+        totalDollars: row.values.reduce((sum, value) => sum + Number(value.dollars || 0), 0)
+      }))
+      .filter((row) => row.totalMinutes > 0 || row.totalDollars > 0)
+      .sort((a, b) => Math.max(b.totalMinutes, b.totalDollars) - Math.max(a.totalMinutes, a.totalDollars) || a.key.localeCompare(b.key));
+    if (!rows.length) return '<section class="fc-panel"><h3>Topic hours vs revenue</h3><div class="fc-chart-empty">No topic schedule/results to graph.</div></section>';
+
+    const legend = rows.map((row, index) => `<span class="fc-legend-item"><i style="background:hsl(${chartHue(index)} 65% 48%)"></i>${escapeHtml(row.key)}</span>`).join('');
+    const body = analyses.map((analysis) => {
+      const totalMinutes = [...analysis.topics.values()].reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const totalDollars = [...analysis.topics.values()].reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      const scheduleSegments = rows.map((row, index) => {
+        const value = analysis.topics.get(row.key) || {};
+        const minutes = Number(value.minutes || 0);
+        if (!(minutes > 0) || !(totalMinutes > 0)) return '';
+        const share = (minutes / totalMinutes) * 100;
+        return `<span class="fc-stack-segment" style="width:${share.toFixed(2)}%;background:hsl(${chartHue(index)} 65% 48%)" title="${escapeHtml(row.key)} · ${escapeHtml(hoursLabel(minutes))} · ${Math.round(share)}% of scheduled hours">${share >= 11 ? `${Math.round(share)}%` : ''}</span>`;
+      }).join('');
+      const revenueSegments = rows.map((row, index) => {
+        const value = analysis.topics.get(row.key) || {};
+        const dollars = Number(value.dollars || 0);
+        if (!(dollars > 0) || !(totalDollars > 0)) return '';
+        const share = (dollars / totalDollars) * 100;
+        return `<span class="fc-stack-segment" style="width:${share.toFixed(2)}%;background:hsl(${chartHue(index)} 65% 48%)" title="${escapeHtml(row.key)} · ${escapeHtml(money(dollars))} · ${Math.round(share)}% of attributable broadcast revenue">${share >= 11 ? `${Math.round(share)}%` : ''}</span>`;
+      }).join('');
+      return `<div class="fc-topic-pair-row">
+        <div class="fc-topic-pair-label"><strong>${escapeHtml(analysis.schedule.title)}</strong><span>${escapeHtml(String(analysis.schedule.year || ''))}</span></div>
+        <div class="fc-topic-pair-bars">
+          <div class="fc-share-line"><b>Hours</b><div class="fc-stack-track">${scheduleSegments}</div><span>${escapeHtml(hoursLabel(totalMinutes))}</span></div>
+          <div class="fc-share-line"><b>Revenue</b><div class="fc-stack-track">${revenueSegments}</div><span>${escapeHtml(money(totalDollars))}</span></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<section class="fc-panel"><div class="fc-panel-head"><div><h3>Topic hours vs revenue</h3><span>Top bar = share of scheduled pledge hours. Bottom bar = share of attributable broadcast dollars. Matching colors let you see whether a topic earned more or less than its schedule weight.</span></div></div><div class="fc-topic-pair-chart">${body}</div><div class="fc-legend">${legend}</div></section>`;
+  }
+''')
+
+          text = replace_function(text, 'renderTimeScheduleMix', 'renderTopicHeatmap', r'''  function renderTimeScheduleMix(analyses = []) {
+    const rows = unionRows(analyses, 'times')
+      .filter((row) => row.values.some((value) => Number(value.minutes || 0) > 0 || Number(value.dollars || 0) > 0))
+      .sort((a, b) => timeSortValue(a.key) - timeSortValue(b.key));
+    if (!rows.length) return '<section class="fc-panel"><h3>Time-slot hours and revenue</h3><div class="fc-chart-empty">No start-time schedule/results to graph.</div></section>';
+
+    const maxMinutes = Math.max(1, ...rows.flatMap((row) => row.values.map((value) => Number(value.minutes || 0))));
+    const maxDollars = Math.max(1, ...rows.flatMap((row) => row.values.map((value) => Number(value.dollars || 0))));
+    const columns = `84px repeat(${Math.max(1, analyses.length)}, minmax(185px,1fr))`;
+    const head = analyses.map((analysis) => `<div class="fc-time-head"><strong>${escapeHtml(analysis.schedule.title)}</strong><span>${escapeHtml(String(analysis.schedule.year || ''))}</span></div>`).join('');
+    const body = rows.map((row) => `<div class="fc-time-matrix-row" style="grid-template-columns:${columns}"><div class="fc-time-label">${escapeHtml(row.key)}</div>${row.values.map((value, index) => {
+      const minutes = Number(value.minutes || 0);
+      const dollars = Number(value.dollars || 0);
+      const hourWidth = Math.max(0, Math.min(100, (minutes / maxMinutes) * 100));
+      const dollarWidth = Math.max(0, Math.min(100, (dollars / maxDollars) * 100));
+      return `<div class="fc-time-cell">
+        <div class="fc-time-metric"><b>H</b><div><span style="width:${hourWidth.toFixed(2)}%;background:hsl(${chartHue(index)} 45% 62%)"></span></div><strong>${escapeHtml(hoursLabel(minutes))}</strong></div>
+        <div class="fc-time-metric money"><b>$</b><div><span style="width:${dollarWidth.toFixed(2)}%;background:hsl(${chartHue(index)} 65% 42%)"></span></div><strong>${escapeHtml(money(dollars))}</strong></div>
+        <small>${escapeHtml(money(dollarsPerHour(dollars, minutes)))}/hr</small>
+      </div>`;
+    }).join('')}</div>`).join('');
+
+    return `<section class="fc-panel"><div class="fc-panel-head"><div><h3>Time-slot hours and revenue</h3><span>Every slot shows scheduled hours, attributable broadcast dollars, and dollars per scheduled hour.</span></div></div><div class="fc-time-matrix-head" style="grid-template-columns:${columns}"><div></div>${head}</div><div class="fc-time-matrix">${body}</div></section>`;
+  }
+''')
+
+          text = replace_function(text, 'renderTopicHeatmap', 'differenceRows', r'''  function renderTopicHeatmap(analyses = []) {
+    const rows = unionRows(analyses, 'topics')
+      .map((row) => ({
+        ...row,
+        totalMinutes: row.values.reduce((sum, value) => sum + Number(value.minutes || 0), 0),
+        totalDollars: row.values.reduce((sum, value) => sum + Number(value.dollars || 0), 0)
+      }))
+      .filter((row) => row.totalMinutes > 0 || row.totalDollars > 0)
+      .sort((a, b) => b.totalDollars - a.totalDollars || b.totalMinutes - a.totalMinutes || a.key.localeCompare(b.key));
+    if (!rows.length) return '<section class="fc-panel"><h3>Topic hours / revenue heatmap</h3><div class="fc-chart-empty">No schedule/results available for the heatmap.</div></section>';
+
+    const maxDollars = Math.max(1, ...rows.flatMap((row) => row.values.map((value) => Number(value.dollars || 0))));
+    const head = analyses.map((analysis) => `<th>${escapeHtml(analysis.schedule.title)}<span>${escapeHtml(String(analysis.schedule.year || ''))}</span></th>`).join('');
+    const body = rows.map((row) => `<tr><th>${escapeHtml(row.key)}</th>${row.values.map((value) => {
+      const minutes = Number(value.minutes || 0);
+      const dollars = Number(value.dollars || 0);
+      if (!(minutes > 0) && !(dollars > 0)) return '<td class="fc-heat-zero">—</td>';
+      const intensity = Math.max(0, Math.min(1, dollars / maxDollars));
+      const alpha = dollars > 0 ? (0.12 + (intensity * 0.76)).toFixed(2) : '0.04';
+      const dark = intensity >= 0.53 ? ' fc-heat-dark' : '';
+      const zeroMoney = dollars <= 0 ? ' fc-heat-zero-money' : '';
+      return `<td class="fc-heat-cell${dark}${zeroMoney}" style="background:rgba(29,95,150,${alpha})" title="${escapeHtml(row.key)} · ${escapeHtml(hoursLabel(minutes))} · ${escapeHtml(money(dollars))} · ${escapeHtml(money(dollarsPerHour(dollars, minutes)))}/hr"><strong>${escapeHtml(hoursLabel(minutes))}</strong><span>${escapeHtml(money(dollars))}</span></td>`;
+    }).join('')}</tr>`).join('');
+
+    return `<section class="fc-panel"><div class="fc-panel-head"><div><h3>Topic hours / revenue heatmap</h3><span>Cell number = scheduled hours. Cell color = attributable broadcast dollars. The small dollar figure confirms the exact result.</span></div><div class="fc-heat-scale"><span>less $</span><i></i><span>more $</span></div></div><div class="fc-table-wrap"><table class="fc-heatmap"><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body}</tbody></table></div></section>`;
+  }
+''')
+
+          text = replace_function(text, 'comparisonFindingGrid', 'selectedAnalyses', r'''  function comparisonFindingGrid(base, current) {
+    const comparable = comparableChannels(base, current);
+    const difference = comparable.currentComparableTotal - comparable.baseComparableTotal;
+    const similarity = comparisonSimilarity(base, current);
+    const topic = biggestDifference(base, current, 'topics');
+    const time = biggestDifference(base, current, 'times');
+    const channels = ['Broadcast', comparable.includeOnline ? 'Online' : '', comparable.includeMail ? 'Mail' : ''].filter(Boolean).join(' + ');
+    const topicGain = topic.positive ? `${topic.positive.key} ${signedMoney(topic.positive.difference)}` : '—';
+    const topicLoss = topic.negative ? `${topic.negative.key} ${signedMoney(topic.negative.difference)}` : '—';
+    const timeSwing = [time.positive, time.negative].filter(Boolean).sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference))[0];
+    const hourChange = percentChange(current.scheduledMinutes, base.scheduledMinutes);
+    const baseRate = dollarsPerHour(base.broadcastDollars, base.scheduledMinutes);
+    const currentRate = dollarsPerHour(current.broadcastDollars, current.scheduledMinutes);
+    const rateChange = percentChange(currentRate, baseRate);
+
+    return `<section class="fc-panel"><div class="fc-panel-head"><div><h3>${escapeHtml(current.schedule.title)} vs baseline</h3><span>${escapeHtml(base.schedule.title)}</span></div></div><div class="fc-finding-grid">
+      <div class="fc-finding"><span>Comparable income</span><strong>${escapeHtml(signedMoney(difference))}</strong><small>${escapeHtml(channels)}</small></div>
+      <div class="fc-finding"><span>Fundraising hours</span><strong>${escapeHtml(hoursLabel(current.scheduledMinutes))}</strong><small>${escapeHtml(signedPercent(hourChange))} vs baseline</small></div>
+      <div class="fc-finding"><span>Broadcast $ / hour</span><strong>${escapeHtml(money(currentRate))}</strong><small>${escapeHtml(signedPercent(rateChange))} vs baseline</small></div>
+      <div class="fc-finding"><span>Schedule similarity</span><strong>${Number.isFinite(similarity) ? `${Math.round(similarity * 100)}%` : '—'}</strong><small>topic + time allocation</small></div>
+      <div class="fc-finding"><span>Biggest topic gain</span><strong>${escapeHtml(topicGain)}</strong></div>
+      <div class="fc-finding"><span>Biggest topic loss</span><strong>${escapeHtml(topicLoss)}</strong></div>
+      <div class="fc-finding"><span>Largest time-slot swing</span><strong>${timeSwing ? `${escapeHtml(timeSwing.key)} ${escapeHtml(signedMoney(timeSwing.difference))}` : '—'}</strong></div>
+    </div></section>`;
+  }
+''')
+
+          old_picker = "    const rows = list.map((schedule) => `<label class=\"fc-drive-option\"><input type=\"checkbox\" value=\"${escapeHtml(schedule.id)}\" ${state.selectedIds.has(schedule.id) ? 'checked' : ''}><span><strong>${escapeHtml(schedule.title)}</strong><small>${escapeHtml(formatDateRange(schedule))}</small></span></label>`).join('');"
+          new_picker = "    const listAnalyses = new Map(list.map((schedule) => [schedule.id, analyzeSchedule(schedule)]));\n    const rows = list.map((schedule) => {\n      const analysis = listAnalyses.get(schedule.id);\n      return `<label class=\"fc-drive-option\"><input type=\"checkbox\" value=\"${escapeHtml(schedule.id)}\" ${state.selectedIds.has(schedule.id) ? 'checked' : ''}><span><strong>${escapeHtml(schedule.title)}</strong><small>${escapeHtml(formatDateRange(schedule))}</small><small class=\"fc-drive-metrics\"><b>Total ${escapeHtml(money(analysis?.recordedTotal || 0))}</b><b>${escapeHtml(hoursLabel(analysis?.scheduledMinutes || 0))}</b></small></span></label>`;\n    }).join('');"
+          if old_picker not in text:
+              raise SystemExit('picker row renderer not found')
+          text = text.replace(old_picker, new_picker, 1)
+
+          old_cards = "    const cards = ordered.map((analysis) => `<article class=\"fc-summary-card ${analysis.schedule.id === baseline.schedule.id ? 'baseline' : ''}\"><div class=\"fc-card-kicker\">${analysis.schedule.id === baseline.schedule.id ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class=\"fc-total\">${money(analysis.broadcastDollars)}</div><div class=\"fc-total-label\">Broadcast $</div><div class=\"fc-mini\"><span>Online ${analysis.onlineTracked ? money(analysis.onlineDollars) : 'not tracked'}</span><span>Mail ${analysis.mailTracked ? money(analysis.mailDollars) : 'not tracked'}</span><span>Recorded total ${money(analysis.recordedTotal)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`).join('');"
+          new_cards = "    const cards = ordered.map((analysis) => `<article class=\"fc-summary-card ${analysis.schedule.id === baseline.schedule.id ? 'baseline' : ''}\"><div class=\"fc-card-kicker\">${analysis.schedule.id === baseline.schedule.id ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class=\"fc-total\">${money(analysis.recordedTotal)}</div><div class=\"fc-total-label\">Total recorded $</div><div class=\"fc-summary-metrics\"><div><span>Fundraising hours</span><strong>${escapeHtml(hoursLabel(analysis.scheduledMinutes))}</strong></div><div><span>Broadcast $ / hr</span><strong>${escapeHtml(money(dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes)))}</strong></div></div><div class=\"fc-mini\"><span>Broadcast ${money(analysis.broadcastDollars)}</span><span>Online ${analysis.onlineTracked ? money(analysis.onlineDollars) : 'not tracked'}</span><span>Mail ${analysis.mailTracked ? money(analysis.mailDollars) : 'not tracked'}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`).join('');"
+          if old_cards not in text:
+              raise SystemExit('summary card renderer not found')
+          text = text.replace(old_cards, new_cards, 1)
+
+          old_note = "<section class=\"fc-section-label\"><strong>Key comparison findings</strong><span>Dollar swings are attributable broadcast results unless the tile explicitly says comparable income.</span></section>"
+          new_note = "<section class=\"fc-section-label\"><strong>Key comparison findings</strong><span>Hours explain schedule volume. Revenue and $/hour show whether the extra schedule actually paid off.</span></section>"
+          if old_note not in text:
+              raise SystemExit('comparison findings note not found')
+          text = text.replace(old_note, new_note, 1)
+
+          css_marker = '@media(max-width:1050px)'
+          css_add = '''.fc-drive-metrics{display:flex!important;justify-content:space-between;gap:8px;margin-top:3px;color:#103a66!important}.fc-drive-metrics b{font-size:.73rem}.fc-summary-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:8px 0}.fc-summary-metrics div{background:#f5fafc;border:1px solid #dbe8ed;border-radius:9px;padding:7px;display:grid;gap:2px}.fc-summary-metrics span{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;font-weight:900;color:#5f7383}.fc-summary-metrics strong{color:#103a66}.fc-topic-pair-chart{display:grid;gap:12px}.fc-topic-pair-row{display:grid;grid-template-columns:minmax(150px,220px) minmax(300px,1fr);gap:10px;align-items:center}.fc-topic-pair-label{display:grid;gap:2px}.fc-topic-pair-label span{font-size:.72rem;color:#5f7383}.fc-topic-pair-bars{display:grid;gap:5px}.fc-share-line{display:grid;grid-template-columns:58px minmax(0,1fr) 74px;gap:7px;align-items:center}.fc-share-line>b{font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:#5f7383}.fc-share-line>span{text-align:right;font-size:.72rem;font-weight:900;color:#103a66}.fc-share-line .fc-stack-track{height:22px}.fc-time-matrix{display:grid;gap:5px;min-width:720px}.fc-time-matrix-head{display:grid;gap:8px;min-width:720px;margin-bottom:6px}.fc-time-head{display:grid;gap:2px;color:#103a66}.fc-time-head span{font-size:.7rem;color:#5f7383}.fc-time-matrix-row{display:grid;gap:8px;align-items:stretch}.fc-time-label{font-weight:900;color:#103a66;padding-top:9px}.fc-time-cell{background:#f8fbfc;border:1px solid #e1ebef;border-radius:9px;padding:6px;display:grid;gap:4px}.fc-time-metric{display:grid;grid-template-columns:16px minmax(0,1fr) 64px;gap:5px;align-items:center}.fc-time-metric>b{font-size:.68rem;color:#5f7383}.fc-time-metric>div{height:7px;background:#e7eef2;border-radius:999px;overflow:hidden}.fc-time-metric>div>span{display:block;height:100%;border-radius:999px}.fc-time-metric>strong{text-align:right;font-size:.7rem;color:#29465b}.fc-time-metric.money>strong{color:#0d736d}.fc-time-cell>small{text-align:right;color:#5f7383;font-weight:800}.fc-heat-cell{display:table-cell}.fc-heat-cell strong{display:block;font-size:.86rem}.fc-heat-cell span{display:block;font-size:.68rem;font-weight:700;margin-top:2px;opacity:.85}.fc-heat-zero-money{color:#6f8290!important}.fc-heat-dark span{color:#fff}.fc-heat-dark strong{color:#fff}'''
+          if css_marker not in text:
+              raise SystemExit('CSS media marker not found')
+          text = text.replace(css_marker, css_add + css_marker, 1)
+
+          text = text.replace('@media(max-width:850px){.fc-layout', '@media(max-width:850px){.fc-topic-pair-row{grid-template-columns:1fr}.fc-layout', 1)
+
+          path.write_text(text, encoding='utf-8')
+
+          version = Path('version.json')
+          info = json.loads(version.read_text(encoding='utf-8'))
+          if info.get('appVersion') != '0.22.81':
+              raise SystemExit(f"Expected v0.22.81, found {info.get('appVersion')}")
+          info['appVersion'] = '0.22.82'
+          info['releasedAt'] = '2026-08-20'
+          version.write_text(json.dumps(info, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate comparison lab
+        shell: bash
+        run: |
+          node --check assets/js/ui-fundraiser-comparison.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          text = Path('assets/js/ui-fundraiser-comparison.js').read_text(encoding='utf-8')
+          version = json.loads(Path('version.json').read_text(encoding='utf-8'))
+          assert version['appVersion'] == '0.22.82'
+          assert 'Topic hours vs revenue' in text
+          assert 'Time-slot hours and revenue' in text
+          assert 'Cell number = scheduled hours. Cell color = attributable broadcast dollars.' in text
+          assert 'Total ${escapeHtml(money(analysis?.recordedTotal || 0))}' in text
+          assert 'Broadcast $ / hr' in text
+          assert 'dollarsPerHour' in text
+          PY
+
+      - name: Commit originals and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/admin-comparison-financial-context.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Add hours and revenue context to fundraiser comparisons"
+          git push origin HEAD:main
