@@ -23,7 +23,6 @@
     els.detailDeleteButton?.classList.toggle('hidden', !canEdit() || Boolean(state.detailCreateMode) || !state.selectedProgramId);
     els.addProgramButton?.classList.toggle('hidden', !canEdit());
     document.querySelectorAll('[data-admin-only="true"]').forEach((node) => node.classList.toggle('hidden', !canEdit()));
-    if (!canEdit() && state.activeWorkspace === 'comparison') App.workspaceUi?.setWorkspace?.('library');
     if (canEdit()) {
       els.roleChip.textContent = state.userEmail ? `Admin · ${state.userEmail}` : 'Admin';
       els.roleChip.classList.add('admin');
