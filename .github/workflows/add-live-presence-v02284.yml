@@ -1,0 +1,336 @@
+name: Add live presence admin indicator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/add-live-presence-v02284.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Add realtime presence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          shell_path = Path('app-shell.html')
+          shell = shell_path.read_text(encoding='utf-8')
+          css_marker = '  <link rel="stylesheet" href="assets/styles.css">\n'
+          css_block = '''  <link rel="stylesheet" href="assets/styles.css">
+  <style id="live-presence-styles">
+    .admin-role-presence{display:grid;justify-items:end;gap:3px;position:relative}
+    .live-presence-admin{position:relative;max-width:270px;font-size:.72rem;color:#536d7d}
+    .live-presence-admin summary{cursor:pointer;list-style:none;font-weight:800;color:#31566e;white-space:nowrap}
+    .live-presence-admin summary::-webkit-details-marker{display:none}
+    .live-presence-admin summary:hover{color:#0c3159}
+    .live-presence-detail{position:absolute;right:0;top:calc(100% + 5px);z-index:1200;min-width:230px;background:#fff;border:1px solid #cbdce4;border-radius:10px;padding:8px;box-shadow:0 8px 24px rgba(22,49,66,.16);text-align:left}
+    .live-presence-row{display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-bottom:1px solid #eef3f5}
+    .live-presence-row:last-of-type{border-bottom:0}
+    .live-presence-row strong{color:#103a66}
+    .live-presence-note{margin-top:5px;padding-top:5px;border-top:1px solid #e3ecef;color:#708591;font-size:.67rem;line-height:1.3}
+  </style>
+'''
+          if 'id="live-presence-styles"' not in shell:
+              if css_marker not in shell:
+                  raise SystemExit('app-shell stylesheet marker not found')
+              shell = shell.replace(css_marker, css_block, 1)
+
+          role_marker = '        <div class="role-chip" id="role-chip">Viewer</div>\n'
+          role_block = '''        <div class="admin-role-presence">
+          <div class="role-chip" id="role-chip">Viewer</div>
+          <details id="live-presence-admin" class="live-presence-admin hidden" data-admin-only="true">
+            <summary id="live-presence-summary">Active now: …</summary>
+            <div id="live-presence-detail" class="live-presence-detail">Connecting…</div>
+          </details>
+        </div>
+'''
+          if 'id="live-presence-admin"' not in shell:
+              if role_marker not in shell:
+                  raise SystemExit('role chip marker not found')
+              shell = shell.replace(role_marker, role_block, 1)
+          shell_path.write_text(shell, encoding='utf-8')
+
+          auth_path = Path('assets/js/auth.js')
+          auth = auth_path.read_text(encoding='utf-8')
+          vars_marker = '  const { els } = App.dom;\n\n'
+          vars_block = '''  const { els } = App.dom;
+
+  const PRESENCE_TOPIC = 'wnmu-pledge-active-v1';
+  const PRESENCE_VISITOR_KEY = 'wnmuPledgePresenceVisitorV1';
+  const PRESENCE_TAB_KEY = 'wnmuPledgePresenceTabV1';
+  let presenceChannel = null;
+  let presenceSubscribed = false;
+  let presenceTimer = 0;
+  let presenceListenersBound = false;
+  let presenceVisitorId = '';
+  let presenceTabId = '';
+
+'''
+          if 'PRESENCE_TOPIC' not in auth:
+              if vars_marker not in auth:
+                  raise SystemExit('auth variable marker not found')
+              auth = auth.replace(vars_marker, vars_block, 1)
+
+          helper_marker = '\n\n  function computeAdmin(session) {'
+          helpers = r'''
+
+  function randomPresenceId() {
+    try {
+      if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    } catch (_error) {
+      // fall through to a non-cryptographic per-browser id
+    }
+    return `presence-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function storedPresenceId(storage, key) {
+    try {
+      const existing = String(storage?.getItem?.(key) || '').trim();
+      if (existing) return existing;
+      const created = randomPresenceId();
+      storage?.setItem?.(key, created);
+      return created;
+    } catch (_error) {
+      return randomPresenceId();
+    }
+  }
+
+  function presenceWorkspaceLabel(workspaceId = '') {
+    return constants.WORKSPACES.find((workspace) => workspace.id === workspaceId)?.label || 'Program Library';
+  }
+
+  function presencePayload() {
+    return {
+      visitorId: presenceVisitorId,
+      tabId: presenceTabId,
+      workspace: state.activeWorkspace || 'library',
+      role: canEdit() ? 'admin' : (state.session ? 'signed-in' : 'viewer'),
+      visible: document.visibilityState !== 'hidden',
+      lastSeen: Date.now()
+    };
+  }
+
+  function presenceMetas() {
+    if (!presenceChannel?.presenceState) return [];
+    const snapshot = presenceChannel.presenceState() || {};
+    return Object.values(snapshot).flatMap((value) => Array.isArray(value) ? value : []);
+  }
+
+  function uniquePresenceVisitors() {
+    const byVisitor = new Map();
+    presenceMetas().forEach((meta) => {
+      const key = String(meta?.visitorId || meta?.tabId || meta?.presence_ref || '').trim();
+      if (!key) return;
+      const previous = byVisitor.get(key);
+      const previousSeen = Number(previous?.lastSeen || 0);
+      const currentSeen = Number(meta?.lastSeen || 0);
+      if (!previous || (meta?.visible && !previous?.visible) || currentSeen >= previousSeen) byVisitor.set(key, meta);
+    });
+    return [...byVisitor.values()];
+  }
+
+  function renderPresenceAdmin() {
+    const host = document.getElementById('live-presence-admin');
+    const summary = document.getElementById('live-presence-summary');
+    const detail = document.getElementById('live-presence-detail');
+    if (!host || !summary || !detail) return;
+
+    host.classList.toggle('hidden', !canEdit());
+    if (!canEdit()) return;
+
+    if (!presenceSubscribed) {
+      summary.textContent = 'Active now: connecting…';
+      detail.textContent = 'Connecting to live presence…';
+      return;
+    }
+
+    const visitors = uniquePresenceVisitors();
+    summary.textContent = `Active now: ${visitors.length}`;
+    const counts = new Map();
+    visitors.forEach((visitor) => {
+      const workspaceId = String(visitor?.workspace || 'library');
+      counts.set(workspaceId, (counts.get(workspaceId) || 0) + 1);
+    });
+
+    const rows = constants.WORKSPACES
+      .map((workspace) => ({ workspace, count: counts.get(workspace.id) || 0 }))
+      .filter((row) => row.count > 0)
+      .map((row) => `<div class="live-presence-row"><span>${utils.escapeHtml(row.workspace.label)}</span><strong>${row.count}</strong></div>`)
+      .join('');
+
+    detail.innerHTML = `${rows || '<div class="live-presence-row"><span>No active browsers</span><strong>0</strong></div>'}<div class="live-presence-note">Counts unique browsers, not open tabs. While the site is public, visitor identities are intentionally not broadcast through the live channel.</div>`;
+  }
+
+  async function refreshPresence() {
+    if (!presenceChannel || !presenceSubscribed) return false;
+    try {
+      await presenceChannel.track(presencePayload());
+      renderPresenceAdmin();
+      return true;
+    } catch (error) {
+      console.warn('Live presence update failed.', error);
+      return false;
+    }
+  }
+
+  function bindPresenceListeners() {
+    if (presenceListenersBound) return;
+    presenceListenersBound = true;
+    document.addEventListener('visibilitychange', () => { void refreshPresence(); });
+    window.addEventListener('focus', () => { void refreshPresence(); });
+    window.addEventListener('pagehide', () => {
+      try { presenceChannel?.untrack?.(); } catch (_error) { /* connection close will clear presence */ }
+    });
+    window.clearInterval(presenceTimer);
+    presenceTimer = window.setInterval(() => { void refreshPresence(); }, 60000);
+  }
+
+  function initPresence() {
+    if (!state.client?.channel) return;
+    if (presenceChannel) {
+      void refreshPresence();
+      return;
+    }
+
+    presenceVisitorId = storedPresenceId(window.localStorage, PRESENCE_VISITOR_KEY);
+    presenceTabId = storedPresenceId(window.sessionStorage, PRESENCE_TAB_KEY);
+    presenceChannel = state.client
+      .channel(PRESENCE_TOPIC, { config: { presence: { key: presenceTabId } } })
+      .on('presence', { event: 'sync' }, renderPresenceAdmin)
+      .on('presence', { event: 'join' }, renderPresenceAdmin)
+      .on('presence', { event: 'leave' }, renderPresenceAdmin)
+      .subscribe((status) => {
+        presenceSubscribed = status === 'SUBSCRIBED';
+        if (presenceSubscribed) void refreshPresence();
+        else renderPresenceAdmin();
+      });
+    bindPresenceListeners();
+    renderPresenceAdmin();
+  }
+
+  function updatePresenceWorkspace() {
+    void refreshPresence();
+  }
+'''
+          if 'function initPresence()' not in auth:
+              if helper_marker not in auth:
+                  raise SystemExit('auth helper marker not found')
+              auth = auth.replace(helper_marker, helpers + helper_marker, 1)
+
+          setrole_marker = "      els.logoutButton.classList.add('hidden');\n    }\n  }\n"
+          setrole_replacement = "      els.logoutButton.classList.add('hidden');\n    }\n    renderPresenceAdmin();\n  }\n"
+          if '    renderPresenceAdmin();\n  }\n\n  function getAdminRedirectUrl()' not in auth:
+              if setrole_marker not in auth:
+                  raise SystemExit('setRoleUi end marker not found')
+              auth = auth.replace(setrole_marker, setrole_replacement, 1)
+
+          init_marker = '''      state.isAdmin = false;
+      setRoleUi();
+    }
+  }
+'''
+          init_replacement = '''      state.isAdmin = false;
+      setRoleUi();
+    }
+    initPresence();
+  }
+'''
+          if '    initPresence();\n  }\n\n  function bindAuthListener()' not in auth:
+              if init_marker not in auth:
+                  raise SystemExit('initAuthRole marker not found')
+              auth = auth.replace(init_marker, init_replacement, 1)
+
+          listener_marker = '''      state.isAdmin = admin.isAdmin;
+      setRoleUi();
+      if (els.detailModal'''
+          listener_replacement = '''      state.isAdmin = admin.isAdmin;
+      setRoleUi();
+      void refreshPresence();
+      if (els.detailModal'''
+          if listener_marker not in auth:
+              raise SystemExit('auth listener marker not found')
+          auth = auth.replace(listener_marker, listener_replacement, 1)
+
+          export_marker = '''    closeAuthShell,
+    initAuthRole,
+    bindAuthListener
+'''
+          export_replacement = '''    closeAuthShell,
+    initAuthRole,
+    bindAuthListener,
+    updatePresenceWorkspace,
+    refreshPresence
+'''
+          if '    updatePresenceWorkspace,\n    refreshPresence\n' not in auth:
+              if export_marker not in auth:
+                  raise SystemExit('auth export marker not found')
+              auth = auth.replace(export_marker, export_replacement, 1)
+          auth_path.write_text(auth, encoding='utf-8')
+
+          workspace_path = Path('assets/js/ui-workspace.js')
+          workspace = workspace_path.read_text(encoding='utf-8')
+          workspace_marker = '    state.activeWorkspace = workspace.id;\n\n    els.workspaceButtons.forEach((button) => {'
+          workspace_replacement = '    state.activeWorkspace = workspace.id;\n    App.auth?.updatePresenceWorkspace?.(workspace.id);\n\n    els.workspaceButtons.forEach((button) => {'
+          if 'App.auth?.updatePresenceWorkspace?.(workspace.id);' not in workspace:
+              if workspace_marker not in workspace:
+                  raise SystemExit('workspace presence marker not found')
+              workspace = workspace.replace(workspace_marker, workspace_replacement, 1)
+          workspace_path.write_text(workspace, encoding='utf-8')
+
+          version_path = Path('version.json')
+          version = json.loads(version_path.read_text(encoding='utf-8'))
+          version['appVersion'] = '0.22.84'
+          version['releasedAt'] = '2026-08-20'
+          version_path.write_text(json.dumps(version, separators=(',', ':')) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate
+        shell: bash
+        run: |
+          node --check assets/js/auth.js
+          node --check assets/js/ui-workspace.js
+          node --check assets/js/ui-fundraiser-comparison.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          assert json.loads(Path('version.json').read_text())['appVersion'] == '0.22.84'
+          shell = Path('app-shell.html').read_text()
+          auth = Path('assets/js/auth.js').read_text()
+          workspace = Path('assets/js/ui-workspace.js').read_text()
+          comparison = Path('assets/js/ui-fundraiser-comparison.js').read_text()
+          assert 'id="live-presence-admin"' in shell
+          assert 'Active now:' in shell
+          assert 'PRESENCE_TOPIC' in auth
+          assert "channel(PRESENCE_TOPIC" in auth
+          assert 'uniquePresenceVisitors' in auth
+          assert 'updatePresenceWorkspace' in workspace
+          assert 'comparisonChannelPolicy' in comparison
+          assert 'renderTopicDrilldown' in comparison
+          assert "const result = row.known ? money(row.dollars) : 'Result pending';" in comparison
+          assert '<span>$/hour</span>' not in comparison
+          PY
+
+      - name: Commit source changes and remove workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/add-live-presence-v02284.yml
+          git config user.name "Tod"
+          git config user.email "tpoirier@nmu.edu"
+          git add app-shell.html assets/js/auth.js assets/js/ui-workspace.js version.json .github/workflows/add-live-presence-v02284.yml
+          git commit -m "Add live module presence indicator"
+          git push origin main
