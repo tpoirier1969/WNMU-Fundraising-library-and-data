@@ -18,6 +18,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
       - name: Apply comparison changes
         shell: bash
         run: |
@@ -25,8 +26,10 @@ jobs:
           from pathlib import Path
           import json, re
 
-          comparison = Path('assets/js/ui-fundraiser-comparison.js')
-          text = comparison.read_text(encoding='utf-8')
+          p = Path('assets/js/ui-fundraiser-comparison.js')
+          s = p.read_text(encoding='utf-8')
+
+          s = s.replace("    baselineId: '',\n", "    baselineId: '',\n    selectedTopic: '',\n", 1)
 
           old = '''  function comparableChannels(base, current) {
     const includeOnline = Boolean(base.onlineTracked && current.onlineTracked);
@@ -56,8 +59,8 @@ jobs:
 
   function excludedChannelLines(analysis = {}, policy = {}) {
     const lines = [];
-    if (!policy.includeOnline && analysis.onlineTracked) lines.push(`Additional Online monies: ${money(analysis.onlineDollars)} (not included)`);
-    if (!policy.includeMail && analysis.mailTracked) lines.push(`Additional Mail monies: ${money(analysis.mailDollars)} (not included)`);
+    if (!policy.includeOnline && analysis.onlineTracked) lines.push(`Additional Online monies ${money(analysis.onlineDollars)} · not included`);
+    if (!policy.includeMail && analysis.mailTracked) lines.push(`Additional Mail monies ${money(analysis.mailDollars)} · not included`);
     return lines;
   }
 
@@ -69,12 +72,11 @@ jobs:
     return `Additional monies attributed to ${excluded.join(' and ')} are shown as small line items where available. Those channels were not tracked evenly across the selected fundraisers and are not included in the comparison totals.`;
   }
 '''
-          if old not in text:
-            raise SystemExit('comparableChannels block not found')
-          text = text.replace(old, new, 1)
+          if old not in s: raise SystemExit('old comparableChannels not found')
+          s = s.replace(old, new, 1)
 
-          pattern = r"  function comparisonFindingGrid\(base, current\) \{.*?(?=\n  function topicDetailRows\()"
-          repl = r'''  function comparisonFindingGrid(base, current, policy) {
+          pat = r"  function comparisonFindingGrid\(base, current\) \{.*?(?=\n  function topicDetailRows\()"
+          rep = r'''  function comparisonFindingGrid(base, current, policy) {
     const difference = comparableTotalForPolicy(current, policy) - comparableTotalForPolicy(base, policy);
     const similarity = comparisonSimilarity(base, current);
     const topic = biggestDifference(base, current, 'topics');
@@ -92,19 +94,63 @@ jobs:
     return `<section class="fc-panel"><div class="fc-panel-head"><div><h3>${escapeHtml(current.schedule.title)} vs baseline</h3><span>${escapeHtml(base.schedule.title)}</span></div></div><div class="fc-finding-grid"><div class="fc-finding"><span>Comparable income</span><strong>${escapeHtml(signedMoney(difference))}</strong><small>${escapeHtml(channels)}</small></div><div class="fc-finding"><span>Fundraising hours</span><strong>${escapeHtml(signedPercent(hourChange))}</strong><small>${escapeHtml(hoursLabel(base.scheduledMinutes))} → ${escapeHtml(hoursLabel(current.scheduledMinutes))}</small></div><div class="fc-finding"><span>Broadcast $</span><strong>${escapeHtml(signedPercent(broadcastChange))}</strong><small>${escapeHtml(money(base.broadcastDollars))} → ${escapeHtml(money(current.broadcastDollars))}</small></div><div class="fc-finding"><span>Broadcast $/hour</span><strong>${escapeHtml(signedPercent(rateChange))}</strong><small>${escapeHtml(money(baseRate))} → ${escapeHtml(money(currentRate))}</small></div><div class="fc-finding"><span>Schedule similarity</span><strong>${Number.isFinite(similarity) ? `${Math.round(similarity * 100)}%` : '—'}</strong><small>topic + start-time allocation</small></div><div class="fc-finding"><span>Biggest topic gain</span><strong>${escapeHtml(topicGain)}</strong></div><div class="fc-finding"><span>Biggest topic loss</span><strong>${escapeHtml(topicLoss)}</strong></div><div class="fc-finding"><span>Largest time-slot swing</span><strong>${timeSwing ? `${escapeHtml(timeSwing.key)} ${escapeHtml(signedMoney(timeSwing.difference))}` : '—'}</strong></div></div></section>`;
   }
 '''
-          text, count = re.subn(pattern, repl.rstrip() + '\n', text, count=1, flags=re.S)
-          if count != 1: raise SystemExit(f'finding grid replace {count}')
+          s, n = re.subn(pat, rep.rstrip() + '\n', s, count=1, flags=re.S)
+          if n != 1: raise SystemExit(f'finding replacement {n}')
 
-          # Calendar: money and hours only. No $/hour at either day or program level.
-          text = text.replace("const result = row.known ? `${money(row.dollars)} · ${money(dollarsPerHour(row.dollars, row.minutes))}/hr` : 'Result pending';", "const result = row.known ? money(row.dollars) : 'Result pending';", 1)
-          old_day = '''<div class="fc-calendar-day-metrics"><div><span>Broadcast $</span><strong>${escapeHtml(money(day.dollars))}</strong></div><div><span>Hours</span><strong>${escapeHtml(hoursLabel(day.minutes))}</strong></div><div><span>$/hour</span><strong>${escapeHtml(money(dollarsPerHour(day.dollars, day.minutes)))}</strong></div></div>'''
-          new_day = '''<div class="fc-calendar-day-metrics"><div><span>Broadcast $</span><strong>${escapeHtml(money(day.dollars))}</strong></div><div><span>Hours</span><strong>${escapeHtml(hoursLabel(day.minutes))}</strong></div></div>'''
-          if old_day not in text: raise SystemExit('calendar day metrics block not found')
-          text = text.replace(old_day, new_day, 1)
+          # Clickable topic labels in heatmap, difference chart, and topic diagnostics.
+          s = s.replace("<tr><th>${escapeHtml(row.key)}</th>${row.values.map((value) => {", "<tr><th><button type=\"button\" class=\"fc-topic-drill-button\" data-topic-drill=\"${escapeHtml(row.key)}\">${escapeHtml(row.key)}</button></th>${row.values.map((value) => {", 1)
+          s = s.replace("      return `<div class=\"fc-delta-row\"><div class=\"fc-delta-label\">${escapeHtml(row.key)}</div><div class=\"fc-delta-track\">", "      const label = field === 'topics' ? `<button type=\"button\" class=\"fc-delta-label fc-topic-drill-button\" data-topic-drill=\"${escapeHtml(row.key)}\">${escapeHtml(row.key)}</button>` : `<div class=\"fc-delta-label\">${escapeHtml(row.key)}</div>`;\n      return `<div class=\"fc-delta-row\">${label}<div class=\"fc-delta-track\">", 1)
+          s = s.replace("<article class=\"fc-topic-diagnostic\"><header><strong>${escapeHtml(row.key)}</strong><span", "<article class=\"fc-topic-diagnostic\"><header><button type=\"button\" class=\"fc-topic-drill-button\" data-topic-drill=\"${escapeHtml(row.key)}\">${escapeHtml(row.key)}</button><span", 1)
 
-          # Picker and comparison summary use one selected-set channel policy.
-          picker_pattern = r"  function renderPicker\(\) \{.*?(?=\n  function renderComparison\()"
-          picker = r'''  function renderPicker() {
+          drill = r'''
+  function renderTopicDrilldown(analyses = [], topic = '') {
+    const wanted = text(topic);
+    if (!wanted) return '';
+    const sets = analyses.map((analysis) => ({
+      analysis,
+      rows: (analysis.placementRows || []).filter((row) => row.topic === wanted)
+    }));
+    const meaningfulSecondary = new Set(sets.flatMap((set) => set.rows.map((row) => text(row.secondary)).filter((value) => value && value !== 'Unspecified')));
+    const useSecondary = meaningfulSecondary.size > 0;
+    const keyFor = useSecondary
+      ? (row) => (text(row.secondary) && text(row.secondary) !== 'Unspecified' ? text(row.secondary) : 'Unspecified')
+      : (row) => text(row.title) || 'Untitled program';
+    const maps = sets.map((set) => aggregatePlacementRows(set.rows, keyFor));
+    const keys = new Set(maps.flatMap((map) => [...map.keys()]));
+    const rows = [...keys].map((key) => ({ key, values: maps.map((map) => map.get(key) || { minutes: 0, dollars: 0, scheduled: 0 }) }))
+      .sort((a, b) => b.values.reduce((sum, value) => sum + Number(value.dollars || 0), 0) - a.values.reduce((sum, value) => sum + Number(value.dollars || 0), 0));
+    const maxDollars = Math.max(1, ...rows.flatMap((row) => row.values.map((value) => Number(value.dollars || 0))));
+    const head = analyses.map((analysis) => `<th>${escapeHtml(analysis.schedule.title)}<span>${escapeHtml(String(analysis.schedule.year || ''))}</span></th>`).join('');
+    const body = rows.map((row) => `<tr><th>${escapeHtml(row.key)}</th>${row.values.map((value) => {
+      const dollars = Number(value.dollars || 0);
+      const minutes = Number(value.minutes || 0);
+      const intensity = Math.max(0, Math.min(1, dollars / maxDollars));
+      const alpha = dollars > 0 ? (0.10 + intensity * 0.58).toFixed(2) : '0.02';
+      return `<td style="background:rgba(29,95,150,${alpha})"><strong>${escapeHtml(hoursLabel(minutes))}</strong><span>${escapeHtml(money(dollars))}</span><small>${escapeHtml(money(dollarsPerHour(dollars, minutes)))}/hr</small></td>`;
+    }).join('')}</tr>`).join('');
+    const mode = useSecondary ? 'Secondary-topic breakdown' : 'Program-title breakdown';
+    const note = useSecondary
+      ? 'Secondary topics are shown only when you ask for them by clicking a primary topic.'
+      : 'No useful secondary-topic tags were found for this topic, so the drill-down falls back to program titles.';
+    return `<section class="fc-panel fc-topic-drill"><div class="fc-panel-head"><div><h3>${escapeHtml(wanted)} drill-down</h3><span>${escapeHtml(mode)} · ${escapeHtml(note)}</span></div><button type="button" class="ghost fc-topic-drill-close" id="fc-topic-drill-close">Close</button></div>${rows.length ? `<div class="fc-table-wrap"><table class="fc-topic-drill-table"><thead><tr><th>${escapeHtml(useSecondary ? 'Secondary topic' : 'Program')}</th>${head}</tr></thead><tbody>${body}</tbody></table></div>` : '<div class="fc-chart-empty">No scheduled programs in this topic for the selected fundraisers.</div>'}</section>`;
+  }
+'''
+          anchor = '\n  function calendarDays(analysis = {}) {'
+          if anchor not in s: raise SystemExit('calendarDays anchor not found')
+          s = s.replace(anchor, drill + anchor, 1)
+
+          # Calendar: dollars and hours only, no $/hour noise.
+          old_result = "const result = row.known ? `${money(row.dollars)} · ${money(dollarsPerHour(row.dollars, row.minutes))}/hr` : 'Result pending';"
+          if old_result not in s: raise SystemExit('calendar program result not found')
+          s = s.replace(old_result, "const result = row.known ? money(row.dollars) : 'Result pending';", 1)
+          old_day = '<div class="fc-calendar-day-metrics"><div><span>Broadcast $</span><strong>${escapeHtml(money(day.dollars))}</strong></div><div><span>Hours</span><strong>${escapeHtml(hoursLabel(day.minutes))}</strong></div><div><span>$/hour</span><strong>${escapeHtml(money(dollarsPerHour(day.dollars, day.minutes)))}</strong></div></div>'
+          new_day = '<div class="fc-calendar-day-metrics"><div><span>Broadcast $</span><strong>${escapeHtml(money(day.dollars))}</strong></div><div><span>Hours</span><strong>${escapeHtml(hoursLabel(day.minutes))}</strong></div></div>'
+          if old_day not in s: raise SystemExit('calendar day metrics not found')
+          s = s.replace(old_day, new_day, 1)
+
+          # Replace picker with selected-set comparable total policy and topic drill handlers.
+          pat = r"  function renderPicker\(\) \{.*?(?=\n  function renderComparison\()"
+          rep = r'''  function renderPicker() {
     const host = root();
     if (!host) return;
 
@@ -123,7 +169,6 @@ jobs:
 
     const baseline = state.baselineId ? analyses.find((analysis) => analysis.schedule.id === state.baselineId) || null : null;
     const baselineOptions = analyses.map((analysis) => `<option value="${escapeHtml(analysis.schedule.id)}" ${state.baselineId === analysis.schedule.id ? 'selected' : ''}>${escapeHtml(analysis.schedule.title)} · ${escapeHtml(String(analysis.schedule.year || ''))}</option>`).join('');
-
     const comparison = analyses.length < 2
       ? '<div class="fc-empty"><strong>Select at least two fundraisers.</strong><span>Then choose which selected fundraiser should be the baseline.</span></div>'
       : !baseline
@@ -136,6 +181,7 @@ jobs:
       state.season = event.target.value || 'all';
       state.selectedIds.clear();
       state.baselineId = '';
+      state.selectedTopic = '';
       renderPicker();
     });
     host.querySelector('#fc-baseline')?.addEventListener('change', (event) => {
@@ -145,6 +191,7 @@ jobs:
     host.querySelector('#fc-clear')?.addEventListener('click', () => {
       state.selectedIds.clear();
       state.baselineId = '';
+      state.selectedTopic = '';
       renderPicker();
     });
     host.querySelector('#fc-reload')?.addEventListener('click', () => {
@@ -159,79 +206,85 @@ jobs:
       }
       renderPicker();
     }));
+    host.querySelectorAll('[data-topic-drill]').forEach((button) => button.addEventListener('click', () => {
+      state.selectedTopic = button.dataset.topicDrill || '';
+      renderPicker();
+      document.querySelector('.fc-topic-drill')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }));
+    host.querySelector('#fc-topic-drill-close')?.addEventListener('click', () => {
+      state.selectedTopic = '';
+      renderPicker();
+    });
 
     if (baseline) void ensureWeatherForAnalyses(analyses);
   }
 '''
-          text, count = re.subn(picker_pattern, picker.rstrip() + '\n', text, count=1, flags=re.S)
-          if count != 1: raise SystemExit(f'picker replace {count}')
+          s, n = re.subn(pat, rep.rstrip() + '\n', s, count=1, flags=re.S)
+          if n != 1: raise SystemExit(f'picker replacement {n}')
 
-          comparison_pattern = r"  function renderComparison\(analyses, baseline\) \{.*?(?=\n  function styles\()"
-          comparison_repl = r'''  function renderComparison(analyses, baseline) {
+          pat = r"  function renderComparison\(analyses, baseline\) \{.*?(?=\n  function styles\()"
+          rep = r'''  function renderComparison(analyses, baseline) {
     const ordered = [baseline, ...analyses.filter((analysis) => analysis.schedule.id !== baseline.schedule.id)];
     const comparisons = ordered.slice(1);
     const policy = comparisonChannelPolicy(ordered);
     const cards = ordered.map((analysis) => {
       const comparableTotal = comparableTotalForPolicy(analysis, policy);
-      const extras = excludedChannelLines(analysis, policy);
-      const onlineLine = policy.includeOnline ? `Online ${money(analysis.onlineDollars)}` : (analysis.onlineTracked ? `Online ${money(analysis.onlineDollars)} additional, not included` : 'Online not tracked');
-      const mailLine = policy.includeMail ? `Mail ${money(analysis.mailDollars)}` : (analysis.mailTracked ? `Mail ${money(analysis.mailDollars)} additional, not included` : 'Mail not tracked');
-      return `<article class="fc-summary-card ${analysis.schedule.id === baseline.schedule.id ? 'baseline' : ''}"><div class="fc-card-kicker">${analysis.schedule.id === baseline.schedule.id ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class="fc-total">${money(comparableTotal)}</div><div class="fc-total-label">Comparable total $</div><div class="fc-summary-metrics"><span><b>${escapeHtml(hoursLabel(analysis.scheduledMinutes))}</b> fundraising</span><span><b>${escapeHtml(money(analysis.broadcastDollars))}</b> Broadcast $</span><span><b>${escapeHtml(money(dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes)))}</b> Broadcast $/hr</span></div><div class="fc-mini"><span>${escapeHtml(onlineLine)}</span><span>${escapeHtml(mailLine)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div>${extras.length ? `<div class="fc-excluded-note">${extras.map((line) => `<span>${escapeHtml(line)}</span>`).join('')}</div>` : ''}</article>`;
+      const onlineLine = policy.includeOnline ? `Online ${money(analysis.onlineDollars)}` : (analysis.onlineTracked ? `Additional Online monies ${money(analysis.onlineDollars)} · not included` : 'Online not tracked');
+      const mailLine = policy.includeMail ? `Mail ${money(analysis.mailDollars)}` : (analysis.mailTracked ? `Additional Mail monies ${money(analysis.mailDollars)} · not included` : 'Mail not tracked');
+      return `<article class="fc-summary-card ${analysis.schedule.id === baseline.schedule.id ? 'baseline' : ''}"><div class="fc-card-kicker">${analysis.schedule.id === baseline.schedule.id ? 'Baseline' : 'Compared fundraiser'}</div><h3>${escapeHtml(analysis.schedule.title)}</h3><div class="fc-total">${money(comparableTotal)}</div><div class="fc-total-label">Comparable total $</div><div class="fc-summary-metrics"><span><b>${escapeHtml(hoursLabel(analysis.scheduledMinutes))}</b> fundraising</span><span><b>${escapeHtml(money(analysis.broadcastDollars))}</b> Broadcast $</span><span><b>${escapeHtml(money(dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes)))}</b> Broadcast $/hr</span></div><div class="fc-mini"><span>${escapeHtml(onlineLine)}</span><span>${escapeHtml(mailLine)}</span><span>${number(analysis.completed)} of ${number(analysis.scheduled)} program results</span></div></article>`;
     }).join('');
     const findings = comparisons.map((analysis) => comparisonFindingGrid(baseline, analysis, policy)).join('');
     const diagnostics = comparisons.map((analysis) => renderTopicDiagnostics(baseline, analysis)).join('');
     const calendars = comparisons.map((analysis) => renderCalendarComparison(baseline, analysis)).join('');
     const deltas = comparisons.map((analysis) => `<section class="fc-difference-pair"><div class="fc-difference-title"><strong>${escapeHtml(analysis.schedule.title)}</strong><span>minus baseline ${escapeHtml(baseline.schedule.title)}</span></div><div class="fc-difference-grid">${renderDifferenceChart(baseline, analysis, 'topics', 'Topic income difference')}${renderDifferenceChart(baseline, analysis, 'times', 'Time-slot income difference')}</div></section>`).join('');
 
-    return `<div class="fc-comparable-note"><strong>Comparison basis: ${escapeHtml(channelBasisLabel(policy))}</strong><span>${escapeHtml(comparisonChannelNote(ordered, policy))}</span></div><div class="fc-summary-grid">${cards}</div>${renderTopicScheduleMix(ordered)}${renderTimeScheduleMix(ordered)}${renderTopicHeatmap(ordered)}<section class="fc-section-label"><strong>Key comparison findings</strong><span>Broadcast $/hour separates sheer fundraising volume from performance of the hours themselves.</span></section>${findings}<section class="fc-section-label"><strong>Topic diagnostics</strong><span>Hours alone do not explain topic performance. These rows expose daypart and secondary-topic mix.</span></section>${diagnostics}<section class="fc-section-label"><strong>Calendar comparison</strong><span>Weekday, weather, daily Broadcast $, topics, dayparts, and individual program results together.</span></section>${calendars}<section class="fc-section-label"><strong>Revenue difference vs baseline</strong><span>Rows include revenue delta plus baseline → compared hours and $/hour.</span></section>${deltas}<div class="fc-note-grid"><div class="fc-note-card"><strong>Channel rule</strong><span>${escapeHtml(comparisonChannelNote(ordered, policy))}</span></div><div class="fc-note-card"><strong>Weather rule</strong><span>Weather is regional context only. The lab does not claim weather caused a fundraising result.</span></div></div>`;
+    return `<div class="fc-comparable-note"><strong>Comparison basis: ${escapeHtml(channelBasisLabel(policy))}</strong><span>${escapeHtml(comparisonChannelNote(ordered, policy))}</span></div><div class="fc-summary-grid">${cards}</div>${renderTopicScheduleMix(ordered)}${renderTimeScheduleMix(ordered)}${renderTopicHeatmap(ordered)}${renderTopicDrilldown(ordered, state.selectedTopic)}<section class="fc-section-label"><strong>Key comparison findings</strong><span>Broadcast $/hour separates sheer fundraising volume from performance of the hours themselves.</span></section>${findings}<section class="fc-section-label"><strong>Topic diagnostics</strong><span>Click any topic name for its secondary-topic or program-title breakdown.</span></section>${diagnostics}<section class="fc-section-label"><strong>Calendar comparison</strong><span>Weekday, weather, daily Broadcast $, topics, dayparts, and individual program results together.</span></section>${calendars}<section class="fc-section-label"><strong>Revenue difference vs baseline</strong><span>Rows include revenue delta plus baseline → compared hours and $/hour.</span></section>${deltas}<div class="fc-note-grid"><div class="fc-note-card"><strong>Channel rule</strong><span>${escapeHtml(comparisonChannelNote(ordered, policy))}</span></div><div class="fc-note-card"><strong>Weather rule</strong><span>Weather is regional context only. The lab does not claim weather caused a fundraising result.</span></div></div>`;
   }
 '''
-          text, count = re.subn(comparison_pattern, comparison_repl.rstrip() + '\n', text, count=1, flags=re.S)
-          if count != 1: raise SystemExit(f'comparison replace {count}')
+          s, n = re.subn(pat, rep.rstrip() + '\n', s, count=1, flags=re.S)
+          if n != 1: raise SystemExit(f'comparison replacement {n}')
 
-          # Public access: remove local auth gate.
-          old_gate = '''    if (!App.auth?.canEdit?.()) {
+          gate = '''    if (!App.auth?.canEdit?.()) {
       host.innerHTML = '<div class="notice-strip warn">Fundraiser Comparison is an Admin-only development workspace.</div>';
       return false;
     }
 '''
-          if old_gate not in text: raise SystemExit('comparison auth gate not found')
-          text = text.replace(old_gate, '', 1)
+          if gate not in s: raise SystemExit('admin gate not found')
+          s = s.replace(gate, '', 1)
 
-          # Styles for selected-set channel explanation and two-column calendar day summary.
+          # Styles
           anchor = '.fc-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:9px}'
-          extra = '.fc-comparable-note{background:#eef7fb;border:1px solid #cfe2ea;border-radius:14px;padding:10px 12px;display:grid;gap:3px}.fc-comparable-note strong{color:#103a66}.fc-comparable-note span{color:#5f7383;font-size:.8rem;line-height:1.35}.fc-drive-extras{display:grid!important;gap:1px!important;margin-top:2px}.fc-drive-extras small{font-size:.69rem;color:#7a6740}.fc-excluded-note{display:grid;gap:2px;margin-top:7px;padding-top:7px;border-top:1px dashed #d7c9a6;color:#7a6740;font-size:.72rem}'
-          if anchor not in text: raise SystemExit('style anchor not found')
-          text = text.replace(anchor, extra + anchor, 1)
-          text = text.replace('.fc-calendar-day-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}', '.fc-calendar-day-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}', 1)
-
-          comparison.write_text(text, encoding='utf-8')
+          extra = '.fc-comparable-note{background:#eef7fb;border:1px solid #cfe2ea;border-radius:14px;padding:10px 12px;display:grid;gap:3px}.fc-comparable-note strong{color:#103a66}.fc-comparable-note span{color:#5f7383;font-size:.8rem;line-height:1.35}.fc-drive-extras{display:grid!important;gap:1px!important;margin-top:2px}.fc-drive-extras small{font-size:.69rem;color:#7a6740}.fc-topic-drill-button{border:0;background:transparent;padding:0;color:#103a66;font:inherit;font-weight:900;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}.fc-topic-drill-button:hover{color:#12867f}.fc-topic-drill-table{width:100%;border-collapse:collapse;font-size:.8rem}.fc-topic-drill-table th,.fc-topic-drill-table td{padding:8px;border-bottom:1px solid #e2ecef;text-align:left;vertical-align:middle}.fc-topic-drill-table thead th{background:#eef7fb;color:#103a66}.fc-topic-drill-table th span{display:block;font-size:.7rem;color:#5f7383}.fc-topic-drill-table td{text-align:center;min-width:120px}.fc-topic-drill-table td strong,.fc-topic-drill-table td span,.fc-topic-drill-table td small{display:block}.fc-topic-drill-table td span{font-weight:900;color:#103a66}.fc-topic-drill-table td small{color:#5f7383}.fc-topic-drill-close{align-self:start}'
+          if anchor not in s: raise SystemExit('style anchor not found')
+          s = s.replace(anchor, extra + anchor, 1)
+          s = s.replace('.fc-calendar-day-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}', '.fc-calendar-day-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}', 1)
+          p.write_text(s, encoding='utf-8')
 
           shell = Path('app-shell.html')
-          html = shell.read_text(encoding='utf-8')
+          h = shell.read_text(encoding='utf-8')
           old_button = '<button type="button" class="workspace-tab hidden" data-admin-only="true" data-workspace-button="comparison" aria-pressed="false">Fundraiser Comparison Lab</button>'
           new_button = '<button type="button" class="workspace-tab" data-workspace-button="comparison" aria-pressed="false">Fundraiser Comparison Lab</button>'
-          if old_button not in html: raise SystemExit('admin-only comparison tab not found')
-          shell.write_text(html.replace(old_button, new_button, 1), encoding='utf-8')
+          if old_button not in h: raise SystemExit('comparison tab not found')
+          shell.write_text(h.replace(old_button, new_button, 1), encoding='utf-8')
 
           core = Path('assets/js/core.js')
-          core_text = core.read_text(encoding='utf-8')
+          c = core.read_text(encoding='utf-8')
           old_ws = "      { id: 'comparison', label: 'Fundraiser Comparison Lab', live: false, adminOnly: true }"
           new_ws = "      { id: 'comparison', label: 'Fundraiser Comparison Lab', live: true }"
-          if old_ws not in core_text: raise SystemExit('comparison workspace registry not found')
-          core.write_text(core_text.replace(old_ws, new_ws, 1), encoding='utf-8')
+          if old_ws not in c: raise SystemExit('comparison registry not found')
+          core.write_text(c.replace(old_ws, new_ws, 1), encoding='utf-8')
 
           auth = Path('assets/js/auth.js')
-          auth_text = auth.read_text(encoding='utf-8')
-          old_redirect = "    if (!canEdit() && state.activeWorkspace === 'comparison') App.workspaceUi?.setWorkspace?.('library');\n"
-          if old_redirect not in auth_text: raise SystemExit('comparison auth redirect not found')
-          auth.write_text(auth_text.replace(old_redirect, '', 1), encoding='utf-8')
+          a = auth.read_text(encoding='utf-8')
+          redirect = "    if (!canEdit() && state.activeWorkspace === 'comparison') App.workspaceUi?.setWorkspace?.('library');\n"
+          if redirect not in a: raise SystemExit('comparison auth redirect not found')
+          auth.write_text(a.replace(redirect, '', 1), encoding='utf-8')
 
           version = Path('version.json')
-          payload = json.loads(version.read_text(encoding='utf-8'))
-          payload['appVersion'] = '0.22.83'
-          payload['releasedAt'] = '2026-08-20'
-          version.write_text(json.dumps(payload, separators=(',', ':')) + '\n', encoding='utf-8')
+          v = json.loads(version.read_text(encoding='utf-8'))
+          v['appVersion'] = '0.22.83'
+          v['releasedAt'] = '2026-08-20'
+          version.write_text(json.dumps(v, separators=(',', ':')) + '\n', encoding='utf-8')
           PY
 
           node --check assets/js/ui-fundraiser-comparison.js
@@ -239,7 +292,9 @@ jobs:
           node --check assets/js/auth.js
           git diff --check
           grep -q '"appVersion":"0.22.83"' version.json
-          grep -q 'Comparison basis:' assets/js/ui-fundraiser-comparison.js
+          grep -q 'comparisonChannelPolicy' assets/js/ui-fundraiser-comparison.js
+          grep -q 'renderTopicDrilldown' assets/js/ui-fundraiser-comparison.js
+          grep -q 'data-topic-drill' assets/js/ui-fundraiser-comparison.js
           grep -q 'Additional monies attributed to' assets/js/ui-fundraiser-comparison.js
           ! grep -q 'Admin-only development workspace' assets/js/ui-fundraiser-comparison.js
           ! grep -q "activeWorkspace === 'comparison'" assets/js/auth.js
@@ -251,5 +306,5 @@ jobs:
           git add assets/js/ui-fundraiser-comparison.js assets/js/core.js assets/js/auth.js app-shell.html version.json .github/workflows/admin-comparison-public-channel-fix.yml
           git config user.name 'Tod'
           git config user.email 'tpoirier@nmu.edu'
-          git commit -m 'Publish fundraiser comparison and normalize totals'
+          git commit -m 'Publish comparison lab and add topic drilldowns'
           git push origin main
