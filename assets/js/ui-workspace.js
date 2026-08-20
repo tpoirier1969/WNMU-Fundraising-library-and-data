@@ -219,6 +219,7 @@
       return;
     }
     state.activeWorkspace = workspace.id;
+    App.auth?.updatePresenceWorkspace?.(workspace.id);
 
     els.workspaceButtons.forEach((button) => {
       const active = button.dataset.workspaceButton === workspace.id;
