@@ -986,6 +986,15 @@
     return ageDays >= -16 && ageDays <= 92 ? [forecast, archive] : [archive, forecast];
   }
 
+  function weatherDateIsFetchable(dateKey = '', now = new Date()) {
+    const date = parseDate(dateKey);
+    const current = now instanceof Date ? now : new Date(now);
+    if (!date || Number.isNaN(current.getTime())) return true;
+    const maxForecast = new Date(current.getFullYear(), current.getMonth(), current.getDate());
+    maxForecast.setDate(maxForecast.getDate() + 16);
+    return localDateSerial(date) <= localDateSerial(maxForecast);
+  }
+
   async function fetchStationWeather(location, startDate, endDate) {
     let lastError = null;
     for (const endpoint of weatherEndpointOrder(endDate)) {
@@ -1013,10 +1022,11 @@
   }
 
   async function fetchWeatherForAnalysis(analysis = {}) {
-    const dates = (analysis.placementRows || []).map((row) => text(row.dateKey)).filter(Boolean).sort();
-    if (!dates.length) return;
-    const startDate = dates[0];
-    const endDate = dates[dates.length - 1];
+    const dates = [...new Set((analysis.placementRows || []).map((row) => text(row.dateKey)).filter(Boolean))].sort();
+    const fetchableDates = dates.filter((dateKey) => weatherDateIsFetchable(dateKey));
+    if (!fetchableDates.length) return;
+    const startDate = fetchableDates[0];
+    const endDate = fetchableDates[fetchableDates.length - 1];
     const settled = await Promise.allSettled(WEATHER_LOCATIONS.map((location) => fetchStationWeather(location, startDate, endDate)));
     const successes = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
     if (!successes.length) throw new Error('Regional weather could not be loaded from Open-Meteo.');
@@ -1064,8 +1074,7 @@
     try {
       const settled = await Promise.allSettled(pending.map((analysis) => fetchWeatherForAnalysis(analysis)));
       const failed = settled.filter((item) => item.status === 'rejected');
-      if (failed.length === settled.length) state.weatherError = failed[0]?.reason?.message || 'Weather unavailable.';
-      else if (failed.length) state.weatherError = 'Some fundraiser weather could not be loaded.';
+      if (failed.length === settled.length && settled.length) state.weatherError = failed[0]?.reason?.message || 'Weather unavailable.';
     } finally {
       state.weatherLoading = false;
       renderPicker();
@@ -1075,6 +1084,7 @@
   function weatherMarkup(dateKey = '') {
     const weather = state.weatherByDate.get(text(dateKey));
     if (!weather) {
+      if (!weatherDateIsFetchable(dateKey)) return '<span class="fc-weather-line muted">Weather not available yet</span>';
       if (state.weatherLoading) return '<span class="fc-weather-line loading">Loading U.P. weather…</span>';
       if (state.weatherError) return `<span class="fc-weather-line error">${escapeHtml(state.weatherError)}</span>`;
       return '<span class="fc-weather-line muted">Weather unavailable</span>';
@@ -1172,7 +1182,7 @@
   }
 
   function renderDailyContextCard(day = null, analysis = {}) {
-    if (!day) return '<article class="fc-day-context-card missing"><strong>No fundraising scheduled</strong><span>No corresponding fundraiser day is present in this saved schedule.</span></article>';
+    if (!day) return '<article class="fc-day-context-card missing"><strong>No pledge programming this day</strong><span>This fundraiser has no pledge programming on the corresponding fundraiser day.</span></article>';
     const programming = dailyProgrammingSummary(day);
     const totalMinutes = Number(analysis.scheduledMinutes || 0);
     const totalDollars = Number(analysis.attributableDollars || 0);
@@ -1181,14 +1191,19 @@
     return `<article class="fc-day-context-card"><header><div><strong>${escapeHtml(analysis.schedule.title)}</strong><span>${escapeHtml(day.dateLabel)}</span></div>${weatherMarkup(day.dateKey)}</header><div class="fc-day-context-metrics"><div><b>${escapeHtml(hoursLabel(day.minutes))}</b><span>fundraising</span></div><div><b>${escapeHtml(money(day.dollars))}</b><span>Broadcast</span></div><div><b>${escapeHtml(money(dollarsPerHour(day.dollars, day.minutes)))}</b><span>$/hr</span></div></div><div class="fc-day-context-share"><b>${Math.round(hourShare)}% hrs → ${Math.round(revenueShare)}% $</b><span>share of this fundraiser's attributable Broadcast results</span></div><div class="fc-day-context-programming"><strong>${escapeHtml(programming.topics || 'No topic detail')}</strong><span>${escapeHtml(programming.dayparts || 'No daypart detail')}</span><small>${escapeHtml(programming.titles || 'No program detail')}</small></div></article>`;
   }
 
+  function dailyContextAnalyses(analyses = []) {
+    return (analyses || []).filter((analysis) => calendarDays(analysis).length > 0);
+  }
+
   function renderDailyContext(analyses = []) {
-    if (!analyses.length) return '';
-    const rows = alignedDailyContextRows(analyses).map((row) => {
+    const comparableAnalyses = dailyContextAnalyses(analyses);
+    if (comparableAnalyses.length < 2) return '';
+    const rows = alignedDailyContextRows(comparableAnalyses).map((row) => {
       const label = fundraiserDayLabel(row.offset);
-      const cards = row.days.map((day, index) => renderDailyContextCard(day, analyses[index])).join('');
-      return `<div class="fc-day-match-row"><div class="fc-day-match-label"><strong>${escapeHtml(label.title)}</strong><span>${escapeHtml(label.detail)}</span></div><div class="fc-day-match-grid" style="grid-template-columns:repeat(${analyses.length},minmax(260px,1fr))">${cards}</div></div>`;
+      const cards = row.days.map((day, index) => renderDailyContextCard(day, comparableAnalyses[index])).join('');
+      return `<div class="fc-day-match-row"><div class="fc-day-match-label"><strong>${escapeHtml(label.title)}</strong><span>${escapeHtml(label.detail)}</span></div><div class="fc-day-match-grid" style="grid-template-columns:repeat(${comparableAnalyses.length},minmax(260px,1fr))">${cards}</div></div>`;
     }).join('');
-    return `<section class="fc-panel fc-day-context"><div class="fc-panel-head"><div><h3>Weather, income and programming by corresponding fundraiser day</h3><span>Days are aligned to the first Saturday of each fundraiser: first Saturday with first Saturday, first Sunday with first Sunday, and so on. A Friday immediately before the first Saturday is Day -1.</span></div></div>${rows || '<div class="fc-chart-empty">No scheduled fundraiser days.</div>'}<div class="fc-weather-source">WNMU dayparts: Morning 7:00–11:30 AM · Afternoon 12:00–4:30 PM · Early evening 5:00–7:30 PM · Prime 8:00–10:00 PM · Overnight 10:30 PM–6:30 AM. Historical weather: Open-Meteo five-location U.P. composite.</div></section>`;
+    return `<section class="fc-panel fc-day-context"><div class="fc-panel-head"><div><h3>Weather, income and programming by corresponding fundraiser day</h3><span>Days are aligned to the first Saturday of each fundraiser: first Saturday with first Saturday, first Sunday with first Sunday, and so on. A Friday immediately before the first Saturday is Day -1. Selected fundraisers with no scheduled pledge programming are omitted until there is a day to compare.</span></div></div>${rows}<div class="fc-weather-source">WNMU dayparts: Morning 7:00–11:30 AM · Afternoon 12:00–4:30 PM · Early evening 5:00–7:30 PM · Prime 8:00–10:00 PM · Overnight 10:30 PM–6:30 AM. Weather source: Open-Meteo five-location U.P. composite.</div></section>`;
   }
 
   function renderCalendarDay(day = null) {
@@ -1291,7 +1306,8 @@
       renderPicker();
     });
 
-    if (analyses.length >= 2) void ensureWeatherForAnalyses(analyses);
+    const weatherAnalyses = dailyContextAnalyses(analyses);
+    if (weatherAnalyses.length >= 2) void ensureWeatherForAnalyses(weatherAnalyses);
   }
 
   function renderComparison(analyses) {

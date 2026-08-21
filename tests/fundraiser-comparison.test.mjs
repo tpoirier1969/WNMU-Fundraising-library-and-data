@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-fundraiser-comparison.js', import.me
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.fundraiserComparisonUi = { ensureReady };';
 assert.ok(source.includes(exportMarker), 'comparison test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable };`);
 
 const context = {
   window: {
@@ -138,4 +138,22 @@ test('corresponding fundraiser days align to the first Saturday and preserve Fri
   assert.equal(hooks.fundraiserDayLabel(0).title, '1st Saturday');
   assert.equal(hooks.fundraiserDayLabel(1).title, '1st Sunday');
   assert.equal(hooks.fundraiserDayLabel(7).title, '2nd Saturday');
+});
+
+
+test('daily context omits selected fundraisers with no scheduled pledge programming', () => {
+  const empty = { schedule: { startDate: '2027-08-07' }, placementRows: [] };
+  const one = { schedule: { startDate: '2026-08-08' }, placementRows: [{ dateKey: '2026-08-08', startMinutes: 420, title: 'A', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: true, dollars: 100, pledges: 1 }] };
+  const two = { schedule: { startDate: '2025-08-09' }, placementRows: [{ dateKey: '2025-08-09', startMinutes: 420, title: 'B', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: true, dollars: 100, pledges: 1 }] };
+  const filtered = hooks.dailyContextAnalyses([empty, one, two]);
+  assert.equal(filtered.length, 2);
+  assert.equal(filtered[0], one);
+  assert.equal(filtered[1], two);
+});
+
+test('weather fetchability treats far-future fundraiser dates as not available yet', () => {
+  const now = new Date(2026, 7, 21);
+  assert.equal(hooks.weatherDateIsFetchable('2026-08-30', now), true);
+  assert.equal(hooks.weatherDateIsFetchable('2027-03-13', now), false);
+  assert.equal(hooks.weatherDateIsFetchable('2025-08-09', now), true);
 });
