@@ -1,0 +1,137 @@
+name: Topic change explanation v0.22.87
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'topic-explanation-coverage-v02287'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Add explanation coverage accounting
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          path = Path('assets/js/ui-fundraiser-comparison.js')
+          src = path.read_text()
+
+          marker = '''  function renderTopicDiagnostics(base, current) {\n'''
+          if src.count(marker) != 1:
+              raise SystemExit(f'renderTopicDiagnostics marker count {src.count(marker)}')
+
+          helpers = r'''  function topicRevenueDecomposition(base, current, baselineRow = {}, currentRow = {}) {
+    const baseLength = Number(base?.scheduledMinutes || 0) / 60;
+    const currentLength = Number(current?.scheduledMinutes || 0) / 60;
+    const baseTopicHours = Number(baselineRow?.minutes || 0) / 60;
+    const currentTopicHours = Number(currentRow?.minutes || 0) / 60;
+    const baseShare = baseLength > 0 ? baseTopicHours / baseLength : 0;
+    const currentShare = currentLength > 0 ? currentTopicHours / currentLength : 0;
+    const baseRate = baseTopicHours > 0 ? Number(baselineRow?.dollars || 0) / baseTopicHours : 0;
+    const currentRate = currentTopicHours > 0 ? Number(currentRow?.dollars || 0) / currentTopicHours : 0;
+    const start = { length: baseLength, share: baseShare, rate: baseRate };
+    const end = { length: currentLength, share: currentShare, rate: currentRate };
+    const permutations = [
+      ['length', 'share', 'rate'], ['length', 'rate', 'share'],
+      ['share', 'length', 'rate'], ['share', 'rate', 'length'],
+      ['rate', 'length', 'share'], ['rate', 'share', 'length']
+    ];
+    const effects = { length: 0, share: 0, rate: 0 };
+    const value = (parts) => Number(parts.length || 0) * Number(parts.share || 0) * Number(parts.rate || 0);
+    permutations.forEach((order) => {
+      const parts = { ...start };
+      let before = value(parts);
+      order.forEach((key) => {
+        parts[key] = end[key];
+        const after = value(parts);
+        effects[key] += after - before;
+        before = after;
+      });
+    });
+    Object.keys(effects).forEach((key) => { effects[key] /= permutations.length; });
+    const difference = Number(currentRow?.dollars || 0) - Number(baselineRow?.dollars || 0);
+    const reconciled = effects.length + effects.share + effects.rate;
+    return { difference, ...effects, residual: difference - reconciled };
+  }
+
+  function explanationCoverageRead(decomposition = {}, proposedFactor = 'share') {
+    const difference = Number(decomposition.difference || 0);
+    const proposed = Number(decomposition[proposedFactor] || 0);
+    const remaining = difference - proposed;
+    const tolerance = Math.max(25, Math.abs(difference) * 0.08);
+    if (Math.abs(difference) < 1) return 'There is no meaningful revenue change to explain.';
+    if (Math.abs(remaining) <= tolerance) return `This reason explains nearly the full ${signedMoney(difference)} revenue change.`;
+    if (Math.sign(proposed) === Math.sign(difference) && Math.abs(proposed) > Math.abs(difference) + tolerance) {
+      return `This reason more than explains the net ${signedMoney(difference)} change; other effects offset it by about ${money(Math.abs(remaining))}.`;
+    }
+    if (Math.sign(proposed) === Math.sign(difference) && Math.abs(proposed) > tolerance) {
+      return `This reason explains about ${signedMoney(proposed)} of the ${signedMoney(difference)} change; about ${money(Math.abs(remaining))} remains in other effects.`;
+    }
+    if (Math.abs(proposed) <= tolerance) return `This reason does not materially explain the ${signedMoney(difference)} revenue change.`;
+    return `This reason moved against the net ${signedMoney(difference)} change, offsetting it by about ${money(Math.abs(proposed))}.`;
+  }
+
+'''
+          src = src.replace(marker, helpers + marker, 1)
+
+          old = r'''      let read = 'Fundraiser length and topic allocation both need inspection.';
+      if (Math.abs(shareDelta) < 1.5) read = 'Topic share stayed about the same; fundraiser length explains much of the hours difference.';
+      else if (shareDelta >= 1.5) read = 'This topic took a larger share of the fundraiser, so the schedule mix shifted toward it.';
+      else if (shareDelta <= -1.5) read = 'This topic took a smaller share of the fundraiser, so the schedule mix shifted away from it.';
+      return `<article class="fc-topic-diagnostic"><header><button type="button" class="fc-topic-drill-button" data-topic-drill="${escapeHtml(row.key)}">${escapeHtml(row.key)}</button><span class="${row.difference > 0 ? 'positive' : row.difference < 0 ? 'negative' : ''}">${escapeHtml(signedMoney(row.difference))}</span></header><div class="fc-topic-why"><strong>${escapeHtml(read)}</strong><div class="fc-topic-context"><span>Fundraiser ${escapeHtml(hoursLabel(base.scheduledMinutes))} → ${escapeHtml(hoursLabel(current.scheduledMinutes))} · ${escapeHtml(signedHoursDelta(driveDeltaMinutes))}</span><span>Topic ${escapeHtml(hoursLabel(row.baseline.minutes))} → ${escapeHtml(hoursLabel(row.current.minutes))} · ${escapeHtml(signedHoursDelta(topicDeltaMinutes))}${escapeHtml(topicScaleRead)}</span><span>Schedule share ${Math.round(baseShare)}% → ${Math.round(currentShare)}% · ${shareDelta > 0 ? '+' : ''}${shareDelta.toFixed(1)} pts</span></div></div><div class="fc-topic-core"><div><span>A</span><b>${escapeHtml(hoursLabel(row.baseline.minutes))} · ${escapeHtml(money(row.baseline.dollars))}</b><small>${escapeHtml(money(dollarsPerHour(row.baseline.dollars, row.baseline.minutes)))}/hr</small></div><i>→</i><div><span>B</span><b>${escapeHtml(hoursLabel(row.current.minutes))} · ${escapeHtml(money(row.current.dollars))}</b><small>${escapeHtml(money(dollarsPerHour(row.current.dollars, row.current.minutes)))}/hr</small></div></div><div class="fc-topic-detail"><b>Daypart mix</b><div>${dayparts || '<span class="muted-cell">No daypart detail</span>'}</div></div><div class="fc-topic-detail"><b>${useSecondary ? 'Subtopic mix' : 'Program mix'}</b><div>${mix || '<span class="muted-cell">No useful mix detail</span>'}</div></div></article>`;
+'''
+          new = r'''      let read = 'Fundraiser length and topic allocation both need inspection.';
+      let proposedFactor = 'share';
+      if (Math.abs(shareDelta) < 1.5) {
+        read = 'Topic share stayed about the same; fundraiser length explains much of the hours difference.';
+        proposedFactor = 'length';
+      } else if (shareDelta >= 1.5) read = 'This topic took a larger share of the fundraiser, so the schedule mix shifted toward it.';
+      else if (shareDelta <= -1.5) read = 'This topic took a smaller share of the fundraiser, so the schedule mix shifted away from it.';
+      const decomposition = topicRevenueDecomposition(base, current, row.baseline, row.current);
+      const coverageRead = explanationCoverageRead(decomposition, proposedFactor);
+      const residualRead = Math.abs(Number(decomposition.residual || 0)) >= 1
+        ? `<span>Unassigned/data residual ${escapeHtml(signedMoney(decomposition.residual))}</span>`
+        : '<span>Effects reconcile to the full revenue change</span>';
+      return `<article class="fc-topic-diagnostic"><header><button type="button" class="fc-topic-drill-button" data-topic-drill="${escapeHtml(row.key)}">${escapeHtml(row.key)}</button><span class="${row.difference > 0 ? 'positive' : row.difference < 0 ? 'negative' : ''}">${escapeHtml(signedMoney(row.difference))}</span></header><div class="fc-topic-why"><strong>${escapeHtml(read)}</strong><div class="fc-topic-context"><span>Fundraiser ${escapeHtml(hoursLabel(base.scheduledMinutes))} → ${escapeHtml(hoursLabel(current.scheduledMinutes))} · ${escapeHtml(signedHoursDelta(driveDeltaMinutes))}</span><span>Topic ${escapeHtml(hoursLabel(row.baseline.minutes))} → ${escapeHtml(hoursLabel(row.current.minutes))} · ${escapeHtml(signedHoursDelta(topicDeltaMinutes))}${escapeHtml(topicScaleRead)}</span><span>Schedule share ${Math.round(baseShare)}% → ${Math.round(currentShare)}% · ${shareDelta > 0 ? '+' : ''}${shareDelta.toFixed(1)} pts</span></div></div><div class="fc-explanation-check"><strong>Does that explain the full revenue change?</strong><p>${escapeHtml(coverageRead)}</p><div><span>Fundraiser length effect <b>${escapeHtml(signedMoney(decomposition.length))}</b></span><span>Topic share effect <b>${escapeHtml(signedMoney(decomposition.share))}</b></span><span>Topic $/hour effect <b>${escapeHtml(signedMoney(decomposition.rate))}</b></span>${residualRead}</div><small>These are an accounting decomposition of the revenue change, not proof that any factor caused the result. Daypart and program/subtopic mix below help interpret the $/hour effect.</small></div><div class="fc-topic-core"><div><span>A</span><b>${escapeHtml(hoursLabel(row.baseline.minutes))} · ${escapeHtml(money(row.baseline.dollars))}</b><small>${escapeHtml(money(dollarsPerHour(row.baseline.dollars, row.baseline.minutes)))}/hr</small></div><i>→</i><div><span>B</span><b>${escapeHtml(hoursLabel(row.current.minutes))} · ${escapeHtml(money(row.current.dollars))}</b><small>${escapeHtml(money(dollarsPerHour(row.current.dollars, row.current.minutes)))}/hr</small></div></div><div class="fc-topic-detail"><b>Daypart mix</b><div>${dayparts || '<span class="muted-cell">No daypart detail</span>'}</div></div><div class="fc-topic-detail"><b>${useSecondary ? 'Subtopic mix' : 'Program mix'}</b><div>${mix || '<span class="muted-cell">No useful mix detail</span>'}</div></div></article>`;
+'''
+          if src.count(old) != 1:
+              raise SystemExit(f'diagnostic block match count {src.count(old)}')
+          src = src.replace(old, new, 1)
+
+          css_old = '.fc-topic-context span{font-size:.67rem;color:#536d7d;background:#fff;border:1px solid #dbe7eb;border-radius:999px;padding:2px 6px}.fc-ab-controls{background:#f6fafc}'
+          css_new = '.fc-topic-context span{font-size:.67rem;color:#536d7d;background:#fff;border:1px solid #dbe7eb;border-radius:999px;padding:2px 6px}.fc-explanation-check{display:grid;gap:5px;border:1px solid #cfe2ea;background:#f7fbfd;border-radius:10px;padding:8px}.fc-explanation-check>strong{color:#103a66;font-size:.76rem}.fc-explanation-check p{margin:0;color:#29465b;font-size:.75rem;font-weight:800}.fc-explanation-check>div{display:flex;gap:5px;flex-wrap:wrap}.fc-explanation-check>div span{font-size:.67rem;color:#536d7d;background:#fff;border:1px solid #dbe7eb;border-radius:999px;padding:3px 6px}.fc-explanation-check>div b{color:#103a66}.fc-explanation-check small{color:#6d8291;font-size:.66rem;line-height:1.3}.fc-ab-controls{background:#f6fafc}'
+          if src.count(css_old) != 1:
+              raise SystemExit(f'css marker match count {src.count(css_old)}')
+          src = src.replace(css_old, css_new, 1)
+          path.write_text(src)
+
+          version = Path('version.json')
+          data = json.loads(version.read_text())
+          data['appVersion'] = '0.22.87'
+          data['releasedAt'] = '2026-08-21'
+          version.write_text(json.dumps(data, separators=(',', ':')))
+          PY
+          node --check assets/js/ui-fundraiser-comparison.js
+          git diff --check
+          grep -q "Does that explain the full revenue change?" assets/js/ui-fundraiser-comparison.js
+          grep -q "topicRevenueDecomposition" assets/js/ui-fundraiser-comparison.js
+          grep -q '"appVersion":"0.22.87"' version.json
+          rm -f .github/workflows/topic-change-explanation-v02287.yml
+          git config user.name "Tod"
+          git config user.email "tpoirier@nmu.edu"
+          git add -A
+          git commit -m "Explain how much of topic revenue changes are accounted for"
+          git push origin HEAD:${{ github.head_ref }}
