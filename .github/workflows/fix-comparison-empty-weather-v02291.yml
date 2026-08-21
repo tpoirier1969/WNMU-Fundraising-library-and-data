@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.head_ref == 'fix-comparison-empty-weather-v02291'
+    if: github.head_ref == 'fix-comparison-empty-weather-v02291b'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
