@@ -1062,6 +1062,27 @@
     return finalLines.map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('');
   }
 
+  function historicalPerformanceFingerprint(program = {}, driveResults = [], exactAirings = []) {
+    const resolvedAirings = resolvedExactAiringRows(exactAirings, driveResults);
+    const airingCount = resolvedAirings.length;
+    const exactTotal = resolvedAirings.reduce((sum, row) => sum + (Number(row.__resolved_contribution_amount || 0) || 0), 0);
+    const driveTotal = (driveResults || []).reduce((sum, row) => sum + contributionAmount(row), 0);
+    const storedTotal = Number(derive.totalRaised(program) || 0) || 0;
+    const total = storedTotal > 0 ? storedTotal : (driveTotal > 0 ? driveTotal : exactTotal);
+    const fundraiserKeys = new Set([...(driveResults || []), ...(exactAirings || [])].map((row) => historyGroupKey(row)).filter(Boolean));
+    const fundraiserCount = fundraiserKeys.size;
+    const storedAvg = Number(derive.avgPerFundraiser(program) || 0) || 0;
+    const avgFundraiser = storedAvg > 0 ? storedAvg : (fundraiserCount > 0 ? total / fundraiserCount : 0);
+    const avgAiring = airingCount > 0 ? exactTotal / airingCount : 0;
+    const bits = [];
+    if (fundraiserCount) bits.push(`${utils.formatCount(fundraiserCount)} pledge period${fundraiserCount === 1 ? '' : 's'}`);
+    if (airingCount) bits.push(`${utils.formatCount(airingCount)} exact airing${airingCount === 1 ? '' : 's'}`);
+    if (total > 0) bits.push(`${utils.formatMoney(total)} total`);
+    if (avgAiring > 0) bits.push(`${utils.formatMoney(avgAiring)}/airing`);
+    if (avgFundraiser > 0) bits.push(`${utils.formatMoney(avgFundraiser)}/fundraiser`);
+    return bits.length ? bits.join(' · ') : 'No completed pledge history yet.';
+  }
+
   function renderOverview(program, driveResults = [], exactAirings = []) {
     const topicValue = [derive.topicPrimary(program), derive.topicSecondary(program)].filter(Boolean).join(' / ') || '—';
     const lastAired = exactAirings.length
@@ -1078,6 +1099,7 @@
       labelValue('Rights begin', utils.escapeHtml(utils.formatDate(derive.rightsBegin(program)))),
       labelValue('Rights end', utils.escapeHtml(utils.formatDate(derive.rightsEnd(program)))),
       labelValue('Last aired', utils.escapeHtml(lastAired || 'N/A')),
+      labelValue('Historical fingerprint', utils.escapeHtml(historicalPerformanceFingerprint(program, driveResults, exactAirings)), 'overview-wide overview-spotlight'),
       labelValue('Status', utils.escapeHtml(derive.isActive(program) ? 'Active' : 'Archived by rights-end date')),
       labelValue('Total contributions', utils.escapeHtml(utils.formatMoney(derive.totalRaised(program)))),
       labelValue('Average per fundraiser', utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(program)))),
