@@ -62,20 +62,19 @@ test('whole-drive hours and performance effects reconcile to Broadcast change', 
 });
 
 test('channel comparison excludes Online or Mail unless every selected fundraiser tracked it', () => {
-  assert.deepEqual(
-    hooks.comparisonChannelPolicy([
-      { onlineTracked: true, mailTracked: true },
-      { onlineTracked: true, mailTracked: false }
-    ]),
-    { includeOnline: true, includeMail: false }
-  );
-  assert.deepEqual(
-    hooks.comparisonChannelPolicy([
-      { onlineTracked: true, mailTracked: true },
-      { onlineTracked: false, mailTracked: true }
-    ]),
-    { includeOnline: false, includeMail: true }
-  );
+  const onlineOnly = hooks.comparisonChannelPolicy([
+    { onlineTracked: true, mailTracked: true },
+    { onlineTracked: true, mailTracked: false }
+  ]);
+  assert.equal(onlineOnly.includeOnline, true);
+  assert.equal(onlineOnly.includeMail, false);
+
+  const mailOnly = hooks.comparisonChannelPolicy([
+    { onlineTracked: true, mailTracked: true },
+    { onlineTracked: false, mailTracked: true }
+  ]);
+  assert.equal(mailOnly.includeOnline, false);
+  assert.equal(mailOnly.includeMail, true);
 });
 
 test('comparable total follows the selected-set channel policy', () => {
