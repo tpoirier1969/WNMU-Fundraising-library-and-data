@@ -1,20 +1,20 @@
 name: Align fundraiser comparison days
 
 on:
-  push:
+  pull_request:
     branches: [main]
-    paths:
-      - .github/workflows/align-fundraiser-days-v02290.yml
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.head_ref == 'align-fundraiser-days-v02290'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -22,6 +22,10 @@ jobs:
       - name: Align corresponding fundraiser days
         shell: bash
         run: |
+          if [ ! -f .align-fundraiser-day-trigger ]; then
+            echo "Alignment patch already applied."
+            exit 0
+          fi
           python - <<'PY'
           from pathlib import Path
           import json
@@ -117,7 +121,6 @@ jobs:
           css_end = s.index('.fc-finding-grid{', css_start)
           css = '''.fc-day-context{display:grid;gap:10px}.fc-day-match-row{display:grid;grid-template-columns:115px minmax(0,1fr);gap:9px;align-items:start;border-top:1px solid #e5edef;padding-top:10px}.fc-day-match-row:first-of-type{border-top:0;padding-top:0}.fc-day-match-label{display:grid;gap:1px;position:sticky;left:0;background:#fff;padding:6px 4px;z-index:1}.fc-day-match-label strong{color:#103a66}.fc-day-match-label span{font-size:.68rem;color:#6d8291}.fc-day-match-grid{display:grid;gap:9px;overflow-x:auto;padding-bottom:2px}.fc-day-context-card{border:1px solid #dbe7eb;border-radius:12px;background:#fbfdfe;padding:9px;display:grid;gap:7px;min-width:0}.fc-day-context-card.missing{align-content:center;min-height:135px;color:#7d909d;background:#f7f9fa}.fc-day-context-card.missing strong{color:#647986}.fc-day-context-card.missing span{font-size:.7rem}.fc-day-context-card>header{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.fc-day-context-card>header>div{display:grid;gap:1px;min-width:0}.fc-day-context-card>header strong{color:#103a66;overflow-wrap:anywhere}.fc-day-context-card>header span{font-size:.68rem;color:#5f7383}.fc-day-context-card .fc-weather-line{max-width:55%;text-align:right;font-size:.64rem!important}.fc-day-context-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.fc-day-context-metrics>div{background:#eef7fb;border-radius:8px;padding:6px;display:grid;gap:1px}.fc-day-context-metrics b{color:#103a66;font-size:.84rem}.fc-day-context-metrics span{font-size:.62rem;text-transform:uppercase;font-weight:900;color:#6d8291}.fc-day-context-share{display:grid;gap:1px;background:#f4f8fa;border-radius:8px;padding:6px}.fc-day-context-share b{color:#103a66;font-size:.74rem}.fc-day-context-share span{font-size:.64rem;color:#657b89}.fc-day-context-programming{display:grid;gap:2px}.fc-day-context-programming strong{color:#103a66;font-size:.74rem}.fc-day-context-programming span,.fc-day-context-programming small{font-size:.65rem;color:#657b89;line-height:1.3}'''
           s = s[:css_start] + css + s[css_end:]
-
           path.write_text(s)
 
           test_path = Path('tests/fundraiser-comparison.test.mjs')
@@ -132,18 +135,7 @@ jobs:
 test('corresponding fundraiser days align to the first Saturday and preserve Friday as day -1', () => {
   const makeAnalysis = (startDate, dates) => ({
     schedule: { startDate },
-    placementRows: dates.map((dateKey) => ({
-      dateKey,
-      startMinutes: 420,
-      title: 'Test program',
-      topic: 'Test',
-      secondary: 'Unspecified',
-      daypart: 'Morning',
-      minutes: 60,
-      known: true,
-      dollars: 100,
-      pledges: 1
-    }))
+    placementRows: dates.map((dateKey) => ({ dateKey, startMinutes: 420, title: 'Test program', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: true, dollars: 100, pledges: 1 }))
   });
   const fridayStart = makeAnalysis('2026-08-07', ['2026-08-07', '2026-08-08', '2026-08-09', '2026-08-15']);
   const saturdayStart = makeAnalysis('2025-08-09', ['2025-08-09', '2025-08-10', '2025-08-16']);
@@ -174,9 +166,9 @@ test('corresponding fundraiser days align to the first Saturday and preserve Fri
           node --check assets/js/ui-fundraiser-comparison.js
           node --test tests/fundraiser-comparison.test.mjs
           git diff --check
-          git rm .github/workflows/align-fundraiser-days-v02290.yml
+          git rm .github/workflows/align-fundraiser-days-v02290.yml .align-fundraiser-day-trigger
           git add assets/js/ui-fundraiser-comparison.js tests/fundraiser-comparison.test.mjs version.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Align corresponding fundraiser comparison days"
-          git push origin main
+          git push origin HEAD:${{ github.head_ref }}
