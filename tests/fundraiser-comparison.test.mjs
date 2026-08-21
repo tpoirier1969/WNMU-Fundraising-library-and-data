@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-fundraiser-comparison.js', import.me
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.fundraiserComparisonUi = { ensureReady };';
 assert.ok(source.includes(exportMarker), 'comparison test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel };`);
 
 const context = {
   window: {
@@ -114,4 +114,28 @@ test('subtopic decomposition reconciles length, topic allocation, subtopic mix, 
   const subtopicCurrent = { minutes: 8 * 60, dollars: 2400 };
   const result = hooks.subtopicRevenueDecomposition(base, current, topicBase, topicCurrent, subtopicBase, subtopicCurrent);
   nearlyEqual(result.length + result.topicShare + result.subtopicShare + result.rate + result.residual, result.difference);
+});
+
+
+test('corresponding fundraiser days align to the first Saturday and preserve Friday as day -1', () => {
+  const makeAnalysis = (startDate, dates) => ({
+    schedule: { startDate },
+    placementRows: dates.map((dateKey) => ({ dateKey, startMinutes: 420, title: 'Test program', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: true, dollars: 100, pledges: 1 }))
+  });
+  const fridayStart = makeAnalysis('2026-08-07', ['2026-08-07', '2026-08-08', '2026-08-09', '2026-08-15']);
+  const saturdayStart = makeAnalysis('2025-08-09', ['2025-08-09', '2025-08-10', '2025-08-16']);
+  const rows = hooks.alignedDailyContextRows([fridayStart, saturdayStart]);
+  assert.deepEqual(Array.from(rows, (row) => row.offset), [-1, 0, 1, 7]);
+  assert.equal(rows.find((row) => row.offset === -1).days[0].dateKey, '2026-08-07');
+  assert.equal(rows.find((row) => row.offset === -1).days[1], null);
+  assert.equal(rows.find((row) => row.offset === 0).days[0].dateKey, '2026-08-08');
+  assert.equal(rows.find((row) => row.offset === 0).days[1].dateKey, '2025-08-09');
+  assert.equal(rows.find((row) => row.offset === 1).days[0].dateKey, '2026-08-09');
+  assert.equal(rows.find((row) => row.offset === 1).days[1].dateKey, '2025-08-10');
+  assert.equal(rows.find((row) => row.offset === 7).days[0].dateKey, '2026-08-15');
+  assert.equal(rows.find((row) => row.offset === 7).days[1].dateKey, '2025-08-16');
+  assert.equal(hooks.fundraiserDayLabel(-1).detail, 'Day -1 · pre-Saturday start');
+  assert.equal(hooks.fundraiserDayLabel(0).title, '1st Saturday');
+  assert.equal(hooks.fundraiserDayLabel(1).title, '1st Sunday');
+  assert.equal(hooks.fundraiserDayLabel(7).title, '2nd Saturday');
 });
