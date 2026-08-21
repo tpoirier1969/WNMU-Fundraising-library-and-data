@@ -24,12 +24,12 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import textwrap
           source = Path('.github/workflows/finetune-comparison-lab.yml').read_text()
           token = "          python - <<'PY'\n"
           start = source.index(token) + len(token)
           end = source.index("\n          PY\n", start)
-          code = textwrap.dedent(source[start:end])
+          lines = source[start:end].splitlines()
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
           exec(compile(code, 'comparison-finetune', 'exec'), {})
           PY
           node --check assets/js/ui-fundraiser-comparison.js
