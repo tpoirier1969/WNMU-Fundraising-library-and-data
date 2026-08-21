@@ -1,2 +1,2 @@
 apply comparison empty/weather cleanup
-retry
+retry 2
