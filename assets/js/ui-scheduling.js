@@ -3436,6 +3436,30 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return result;
   }
 
+  function scheduleFundraisingMinutesByDate(schedule = {}) {
+    const result = new Map(scheduleFundraiserDayKeys(schedule).map((dateKey) => [dateKey, 0]));
+    (schedule?.placements || []).forEach((placement) => {
+      if (!placement || placement.isNonPledge) return;
+      const dateKey = utils.normalizeText(placement.dateKey || '');
+      if (!dateKey) return;
+      const minutes = Number(placement.lengthMinutes || scheduledPlacementRuntimeMinutes(placement) || 0);
+      if (!(minutes > 0)) return;
+      result.set(dateKey, (result.get(dateKey) || 0) + minutes);
+    });
+    return result;
+  }
+
+  function scheduleTotalFundraisingMinutes(schedule = {}) {
+    return [...scheduleFundraisingMinutesByDate(schedule).values()].reduce((sum, minutes) => sum + Number(minutes || 0), 0);
+  }
+
+  function scheduleFundraisingHoursLabel(minutes = 0) {
+    const hours = Number(minutes || 0) / 60;
+    if (!(hours > 0)) return '0 hr';
+    const value = Math.abs(hours - Math.round(hours)) < 0.01 ? Math.round(hours) : Math.round(hours * 10) / 10;
+    return `${value} hr`;
+  }
+
   function scheduleStartBucketMoneyMap(schedule = {}, importedRows = []) {
     const result = new Map();
     const add = (minutesValue, dollarsValue) => {
@@ -3604,6 +3628,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       });
     }
     const dailyMoney = scheduleDailyMoneyMap(schedule, importedRows);
+    const dailyFundraisingMinutes = scheduleFundraisingMinutesByDate(schedule);
+    const totalFundraisingMinutes = scheduleTotalFundraisingMinutes(schedule);
     const startBucketMoney = scheduleStartBucketMoneyMap(schedule, importedRows);
     renderSameFundraiserComparison(schedule, importedRows, importedRowsReady);
     const windowConfig = getScheduleWindow(state.scheduleView);
@@ -3638,7 +3664,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleGrid.style.setProperty('--schedule-slot-height', `${slotHeight}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-font-size', `${timeFontPx}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-width', `${timeColumnWidth}px`);
-    els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin - constants.DEFAULT_SLOT_MINUTES)}`;
+    els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin - constants.DEFAULT_SLOT_MINUTES)} · ${scheduleFundraisingHoursLabel(totalFundraisingMinutes)} fundraising scheduled`;
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
     const header = ['<div class="schedule-corner sticky"></div>'];
@@ -3650,7 +3676,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       const moneyTitle = money.hasImportedResults
         ? `Imported broadcast ${utils.formatMoney(money.broadcast)} + prorated Online/Mail ${utils.formatMoney(money.onlineMail)}`
         : 'No imported results for this date yet';
-      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span><span class="schedule-day-total ${money.hasImportedResults ? 'reported' : 'unreported'}" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span></div>`);
+      const fundraisingHours = scheduleFundraisingHoursLabel(dailyFundraisingMinutes.get(dateKey) || 0);
+      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span><span class="schedule-day-total ${money.hasImportedResults ? 'reported' : 'unreported'}" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span><span class="schedule-day-hours" style="font-size:.68rem;color:#5f7383;font-weight:800;">${utils.escapeHtml(fundraisingHours)} fundraising</span></div>`);
       footer.push(`<div class="schedule-day-head schedule-day-foot ${weekendClass}"><span>${label}</span></div>`);
     });
 
