@@ -1,0 +1,38 @@
+name: Run fundraiser day alignment
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'align-fundraiser-days-v02290'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply alignment patch
+        shell: bash
+        run: |
+          if [ ! -f .github/patches/align-fundraiser-days.py ]; then
+            echo "Patch already applied."
+            exit 0
+          fi
+          python .github/patches/align-fundraiser-days.py
+          node --check assets/js/ui-fundraiser-comparison.js
+          node --test tests/fundraiser-comparison.test.mjs
+          git diff --check
+          git rm -f .github/patches/align-fundraiser-days.py .align-fundraiser-day-trigger || true
+          git add assets/js/ui-fundraiser-comparison.js tests/fundraiser-comparison.test.mjs version.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Align corresponding fundraiser comparison days"
+          git push origin HEAD:${{ github.head_ref }}
