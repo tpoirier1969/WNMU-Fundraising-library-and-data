@@ -1,0 +1,36 @@
+name: Temporary topic explanation PR runner
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'topic-explanation-coverage-v02287'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply topic explanation patch
+        run: |
+          python .github/topic-explanation-v02287.py
+          node --check assets/js/ui-fundraiser-comparison.js
+          git diff --check
+          grep -q "Does that explain the full revenue change?" assets/js/ui-fundraiser-comparison.js
+          grep -q "topicRevenueDecomposition" assets/js/ui-fundraiser-comparison.js
+          grep -q '"appVersion":"0.22.87"' version.json
+          rm -f .github/topic-explanation-v02287.py .github/workflows/topic-change-explanation-v02287.yml
+          git config user.name "Tod"
+          git config user.email "tpoirier@nmu.edu"
+          git add -A
+          git commit -m "Explain how much of topic revenue changes are accounted for"
+          git push origin HEAD:${{ github.head_ref }}
