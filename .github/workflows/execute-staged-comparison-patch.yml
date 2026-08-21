@@ -30,6 +30,8 @@ jobs:
           end = source.index("\n          PY\n", start)
           lines = source[start:end].splitlines()
           code = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          code = code.replace('"""      .fc-drive-extras', '""".fc-drive-extras')
+          code = code.replace('"""      .fc-finding-grid', '""".fc-finding-grid')
           exec(compile(code, 'comparison-finetune', 'exec'), {})
           PY
           node --check assets/js/ui-fundraiser-comparison.js
