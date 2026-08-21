@@ -1,169 +1,37 @@
-name: Subtopic explanation v0.22.88
+name: Temporary subtopic explanation runner
 
 on:
-  push:
+  pull_request:
     branches: [main]
-    paths:
-      - '.github/workflows/subtopic-explanation-v02288.yml'
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
 
 jobs:
   patch:
+    if: github.head_ref == 'subtopic-explanation-v02288'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Add subtopic explanation drill-down
+      - name: Apply subtopic explanation patch
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import json
-
-          path = Path('assets/js/ui-fundraiser-comparison.js')
-          src = path.read_text()
-
-          marker = "  function renderTopicDiagnostics(base, current) {\n"
-          if src.count(marker) != 1:
-              raise SystemExit(f'renderTopicDiagnostics marker count {src.count(marker)}')
-
-          helpers = r'''  function factorPermutations(keys = []) {
-    if (keys.length <= 1) return [keys];
-    return keys.flatMap((key, index) => {
-      const rest = [...keys.slice(0, index), ...keys.slice(index + 1)];
-      return factorPermutations(rest).map((order) => [key, ...order]);
-    });
-  }
-
-  function subtopicRevenueDecomposition(base, current, topicBase = {}, topicCurrent = {}, subtopicBase = {}, subtopicCurrent = {}) {
-    const baseLength = Number(base?.scheduledMinutes || 0) / 60;
-    const currentLength = Number(current?.scheduledMinutes || 0) / 60;
-    const baseTopicHours = Number(topicBase?.minutes || 0) / 60;
-    const currentTopicHours = Number(topicCurrent?.minutes || 0) / 60;
-    const baseSubtopicHours = Number(subtopicBase?.minutes || 0) / 60;
-    const currentSubtopicHours = Number(subtopicCurrent?.minutes || 0) / 60;
-    const start = {
-      length: baseLength,
-      topicShare: baseLength > 0 ? baseTopicHours / baseLength : 0,
-      subtopicShare: baseTopicHours > 0 ? baseSubtopicHours / baseTopicHours : 0,
-      rate: baseSubtopicHours > 0 ? Number(subtopicBase?.dollars || 0) / baseSubtopicHours : 0
-    };
-    const end = {
-      length: currentLength,
-      topicShare: currentLength > 0 ? currentTopicHours / currentLength : 0,
-      subtopicShare: currentTopicHours > 0 ? currentSubtopicHours / currentTopicHours : 0,
-      rate: currentSubtopicHours > 0 ? Number(subtopicCurrent?.dollars || 0) / currentSubtopicHours : 0
-    };
-    const keys = ['length', 'topicShare', 'subtopicShare', 'rate'];
-    const effects = { length: 0, topicShare: 0, subtopicShare: 0, rate: 0 };
-    const value = (parts) => Number(parts.length || 0) * Number(parts.topicShare || 0) * Number(parts.subtopicShare || 0) * Number(parts.rate || 0);
-    const orders = factorPermutations(keys);
-    orders.forEach((order) => {
-      const parts = { ...start };
-      let before = value(parts);
-      order.forEach((key) => {
-        parts[key] = end[key];
-        const after = value(parts);
-        effects[key] += after - before;
-        before = after;
-      });
-    });
-    keys.forEach((key) => { effects[key] /= orders.length; });
-    const difference = Number(subtopicCurrent?.dollars || 0) - Number(subtopicBase?.dollars || 0);
-    const reconciled = keys.reduce((sum, key) => sum + effects[key], 0);
-    return { difference, ...effects, residual: difference - reconciled };
-  }
-
-  function subtopicExplanationRead(decomposition = {}) {
-    const difference = Number(decomposition.difference || 0);
-    const factors = [
-      { key: 'length', label: 'fundraiser length', value: Number(decomposition.length || 0) },
-      { key: 'topicShare', label: 'topic allocation', value: Number(decomposition.topicShare || 0) },
-      { key: 'subtopicShare', label: 'subtopic mix', value: Number(decomposition.subtopicShare || 0) },
-      { key: 'rate', label: 'subtopic $/hour', value: Number(decomposition.rate || 0) }
-    ];
-    if (Math.abs(difference) < 1) return { label: 'no material change', read: 'There is no meaningful revenue change to explain.' };
-    const sameDirection = factors.filter((factor) => Math.sign(factor.value) === Math.sign(difference) && Math.abs(factor.value) >= 1);
-    const dominant = [...(sameDirection.length ? sameDirection : factors)].sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
-    return { label: dominant?.label || 'mixed effects', read: explanationCoverageRead(decomposition, dominant?.key || 'rate') };
-  }
-
-  function renderSubtopicDiagnostics(base, current, topic = '') {
-    if (!CERTIFIED_SUBTOPIC_TOPICS.has(lookupKey(topic))) return '';
-    const baseRows = topicDetailRows(base, topic);
-    const currentRows = topicDetailRows(current, topic);
-    const subtopicKey = (row) => (text(row.secondary) && text(row.secondary) !== 'Unspecified' ? text(row.secondary) : 'Unspecified');
-    const baseMap = aggregatePlacementRows(baseRows, subtopicKey);
-    const currentMap = aggregatePlacementRows(currentRows, subtopicKey);
-    const topicBase = base.topics.get(topic) || { minutes: 0, dollars: 0 };
-    const topicCurrent = current.topics.get(topic) || { minutes: 0, dollars: 0 };
-    const keys = new Set([...baseMap.keys(), ...currentMap.keys()]);
-    const rows = [...keys].map((key) => ({
-      key,
-      base: baseMap.get(key) || { minutes: 0, dollars: 0 },
-      current: currentMap.get(key) || { minutes: 0, dollars: 0 }
-    })).sort((a, b) => Math.abs(Number(b.current.dollars || 0) - Number(b.base.dollars || 0)) - Math.abs(Number(a.current.dollars || 0) - Number(a.base.dollars || 0)) || a.key.localeCompare(b.key));
-    if (!rows.length) return '';
-
-    const body = rows.map((row) => {
-      const decomposition = subtopicRevenueDecomposition(base, current, topicBase, topicCurrent, row.base, row.current);
-      const explanation = subtopicExplanationRead(decomposition);
-      const difference = Number(decomposition.difference || 0);
-      const baseMix = Number(topicBase.minutes || 0) > 0 ? (Number(row.base.minutes || 0) / Number(topicBase.minutes || 0)) * 100 : 0;
-      const currentMix = Number(topicCurrent.minutes || 0) > 0 ? (Number(row.current.minutes || 0) / Number(topicCurrent.minutes || 0)) * 100 : 0;
-      const mixDelta = currentMix - baseMix;
-      const residual = Math.abs(Number(decomposition.residual || 0)) >= 1
-        ? `<span>Residual <b>${escapeHtml(signedMoney(decomposition.residual))}</b></span>`
-        : '<span>Effects reconcile to the full change</span>';
-      return `<details class="fc-subtopic-diagnostic"><summary><span><strong>${escapeHtml(row.key)}</strong><small>${escapeHtml(hoursLabel(row.base.minutes))} / ${escapeHtml(money(row.base.dollars))} → ${escapeHtml(hoursLabel(row.current.minutes))} / ${escapeHtml(money(row.current.dollars))}</small></span><b class="${difference > 0 ? 'positive' : difference < 0 ? 'negative' : ''}">${escapeHtml(signedMoney(difference))}</b></summary><div class="fc-subtopic-explanation"><strong>Main accounting driver: ${escapeHtml(explanation.label)}</strong><p>${escapeHtml(explanation.read)}</p><div class="fc-subtopic-effect-grid"><span>Fundraiser length <b>${escapeHtml(signedMoney(decomposition.length))}</b></span><span>${escapeHtml(topic)} allocation <b>${escapeHtml(signedMoney(decomposition.topicShare))}</b></span><span>Subtopic mix <b>${escapeHtml(signedMoney(decomposition.subtopicShare))}</b></span><span>Subtopic $/hour <b>${escapeHtml(signedMoney(decomposition.rate))}</b></span>${residual}</div><small>Share within ${escapeHtml(topic)}: ${Math.round(baseMix)}% → ${Math.round(currentMix)}% · ${mixDelta > 0 ? '+' : ''}${mixDelta.toFixed(1)} pts. These effects account for the revenue change; they do not prove causation.</small></div></details>`;
-    }).join('');
-
-    return `<details class="fc-subtopic-group"><summary>Dial down into ${escapeHtml(topic)} subtopics</summary><div class="fc-subtopic-diagnostics">${body}</div></details>`;
-  }
-
-'''
-          src = src.replace(marker, helpers + marker, 1)
-
-          old = '''      const residualRead = Math.abs(Number(decomposition.residual || 0)) >= 1\n        ? `<span>Unassigned/data residual ${escapeHtml(signedMoney(decomposition.residual))}</span>`\n        : '<span>Effects reconcile to the full revenue change</span>';\n      return `<article class="fc-topic-diagnostic">'''
-          new = '''      const residualRead = Math.abs(Number(decomposition.residual || 0)) >= 1\n        ? `<span>Unassigned/data residual ${escapeHtml(signedMoney(decomposition.residual))}</span>`\n        : '<span>Effects reconcile to the full revenue change</span>';\n      const subtopicDiagnostics = useSecondary ? renderSubtopicDiagnostics(base, current, row.key) : '';\n      return `<article class="fc-topic-diagnostic">'''
-          if src.count(old) != 1:
-              raise SystemExit(f'subtopic diagnostic insertion count {src.count(old)}')
-          src = src.replace(old, new, 1)
-
-          old_tail = '''<div class="fc-topic-detail"><b>${useSecondary ? 'Subtopic mix' : 'Program mix'}</b><div>${mix || '<span class="muted-cell">No useful mix detail</span>'}</div></div></article>`;'''
-          new_tail = '''<div class="fc-topic-detail"><b>${useSecondary ? 'Subtopic mix' : 'Program mix'}</b><div>${mix || '<span class="muted-cell">No useful mix detail</span>'}</div></div>${subtopicDiagnostics}</article>`;'''
-          if src.count(old_tail) != 1:
-              raise SystemExit(f'topic diagnostic tail count {src.count(old_tail)}')
-          src = src.replace(old_tail, new_tail, 1)
-
-          css_old = '.fc-explanation-check small{color:#6d8291;font-size:.66rem;line-height:1.3}.fc-ab-controls{background:#f6fafc}'
-          css_new = '.fc-explanation-check small{color:#6d8291;font-size:.66rem;line-height:1.3}.fc-subtopic-group{border:1px solid #cfe2ea;border-radius:10px;background:#f8fbfc;padding:7px}.fc-subtopic-group>summary{cursor:pointer;color:#103a66;font-size:.75rem;font-weight:900}.fc-subtopic-diagnostics{display:grid;gap:6px;margin-top:7px}.fc-subtopic-diagnostic{border:1px solid #dde9ed;border-radius:9px;background:#fff;padding:6px 8px}.fc-subtopic-diagnostic>summary{cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:center;list-style-position:inside}.fc-subtopic-diagnostic>summary>span{display:grid;gap:1px}.fc-subtopic-diagnostic>summary strong{color:#103a66;font-size:.74rem}.fc-subtopic-diagnostic>summary small{color:#6d8291;font-size:.65rem}.fc-subtopic-diagnostic>summary>b{font-size:.74rem}.fc-subtopic-explanation{display:grid;gap:5px;padding:7px 0 2px}.fc-subtopic-explanation>strong{font-size:.72rem;color:#29465b}.fc-subtopic-explanation p{margin:0;font-size:.7rem;font-weight:800;color:#3f5c6e}.fc-subtopic-effect-grid{display:flex;gap:4px;flex-wrap:wrap}.fc-subtopic-effect-grid span{font-size:.64rem;color:#536d7d;background:#f6fafc;border:1px solid #dbe7eb;border-radius:999px;padding:3px 6px}.fc-subtopic-effect-grid b{color:#103a66}.fc-subtopic-explanation>small{font-size:.64rem;color:#708591;line-height:1.3}.fc-ab-controls{background:#f6fafc}'
-          if src.count(css_old) != 1:
-              raise SystemExit(f'css insertion count {src.count(css_old)}')
-          src = src.replace(css_old, css_new, 1)
-          path.write_text(src)
-
-          version = Path('version.json')
-          data = json.loads(version.read_text())
-          data['appVersion'] = '0.22.88'
-          data['releasedAt'] = '2026-08-21'
-          version.write_text(json.dumps(data, separators=(',', ':')))
-          PY
+          python .github/subtopic-explanation-v02288.py
           node --check assets/js/ui-fundraiser-comparison.js
           git diff --check
           grep -q "Dial down into" assets/js/ui-fundraiser-comparison.js
           grep -q "subtopicRevenueDecomposition" assets/js/ui-fundraiser-comparison.js
           grep -q "Main accounting driver" assets/js/ui-fundraiser-comparison.js
           grep -q '"appVersion":"0.22.88"' version.json
-          rm -f .github/workflows/subtopic-explanation-v02288.yml
+          rm -f .github/subtopic-explanation-v02288.py .github/workflows/subtopic-explanation-v02288.yml
           git config user.name "Tod"
           git config user.email "tpoirier@nmu.edu"
           git add -A
           git commit -m "Add subtopic explanation drill-down"
-          git push origin main
+          git push origin HEAD:${{ github.head_ref }}
