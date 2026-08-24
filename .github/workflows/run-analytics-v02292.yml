@@ -26,12 +26,13 @@ jobs:
         run: |
           git fetch origin fix-performance-analytics-starttime-v02292
           git switch fix-performance-analytics-starttime-v02292
+          python scripts/_tmp_fix_v02292_patch_helper.py
           python scripts/_tmp_v02292_patch.py
           node --check assets/js/ui-analytics.js
           node --check assets/js/ui-fundraiser-comparison.js
           node --test tests/performance-analytics.test.mjs
           node --test tests/fundraiser-comparison.test.mjs
-          rm -f scripts/_tmp_v02292_patch.py scripts/_tmp_trigger_v02292.txt
+          rm -f scripts/_tmp_v02292_patch.py scripts/_tmp_fix_v02292_patch_helper.py scripts/_tmp_trigger_v02292.txt
           git config user.name "OpenAI"
           git config user.email "noreply@openai.com"
           git add -A
