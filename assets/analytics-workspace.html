@@ -282,11 +282,13 @@
       <div class="field" data-filter-key="metric">
         <label for="adv-metric">Rank by</label>
         <select id="adv-metric">
-          <option value="median">Median $ / airing</option>
+          <option value="median" selected>Median $ / airing</option>
           <option value="avg">Average $ / airing</option>
-          <option value="total" selected>Total dollars</option>
           <option value="pledges">Pledge count</option>
           <option value="broadcasts">Broadcast count</option>
+          <optgroup label="Volume context">
+            <option value="total">Total dollars</option>
+          </optgroup>
         </select>
       </div>
       <div class="field" data-filter-key="live">
@@ -303,7 +305,8 @@
           <option value="all">All dayparts</option>
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>
-          <option value="evening">Evening</option>
+          <option value="early-evening">Early Evening</option>
+          <option value="prime">Prime</option>
           <option value="overnight">Overnight</option>
         </select>
       </div>

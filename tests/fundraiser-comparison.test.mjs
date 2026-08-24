@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-fundraiser-comparison.js', import.me
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.fundraiserComparisonUi = { ensureReady };';
 assert.ok(source.includes(exportMarker), 'comparison test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable, medianValue, outlierSummary, groupStrength, pledgeWeatherWindowForDate, stationPledgeWindowSummaries };`);
 
 const context = {
   window: {
@@ -156,4 +156,38 @@ test('weather fetchability treats far-future fundraiser dates as not available y
   assert.equal(hooks.weatherDateIsFetchable('2026-08-30', now), true);
   assert.equal(hooks.weatherDateIsFetchable('2027-03-13', now), false);
   assert.equal(hooks.weatherDateIsFetchable('2025-08-09', now), true);
+});
+
+
+test('median average and MAD outlier flag preserve an unusual high result', () => {
+  const values = [0, 150, 240, 310, 2400];
+  assert.equal(hooks.medianValue(values), 240);
+  const strength = hooks.groupStrength({ results: values });
+  assert.equal(strength.avg, 620);
+  assert.equal(strength.median, 240);
+  assert.equal(strength.outlierCount, 1);
+  assert.equal(strength.highOutliers, 1);
+  assert.deepEqual(Array.from(strength.outlierValues), [2400]);
+});
+
+test('pledge weather windows use weekday evenings and weekend 3 PM starts', () => {
+  const monday = hooks.pledgeWeatherWindowForDate('2026-08-10');
+  const saturday = hooks.pledgeWeatherWindowForDate('2026-08-08');
+  assert.equal(monday.startHour, 17);
+  assert.equal(monday.endHourExclusive, 24);
+  assert.equal(saturday.startHour, 15);
+  assert.equal(saturday.endHourExclusive, 24);
+});
+
+test('hourly weather aggregation excludes hours outside the pledge window', () => {
+  const summaries = hooks.stationPledgeWindowSummaries({
+    time: ['2026-08-10T10:00', '2026-08-10T17:00', '2026-08-10T18:00', '2026-08-10T23:00'],
+    temperature_2m: [90, 60, 64, 68],
+    precipitation: [9, 0.01, 0.02, 0.03]
+  });
+  const day = summaries.get('2026-08-10');
+  assert.ok(day);
+  assert.equal(day.avgTemp, 64);
+  nearlyEqual(day.precip, 0.06);
+  assert.equal(day.windowLabel, '5 PM-midnight');
 });
