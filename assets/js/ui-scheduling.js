@@ -1837,11 +1837,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     ].filter((line) => line !== '').join('\n');
   }
 
-  function mergeImportedRowsIntoSchedules(rows = [], { rebuild = false, activateFirst = true, dirtySchedules = [], allowDuplicateMerges = false, allowCreateMissing = true, allowRefreshPlacements = true, allowTitleUpdates = false, destructiveApproval = false } = {}) {
+  function mergeImportedRowsIntoSchedules(rows = [], { activateFirst = true, dirtySchedules = [], allowDuplicateMerges = false, allowCreateMissing = true, allowRefreshPlacements = true, allowTitleUpdates = false, destructiveApproval = false } = {}) {
     const prepared = prepareImportedScheduleRows(rows);
     const { sourceRows, groupedRows, skippedRows, groups, diagnostics } = prepared;
     const safeAllowDuplicateMerges = Boolean(allowDuplicateMerges && destructiveApproval);
-    const safeRebuild = Boolean(rebuild && destructiveApproval);
 
     let createdSchedules = 0;
     let updatedSchedules = 0;
@@ -1856,6 +1855,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     let suspiciousSpanGroups = 0;
     let suspiciousSpanRows = 0;
     const removedScheduleIds = [];
+    const removedScheduleReplacements = {};
     let firstScheduleId = '';
 
     groups.forEach((group) => {
@@ -1886,11 +1886,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       duplicateSchedules.forEach((duplicate) => {
         mergeImportedSchedulePlacements(schedule, duplicate, group.key);
         removedScheduleIds.push(duplicate.id);
+        removedScheduleReplacements[duplicate.id] = schedule.id;
       });
       if (duplicateSchedules.length) {
+        // Stage duplicate schedule-row removal only. The duplicate remains in local state
+        // until its backing record is actually deleted, so a Supabase failure cannot
+        // make the browser pretend a still-existing remote fundraiser disappeared.
         mergedDuplicateSchedules += duplicateSchedules.length;
-        state.schedules = (state.schedules || []).filter((item) => !removedScheduleIds.includes(item.id));
-        if (removedScheduleIds.includes(state.activeScheduleId)) state.activeScheduleId = schedule.id;
       }
       if (scheduleWasAutoImported) {
         if (createdThisSchedule || allowTitleUpdates) schedule.title = group.title || schedule.title;
@@ -1898,7 +1900,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         schedule.endDate = group.endDate || schedule.endDate;
       }
       const preservedLiveBreaks = collectLiveBreakPreserveMap(schedule, group.key);
-      const shouldRefreshPlacements = Boolean(allowRefreshPlacements || createdThisSchedule || duplicateSchedules.length || safeRebuild);
+      const shouldRefreshPlacements = Boolean(allowRefreshPlacements || createdThisSchedule || duplicateSchedules.length);
       if (!createdThisSchedule) updatedSchedules += 1;
       const scheduleableRows = group.rows.filter((entry) => !entry?.isNonSpecific && canBuildImportedPlacement(entry) && entry?.dateKey && Number.isFinite(importedRowStartMinutes(entry.row)));
       const totals = summarizeImportedRows(group.rows);
@@ -2007,34 +2009,52 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       suspiciousSpanGroups,
       suspiciousSpanRows,
       removedScheduleIds: [...new Set(removedScheduleIds.filter(Boolean))],
+      removedScheduleReplacements: { ...removedScheduleReplacements },
       fundraiserCount: Math.max(0, groups.length - suspiciousSpanGroups),
       diagnostics
     };
   }
 
-  async function deleteMergedImportedScheduleRecords(scheduleIds = [], { explicitApproval = false } = {}) {
+  async function deleteMergedImportedScheduleRecords(scheduleIds = [], { explicitApproval = false, replacementScheduleIds = {} } = {}) {
     if (!explicitApproval) {
       console.warn('Blocked imported schedule deletion because explicit manual approval was not supplied.');
       return 0;
     }
     const wanted = [...new Set((Array.isArray(scheduleIds) ? scheduleIds : []).map((id) => utils.normalizeText(id)).filter(Boolean))];
     if (!wanted.length) return 0;
-    let removed = 0;
-    if (state.scheduleStoreMode === 'remote' && state.client) {
+
+    const removedIds = [];
+    const remoteDelete = state.scheduleStoreMode === 'remote' && state.client;
+    if (remoteDelete) {
       for (const scheduleId of wanted) {
         try {
           await App.data.deleteScheduleRemote(scheduleId);
-          removed += 1;
+          removedIds.push(scheduleId);
         } catch (error) {
           console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);
           state.scheduleStoreMode = 'local';
-          state.scheduleSyncMessage = `Remote duplicate cleanup failed. Using this browser only. ${error.message || ''}`.trim();
+          state.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();
           break;
         }
       }
+    } else {
+      removedIds.push(...wanted);
+    }
+
+    if (removedIds.length) {
+      const removedSet = new Set(removedIds);
+      const activeId = utils.normalizeText(state.activeScheduleId || '');
+      const replacementId = removedSet.has(activeId)
+        ? utils.normalizeText(replacementScheduleIds?.[activeId] || '')
+        : '';
+      state.schedules = (state.schedules || []).filter((item) => !removedSet.has(utils.normalizeText(item?.id || '')));
+      if (removedSet.has(activeId)) {
+        const replacement = (state.schedules || []).find((item) => utils.normalizeText(item?.id || '') === replacementId);
+        state.activeScheduleId = replacement?.id || state.schedules?.[0]?.id || '';
+      }
     }
     utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
-    return removed || wanted.length;
+    return removedIds.length;
   }
 
 
@@ -2064,16 +2084,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
   function confirmImportedScheduleDestructiveRepair(analysis = {}, options = {}) {
-    const wantsMerge = Boolean(options.merge);
-    const wantsRebuild = Boolean(options.rebuild);
-    if (!wantsMerge && !wantsRebuild) return true;
-
+    if (!options.merge) return true;
     const duplicateGroups = (analysis.groupSummaries || []).filter((group) => group.duplicateIds?.length);
     const preview = duplicateGroups.slice(0, 6).map((group) => {
       const range = group.startDate && group.endDate && group.startDate !== group.endDate
         ? `${group.startDate} through ${group.endDate}`
         : (group.startDate || group.endDate || 'date range unavailable');
-      return `${group.title || group.scheduleTitle || 'Fundraiser'} (${range}): ${utils.formatCount(group.duplicateIds.length)} duplicate schedule row${group.duplicateIds.length === 1 ? '' : 's'} could be removed after its placements are merged.`;
+      return `${group.title || group.scheduleTitle || 'Fundraiser'} (${range}): ${utils.formatCount(group.duplicateIds.length)} duplicate schedule row${group.duplicateIds.length === 1 ? '' : 's'} could be removed after its imported placements are merged.`;
     });
     const more = duplicateGroups.length > preview.length
       ? `And ${utils.formatCount(duplicateGroups.length - preview.length)} more duplicate fundraiser group${duplicateGroups.length - preview.length === 1 ? '' : 's'}.`
@@ -2083,11 +2100,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       '',
       'Imported fundraiser reports are the factual record of what actually aired, but they do not get permission to erase saved Scheduling work automatically.',
       '',
-      wantsMerge ? `Merge is selected. ${utils.formatCount(analysis.mergeableSchedules || 0)} duplicate schedule row${Number(analysis.mergeableSchedules || 0) === 1 ? '' : 's'} may be removed only after their placements are merged into the retained schedule.` : '',
-      wantsRebuild ? 'Rebuild is selected. Imported-only placements may be removed and recreated from report evidence. Manual and non-imported scheduled placements are preserved.' : '',
+      `Merge is selected. ${utils.formatCount(analysis.mergeableSchedules || 0)} duplicate imported-only schedule row${Number(analysis.mergeableSchedules || 0) === 1 ? '' : 's'} may be removed only after its imported placements are copied into the retained schedule.`,
       ...preview,
       more,
       '',
+      'Schedules containing manual/user-created blocks are not eligible for this automatic duplicate cleanup.',
       'Review the Scheduling calendar before authorizing this repair.',
       'Type APPLY SCHEDULE CHANGES to continue. Cancel or any other text makes no destructive schedule change.'
     ].filter(Boolean);
@@ -2130,9 +2147,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           <h4 style="margin:1rem 0 .35rem;">Recommended Repairs</h4>
           ${repairOptionRow({ key: 'merge', label: 'Merge overlapping imported fundraiser schedules', detail: `${utils.formatCount(analysis.mergeableSchedules)} duplicate imported-only schedule${analysis.mergeableSchedules === 1 ? '' : 's'} found. This is the narrow repair for duplicate June-style entries.`, checked: false, disabled: analysis.mergeableSchedules <= 0 })}
           ${repairOptionRow({ key: 'create', label: 'Create missing schedules from imported rows', detail: `${utils.formatCount(analysis.missingSchedules)} fundraiser cluster${analysis.missingSchedules === 1 ? '' : 's'} have imported rows but no schedule/dropdown record.`, checked: analysis.missingSchedules > 0, disabled: analysis.missingSchedules <= 0 })}
-          ${repairOptionRow({ key: 'refresh', label: 'Refresh imported placements and pledge totals', detail: `Rebuild imported placements/totals from existing imported airing rows. Does not rename existing schedules unless that option is selected.`, checked: false })}
+          ${repairOptionRow({ key: 'refresh', label: 'Refresh imported report evidence', detail: `Adds missing imported placements and refreshes matching report evidence/totals. It never deletes existing schedule blocks or replaces a conflicting scheduled title.`, checked: false })}
           <h4 style="margin:1rem 0 .35rem;">Optional Cleanup</h4>
-          ${repairOptionRow({ key: 'rebuild', label: 'Rebuild imported placements', detail: 'More aggressive: removes imported placements in affected schedules and rebuilds them from imported airings. Manual/non-imported placements are kept.', checked: false, danger: true })}
           ${repairOptionRow({ key: 'titles', label: 'Rename imported schedules', detail: `Optional only. ${utils.formatCount(analysis.renameCandidates)} existing imported schedule title${analysis.renameCandidates === 1 ? '' : 's'} differ from the generated Imported pledge date-range title. Leave this unchecked to preserve your fundraiser names.`, checked: false, disabled: analysis.renameCandidates <= 0 })}
           <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap;">
             <button type="button" class="ghost" data-repair-close>Cancel</button>
@@ -2154,13 +2170,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         activateFirst: true,
         allowDuplicateMerges: selected.has('merge'),
         allowCreateMissing: selected.has('create'),
-        allowRefreshPlacements: selected.has('refresh') || selected.has('rebuild'),
-        rebuild: selected.has('rebuild'),
+        allowRefreshPlacements: selected.has('refresh'),
         allowTitleUpdates: selected.has('titles')
       });
       if (summary) {
         const selectedLabels = [...selected].join(', ');
-        setNotice(`Applied selected schedule repairs (${selectedLabels}). ${utils.formatCount(summary.mergedDuplicateSchedules || 0)} duplicates merged, ${utils.formatCount(summary.schedulesCreated || 0)} schedules created, ${utils.formatCount(summary.placementsCreated || 0)} placements added. Existing titles were ${selected.has('titles') ? 'allowed to update' : 'preserved'}.`);
+        const removalNote = summary.failedScheduleRecordDeletes
+          ? `${utils.formatCount(summary.removedScheduleRecords || 0)} duplicate rows removed; ${utils.formatCount(summary.failedScheduleRecordDeletes)} remain because deletion failed.`
+          : `${utils.formatCount(summary.removedScheduleRecords || 0)} duplicate rows removed.`;
+        setNotice(`Applied selected schedule repairs (${selectedLabels}). ${removalNote} ${utils.formatCount(summary.schedulesCreated || 0)} schedules created, ${utils.formatCount(summary.placementsCreated || 0)} placements added. Existing titles were ${selected.has('titles') ? 'allowed to update' : 'preserved'}.`);
       }
     });
     setNotice(`Schedule Repair Options found ${utils.formatCount(analysis.mergeableSchedules)} duplicate schedule${analysis.mergeableSchedules === 1 ? '' : 's'} and ${utils.formatCount(analysis.missingSchedules)} missing schedule${analysis.missingSchedules === 1 ? '' : 's'}.`);
@@ -2169,12 +2187,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   async function buildSchedulesFromImportedReports(options = {}) {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to build fundraiser calendars from imported reports.', 'warn'); return null; }
     const rows = Array.isArray(options.rows) ? options.rows : await App.data.fetchImportedAirings();
-    const destructiveRequested = Boolean(options.allowDuplicateMerges || options.rebuild);
+    const destructiveRequested = Boolean(options.allowDuplicateMerges);
     if (destructiveRequested) {
       const repairAnalysis = analyzeImportedScheduleRepairs(rows);
       const approved = confirmImportedScheduleDestructiveRepair(repairAnalysis, {
-        merge: Boolean(options.allowDuplicateMerges),
-        rebuild: Boolean(options.rebuild)
+        merge: Boolean(options.allowDuplicateMerges)
       });
       if (!approved) {
         setNotice('Imported schedule repair cancelled. No schedule rows or placements were removed.', 'warn');
@@ -2210,7 +2227,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     }
     const dirtySchedules = [];
     const summary = mergeImportedRowsIntoSchedules(rows, {
-      rebuild: Boolean(options.rebuild),
       activateFirst: options.activateFirst !== false,
       dirtySchedules,
       allowDuplicateMerges: Boolean(options.allowDuplicateMerges),
@@ -2225,7 +2241,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       await persistSchedules(schedule);
     }
     if (summary.removedScheduleIds?.length) {
-      summary.removedScheduleRecords = await deleteMergedImportedScheduleRecords(summary.removedScheduleIds, { explicitApproval: destructiveRequested });
+      summary.removedScheduleRecords = await deleteMergedImportedScheduleRecords(summary.removedScheduleIds, {
+        explicitApproval: destructiveRequested,
+        replacementScheduleIds: summary.removedScheduleReplacements || {}
+      });
+      summary.failedScheduleRecordDeletes = Math.max(0, summary.removedScheduleIds.length - summary.removedScheduleRecords);
+    } else {
+      summary.removedScheduleRecords = 0;
+      summary.failedScheduleRecordDeletes = 0;
     }
     renderAll();
     const noteBits = [
@@ -2242,7 +2265,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       if (reasonBits.length) noteBits.push(`Breakdown: ${reasonBits.join(', ')}.`);
     }
     if (diag.clusteredFundraisers) noteBits.push(`${utils.formatCount(diag.clusteredFundraisers)} fundraiser clusters were identified from actual airing dates.`);
-    if (summary.mergedDuplicateSchedules) noteBits.push(`${utils.formatCount(summary.mergedDuplicateSchedules)} duplicate imported fundraiser calendar${summary.mergedDuplicateSchedules === 1 ? '' : 's'} were merged.`);
+    if (summary.removedScheduleRecords) noteBits.push(`${utils.formatCount(summary.removedScheduleRecords)} duplicate imported fundraiser calendar row${summary.removedScheduleRecords === 1 ? '' : 's'} were merged and removed.`);
+    if (summary.failedScheduleRecordDeletes) noteBits.push(`${utils.formatCount(summary.failedScheduleRecordDeletes)} duplicate calendar row${summary.failedScheduleRecordDeletes === 1 ? '' : 's'} could not be removed and remain visible for review.`);
     if (diag.collapsedDuplicateImports) noteBits.push(`${utils.formatCount(diag.collapsedDuplicateImports)} older imported duplicate row${diag.collapsedDuplicateImports === 1 ? '' : 's'} were collapsed before schedule build.`);
     if (summary.correctedDurations) noteBits.push(`${utils.formatCount(summary.correctedDurations)} durations were corrected from library runtimes.`);
     noteBits.push(state.scheduleSyncMessage);
@@ -6057,8 +6081,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleDesktopSelect?.addEventListener('click', reopenSelectedSchedule);
     els.scheduleMobileSelect?.addEventListener('click', reopenSelectedSchedule);
     els.scheduleGenerateButton?.addEventListener('click', () => { void createOrUpdateScheduleFromDraft(); });
-    els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions({ rebuildDefault: false }); });
-    els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions({ rebuildDefault: true }); });
+    els.scheduleBuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions(); });
+    els.scheduleRebuildFromImportsButton?.addEventListener('click', () => { void openScheduleRepairOptions(); });
     els.scheduleFundraiserGraphButton?.addEventListener('click', () => { void openFundraiserGraph(); });
     els.fundraiserGraphCloseButton?.addEventListener('click', closeFundraiserGraph);
     els.fundraiserGraphBackdrop?.addEventListener('click', closeFundraiserGraph);
