@@ -98,3 +98,19 @@ test('analytics source uses the canonical imported-airing data layer when availa
   const text = fs.readFileSync(sourcePath, 'utf8');
   assert.match(text, /App\.data\?\.fetchImportedAirings/);
 });
+
+
+test('topic analytics exposes clickable topic and outlier drilldown controls', () => {
+  const text = fs.readFileSync(sourcePath, 'utf8');
+  assert.match(text, /groupTitleDetailCell/);
+  assert.match(text, /groupOutlierDetailCell/);
+  assert.match(text, /data-group-detail-id/);
+  assert.match(text, /openGroupDetail/);
+});
+
+test('topic analytics columns explicitly opt into left alignment', () => {
+  const text = fs.readFileSync(sourcePath, 'utf8');
+  assert.ok(text.includes('analytics-left'));
+  const workspace = fs.readFileSync(new URL('../assets/analytics-workspace.html', import.meta.url), 'utf8');
+  assert.ok(workspace.includes('.analytics-left { text-align: left !important; }'));
+});

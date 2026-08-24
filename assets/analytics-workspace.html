@@ -137,6 +137,11 @@
     .sort-th-button:hover { color: var(--accent); }
     .sort-arrow { color: var(--accent); font-size: .8rem; white-space: nowrap; }
     .money, .num { text-align: right; white-space: nowrap; }
+    .analytics-left { text-align: left !important; }
+    .analytics-detail-link { border: 0; border-radius: 0; padding: 0; background: transparent; color: var(--accent-2); font-weight: 900; text-decoration: underline; text-underline-offset: 2px; text-align: left; display: inline-grid; gap: 2px; }
+    .analytics-detail-link:hover { color: var(--accent); }
+    .analytics-detail-link.outlier-link { color: var(--bad); display: inline; }
+    .outlier-row { background: #fff8e8; }
     .emphasis { font-weight: 950; color: var(--accent); }
     .program-link { color: var(--accent-2); font-weight: 900; text-decoration: underline; text-underline-offset: 2px; }
     .program-link:hover { color: var(--accent); }
@@ -371,7 +376,7 @@
   <div class="modal-card">
     <div class="modal-head">
       <div>
-        <div class="eyebrow">Program detail</div>
+        <div class="eyebrow">Analytics detail</div>
         <h2 id="program-modal-title">Program</h2>
         <p id="program-modal-subtitle">Analytics detail for this title.</p>
       </div>
