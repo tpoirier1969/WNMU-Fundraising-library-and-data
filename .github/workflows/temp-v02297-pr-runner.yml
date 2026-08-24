@@ -1,0 +1,51 @@
+name: Temporary v0.22.97 PR cleanup validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: cleanup-v02297
+          fetch-depth: 0
+      - name: Apply cleanup from staged workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          lines = Path('.github/workflows/v02297-cleanup.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if '- name: Apply cleanup to source and tests' in line)
+          end = next(i for i, line in enumerate(lines[start + 1:], start + 1) if '- name: Validate JavaScript and regression suites' in line)
+          run_line = next(i for i in range(start, end) if lines[i].strip() == 'run: |')
+          body = []
+          for line in lines[run_line + 1:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/v02297-apply.sh').write_text('\n'.join(body) + '\n')
+          PY
+          bash /tmp/v02297-apply.sh
+      - name: Validate
+        shell: bash
+        run: |
+          node --check assets/js/ui-scheduling.js
+          node --check assets/js/ui-analytics.js
+          node --check assets/js/ui-fundraiser-comparison.js
+          node --test tests/schedule-import-safety.test.mjs
+          node --test tests/performance-analytics.test.mjs
+          node --test tests/fundraiser-comparison.test.mjs
+      - name: Commit validated cleanup
+        shell: bash
+        run: |
+          rm .github/workflows/v02297-cleanup.yml
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add assets/js/ui-scheduling.js tests/schedule-import-safety.test.mjs version.json .github/workflows/v02297-cleanup.yml
+          git commit -m "Harden imported schedule repair cleanup v0.22.97"
+          git push origin HEAD:cleanup-v02297
