@@ -49,3 +49,4 @@ jobs:
           git add -A
           git commit -m "Remove temporary v0.22.92 analytics runner"
           git push origin HEAD:main
+# trigger after workflow exists on default branch
