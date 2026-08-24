@@ -191,3 +191,25 @@ test('hourly weather aggregation excludes hours outside the pledge window', () =
   nearlyEqual(day.precip, 0.06);
   assert.equal(day.windowLabel, '5 PM-midnight');
 });
+
+
+test('corresponding fundraiser alignment uses actual pledge placement sequence even when saved start date is stale', () => {
+  const analysis = {
+    schedule: { startDate: '2026-08-01' },
+    placementRows: ['2026-08-21', '2026-08-22', '2026-08-23'].map((dateKey) => ({ dateKey, startMinutes: 420, title: 'Test', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: true, dollars: 100, pledges: 1 }))
+  };
+  assert.equal(hooks.fundraiserDayOffset(analysis, { dateKey: '2026-08-21' }), -1);
+  assert.equal(hooks.fundraiserDayOffset(analysis, { dateKey: '2026-08-22' }), 0);
+  assert.equal(hooks.fundraiserDayOffset(analysis, { dateKey: '2026-08-23' }), 1);
+});
+
+test('daily context starts at the pre-Saturday Friday at earliest and omits unmatched tail days', () => {
+  const makeAnalysis = (startDate, dates) => ({
+    schedule: { startDate },
+    placementRows: dates.map((dateKey) => ({ dateKey, startMinutes: 420, title: 'Test', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: true, dollars: 100, pledges: 1 }))
+  });
+  const longer = makeAnalysis('2026-08-01', ['2026-08-17', '2026-08-21', '2026-08-22', '2026-08-23', '2026-08-29', '2026-09-05']);
+  const peer = makeAnalysis('2025-08-08', ['2025-08-08', '2025-08-09', '2025-08-10', '2025-08-16']);
+  const rows = hooks.alignedDailyContextRows([longer, peer]);
+  assert.deepEqual(Array.from(rows, (row) => row.offset), [-1, 0, 1, 7]);
+});
