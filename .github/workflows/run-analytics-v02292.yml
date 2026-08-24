@@ -1,0 +1,51 @@
+name: Run analytics v0.22.92 patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/run-analytics-v02292.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run patch from feature branch
+        shell: bash
+        run: |
+          git fetch origin fix-performance-analytics-starttime-v02292
+          git switch fix-performance-analytics-starttime-v02292
+          ruby -e 'require "yaml"; y=YAML.load_file(".github/workflows/analytics-and-comparison-v02292.yml"); puts y["jobs"]["patch"]["steps"].find{|s| s["name"]=="Apply analytics hardening and comparison refinements"}["run"]' > /tmp/apply.sh
+          bash /tmp/apply.sh
+          ruby -e 'require "yaml"; y=YAML.load_file(".github/workflows/analytics-and-comparison-v02292.yml"); puts y["jobs"]["patch"]["steps"].find{|s| s["name"]=="Validate"}["run"]' > /tmp/validate.sh
+          bash /tmp/validate.sh
+          rm -f .github/workflows/analytics-and-comparison-v02292.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Harden analytics and add weather performance view"
+          git push origin HEAD:fix-performance-analytics-starttime-v02292
+      - name: Remove temporary runner from main
+        shell: bash
+        run: |
+          git switch main
+          git pull --ff-only origin main
+          rm -f .github/workflows/run-analytics-v02292.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Remove temporary v0.22.92 analytics runner"
+          git push origin HEAD:main
