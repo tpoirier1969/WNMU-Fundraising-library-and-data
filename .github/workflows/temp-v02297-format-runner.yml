@@ -23,24 +23,8 @@ jobs:
           from pathlib import Path
           path = Path('assets/js/ui-scheduling.js')
           text = path.read_text()
-          old = """        try {
-await App.data.deleteScheduleRemote(scheduleId);
-removedIds.push(scheduleId);
-        } catch (error) {
-console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);
-state.scheduleStoreMode = 'local';
-state.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();
-break;
-        }"""
-          new = """        try {
-          await App.data.deleteScheduleRemote(scheduleId);
-          removedIds.push(scheduleId);
-        } catch (error) {
-          console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);
-          state.scheduleStoreMode = 'local';
-          state.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();
-          break;
-        }"""
+          old = "        try {\nawait App.data.deleteScheduleRemote(scheduleId);\nremovedIds.push(scheduleId);\n        } catch (error) {\nconsole.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);\nstate.scheduleStoreMode = 'local';\nstate.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();\nbreak;\n        }"
+          new = "        try {\n          await App.data.deleteScheduleRemote(scheduleId);\n          removedIds.push(scheduleId);\n        } catch (error) {\n          console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);\n          state.scheduleStoreMode = 'local';\n          state.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();\n          break;\n        }"
           if text.count(old) != 1:
               raise SystemExit(f'expected one formatting target, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1))
