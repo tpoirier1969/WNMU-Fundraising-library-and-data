@@ -54,7 +54,7 @@
     yearFilters: null,
     search: '',
     evidence: 'all',
-    metric: 'total',
+    metric: 'median',
     topicFilters: [],
     secondaryTopicFilter: 'all',
     rightsScope: 'all',
@@ -349,11 +349,11 @@
 
   function daypartFromMinutes(minutes) {
     if (!Number.isFinite(Number(minutes))) return '';
-    const value = Number(minutes);
-    const hour = Math.floor((((value % 1440) + 1440) % 1440) / 60);
-    if (hour >= 5 && hour < 12) return 'morning';
-    if (hour >= 12 && hour < 17) return 'afternoon';
-    if (hour >= 17 && hour < 24) return 'evening';
+    const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+    if (normalized >= 420 && normalized < 720) return 'morning';
+    if (normalized >= 720 && normalized < 1020) return 'afternoon';
+    if (normalized >= 1020 && normalized < 1200) return 'early-evening';
+    if (normalized >= 1200 && normalized < 1350) return 'prime';
     return 'overnight';
   }
 
@@ -388,6 +388,7 @@
   function placementDollars(placement = {}) {
     return Number(firstNonEmpty(
       placement.importedBroadcastDollars,
+      placement.manualResultRecorded ? Number(placement.manualBroadcastDollars || 0) : null,
       placement.actualDollars,
       placement.broadcastDollars,
       placement.dollars,
@@ -501,25 +502,27 @@
   function dedupeSchedulesByDateRange(schedules = []) {
     const buckets = new Map();
     schedules.forEach((schedule) => {
-      const key = `${text(schedule.startDate)}|${text(schedule.endDate)}`;
-      if (!text(schedule.startDate) || !text(schedule.endDate)) {
-        buckets.set(`${key}|${text(schedule.id)}`, [schedule]);
-        return;
-      }
+      const start = text(schedule.startDate);
+      const end = text(schedule.endDate);
+      const key = start && end ? `${start}|${end}` : `id:${text(schedule.id)}`;
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(schedule);
     });
     const active = [];
-    let merged = 0;
-    buckets.forEach((items) => {
-      active.push(mergeDuplicateScheduleBucket(items));
-      merged += Math.max(0, items.length - 1);
+    const ambiguous = [];
+    buckets.forEach((items, key) => {
+      if (items.length === 1 || key.startsWith('id:')) {
+        active.push(items[0]);
+        return;
+      }
+      ambiguous.push({ key, count: items.length, ids: items.map((schedule) => text(schedule.id)).filter(Boolean) });
     });
     state.scheduleAudit = {
       rawSchedules: schedules.length,
       activeSchedules: active.length,
-      duplicateSchedulesMerged: merged,
-      duplicateSchedulesSuppressed: 0
+      duplicateSchedulesMerged: 0,
+      duplicateSchedulesSuppressed: ambiguous.reduce((sum, item) => sum + item.count, 0),
+      ambiguousDateRanges: ambiguous
     };
     return active.sort((a, b) => `${text(a.startDate)}|${text(a.endDate)}`.localeCompare(`${text(b.startDate)}|${text(b.endDate)}`));
   }
@@ -842,27 +845,30 @@
     const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
     if (hash && airingLookup.hash.has(hash)) return airingLookup.hash.get(hash);
     const keys = [pid, nola, title, lookupKey(placement.programTitle || placement.program_title || placement.title || placement.name || '')].filter(Boolean);
-    const candidates = [];
+    const exactCandidates = [];
+    const sameDayCandidates = [];
     keys.forEach((key) => {
-      if (Number.isFinite(startMinutes)) candidates.push(...(airingLookup.exact.get(`${dateKey}|${key}|${startMinutes}`) || []));
-      candidates.push(...(airingLookup.dateProgram.get(`${dateKey}|${key}`) || []));
-      candidates.push(...(airingLookup.dateNola.get(`${dateKey}|${key}`) || []));
-      candidates.push(...(airingLookup.dateTitle.get(`${dateKey}|${key}`) || []));
+      if (Number.isFinite(startMinutes)) exactCandidates.push(...(airingLookup.exact.get(`${dateKey}|${key}|${startMinutes}`) || []));
+      sameDayCandidates.push(...(airingLookup.dateProgram.get(`${dateKey}|${key}`) || []));
+      sameDayCandidates.push(...(airingLookup.dateNola.get(`${dateKey}|${key}`) || []));
+      sameDayCandidates.push(...(airingLookup.dateTitle.get(`${dateKey}|${key}`) || []));
     });
-    const unique = [];
-    const seen = new Set();
-    candidates.forEach((record) => {
-      const id = text(record.id || record.sourceAiringHash || `${record.dateKey}|${record.startMinutes}|${record.title}|${record.dollars}`);
-      if (seen.has(id)) return;
-      seen.add(id);
-      unique.push(record);
-    });
-    if (!unique.length) return null;
-    if (Number.isFinite(startMinutes)) {
-      const exact = unique.find((record) => Number(record.startMinutes) === Number(startMinutes));
-      if (exact) return exact;
-    }
-    return unique.sort((a, b) => Number(b.dollars || 0) - Number(a.dollars || 0))[0] || null;
+    const uniqueRows = (rows) => {
+      const unique = [];
+      const seen = new Set();
+      rows.forEach((record) => {
+        const id = text(record.id || record.sourceAiringHash || `${record.dateKey}|${record.startMinutes}|${record.title}|${record.dollars}`);
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        unique.push(record);
+      });
+      return unique;
+    };
+    const exact = uniqueRows(exactCandidates);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return null;
+    const sameDay = uniqueRows(sameDayCandidates);
+    return sameDay.length === 1 ? sameDay[0] : null;
   }
 
   function buildScheduleRecords(schedules = [], libraryRows = [], airingRecords = []) {
@@ -907,6 +913,7 @@
         )) : '';
         const explicitDollars = firstNonEmpty(
           placement.importedBroadcastDollars,
+          placement.manualResultRecorded ? Number(placement.manualBroadcastDollars || 0) : null,
           placement.actualDollars,
           placement.broadcastDollars,
           placement.dollars,
@@ -916,6 +923,7 @@
         const explicitPledges = firstNonEmpty(
           placement.importedPledges,
           placement.importedBroadcastPledges,
+          placement.manualResultRecorded ? Number(placement.manualPledgeCount || 0) : null,
           placement.pledges,
           placement.pledgeCount,
           null
@@ -1011,6 +1019,31 @@
     return clean.length % 2 ? clean[mid] : (clean[mid - 1] + clean[mid]) / 2;
   }
 
+function outlierSummary(values = []) {
+    const clean = values.map(Number).filter((value) => Number.isFinite(value));
+    if (clean.length < 4) return { outlierCount: 0, highOutliers: 0, lowOutliers: 0, outlierValues: [] };
+    const median = medianValue(clean);
+    const deviations = clean.map((value) => Math.abs(value - median));
+    const mad = medianValue(deviations);
+    if (!(mad > 0)) return { outlierCount: 0, highOutliers: 0, lowOutliers: 0, outlierValues: [] };
+    const outlierValues = clean.filter((value) => Math.abs((0.6745 * (value - median)) / mad) > 3.5);
+    return {
+      outlierCount: outlierValues.length,
+      highOutliers: outlierValues.filter((value) => value > median).length,
+      lowOutliers: outlierValues.filter((value) => value < median).length,
+      outlierValues
+    };
+  }
+
+  function outlierLabel(row = {}) {
+    const count = Number(row.outlierCount || 0);
+    if (!count) return 'None flagged';
+    const bits = [];
+    if (row.highOutliers) bits.push(`${row.highOutliers} high`);
+    if (row.lowOutliers) bits.push(`${row.lowOutliers} low`);
+    return `${count} unusual${bits.length ? ` · ${bits.join(' / ')}` : ''}`;
+  }
+
   function closestMedianSeason(realSeasonStats = []) {
     const median = medianValue(realSeasonStats.map((item) => item.avg));
     return realSeasonStats.reduce((winner, item) => {
@@ -1045,6 +1078,7 @@
       seasons: seasons.size,
       avg: records.length ? dollars / records.length : 0,
       median: medianValue(records.map((record) => Number(record.dollars || 0))),
+      ...outlierSummary(records.map((record) => Number(record.dollars || 0))),
       weak: records.length < WEAK_BROADCASTS || seasons.size < WEAK_SEASONS,
       mix: mix.label,
       allFour: mix.allFour,
@@ -1877,8 +1911,10 @@
       read: topicRead,
       columns: [
         ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
+        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis', (row) => row.median],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Outliers', (row) => escapeHtml(outlierLabel(row)), '', (row) => row.outlierCount || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
         ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
@@ -1909,18 +1945,20 @@
     },
     topics: {
       title: 'What topics work best?',
-      summary: 'Topic strength by average dollars per airing, with four-season coverage shown.',
-      graphTitle: 'Topics by average dollars per airing',
+      summary: 'Topic strength by median dollars per airing, with average, outliers, and four-season coverage shown.',
+      graphTitle: 'Topics by typical dollars per airing',
       tableTitle: 'Topic ranking',
       tableNote: 'Season mix uses M/J/A/D counts, for example [M-3, J-1, A-0, D-5].',
       rows: rowsTopics,
       metricDriven: true,
-      metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
+      metric: (rows) => rows[0] ? formatMoney(rows[0].median) : '—',
       tag: 'topic lens',
       read: topicRead,
       columns: [
         ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
+        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis', (row) => row.median],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Outliers', (row) => escapeHtml(outlierLabel(row)), '', (row) => row.outlierCount || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
         ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
@@ -1929,17 +1967,19 @@
     secondaryTopics: {
       title: 'What secondary topics work best?',
       summary: 'Subtopic strength inside the selected filters. Use Primary topic = Music for Music styles.',
-      graphTitle: 'Secondary topics by average dollars per airing',
+      graphTitle: 'Secondary topics by typical dollars per airing',
       tableTitle: 'Secondary topic ranking',
       tableNote: 'Choose Primary topic = Music and leave Secondary topic = All to compare Music subtopics against each other.',
       rows: rowsSecondaryTopics,
       metricDriven: true,
-      metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
+      metric: (rows) => rows[0] ? formatMoney(rows[0].median) : '—',
       tag: 'subtopic lens',
       read: secondaryTopicRead,
       columns: [
         ['Secondary topic', (row) => labelWithMixCell(row), '', (row) => row.title],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
+        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis', (row) => row.median],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
+        ['Outliers', (row) => escapeHtml(outlierLabel(row)), '', (row) => row.outlierCount || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
         ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
@@ -2182,7 +2222,7 @@
       state.cohort = readAnalyticsCohort();
       if (state.cohort?.keySet) {
         state.question = 'programs';
-        state.metric = 'avg';
+        state.metric = 'median';
       }
       initialized = true;
     }
@@ -2197,12 +2237,15 @@
 
 
   async function fetchAiringsForAnalytics() {
+    if (App.data?.fetchImportedAirings) return App.data.fetchImportedAirings();
     const base = 'id,program_id,pledge_program_id,manual_match_program_id,aired_at,air_date,air_time,contribution_amount,dollars,pledge_count,fundraiser_label,drive_start_date,drive_end_date,title,program_title,imported_program_title,matched_library_title,nola_code,row_hash,program_minutes';
     try {
-      return await fetchAll(AIRINGS_TABLE, `${base},raw_payload`, 'air_date');
+      const rows = await fetchAll(AIRINGS_TABLE, `${base},raw_payload`, 'air_date');
+      return App.data?.canonicalizeImportedAirings ? App.data.canonicalizeImportedAirings(rows) : rows;
     } catch (error) {
       console.warn('Airings raw_payload fetch failed; retrying without raw payload.', error);
-      return fetchAll(AIRINGS_TABLE, base, 'air_date');
+      const rows = await fetchAll(AIRINGS_TABLE, base, 'air_date');
+      return App.data?.canonicalizeImportedAirings ? App.data.canonicalizeImportedAirings(rows) : rows;
     }
   }
 
@@ -2230,7 +2273,10 @@
     if ((diag.livePlacements || 0) > 0 && (diag.liveDollars || 0) <= 0) {
       note(`Live-break guardrail: ${formatNumber(diag.livePlacements || 0)} saved live-break placement(s) exist, but none matched pledge dollars. Analytics did not fall back to imported live-break guesses. Check schedule placement hashes/titles/times.`, 'bad');
     } else {
-      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Active schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)} (${formatNumber(state.scheduleAudit.duplicateSchedulesMerged || 0)} duplicate date-range row(s) merged). Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
+      const duplicateNote = Number(state.scheduleAudit.duplicateSchedulesSuppressed || 0)
+        ? ` ${formatNumber(state.scheduleAudit.duplicateSchedulesSuppressed || 0)} saved schedule row(s) from ambiguous duplicate date ranges were excluded from schedule-derived analytics rather than blended.`
+        : '';
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
     }
   }
 
@@ -2703,7 +2749,7 @@
       state.cohort = readAnalyticsCohort();
       if (state.cohort?.keySet) {
         state.question = 'programs';
-        state.metric = 'avg';
+        state.metric = 'median';
       }
     }
     if (loaded && !options.force) {
