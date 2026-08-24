@@ -5,14 +5,9 @@ on:
     branches: [main]
     paths:
       - .github/workflows/run-analytics-v02292.yml
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/analytics-and-comparison-v02292.yml
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   patch:
@@ -29,9 +24,27 @@ jobs:
         run: |
           git fetch origin fix-performance-analytics-starttime-v02292
           git switch fix-performance-analytics-starttime-v02292
-          ruby -e 'require "yaml"; y=YAML.load_file(".github/workflows/analytics-and-comparison-v02292.yml"); puts y["jobs"]["patch"]["steps"].find{|s| s["name"]=="Apply analytics hardening and comparison refinements"}["run"]' > /tmp/apply.sh
+          python - <<'PY' > /tmp/apply.sh
+          from pathlib import Path
+          import textwrap
+          lines = Path('.github/workflows/analytics-and-comparison-v02292.yml').read_text(encoding='utf-8').splitlines()
+          target = '      - name: Apply analytics hardening and comparison refinements'
+          start = lines.index(target)
+          run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
+          end = next((i for i in range(run_line + 1, len(lines)) if lines[i].startswith('      - name: ')), len(lines))
+          print(textwrap.dedent('\n'.join(lines[run_line + 1:end])))
+          PY
           bash /tmp/apply.sh
-          ruby -e 'require "yaml"; y=YAML.load_file(".github/workflows/analytics-and-comparison-v02292.yml"); puts y["jobs"]["patch"]["steps"].find{|s| s["name"]=="Validate"}["run"]' > /tmp/validate.sh
+          python - <<'PY' > /tmp/validate.sh
+          from pathlib import Path
+          import textwrap
+          lines = Path('.github/workflows/analytics-and-comparison-v02292.yml').read_text(encoding='utf-8').splitlines()
+          target = '      - name: Validate'
+          start = lines.index(target)
+          run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
+          end = next((i for i in range(run_line + 1, len(lines)) if lines[i].startswith('      - name: ')), len(lines))
+          print(textwrap.dedent('\n'.join(lines[run_line + 1:end])))
+          PY
           bash /tmp/validate.sh
           rm -f .github/workflows/analytics-and-comparison-v02292.yml
           rmdir .github/workflows 2>/dev/null || true
