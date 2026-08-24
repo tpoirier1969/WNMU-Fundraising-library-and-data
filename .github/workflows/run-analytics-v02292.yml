@@ -1,54 +1,23 @@
-name: Run analytics v0.22.92 patch
+name: Validate analytics v0.22.92
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/run-analytics-v02292.yml
   pull_request:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Apply and validate v0.22.92 on feature branch
-        shell: bash
+      - name: Validate analytics and comparison changes
         run: |
-          git fetch origin fix-performance-analytics-starttime-v02292
-          git switch fix-performance-analytics-starttime-v02292
-          python scripts/_tmp_fix_v02292_patch_helper.py
-          python scripts/_tmp_v02292_patch.py
           node --check assets/js/ui-analytics.js
           node --check assets/js/ui-fundraiser-comparison.js
           node --test tests/performance-analytics.test.mjs
           node --test tests/fundraiser-comparison.test.mjs
-          rm -f scripts/_tmp_v02292_patch.py scripts/_tmp_fix_v02292_patch_helper.py scripts/_tmp_trigger_v02292*.txt
-          git config user.name "OpenAI"
-          git config user.email "noreply@openai.com"
-          git add -A
-          git commit -m "Harden analytics and add median weather performance views"
-          git push origin HEAD:fix-performance-analytics-starttime-v02292
-      - name: Remove temporary runner from main
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          git switch main
-          git pull --ff-only origin main
-          rm -f .github/workflows/run-analytics-v02292.yml
-          rmdir .github/workflows 2>/dev/null || true
-          rmdir .github 2>/dev/null || true
-          git config user.name "OpenAI"
-          git config user.email "noreply@openai.com"
-          git add -A
-          git commit -m "Remove temporary v0.22.92 analytics runner"
-          git push origin HEAD:main
