@@ -46,3 +46,4 @@ jobs:
           git add -A
           git commit -m "Remove temporary v0.22.93 topic drilldown runner"
           git push origin HEAD:main
+# trigger
