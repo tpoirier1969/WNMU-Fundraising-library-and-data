@@ -31,7 +31,7 @@ jobs:
           node --check assets/js/ui-fundraiser-comparison.js
           node --test tests/performance-analytics.test.mjs
           node --test tests/fundraiser-comparison.test.mjs
-          rm -f scripts/_tmp_v02292_patch.py
+          rm -f scripts/_tmp_v02292_patch.py scripts/_tmp_trigger_v02292.txt
           git config user.name "OpenAI"
           git config user.email "noreply@openai.com"
           git add -A
