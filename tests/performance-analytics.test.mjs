@@ -128,3 +128,51 @@ test('zero-dominated groups are flagged even when MAD has no statistical outlier
   assert.match(hooks.distributionLabel(row), /Zero-dominated/);
   assert.match(hooks.distributionLabel(row), /3\/5 at \$0/);
 });
+
+
+test('unique imported date and time can override a mismatched planned title', () => {
+  const actual = { id: 'actual', sourceAiringHash: '', dateKey: '2026-08-08', startMinutes: 1200, title: 'Actual Show', importedTitle: 'Actual Show', programId: 'p2', programOpenId: 'p2', nola: '', dollars: 725 };
+  const lookup = hooks.buildAiringRecordLookup([actual]);
+  const matched = hooks.findAiringForSchedulePlacement({ placement: { programId: 'p1', programTitle: 'Planned Show' }, dateKey: '2026-08-08', startMinutes: 1200, pid: 'p1', nola: '', title: 'planned show', airingLookup: lookup });
+  assert.equal(matched?.id, 'actual');
+  assert.equal(matched?.dollars, 725);
+});
+
+test('imported result beats manual data and supplies the actual imported start time', () => {
+  const schedules = [{ id: 's1', title: 'August 2026', placements: [{ id: 'x', dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260, programId: 'p1', programTitle: 'Same Show', manualResultRecorded: true, manualBroadcastDollars: 999, manualPledgeCount: 9 }] }];
+  const library = [{ id: 'p1', title: 'Same Show', topic_primary: 'Drama', topic_secondary: 'Doc' }];
+  const imported = [{ id: 'a1', sourceAiringHash: '', dateKey: '2026-08-08', date: new Date(2026, 7, 8), startMinutes: 1230, title: 'Same Show', importedTitle: 'Same Show', programId: 'p1', programOpenId: 'p1', nola: '', topic: 'Drama', secondaryTopic: 'Doc', dollars: 450, pledges: 4 }];
+  const rows = hooks.buildScheduleRecords(schedules, library, imported);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].dollars, 450);
+  assert.equal(rows[0].pledges, 4);
+  assert.equal(rows[0].startMinutes, 1230);
+  assert.equal(rows[0].resultSource, 'report');
+});
+
+test('scheduled title omitted from a populated imported day becomes zero, while an unreported day stays pending', () => {
+  const schedules = [{ id: 's1', title: 'August 2026', placements: [
+    { id: 'reported', dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260, programId: 'p1', programTitle: 'Reported Show' },
+    { id: 'missing', dateKey: '2026-08-08', startMinutes: 1260, endMinutes: 1320, programId: 'p2', programTitle: 'Missing Show' },
+    { id: 'pending', dateKey: '2026-08-09', startMinutes: 1200, endMinutes: 1260, programId: 'p3', programTitle: 'Pending Show' }
+  ] }];
+  const library = [
+    { id: 'p1', title: 'Reported Show', topic_primary: 'Music', topic_secondary: 'Rock' },
+    { id: 'p2', title: 'Missing Show', topic_primary: 'Drama', topic_secondary: 'Doc' },
+    { id: 'p3', title: 'Pending Show', topic_primary: 'Science', topic_secondary: 'Nature' }
+  ];
+  const imported = [{ id: 'a1', sourceAiringHash: '', dateKey: '2026-08-08', date: new Date(2026, 7, 8), startMinutes: 1200, title: 'Reported Show', importedTitle: 'Reported Show', programId: 'p1', programOpenId: 'p1', nola: '', topic: 'Music', secondaryTopic: 'Rock', dollars: 500, pledges: 2 }];
+  const rows = hooks.buildScheduleRecords(schedules, library, imported);
+  assert.equal(rows.length, 2);
+  const missing = rows.find((row) => row.plannedTitle === 'Missing Show');
+  assert.ok(missing);
+  assert.equal(missing.dollars, 0);
+  assert.equal(missing.resultSource, 'report-day-zero');
+  assert.equal(rows.some((row) => row.plannedTitle === 'Pending Show'), false);
+});
+
+test('start-time analytics copy states imported history is authoritative and documents report-day zero handling', () => {
+  const text = fs.readFileSync(sourcePath, 'utf8');
+  assert.match(text, /Imported fundraiser history is the factual source/);
+  assert.match(text, /missing from an otherwise populated imported report day counts as a completed \$0/);
+});
