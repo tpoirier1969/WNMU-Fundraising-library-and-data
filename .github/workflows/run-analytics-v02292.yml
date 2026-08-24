@@ -19,40 +19,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run patch from feature branch
+      - name: Apply and validate v0.22.92 on feature branch
         shell: bash
         run: |
           git fetch origin fix-performance-analytics-starttime-v02292
           git switch fix-performance-analytics-starttime-v02292
-          python - <<'PY' > /tmp/apply.sh
-          from pathlib import Path
-          import textwrap
-          lines = Path('.github/workflows/analytics-and-comparison-v02292.yml').read_text(encoding='utf-8').splitlines()
-          target = '      - name: Apply analytics hardening and comparison refinements'
-          start = lines.index(target)
-          run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
-          end = next((i for i in range(run_line + 1, len(lines)) if lines[i].startswith('      - name: ')), len(lines))
-          print(textwrap.dedent('\n'.join(lines[run_line + 1:end])))
-          PY
-          bash /tmp/apply.sh
-          python - <<'PY' > /tmp/validate.sh
-          from pathlib import Path
-          import textwrap
-          lines = Path('.github/workflows/analytics-and-comparison-v02292.yml').read_text(encoding='utf-8').splitlines()
-          target = '      - name: Validate'
-          start = lines.index(target)
-          run_line = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'run: |')
-          end = next((i for i in range(run_line + 1, len(lines)) if lines[i].startswith('      - name: ')), len(lines))
-          print(textwrap.dedent('\n'.join(lines[run_line + 1:end])))
-          PY
-          bash /tmp/validate.sh
-          rm -f .github/workflows/analytics-and-comparison-v02292.yml
-          rmdir .github/workflows 2>/dev/null || true
-          rmdir .github 2>/dev/null || true
+          python scripts/_tmp_v02292_patch.py
+          node --check assets/js/ui-analytics.js
+          node --check assets/js/ui-fundraiser-comparison.js
+          node --test tests/performance-analytics.test.mjs
+          node --test tests/fundraiser-comparison.test.mjs
+          rm -f scripts/_tmp_v02292_patch.py
           git config user.name "OpenAI"
           git config user.email "noreply@openai.com"
           git add -A
-          git commit -m "Harden analytics and add weather performance view"
+          git commit -m "Harden analytics and add median weather performance views"
           git push origin HEAD:fix-performance-analytics-starttime-v02292
       - name: Remove temporary runner from main
         shell: bash
