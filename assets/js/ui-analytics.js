@@ -814,187 +814,225 @@
 
 
   function buildAiringRecordLookup(airingRecords = []) {
-    const maps = { hash: new Map(), exact: new Map(), dateProgram: new Map(), dateNola: new Map(), dateTitle: new Map() };
-    const push = (map, key, record) => {
-      if (!key) return;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(record);
-    };
-    airingRecords.forEach((record) => {
-      const hash = text(record.sourceAiringHash || record.row?.row_hash || '');
-      if (hash) maps.hash.set(hash, record);
-      const dateKey = text(record.dateKey || '');
-      if (!dateKey) return;
-      const keys = [
-        text(record.programOpenId || ''),
-        text(record.programId || ''),
-        record.nola ? nolaKey(record.nola) : '',
-        lookupKey(record.title),
-        lookupKey(record.importedTitle)
-      ].filter(Boolean);
-      keys.forEach((key) => {
-        if (Number.isFinite(record.startMinutes)) push(maps.exact, `${dateKey}|${key}|${record.startMinutes}`, record);
-        push(maps.dateProgram, `${dateKey}|${key}`, record);
-        push(maps.dateNola, `${dateKey}|${key}`, record);
-        push(maps.dateTitle, `${dateKey}|${key}`, record);
-      });
-    });
-    return maps;
-  }
-
-  function findAiringForSchedulePlacement({ placement = {}, dateKey = '', startMinutes = NaN, pid = '', nola = '', title = '', airingLookup }) {
-    const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
-    if (hash && airingLookup.hash.has(hash)) return airingLookup.hash.get(hash);
-    const keys = [pid, nola, title, lookupKey(placement.programTitle || placement.program_title || placement.title || placement.name || '')].filter(Boolean);
-    const exactCandidates = [];
-    const sameDayCandidates = [];
+  const maps = { hash: new Map(), exact: new Map(), dateTime: new Map(), dateProgram: new Map(), dateNola: new Map(), dateTitle: new Map() };
+  const push = (map, key, record) => {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(record);
+  };
+  airingRecords.forEach((record) => {
+    const hash = text(record.sourceAiringHash || record.row?.row_hash || '');
+    if (hash) maps.hash.set(hash, record);
+    const dateKey = text(record.dateKey || '');
+    if (!dateKey) return;
+    if (Number.isFinite(record.startMinutes)) push(maps.dateTime, `${dateKey}|${record.startMinutes}`, record);
+    const keys = [
+      text(record.programOpenId || ''),
+      text(record.programId || ''),
+      record.nola ? nolaKey(record.nola) : '',
+      lookupKey(record.title),
+      lookupKey(record.importedTitle)
+    ].filter(Boolean);
     keys.forEach((key) => {
-      if (Number.isFinite(startMinutes)) exactCandidates.push(...(airingLookup.exact.get(`${dateKey}|${key}|${startMinutes}`) || []));
-      sameDayCandidates.push(...(airingLookup.dateProgram.get(`${dateKey}|${key}`) || []));
-      sameDayCandidates.push(...(airingLookup.dateNola.get(`${dateKey}|${key}`) || []));
-      sameDayCandidates.push(...(airingLookup.dateTitle.get(`${dateKey}|${key}`) || []));
+      if (Number.isFinite(record.startMinutes)) push(maps.exact, `${dateKey}|${key}|${record.startMinutes}`, record);
+      push(maps.dateProgram, `${dateKey}|${key}`, record);
+      push(maps.dateNola, `${dateKey}|${key}`, record);
+      push(maps.dateTitle, `${dateKey}|${key}`, record);
     });
-    const uniqueRows = (rows) => {
-      const unique = [];
-      const seen = new Set();
-      rows.forEach((record) => {
-        const id = text(record.id || record.sourceAiringHash || `${record.dateKey}|${record.startMinutes}|${record.title}|${record.dollars}`);
-        if (!id || seen.has(id)) return;
-        seen.add(id);
-        unique.push(record);
-      });
-      return unique;
-    };
-    const exact = uniqueRows(exactCandidates);
-    if (exact.length === 1) return exact[0];
-    if (exact.length > 1) return null;
-    const sameDay = uniqueRows(sameDayCandidates);
-    return sameDay.length === 1 ? sameDay[0] : null;
+  });
+  return maps;
+}
+  function findAiringForSchedulePlacement({ placement = {}, dateKey = '', startMinutes = NaN, pid = '', nola = '', title = '', airingLookup }) {
+  const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+  if (hash && airingLookup.hash.has(hash)) return airingLookup.hash.get(hash);
+  const keys = [pid, nola, title, lookupKey(placement.programTitle || placement.program_title || placement.title || placement.name || '')].filter(Boolean);
+  const exactCandidates = [];
+  const sameDayCandidates = [];
+  keys.forEach((key) => {
+    if (Number.isFinite(startMinutes)) exactCandidates.push(...(airingLookup.exact.get(`${dateKey}|${key}|${startMinutes}`) || []));
+    sameDayCandidates.push(...(airingLookup.dateProgram.get(`${dateKey}|${key}`) || []));
+    sameDayCandidates.push(...(airingLookup.dateNola.get(`${dateKey}|${key}`) || []));
+    sameDayCandidates.push(...(airingLookup.dateTitle.get(`${dateKey}|${key}`) || []));
+  });
+  const uniqueRows = (rows) => {
+    const unique = [];
+    const seen = new Set();
+    rows.forEach((record) => {
+      const id = text(record.id || record.sourceAiringHash || `${record.dateKey}|${record.startMinutes}|${record.title}|${record.dollars}`);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      unique.push(record);
+    });
+    return unique;
+  };
+  const exact = uniqueRows(exactCandidates);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+  if (Number.isFinite(startMinutes)) {
+    const exactTime = uniqueRows(airingLookup.dateTime?.get(`${dateKey}|${startMinutes}`) || []);
+    if (exactTime.length === 1) return exactTime[0];
+    if (exactTime.length > 1) return null;
   }
-
+  const sameDay = uniqueRows(sameDayCandidates);
+  return sameDay.length === 1 ? sameDay[0] : null;
+}
   function buildScheduleRecords(schedules = [], libraryRows = [], airingRecords = []) {
-    const indexes = buildLibraryIndexes(libraryRows);
-    const airingLookup = buildAiringRecordLookup(airingRecords);
-    const out = [];
-    const usedAiringDollarMatches = new Set();
-    const diagnostics = { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 };
-    schedules.forEach((schedule) => {
-      (schedule.placements || []).forEach((placement) => {
-        diagnostics.schedulePlacements += 1;
-        const liveFlag = placementLive(placement);
-        if (liveFlag) diagnostics.livePlacements += 1;
-        const dateKey = text(placement.dateKey || placement.date_key || '');
-        const date = parseLocalDate(dateKey);
-        const season = pledgeSeason(date);
-        const year = date ? date.getFullYear() : '';
-        const startMinutes = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? NaN);
-        const endMinutes = Number(placement.endMinutes ?? placement.end_minutes ?? placement.end ?? NaN);
-        const durationMinutes = Number(firstNonEmpty(placement.programMinutes, placement.program_minutes, placement.durationMinutes, placement.duration_minutes, null)) || durationFromTimes(startMinutes, endMinutes);
-        if (!dateKey || !date || !season) return;
-        const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
-        const rawPid = text(firstNonEmpty(placement.programId, placement.program_id, ''));
-        const rawNola = nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
-        const rawTitle = lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''));
-        const initialLib = indexes.byId.get(rawPid) || resolveLibraryByNola(indexes, rawNola, rawTitle) || indexes.byTitle.get(rawTitle) || {};
-        const initialPid = text(firstNonEmpty(rawPid, initialLib.id, ''));
-        const initialNola = nolaKey(firstNonEmpty(initialLib.nola_code, rawNola, ''));
-        const initialTitle = lookupKey(firstNonEmpty(initialLib.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
-        const matched = findAiringForSchedulePlacement({ placement, dateKey, startMinutes, pid: initialPid, nola: initialNola, title: initialTitle, airingLookup });
-        if (liveFlag && !matched) diagnostics.unmatchedLivePlacements += 1;
-        const pid = text(firstNonEmpty(placement.programId, placement.program_id, matched?.programOpenId, matched?.programId, initialLib.id, ''));
-        const lib = indexes.byId.get(pid) || (matched?.nola ? resolveLibraryByNola(indexes, nolaKey(matched.nola), lookupKey(firstNonEmpty(matched?.title, matched?.importedTitle, ''))) : null) || resolveLibraryByNola(indexes, initialNola, initialTitle) || indexes.byTitle.get(lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, matched?.title, ''))) || initialLib || {};
-        const title = text(firstNonEmpty(lib.title, matched?.title, placement.programTitle, placement.program_title, placement.title, placement.name, 'Untitled'));
-        const nonSpecific = isNonSpecificPledgeBucket(title, lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola);
-        const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, matched?.topic, ''));
-        const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
-        const matchedDollarKey = matched ? text(firstNonEmpty(
-          matched.sourceAiringHash,
-          matched.id,
-          `${matched.dateKey || dateKey}|${matched.startMinutes ?? ''}|${lookupKey(matched.title || '')}|${matched.dollars ?? ''}`
-        )) : '';
-        const explicitDollars = firstNonEmpty(
-          placement.importedBroadcastDollars,
-          placement.manualResultRecorded ? Number(placement.manualBroadcastDollars || 0) : null,
-          placement.actualDollars,
-          placement.broadcastDollars,
-          placement.dollars,
-          placement.pledgeDollars,
-          null
-        );
-        const explicitPledges = firstNonEmpty(
-          placement.importedPledges,
-          placement.importedBroadcastPledges,
-          placement.manualResultRecorded ? Number(placement.manualPledgeCount || 0) : null,
-          placement.pledges,
-          placement.pledgeCount,
-          null
-        );
-        const canUseMatchedDollars = matchedDollarKey ? !usedAiringDollarMatches.has(matchedDollarKey) : Boolean(matched);
-        const resultKnown = explicitDollars != null || Boolean(canUseMatchedDollars && matched);
-        const dollars = Number(firstNonEmpty(
-          explicitDollars,
-          canUseMatchedDollars ? matched?.dollars : null,
-          0
-        ) || 0);
-        const pledges = Number(firstNonEmpty(
-          explicitPledges,
-          canUseMatchedDollars ? matched?.pledges : null,
-          0
-        ) || 0);
-        if (matchedDollarKey && explicitDollars == null && canUseMatchedDollars && matched) usedAiringDollarMatches.add(matchedDollarKey);
-        if (!resultKnown) return;
-        if (liveFlag) {
-          diagnostics.liveRows += 1;
-          diagnostics.liveDollars += dollars;
-        }
-        out.push({
-          id: placement.id || hash || `${schedule.id}|${dateKey}|${startMinutes}|${title}`,
-          row: matched?.row || {},
-          programId: pid,
-          programOpenId: text(firstNonEmpty(lib.id, matched?.programOpenId, pid, '')),
-          sourceAiringHash: hash,
-          title,
-          importedTitle: matched?.importedTitle || title,
-          nola: text(firstNonEmpty(lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola, '')),
-          topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
-          secondaryTopic: text(firstNonEmpty(lib.topic_secondary, matched?.secondaryTopic, placement.topicSecondary, placement.topic_secondary, '')),
-          topicMissing,
-          isNonSpecific: nonSpecific,
-          distributor: text(firstNonEmpty(lib.distributor, matched?.distributor, placement.distributor, '')),
-          libraryKnown: Boolean(lib && lib.id),
-          rightsStart: text(lib.rights_start || ''),
-          rightsEnd: text(lib.rights_end || ''),
-          rightsStartKey: normalizedDateKey(lib.rights_start || ''),
-          rightsEndKey: normalizedDateKey(lib.rights_end || ''),
-          rightsEndDisplay: formatDateKey(lib.rights_end || ''),
-          rightsExpired: rightsExpiredFromEnd(lib.rights_end || ''),
-          rightsNotStarted: rightsNotStartedFromStart(lib.rights_start || ''),
-          inactive: libraryInactive(lib),
-          date,
-          dateKey,
-          startMinutes,
-          endMinutes,
-          durationMinutes,
-          daypart: daypartFromMinutes(Number.isFinite(startMinutes) ? startMinutes : null),
-          weekpart: weekpartFromDate(date),
-          season,
-          year,
-          seasonYear: `${season} ${year}`,
-          fundraiser: text(schedule.title || matched?.fundraiser || `${season} ${year}`),
-          dollars,
-          pledges,
-          live: liveFlag,
-          liveState: liveFlag ? 'live' : 'nonlive',
-          liveSource: 'schedule-placement',
-          scheduleMatched: true,
-          scheduleTitle: schedule.title || ''
-        });
+  const indexes = buildLibraryIndexes(libraryRows);
+  const airingLookup = buildAiringRecordLookup(airingRecords);
+  const importedDates = new Set(airingRecords.map((record) => text(record.dateKey || '')).filter(Boolean));
+  const out = [];
+  const usedAiringDollarMatches = new Set();
+  const diagnostics = { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0, implicitZeroRows: 0 };
+  schedules.forEach((schedule) => {
+    (schedule.placements || []).forEach((placement) => {
+      diagnostics.schedulePlacements += 1;
+      const liveFlag = placementLive(placement);
+      if (liveFlag) diagnostics.livePlacements += 1;
+      const scheduledDateKey = text(placement.dateKey || placement.date_key || '');
+      const scheduledDate = parseLocalDate(scheduledDateKey);
+      const scheduledSeason = pledgeSeason(scheduledDate);
+      const scheduledStartMinutes = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? NaN);
+      const scheduledEndMinutes = Number(placement.endMinutes ?? placement.end_minutes ?? placement.end ?? NaN);
+      const scheduledDurationMinutes = Number(firstNonEmpty(placement.programMinutes, placement.program_minutes, placement.durationMinutes, placement.duration_minutes, null)) || durationFromTimes(scheduledStartMinutes, scheduledEndMinutes);
+      if (!scheduledDateKey || !scheduledDate || !scheduledSeason) return;
+      const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+      const rawPid = text(firstNonEmpty(placement.programId, placement.program_id, ''));
+      const rawNola = nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
+      const rawTitleText = text(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''));
+      const rawTitle = lookupKey(rawTitleText);
+      const initialLib = indexes.byId.get(rawPid) || resolveLibraryByNola(indexes, rawNola, rawTitle) || indexes.byTitle.get(rawTitle) || {};
+      const initialPid = text(firstNonEmpty(rawPid, initialLib.id, ''));
+      const initialNola = nolaKey(firstNonEmpty(initialLib.nola_code, rawNola, ''));
+      const initialTitle = lookupKey(firstNonEmpty(initialLib.title, rawTitleText, ''));
+      const matchedCandidate = findAiringForSchedulePlacement({ placement, dateKey: scheduledDateKey, startMinutes: scheduledStartMinutes, pid: initialPid, nola: initialNola, title: initialTitle, airingLookup });
+      const matchedDollarKey = matchedCandidate ? text(firstNonEmpty(
+        matchedCandidate.sourceAiringHash,
+        matchedCandidate.id,
+        `${matchedCandidate.dateKey || scheduledDateKey}|${matchedCandidate.startMinutes ?? ''}|${lookupKey(matchedCandidate.title || '')}|${matchedCandidate.dollars ?? ''}`
+      )) : '';
+      const canUseMatchedDollars = matchedCandidate && (matchedDollarKey ? !usedAiringDollarMatches.has(matchedDollarKey) : true);
+      const matched = canUseMatchedDollars ? matchedCandidate : null;
+      if (liveFlag && !matched) diagnostics.unmatchedLivePlacements += 1;
+
+      const attachedImportedDollars = placement.importedBroadcastDollars === '' || placement.importedBroadcastDollars == null
+        ? null
+        : Number(placement.importedBroadcastDollars);
+      const attachedImportedPledges = firstNonEmpty(placement.importedPledges, placement.importedBroadcastPledges, null);
+      const savedDollars = firstNonEmpty(
+        placement.manualResultRecorded ? Number(placement.manualBroadcastDollars || 0) : null,
+        placement.actualDollars,
+        placement.broadcastDollars,
+        placement.dollars,
+        placement.pledgeDollars,
+        null
+      );
+      const savedPledges = firstNonEmpty(
+        placement.manualResultRecorded ? Number(placement.manualPledgeCount || 0) : null,
+        placement.pledges,
+        placement.pledgeCount,
+        null
+      );
+      const sameDayReported = importedDates.has(scheduledDateKey);
+      let resultSource = 'none';
+      let dollars = 0;
+      let pledges = 0;
+      if (matched) {
+        resultSource = 'report';
+        dollars = Number(matched.dollars || 0) || 0;
+        pledges = Number(matched.pledges || 0) || 0;
+        if (matchedDollarKey) usedAiringDollarMatches.add(matchedDollarKey);
+      } else if (Number.isFinite(attachedImportedDollars)) {
+        resultSource = 'attached-report';
+        dollars = attachedImportedDollars;
+        pledges = Number(attachedImportedPledges || 0) || 0;
+      } else if (sameDayReported) {
+        resultSource = 'report-day-zero';
+        dollars = 0;
+        pledges = 0;
+        diagnostics.implicitZeroRows += 1;
+      } else if (savedDollars != null) {
+        resultSource = placement.manualResultRecorded ? 'manual' : 'saved-result';
+        dollars = Number(savedDollars || 0) || 0;
+        pledges = Number(savedPledges || 0) || 0;
+      } else {
+        return;
+      }
+
+      const pid = text(firstNonEmpty(matched?.programOpenId, matched?.programId, placement.programId, placement.program_id, initialLib.id, ''));
+      const matchedTitleKey = lookupKey(firstNonEmpty(matched?.title, matched?.importedTitle, ''));
+      const lib = (matched?.programOpenId ? indexes.byId.get(text(matched.programOpenId)) : null)
+        || (matched?.programId ? indexes.byId.get(text(matched.programId)) : null)
+        || (matched?.nola ? resolveLibraryByNola(indexes, nolaKey(matched.nola), matchedTitleKey) : null)
+        || indexes.byId.get(pid)
+        || resolveLibraryByNola(indexes, initialNola, initialTitle)
+        || indexes.byTitle.get(matchedTitleKey)
+        || indexes.byTitle.get(rawTitle)
+        || initialLib
+        || {};
+      const title = text(firstNonEmpty(matched?.title, lib.title, rawTitleText, 'Untitled'));
+      const nonSpecific = isNonSpecificPledgeBucket(title, lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola);
+      const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(matched?.topic, lib.topic_primary, ''));
+      const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
+      const actualDateKey = text(firstNonEmpty(matched?.dateKey, scheduledDateKey));
+      const actualDate = matched?.date instanceof Date && !Number.isNaN(matched.date.getTime()) ? matched.date : (parseLocalDate(actualDateKey) || scheduledDate);
+      const actualStartMinutes = Number.isFinite(Number(matched?.startMinutes)) ? Number(matched.startMinutes) : scheduledStartMinutes;
+      const actualEndMinutes = Number.isFinite(Number(matched?.endMinutes)) ? Number(matched.endMinutes) : scheduledEndMinutes;
+      const actualDurationMinutes = Number(firstNonEmpty(matched?.durationMinutes, scheduledDurationMinutes, null)) || durationFromTimes(actualStartMinutes, actualEndMinutes);
+      const season = pledgeSeason(actualDate) || scheduledSeason;
+      const year = actualDate ? actualDate.getFullYear() : scheduledDate.getFullYear();
+      if (liveFlag) {
+        diagnostics.liveRows += 1;
+        diagnostics.liveDollars += dollars;
+      }
+      out.push({
+        id: placement.id || text(matched?.sourceAiringHash) || hash || `${schedule.id}|${actualDateKey}|${actualStartMinutes}|${title}`,
+        row: matched?.row || {},
+        programId: pid,
+        programOpenId: text(firstNonEmpty(matched?.programOpenId, lib.id, pid, '')),
+        sourceAiringHash: text(firstNonEmpty(matched?.sourceAiringHash, hash, '')),
+        title,
+        plannedTitle: rawTitleText,
+        importedTitle: matched?.importedTitle || title,
+        nola: text(firstNonEmpty(matched?.nola, lib.nola_code, placement.nolaCode, placement.nola_code, placement.nola, '')),
+        topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
+        secondaryTopic: text(firstNonEmpty(matched?.secondaryTopic, lib.topic_secondary, placement.topicSecondary, placement.topic_secondary, '')),
+        topicMissing,
+        isNonSpecific: nonSpecific,
+        distributor: text(firstNonEmpty(matched?.distributor, lib.distributor, placement.distributor, '')),
+        libraryKnown: Boolean(lib && lib.id),
+        rightsStart: text(lib.rights_start || ''),
+        rightsEnd: text(lib.rights_end || ''),
+        rightsStartKey: normalizedDateKey(lib.rights_start || ''),
+        rightsEndKey: normalizedDateKey(lib.rights_end || ''),
+        rightsEndDisplay: formatDateKey(lib.rights_end || ''),
+        rightsExpired: rightsExpiredFromEnd(lib.rights_end || ''),
+        rightsNotStarted: rightsNotStartedFromStart(lib.rights_start || ''),
+        inactive: libraryInactive(lib),
+        date: actualDate,
+        dateKey: actualDateKey,
+        startMinutes: actualStartMinutes,
+        endMinutes: actualEndMinutes,
+        durationMinutes: actualDurationMinutes,
+        daypart: daypartFromMinutes(Number.isFinite(actualStartMinutes) ? actualStartMinutes : null),
+        weekpart: weekpartFromDate(actualDate),
+        season,
+        year,
+        seasonYear: `${season} ${year}`,
+        fundraiser: text(schedule.title || matched?.fundraiser || `${season} ${year}`),
+        dollars,
+        pledges,
+        resultSource,
+        live: liveFlag,
+        liveState: liveFlag ? 'live' : 'nonlive',
+        liveSource: 'schedule-placement',
+        scheduleMatched: true,
+        scheduleTitle: schedule.title || ''
       });
     });
-    state.liveBreakDiagnostics = diagnostics;
-    return out;
-  }
-
+  });
+  state.liveBreakDiagnostics = diagnostics;
+  return out;
+}
   function groupBy(rows, fn) {
     const map = new Map();
     rows.forEach((row) => {
@@ -1908,10 +1946,10 @@ function outlierSummary(values = []) {
   const QUESTIONS = {
     startTimes: {
       title: 'Start time performance',
-      summary: 'Broadcast proceeds by actual 30-minute program start bucket from saved fundraiser schedules.',
+      summary: 'Broadcast proceeds by the actual imported start time when report evidence exists, while saved Scheduling placements preserve report-day $0s.',
       graphTitle: 'Start time buckets',
       tableTitle: 'Start time performance',
-      tableNote: 'Uses saved Scheduling placements for the actual program start time, then attaches the imported or manual broadcast result for that airing. Completed $0 broadcasts count as airings. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',
+      tableNote: 'Imported fundraiser history is the factual source for completed airing date, time, title, and dollars. Saved Scheduling placements are retained so a scheduled title missing from an otherwise populated imported report day counts as a completed $0 at its scheduled slot. A schedule day with no imported fundraiser rows remains pending and is excluded until results exist. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',
       source: 'schedule',
       rows: rowsStartTimes,
       metricDriven: true,

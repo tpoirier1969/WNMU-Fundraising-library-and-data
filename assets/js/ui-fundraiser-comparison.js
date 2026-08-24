@@ -190,86 +190,174 @@
   }
 
   function importedStartMinutes(row = {}) {
-    const raw = text(row.air_time || '');
-    const match = raw.match(/^(\d{1,2}):(\d{2})/);
-    if (match) return (Number(match[1]) * 60) + Number(match[2]);
-    const date = new Date(row.aired_at || '');
-    return Number.isNaN(date.getTime()) ? null : (date.getHours() * 60) + date.getMinutes();
-  }
+  const raw = text(row.air_time || '');
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (match) return (Number(match[1]) * 60) + Number(match[2]);
+  const date = new Date(row.aired_at || '');
+  return Number.isNaN(date.getTime()) ? null : (date.getHours() * 60) + date.getMinutes();
+}
 
-  function placementStartMinutes(placement = {}) {
-    const value = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start);
-    return Number.isFinite(value) ? value : null;
-  }
+function importedTitle(row = {}) {
+  return text(row.imported_program_title || row.program_title || row.title || row.matched_library_title || '');
+}
 
-  function identityMatches(row = {}, placement = {}, lib = null) {
-    const placementId = text(placement.programId || placement.program_id || lib?.id || '');
-    const rowId = text(row.program_id || row.pledge_program_id || row.manual_match_program_id || '');
-    if (placementId && rowId && placementId === rowId) return true;
-
-    const placementNola = nolaKey(lib?.nola_code || placement.nolaCode || placement.nola_code || placement.nola || '');
-    const rowNola = nolaKey(row.nola_code || row.nola || row.program_nola || '');
-    if (placementNola && rowNola && placementNola === rowNola) return true;
-
-    const placementTitle = lookupKey(lib?.title || placement.programTitle || placement.program_title || placement.title || '');
-    const rowTitle = lookupKey(row.matched_library_title || row.program_title || row.title || row.imported_program_title || '');
-    return Boolean(placementTitle && rowTitle && placementTitle === rowTitle);
-  }
-
-  function importedRowForPlacement(placement = {}, used = new Set()) {
-    const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
-    if (hash) {
-      const direct = state.airings.find((row) => text(row.row_hash) === hash && !used.has(text(row.row_hash || row.id)));
-      if (direct) return direct;
+function libraryRowForImportedRow(row = {}) {
+  const id = text(row.pledge_program_id || row.manual_match_program_id || row.program_id || '');
+  if (id && state.libraryById.has(id)) return state.libraryById.get(id);
+  const nola = nolaKey(row.nola_code || row.nola || row.program_nola || '');
+  const title = lookupKey(row.matched_library_title || row.program_title || row.title || row.imported_program_title || '');
+  if (nola) {
+    const matches = state.libraryByNola.get(nola) || [];
+    if (title) {
+      const exact = matches.find((candidate) => lookupKey(candidate.title) === title);
+      if (exact) return exact;
     }
+    if (matches.length === 1) return matches[0];
+  }
+  return title ? state.libraryByTitle.get(title) || null : null;
+}
 
-    const dateKey = text(placement.dateKey || placement.date_key || '');
-    const start = placementStartMinutes(placement);
-    if (!dateKey || !Number.isFinite(start)) return null;
+function scheduleSeasonYear(schedule = {}) {
+  const counts = new Map();
+  (schedule.placements || []).forEach((placement) => {
+    const date = parseDate(placement?.dateKey || placement?.date_key || '');
+    if (!date) return;
+    const season = seasonForDate(date);
+    const year = date.getFullYear();
+    if (!season || !year) return;
+    const key = `${season}|${year}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  if (counts.size) {
+    const [key] = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    const [season, year] = key.split('|');
+    return { season, year: Number(year) };
+  }
+  const title = text(schedule.title || '');
+  const titleSeason = SEASONS.find((season) => new RegExp(`\\b${season}\\b`, 'i').test(title)) || '';
+  const titleYearMatch = title.match(/\\b(20\\d{2})\\b/);
+  if (titleSeason && titleYearMatch) return { season: titleSeason, year: Number(titleYearMatch[1]) };
+  const start = parseDate(schedule.startDate || schedule.start_date || '');
+  return {
+    season: text(schedule.season || seasonForDate(start)),
+    year: Number(schedule.year || start?.getFullYear() || 0)
+  };
+}
 
-    const lib = libraryRowForPlacement(placement);
-    const candidates = state.airings.filter((row) => importedDateKey(row) === dateKey && importedStartMinutes(row) === start && !used.has(text(row.row_hash || row.id)));
-    const matches = candidates.filter((row) => identityMatches(row, placement, lib));
-    return matches.length === 1 ? matches[0] : null;
+function importedRowsForSchedule(schedule = {}) {
+  const identity = scheduleSeasonYear(schedule);
+  if (!identity.season || !identity.year) return [];
+  return (state.airings || []).filter((row) => {
+    const date = parseDate(importedDateKey(row));
+    return Boolean(date && seasonForDate(date) === identity.season && date.getFullYear() === identity.year);
+  });
+}
+
+function importedUseKey(row = {}) {
+  return text(row.row_hash || row.id || `${importedDateKey(row)}|${importedStartMinutes(row) ?? ''}|${importedTitle(row)}|${row.dollars ?? row.contribution_amount ?? ''}`);
+}
+
+function importedDateHasResults(dateKey = '', importedRows = []) {
+  const wanted = text(dateKey);
+  return Boolean(wanted && (importedRows || []).some((row) => importedDateKey(row) === wanted));
+}
+
+function placementStartMinutes(placement = {}) {
+  const value = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start);
+  return Number.isFinite(value) ? value : null;
+}
+
+function identityMatches(row = {}, placement = {}, lib = null) {
+  const placementId = text(placement.programId || placement.program_id || lib?.id || '');
+  const rowId = text(row.program_id || row.pledge_program_id || row.manual_match_program_id || '');
+  if (placementId && rowId && placementId === rowId) return true;
+
+  const placementNola = nolaKey(lib?.nola_code || placement.nolaCode || placement.nola_code || placement.nola || '');
+  const rowNola = nolaKey(row.nola_code || row.nola || row.program_nola || '');
+  if (placementNola && rowNola && placementNola === rowNola) return true;
+
+  const placementTitle = lookupKey(lib?.title || placement.programTitle || placement.program_title || placement.title || '');
+  const rowTitle = lookupKey(row.matched_library_title || row.program_title || row.title || row.imported_program_title || '');
+  return Boolean(placementTitle && rowTitle && placementTitle === rowTitle);
+}
+
+function importedRowForPlacement(placement = {}, used = new Set(), importedRows = state.airings || []) {
+  const available = (importedRows || []).filter((row) => !used.has(importedUseKey(row)));
+  const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+  if (hash) {
+    const direct = available.find((row) => text(row.row_hash) === hash);
+    if (direct) return direct;
   }
 
-  function placementResult(placement = {}, used = new Set()) {
-    if (placement?.isNonPledge) return { known: false, dollars: 0, pledges: 0, source: 'non-pledge' };
+  const dateKey = text(placement.dateKey || placement.date_key || '');
+  if (!dateKey) return null;
+  const start = placementStartMinutes(placement);
+  const lib = libraryRowForPlacement(placement);
+  const sameDay = available.filter((row) => importedDateKey(row) === dateKey);
+  if (Number.isFinite(start)) {
+    const exactTime = sameDay.filter((row) => importedStartMinutes(row) === start);
+    const exactIdentity = exactTime.filter((row) => identityMatches(row, placement, lib));
+    if (exactIdentity.length === 1) return exactIdentity[0];
+    if (exactIdentity.length > 1) return null;
+    if (exactTime.length === 1) return exactTime[0];
+    if (exactTime.length > 1) return null;
+  }
+  const sameDayIdentity = sameDay.filter((row) => identityMatches(row, placement, lib));
+  return sameDayIdentity.length === 1 ? sameDayIdentity[0] : null;
+}
 
-    const imported = importedRowForPlacement(placement, used);
-    if (imported) {
-      const usedKey = text(imported.row_hash || imported.id);
-      if (usedKey) used.add(usedKey);
-      return {
-        known: true,
-        dollars: Number(imported.dollars ?? imported.contribution_amount ?? 0) || 0,
-        pledges: Number(imported.pledge_count || 0) || 0,
-        source: 'report'
-      };
-    }
+function placementResult(placement = {}, used = new Set(), importedRows = state.airings || []) {
+  if (placement?.isNonPledge) return { known: false, dollars: 0, pledges: 0, source: 'non-pledge' };
 
-    const attached = Number(placement.importedBroadcastDollars);
-    if (Number.isFinite(attached) && (attached !== 0 || placement.importedFromReport || text(placement.sourceAiringHash))) {
-      return {
-        known: true,
-        dollars: attached,
-        pledges: Number(placement.importedPledges || placement.importedBroadcastPledges || 0) || 0,
-        source: 'attached-report'
-      };
-    }
-
-    if (placement?.manualResultRecorded) {
-      return {
-        known: true,
-        dollars: Number(placement.manualBroadcastDollars || 0) || 0,
-        pledges: Number(placement.manualPledgeCount || 0) || 0,
-        source: 'manual'
-      };
-    }
-
-    return { known: false, dollars: 0, pledges: 0, source: 'none' };
+  const imported = importedRowForPlacement(placement, used, importedRows);
+  if (imported) {
+    const usedKey = importedUseKey(imported);
+    if (usedKey) used.add(usedKey);
+    return {
+      known: true,
+      dollars: Number(imported.dollars ?? imported.contribution_amount ?? 0) || 0,
+      pledges: Number(imported.pledge_count || 0) || 0,
+      source: 'report',
+      importedRow: imported,
+      actualDateKey: importedDateKey(imported),
+      actualStartMinutes: importedStartMinutes(imported),
+      actualTitle: importedTitle(imported)
+    };
   }
 
+  const attachedRaw = placement.importedBroadcastDollars;
+  const attached = attachedRaw === '' || attachedRaw == null ? null : Number(attachedRaw);
+  if (Number.isFinite(attached)) {
+    return {
+      known: true,
+      dollars: attached,
+      pledges: Number(placement.importedPledges || placement.importedBroadcastPledges || 0) || 0,
+      source: 'attached-report'
+    };
+  }
+
+  const dateKey = text(placement.dateKey || placement.date_key || '');
+  if (importedDateHasResults(dateKey, importedRows)) {
+    return {
+      known: true,
+      dollars: 0,
+      pledges: 0,
+      source: 'report-day-zero',
+      implicitZero: true
+    };
+  }
+
+  if (placement?.manualResultRecorded) {
+    return {
+      known: true,
+      dollars: Number(placement.manualBroadcastDollars || 0) || 0,
+      pledges: Number(placement.manualPledgeCount || 0) || 0,
+      source: 'manual'
+    };
+  }
+
+  return { known: false, dollars: 0, pledges: 0, source: 'none' };
+}
   function programMinutes(placement = {}) {
     const explicit = Number(placement.lengthMinutes ?? placement.programMinutes ?? placement.program_minutes ?? placement.durationMinutes);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
@@ -330,84 +418,93 @@
   }
 
   function analyzeSchedule(schedule = {}) {
-    const used = new Set();
-    const topics = new Map();
-    const times = new Map();
-    const placementRows = [];
-    let scheduled = 0;
-    let completed = 0;
-    let scheduledMinutes = 0;
-    let attributableDollars = 0;
-    let attributablePledges = 0;
+  const used = new Set();
+  const importedRows = importedRowsForSchedule(schedule);
+  const topics = new Map();
+  const times = new Map();
+  const placementRows = [];
+  let scheduled = 0;
+  let completed = 0;
+  let scheduledMinutes = 0;
+  let attributableDollars = 0;
+  let attributablePledges = 0;
 
-    (schedule.placements || []).forEach((placement) => {
-      if (!placement || placement.isNonPledge) return;
-      const title = text(placement.programTitle || placement.program_title || placement.title || '');
-      if (!title && !placement.programId) return;
-      const lib = libraryRowForPlacement(placement) || {};
-      const minutes = programMinutes(placement);
-      const startMinutes = placementStartMinutes(placement);
-      const result = placementResult(placement, used);
-      const topic = text(lib.topic_primary || placement.topicPrimary || placement.topic_primary || 'Uncategorized') || 'Uncategorized';
-      const secondary = text(lib.topic_secondary || placement.topicSecondary || placement.topic_secondary || 'Unspecified') || 'Unspecified';
-      const dateKey = text(placement.dateKey || placement.date_key || '');
-      const daypart = daypartLabel(startMinutes);
+  (schedule.placements || []).forEach((placement) => {
+    if (!placement || placement.isNonPledge) return;
+    const scheduledTitle = text(placement.programTitle || placement.program_title || placement.title || '');
+    if (!scheduledTitle && !placement.programId) return;
+    const scheduledLib = libraryRowForPlacement(placement) || {};
+    const minutes = programMinutes(placement);
+    const scheduledStartMinutes = placementStartMinutes(placement);
+    const result = placementResult(placement, used, importedRows);
+    const importedLib = result.importedRow ? libraryRowForImportedRow(result.importedRow) || {} : {};
+    const lib = Object.keys(importedLib).length ? importedLib : scheduledLib;
+    const startMinutes = Number.isFinite(result.actualStartMinutes) ? result.actualStartMinutes : scheduledStartMinutes;
+    const dateKey = text(result.actualDateKey || placement.dateKey || placement.date_key || '');
+    const displayTitle = text(result.actualTitle || lib.title || scheduledTitle || 'Untitled program');
+    const topic = text(lib.topic_primary || result.importedRow?.topic_primary || result.importedRow?.topic || placement.topicPrimary || placement.topic_primary || 'Uncategorized') || 'Uncategorized';
+    const secondary = text(lib.topic_secondary || result.importedRow?.topic_secondary || result.importedRow?.secondary_topic || placement.topicSecondary || placement.topic_secondary || 'Unspecified') || 'Unspecified';
+    const daypart = daypartLabel(startMinutes);
 
-      scheduled += 1;
-      scheduledMinutes += minutes;
-      if (result.known) {
-        completed += 1;
-        attributableDollars += result.dollars;
-        attributablePledges += result.pledges;
-      }
-      addGroup(topics, topic, minutes, result);
-      addGroup(times, timeBucketLabel(startMinutes), minutes, result);
-      placementRows.push({
-        dateKey,
-        startMinutes,
-        title: title || text(lib.title || 'Untitled program'),
-        topic,
-        secondary,
-        daypart,
-        minutes,
-        known: Boolean(result.known),
-        dollars: Number(result.dollars || 0),
-        pledges: Number(result.pledges || 0),
-        source: result.source || 'none'
-      });
+    scheduled += 1;
+    scheduledMinutes += minutes;
+    if (result.known) {
+      completed += 1;
+      attributableDollars += result.dollars;
+      attributablePledges += result.pledges;
+    }
+    addGroup(topics, topic, minutes, result);
+    addGroup(times, timeBucketLabel(startMinutes), minutes, result);
+    placementRows.push({
+      dateKey,
+      startMinutes,
+      title: displayTitle,
+      plannedTitle: scheduledTitle,
+      topic,
+      secondary,
+      daypart,
+      minutes,
+      known: Boolean(result.known),
+      dollars: Number(result.dollars || 0),
+      pledges: Number(result.pledges || 0),
+      source: result.source || 'none'
     });
+  });
 
-    placementRows.sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+  placementRows.sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
 
-    const meta = schedule.meta || {};
-    const reportedBroadcast = Number(meta.reportedBroadcastTotalDollars ?? meta.importedBroadcastTotalDollars ?? meta.importedProgramSpecificBroadcastTotalDollars);
-    const broadcastDollars = Number.isFinite(reportedBroadcast) && reportedBroadcast > 0 ? reportedBroadcast : attributableDollars;
-    const onlineDollars = Number(schedule.onlineDollars || 0) || 0;
-    const mailDollars = Number(schedule.mailDollars || 0) || 0;
-    const onlineTracked = onlineDollars > 0;
-    const mailTracked = mailDollars > 0;
-    const recordedTotal = broadcastDollars + onlineDollars + mailDollars;
+  const meta = schedule.meta || {};
+  const reportedBroadcast = Number(meta.reportedBroadcastTotalDollars ?? meta.importedBroadcastTotalDollars ?? meta.importedProgramSpecificBroadcastTotalDollars);
+  const importedBroadcast = importedRows.reduce((sum, row) => sum + (Number(row.dollars ?? row.contribution_amount ?? 0) || 0), 0);
+  const broadcastDollars = importedRows.length
+    ? importedBroadcast
+    : (Number.isFinite(reportedBroadcast) ? reportedBroadcast : attributableDollars);
+  const onlineDollars = Number(schedule.onlineDollars || 0) || 0;
+  const mailDollars = Number(schedule.mailDollars || 0) || 0;
+  const onlineTracked = onlineDollars > 0;
+  const mailTracked = mailDollars > 0;
+  const recordedTotal = broadcastDollars + onlineDollars + mailDollars;
 
-    return {
-      schedule,
-      scheduled,
-      completed,
-      scheduledMinutes,
-      attributableDollars,
-      attributablePledges,
-      broadcastDollars,
-      unattributedBroadcast: broadcastDollars - attributableDollars,
-      onlineDollars,
-      mailDollars,
-      onlineTracked,
-      mailTracked,
-      recordedTotal,
-      topics,
-      times,
-      placementRows
-    };
-  }
-
+  return {
+    schedule,
+    scheduled,
+    completed,
+    scheduledMinutes,
+    attributableDollars,
+    attributablePledges,
+    broadcastDollars,
+    unattributedBroadcast: broadcastDollars - attributableDollars,
+    onlineDollars,
+    mailDollars,
+    onlineTracked,
+    mailTracked,
+    recordedTotal,
+    topics,
+    times,
+    placementRows,
+    importedRows
+  };
+}
   function analysisForSchedule(schedule = {}) {
     const id = text(schedule.id);
     if (id && state.analysisCache.has(id)) return state.analysisCache.get(id);
@@ -1204,19 +1301,27 @@ function pledgeWeatherWindowForDate(dateKey = '') {
   }
 
   function firstSaturdayAnchor(analysis = {}) {
-    const placementDays = calendarDays(analysis)
-      .map((day) => day?.date || parseDate(day?.dateKey))
-      .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
-      .sort((a, b) => a - b);
-    const startDate = placementDays[0] || parseDate(analysis?.schedule?.startDate);
-    if (!startDate) return null;
-    const anchor = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-    const weekday = anchor.getDay();
-    const daysToSaturday = weekday === 0 ? -1 : (6 - weekday + 7) % 7;
-    anchor.setDate(anchor.getDate() + daysToSaturday);
-    return anchor;
+  const importedDays = importedRowsForSchedule(analysis?.schedule || {})
+    .map((row) => parseDate(importedDateKey(row)))
+    .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+    .sort((a, b) => a - b);
+  const placementDays = calendarDays(analysis)
+    .map((day) => day?.date || parseDate(day?.dateKey))
+    .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+    .sort((a, b) => a - b);
+  const observedDays = importedDays.length ? importedDays : placementDays;
+  const firstObservedSaturday = observedDays.find((date) => date.getDay() === 6);
+  if (firstObservedSaturday) {
+    return new Date(firstObservedSaturday.getFullYear(), firstObservedSaturday.getMonth(), firstObservedSaturday.getDate());
   }
-
+  const startDate = observedDays[0] || parseDate(analysis?.schedule?.startDate);
+  if (!startDate) return null;
+  const anchor = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const weekday = anchor.getDay();
+  const daysToSaturday = weekday === 0 ? -1 : (6 - weekday + 7) % 7;
+  anchor.setDate(anchor.getDate() + daysToSaturday);
+  return anchor;
+}
   function localDateSerial(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
     return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
@@ -1299,7 +1404,7 @@ function pledgeWeatherWindowForDate(dateKey = '') {
       const cards = row.days.map((day, index) => renderDailyContextCard(day, comparableAnalyses[index])).join('');
       return `<div class="fc-day-match-row"><div class="fc-day-match-label"><strong>${escapeHtml(label.title)}</strong><span>${escapeHtml(label.detail)}</span></div><div class="fc-day-match-grid" style="grid-template-columns:repeat(${comparableAnalyses.length},minmax(260px,1fr))">${cards}</div></div>`;
     }).join('');
-    return `<section class="fc-panel fc-day-context"><div class="fc-panel-head"><div><h3>Weather, income and programming by corresponding fundraiser day</h3><span>Days are aligned by fundraiser sequence, not by calendar date: first Saturday with first Saturday, first Sunday with first Sunday, second Saturday with second Saturday, and so on. Day 0 is the first Saturday; only the Friday immediately before it can appear as Day -1. Extra tail days that fall outside the shared comparison window are omitted.</span></div></div>${rows}<div class="fc-weather-source">WNMU dayparts: Morning 7:00–11:30 AM · Afternoon 12:00–4:30 PM · Early evening 5:00–7:30 PM · Prime 8:00–10:00 PM · Overnight 10:30 PM–6:30 AM. Weather source: Open-Meteo five-location U.P. composite.</div></section>`;
+    return `<section class="fc-panel fc-day-context"><div class="fc-panel-head"><div><h3>Weather, income and programming by corresponding fundraiser day</h3><span>Imported fundraiser history establishes the actual historical calendar whenever it exists. Days are then aligned by fundraiser sequence, not by calendar date: first Saturday with first Saturday, first Sunday with first Sunday, second Saturday with second Saturday, and so on. Day 0 is the first Saturday; only the Friday immediately before it can appear as Day -1. Extra tail days that fall outside the shared comparison window are omitted.</span></div></div>${rows}<div class="fc-weather-source">WNMU dayparts: Morning 7:00–11:30 AM · Afternoon 12:00–4:30 PM · Early evening 5:00–7:30 PM · Prime 8:00–10:00 PM · Overnight 10:30 PM–6:30 AM. Weather source: Open-Meteo five-location U.P. composite.</div></section>`;
   }
 
 function renderWeatherScatter(analyses = []) {

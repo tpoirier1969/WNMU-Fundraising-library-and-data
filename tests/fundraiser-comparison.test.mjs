@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-fundraiser-comparison.js', import.me
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.fundraiserComparisonUi = { ensureReady };';
 assert.ok(source.includes(exportMarker), 'comparison test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable, medianValue, outlierSummary, groupStrength, pledgeWeatherWindowForDate, stationPledgeWindowSummaries };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, analyzeSchedule, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable, medianValue, outlierSummary, groupStrength, pledgeWeatherWindowForDate, stationPledgeWindowSummaries, setAirings: (rows) => { state.airings = rows; state.analysisCache.clear(); } };`);
 
 const context = {
   window: {
@@ -212,4 +212,58 @@ test('daily context starts at the pre-Saturday Friday at earliest and omits unma
   const peer = makeAnalysis('2025-08-08', ['2025-08-08', '2025-08-09', '2025-08-10', '2025-08-16']);
   const rows = hooks.alignedDailyContextRows([longer, peer]);
   assert.deepEqual(Array.from(rows, (row) => row.offset), [-1, 0, 1, 7]);
+});
+
+
+test('same-day imported report coverage turns an omitted scheduled title into a completed zero', () => {
+  const importedRows = [{ id: 'reported', air_date: '2026-08-08', air_time: '20:00', program_title: 'Reported Program', dollars: 500, pledge_count: 2 }];
+  const zero = hooks.placementResult({ dateKey: '2026-08-08', startMinutes: 1260, programTitle: 'Scheduled But Missing' }, new Set(), importedRows);
+  assert.equal(zero.known, true);
+  assert.equal(zero.dollars, 0);
+  assert.equal(zero.source, 'report-day-zero');
+
+  const pending = hooks.placementResult({ dateKey: '2026-08-09', startMinutes: 1260, programTitle: 'Not Reported Yet' }, new Set(), importedRows);
+  assert.equal(pending.known, false);
+  assert.equal(pending.source, 'none');
+});
+
+test('unique imported date and time wins even when the planned title differs', () => {
+  const importedRows = [{ id: 'actual', air_date: '2026-08-08', air_time: '20:00', imported_program_title: 'Actual Program', program_title: 'Actual Program', dollars: 725, pledge_count: 3 }];
+  const result = hooks.placementResult({ dateKey: '2026-08-08', startMinutes: 1200, programTitle: 'Planned Program' }, new Set(), importedRows);
+  assert.equal(result.source, 'report');
+  assert.equal(result.dollars, 725);
+  assert.equal(result.actualDateKey, '2026-08-08');
+  assert.equal(result.actualStartMinutes, 1200);
+  assert.equal(result.actualTitle, 'Actual Program');
+});
+
+test('imported fundraiser dates establish the historical first-Saturday anchor', () => {
+  hooks.setAirings([
+    { id: 'f', air_date: '2026-08-21', air_time: '20:00', program_title: 'Friday Actual', dollars: 100 },
+    { id: 's', air_date: '2026-08-22', air_time: '20:00', program_title: 'Saturday Actual', dollars: 200 }
+  ]);
+  const analysis = {
+    schedule: { title: 'August 2026', startDate: '2026-08-01', season: 'August', year: 2026, placements: [] },
+    placementRows: [{ dateKey: '2026-08-08', startMinutes: 420, title: 'Stale scheduled day', topic: 'Test', secondary: 'Unspecified', daypart: 'Morning', minutes: 60, known: false, dollars: 0, pledges: 0 }]
+  };
+  assert.equal(hooks.fundraiserDayOffset(analysis, { dateKey: '2026-08-21' }), -1);
+  assert.equal(hooks.fundraiserDayOffset(analysis, { dateKey: '2026-08-22' }), 0);
+  hooks.setAirings([]);
+});
+
+test('raw imported Broadcast dollars override stale saved fundraiser totals', () => {
+  hooks.setAirings([{ id: 'r1', air_date: '2026-08-08', air_time: '20:00', program_title: 'Actual Program', dollars: 500, pledge_count: 2 }]);
+  const analysis = hooks.analyzeSchedule({
+    id: 's1',
+    title: 'August 2026',
+    startDate: '2026-08-08',
+    season: 'August',
+    year: 2026,
+    meta: { reportedBroadcastTotalDollars: 9999 },
+    placements: [{ id: 'p1', dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260, programTitle: 'Planned Program' }]
+  });
+  assert.equal(analysis.broadcastDollars, 500);
+  assert.equal(analysis.attributableDollars, 500);
+  assert.equal(analysis.placementRows[0].title, 'Actual Program');
+  hooks.setAirings([]);
 });
