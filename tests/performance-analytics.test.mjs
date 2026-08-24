@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-analytics.js', import.meta.url);
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.analyticsUi = { ensureReady, openCohort, reload };';
 assert.ok(source.includes(exportMarker), 'analytics test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__analyticsTestHooks = { daypartFromMinutes, medianValue, outlierSummary, buildAiringRecordLookup, findAiringForSchedulePlacement, buildScheduleRecords, dedupeSchedulesByDateRange, getScheduleAudit: () => state.scheduleAudit, getMetric: () => state.metric };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__analyticsTestHooks = { daypartFromMinutes, medianValue, outlierSummary, summarizeGroup, distributionLabel, buildAiringRecordLookup, findAiringForSchedulePlacement, buildScheduleRecords, dedupeSchedulesByDateRange, getScheduleAudit: () => state.scheduleAudit, getMetric: () => state.metric };`);
 
 const storage = new Map();
 const context = {
@@ -113,4 +113,18 @@ test('topic analytics columns explicitly opt into left alignment', () => {
   assert.ok(text.includes('analytics-left'));
   const workspace = fs.readFileSync(new URL('../assets/analytics-workspace.html', import.meta.url), 'utf8');
   assert.ok(workspace.includes('.analytics-left { text-align: left !important; }'));
+});
+
+
+test('zero-dominated groups are flagged even when MAD has no statistical outlier', () => {
+  const values = [0, 0, 0, 400, 900];
+  const records = values.map((dollars, index) => ({ dollars, pledges: 0, season: 'August', seasonYear: `August ${2020 + index}` }));
+  const row = hooks.summarizeGroup('Drama Doc', records);
+  assert.equal(row.median, 0);
+  assert.equal(row.avg, 260);
+  assert.equal(row.zeroCount, 3);
+  assert.equal(row.zeroDominated, true);
+  assert.equal(row.outlierCount, 0);
+  assert.match(hooks.distributionLabel(row), /Zero-dominated/);
+  assert.match(hooks.distributionLabel(row), /3\/5 at \$0/);
 });

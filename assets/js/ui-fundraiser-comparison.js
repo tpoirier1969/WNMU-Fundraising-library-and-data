@@ -1204,12 +1204,15 @@ function pledgeWeatherWindowForDate(dateKey = '') {
   }
 
   function firstSaturdayAnchor(analysis = {}) {
-    const startDate = parseDate(analysis?.schedule?.startDate);
-    const fallback = calendarDays(analysis)[0]?.date || null;
-    const start = startDate || fallback;
-    if (!start) return null;
-    const anchor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-    const daysToSaturday = (6 - anchor.getDay() + 7) % 7;
+    const placementDays = calendarDays(analysis)
+      .map((day) => day?.date || parseDate(day?.dateKey))
+      .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+      .sort((a, b) => a - b);
+    const startDate = placementDays[0] || parseDate(analysis?.schedule?.startDate);
+    if (!startDate) return null;
+    const anchor = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const weekday = anchor.getDay();
+    const daysToSaturday = weekday === 0 ? -1 : (6 - weekday + 7) % 7;
     anchor.setDate(anchor.getDate() + daysToSaturday);
     return anchor;
   }
@@ -1255,11 +1258,22 @@ function pledgeWeatherWindowForDate(dateKey = '') {
       const map = new Map();
       calendarDays(analysis).forEach((day) => {
         const offset = fundraiserDayOffset(analysis, day);
-        if (Number.isFinite(offset)) map.set(offset, day);
+        if (Number.isFinite(offset) && offset >= -1) map.set(offset, day);
       });
       return map;
     });
-    const offsets = [...new Set(maps.flatMap((map) => [...map.keys()]))].sort((a, b) => a - b);
+    const maxOffsets = maps.map((map) => {
+      const postSaturday = [...map.keys()].filter((offset) => offset >= 0);
+      return postSaturday.length ? Math.max(...postSaturday) : null;
+    });
+    const offsets = [...new Set(maps.flatMap((map) => [...map.keys()]))]
+      .filter((offset) => {
+        if (offset === -1) return maps.some((map) => map.has(-1));
+        if (offset < 0) return false;
+        const comparableWindows = maxOffsets.filter((maxOffset) => Number.isFinite(maxOffset) && offset <= maxOffset).length;
+        return comparableWindows >= 2;
+      })
+      .sort((a, b) => a - b);
     return offsets.map((offset) => ({ offset, days: maps.map((map) => map.get(offset) || null) }));
   }
 
@@ -1285,7 +1299,7 @@ function pledgeWeatherWindowForDate(dateKey = '') {
       const cards = row.days.map((day, index) => renderDailyContextCard(day, comparableAnalyses[index])).join('');
       return `<div class="fc-day-match-row"><div class="fc-day-match-label"><strong>${escapeHtml(label.title)}</strong><span>${escapeHtml(label.detail)}</span></div><div class="fc-day-match-grid" style="grid-template-columns:repeat(${comparableAnalyses.length},minmax(260px,1fr))">${cards}</div></div>`;
     }).join('');
-    return `<section class="fc-panel fc-day-context"><div class="fc-panel-head"><div><h3>Weather, income and programming by corresponding fundraiser day</h3><span>Days are aligned to the first Saturday of each fundraiser: first Saturday with first Saturday, first Sunday with first Sunday, and so on. A Friday immediately before the first Saturday is Day -1. Selected fundraisers with no scheduled pledge programming are omitted until there is a day to compare.</span></div></div>${rows}<div class="fc-weather-source">WNMU dayparts: Morning 7:00–11:30 AM · Afternoon 12:00–4:30 PM · Early evening 5:00–7:30 PM · Prime 8:00–10:00 PM · Overnight 10:30 PM–6:30 AM. Weather source: Open-Meteo five-location U.P. composite.</div></section>`;
+    return `<section class="fc-panel fc-day-context"><div class="fc-panel-head"><div><h3>Weather, income and programming by corresponding fundraiser day</h3><span>Days are aligned by fundraiser sequence, not by calendar date: first Saturday with first Saturday, first Sunday with first Sunday, second Saturday with second Saturday, and so on. Day 0 is the first Saturday; only the Friday immediately before it can appear as Day -1. Extra tail days that fall outside the shared comparison window are omitted.</span></div></div>${rows}<div class="fc-weather-source">WNMU dayparts: Morning 7:00–11:30 AM · Afternoon 12:00–4:30 PM · Early evening 5:00–7:30 PM · Prime 8:00–10:00 PM · Overnight 10:30 PM–6:30 AM. Weather source: Open-Meteo five-location U.P. composite.</div></section>`;
   }
 
 function renderWeatherScatter(analyses = []) {
@@ -1295,6 +1309,7 @@ function renderWeatherScatter(analyses = []) {
         const weather = state.weatherByDate.get(text(day.dateKey));
         if (!weather || !Number.isFinite(weather.avgTemp) || !Number.isFinite(weather.precip)) return;
         const offset = fundraiserDayOffset(analysis, day);
+        if (Number.isFinite(offset) && offset < -1) return;
         const label = Number.isFinite(offset) ? fundraiserDayLabel(offset).title : day.weekday;
         const programming = dailyProgrammingSummary(day);
         points.push({
