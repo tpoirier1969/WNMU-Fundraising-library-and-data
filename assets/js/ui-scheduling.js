@@ -2028,13 +2028,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (remoteDelete) {
       for (const scheduleId of wanted) {
         try {
-await App.data.deleteScheduleRemote(scheduleId);
-removedIds.push(scheduleId);
+          await App.data.deleteScheduleRemote(scheduleId);
+          removedIds.push(scheduleId);
         } catch (error) {
-console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);
-state.scheduleStoreMode = 'local';
-state.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();
-break;
+          console.warn('Remote duplicate imported fundraiser delete failed.', scheduleId, error);
+          state.scheduleStoreMode = 'local';
+          state.scheduleSyncMessage = `Remote duplicate cleanup failed. The failed duplicate remains visible in this browser. ${error.message || ''}`.trim();
+          break;
         }
       }
     } else {
