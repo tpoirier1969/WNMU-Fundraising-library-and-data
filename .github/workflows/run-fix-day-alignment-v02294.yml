@@ -1,0 +1,52 @@
+name: Run v0.22.94 comparison alignment fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/run-fix-day-alignment-v02294.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply and validate v0.22.94
+        shell: bash
+        run: |
+          git fetch origin fix-comparison-day-alignment-v02294
+          git switch fix-comparison-day-alignment-v02294
+          python scripts/_tmp_fix_day_alignment_v02294.py
+          rm -f scripts/_tmp_fix_day_alignment_v02294.py
+          node --check assets/js/ui-fundraiser-comparison.js
+          node --check assets/js/ui-analytics.js
+          node --test tests/fundraiser-comparison.test.mjs tests/performance-analytics.test.mjs
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Fix fundraiser day alignment and flag zero-dominated analytics"
+          git push origin HEAD:fix-comparison-day-alignment-v02294
+      - name: Remove temporary runner from main
+        if: always()
+        shell: bash
+        run: |
+          git switch main
+          git pull --ff-only origin main
+          rm -f .github/workflows/run-fix-day-alignment-v02294.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Remove temporary v0.22.94 runner"
+            git push origin HEAD:main
+          fi
