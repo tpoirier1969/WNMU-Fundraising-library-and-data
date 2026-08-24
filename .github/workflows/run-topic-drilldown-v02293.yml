@@ -1,16 +1,14 @@
-name: Run topic drilldown v0.22.93
+name: Validate topic drilldown v0.22.93
 
 on:
-  push:
+  pull_request:
     branches: [main]
-    paths:
-      - .github/workflows/run-topic-drilldown-v02293.yml
 
 permissions:
   contents: write
 
 jobs:
-  patch:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,26 +22,17 @@ jobs:
         run: |
           git fetch origin analytics-topic-drilldown-v02293
           git switch analytics-topic-drilldown-v02293
-          python scripts/_tmp_topic_drilldown_v02293.py
-          node --check assets/js/ui-analytics.js
-          node --test tests/performance-analytics.test.mjs
-          rm -f scripts/_tmp_topic_drilldown_v02293.py
-          git config user.name "OpenAI"
-          git config user.email "noreply@openai.com"
-          git add -A
-          git commit -m "Add topic and outlier analytics drilldowns"
-          git push origin HEAD:analytics-topic-drilldown-v02293
-      - name: Remove temporary runner from main
-        shell: bash
-        run: |
-          git switch main
-          git pull --ff-only origin main
-          rm -f .github/workflows/run-topic-drilldown-v02293.yml
-          rmdir .github/workflows 2>/dev/null || true
-          rmdir .github 2>/dev/null || true
-          git config user.name "OpenAI"
-          git config user.email "noreply@openai.com"
-          git add -A
-          git commit -m "Remove temporary v0.22.93 topic drilldown runner"
-          git push origin HEAD:main
-# trigger
+          if [ -f scripts/_tmp_topic_drilldown_v02293.py ]; then
+            python scripts/_tmp_topic_drilldown_v02293.py
+            rm -f scripts/_tmp_topic_drilldown_v02293.py
+            node --check assets/js/ui-analytics.js
+            node --test tests/performance-analytics.test.mjs
+            git config user.name "OpenAI"
+            git config user.email "noreply@openai.com"
+            git add -A
+            git commit -m "Add topic and outlier analytics drilldowns"
+            git push origin HEAD:analytics-topic-drilldown-v02293
+          else
+            node --check assets/js/ui-analytics.js
+            node --test tests/performance-analytics.test.mjs
+          fi
