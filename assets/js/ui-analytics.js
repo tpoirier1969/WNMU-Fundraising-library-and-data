@@ -64,6 +64,7 @@
     advancedWeekpart: 'all',
     advancedDuration: 'all',
     trendRows: new Map(),
+    groupDetailRows: new Map(),
     tableSort: { question: '', index: null, direction: 'asc' },
     liveBreakDiagnostics: { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0 },
     scheduleAudit: { rawSchedules: 0, activeSchedules: 0, duplicateSchedulesSuppressed: 0 },
@@ -1044,6 +1045,33 @@ function outlierSummary(values = []) {
     return `${count} unusual${bits.length ? ` · ${bits.join(' / ')}` : ''}`;
   }
 
+  function groupDetailId(row = {}) {
+    const id = `group-${state.groupDetailRows.size + 1}`;
+    state.groupDetailRows.set(id, row);
+    return id;
+  }
+
+  function groupTitleDetailCell(row = {}) {
+    const id = groupDetailId(row);
+    return `<button type="button" class="analytics-detail-link" data-group-detail-id="${escapeHtml(id)}" data-group-detail-mode="all">${labelWithMixCell(row)}</button>`;
+  }
+
+  function groupOutlierDetailCell(row = {}) {
+    if (!Number(row.outlierCount || 0)) return escapeHtml(outlierLabel(row));
+    const id = groupDetailId(row);
+    return `<button type="button" class="analytics-detail-link outlier-link" data-group-detail-id="${escapeHtml(id)}" data-group-detail-mode="outliers">${escapeHtml(outlierLabel(row))}</button>`;
+  }
+
+  function outlierStatusForRecord(row = {}, record = {}) {
+    const value = Number(record.dollars || 0);
+    const flagged = Array.isArray(row.outlierValues) && row.outlierValues.some((candidate) => Number(candidate) === value);
+    if (!flagged) return '';
+    const median = Number(row.median || 0);
+    if (value > median) return 'High outlier';
+    if (value < median) return 'Low outlier';
+    return 'Unusual result';
+  }
+
   function closestMedianSeason(realSeasonStats = []) {
     const median = medianValue(realSeasonStats.map((item) => item.avg));
     return realSeasonStats.reduce((winner, item) => {
@@ -1910,14 +1938,14 @@ function outlierSummary(values = []) {
       metricDriven: true,
       read: topicRead,
       columns: [
-        ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
-        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis', (row) => row.median],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
-        ['Outliers', (row) => escapeHtml(outlierLabel(row)), '', (row) => row.outlierCount || 0],
-        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
-        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
+        ['Topic', (row) => groupTitleDetailCell(row), 'analytics-left', (row) => row.title],
+        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis analytics-left', (row) => row.median],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money analytics-left', (row) => row.avg],
+        ['Outliers', (row) => groupOutlierDetailCell(row), 'analytics-left', (row) => row.outlierCount || 0],
+        ['Total $', (row) => formatMoney(row.dollars), 'money analytics-left', (row) => row.dollars],
+        ['Pledges', (row) => formatNumber(row.pledges), 'num analytics-left', (row) => row.pledges],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num analytics-left', (row) => row.broadcasts],
+        ['Season mix', (row) => escapeHtml(row.mix), 'analytics-left', (row) => row.seasons || 0]
       ]
     },
     seasonOverview: {
@@ -1955,13 +1983,13 @@ function outlierSummary(values = []) {
       tag: 'topic lens',
       read: topicRead,
       columns: [
-        ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
-        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis', (row) => row.median],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
-        ['Outliers', (row) => escapeHtml(outlierLabel(row)), '', (row) => row.outlierCount || 0],
-        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
-        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
+        ['Topic', (row) => groupTitleDetailCell(row), 'analytics-left', (row) => row.title],
+        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis analytics-left', (row) => row.median],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money analytics-left', (row) => row.avg],
+        ['Outliers', (row) => groupOutlierDetailCell(row), 'analytics-left', (row) => row.outlierCount || 0],
+        ['Total $', (row) => formatMoney(row.dollars), 'money analytics-left', (row) => row.dollars],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num analytics-left', (row) => row.broadcasts],
+        ['Season mix', (row) => escapeHtml(row.mix), 'analytics-left', (row) => row.seasons || 0]
       ]
     },
     secondaryTopics: {
@@ -1976,13 +2004,13 @@ function outlierSummary(values = []) {
       tag: 'subtopic lens',
       read: secondaryTopicRead,
       columns: [
-        ['Secondary topic', (row) => labelWithMixCell(row), '', (row) => row.title],
-        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis', (row) => row.median],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money', (row) => row.avg],
-        ['Outliers', (row) => escapeHtml(outlierLabel(row)), '', (row) => row.outlierCount || 0],
-        ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
-        ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
+        ['Secondary topic', (row) => groupTitleDetailCell(row), 'analytics-left', (row) => row.title],
+        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis analytics-left', (row) => row.median],
+        ['Avg / airing', (row) => formatMoney(row.avg), 'money analytics-left', (row) => row.avg],
+        ['Outliers', (row) => groupOutlierDetailCell(row), 'analytics-left', (row) => row.outlierCount || 0],
+        ['Total $', (row) => formatMoney(row.dollars), 'money analytics-left', (row) => row.dollars],
+        ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num analytics-left', (row) => row.broadcasts],
+        ['Season mix', (row) => escapeHtml(row.mix), 'analytics-left', (row) => row.seasons || 0]
       ]
     },
     seasonal: {
@@ -2364,6 +2392,7 @@ function outlierSummary(values = []) {
 
   function render() {
     state.trendRows.clear();
+    state.groupDetailRows.clear();
     updateFilterState();
     const entries = Object.entries(QUESTIONS).map(([id, question]) => ({ id, question }));
     dom.cards.innerHTML = entries.map(({ id, question }) => `<button type="button" class="qcard ${id === state.question ? 'active' : ''}" data-question="${escapeHtml(id)}">
@@ -2596,6 +2625,9 @@ function outlierSummary(values = []) {
     dom.table.querySelectorAll('[data-trend-id]').forEach((button) => {
       button.addEventListener('click', () => openTrend(button.dataset.trendId || ''));
     });
+    dom.table.querySelectorAll('[data-group-detail-id]').forEach((button) => {
+      button.addEventListener('click', () => openGroupDetail(button.dataset.groupDetailId || '', button.dataset.groupDetailMode || 'all'));
+    });
     dom.table.querySelectorAll('[data-program-detail-id]').forEach((button) => {
       button.addEventListener('click', () => openProgramDetail(button.dataset.programDetailId || '', button.dataset.programDetailTitle || button.textContent || ''));
     });
@@ -2696,6 +2728,45 @@ function outlierSummary(values = []) {
   function closeProgramDetail() {
     dom.programModal.classList.add('hidden');
     dom.programModalBody.innerHTML = '';
+  }
+
+
+  function openGroupDetail(id = '', mode = 'all') {
+    const row = state.groupDetailRows.get(id);
+    if (!row) return;
+    const records = Array.isArray(row.records) ? [...row.records] : [];
+    const zeroCount = records.filter((record) => Number(record.dollars || 0) === 0).length;
+    const outlierCount = Number(row.outlierCount || 0);
+    const sortedRecords = records.sort((a, b) => {
+      if (mode === 'outliers') {
+        const aFlagged = outlierStatusForRecord(row, a) ? 1 : 0;
+        const bFlagged = outlierStatusForRecord(row, b) ? 1 : 0;
+        if (aFlagged !== bFlagged) return bFlagged - aFlagged;
+      }
+      const aTime = a.date instanceof Date && !Number.isNaN(a.date.getTime()) ? a.date.getTime() : 0;
+      const bTime = b.date instanceof Date && !Number.isNaN(b.date.getTime()) ? b.date.getTime() : 0;
+      return bTime - aTime || Number(b.dollars || 0) - Number(a.dollars || 0);
+    });
+    const lens = state.question === 'secondaryTopics' ? 'Secondary topic' : 'Topic';
+    dom.programModalTitle.textContent = `${row.title || lens} · ${lens} detail`;
+    dom.programModalSubtitle.textContent = `${formatNumber(records.length)} airing(s) · Median ${formatMoney(row.median || 0)} · Average ${formatMoney(row.avg || 0)} · Total ${formatMoney(row.dollars || 0)}`;
+    const detailRows = sortedRecords.map((record) => {
+      const status = outlierStatusForRecord(row, record);
+      const date = record.date instanceof Date && !Number.isNaN(record.date.getTime()) ? record.date.toLocaleDateString() : (record.dateKey || '—');
+      const start = Number.isFinite(Number(record.startMinutes)) ? formatTimeFromMinutes(record.startMinutes) : '—';
+      return `<tr class="${status ? 'outlier-row' : ''}"><td>${escapeHtml(date)}</td><td>${escapeHtml(record.fundraiser || record.seasonYear || '—')}</td><td>${escapeHtml(record.title || record.importedTitle || '—')}</td><td>${escapeHtml(start)}</td><td class="analytics-left">${formatMoney(record.dollars || 0)}</td><td class="analytics-left">${formatNumber(record.pledges || 0)}</td><td>${status ? `<span class="risk">${escapeHtml(status)}</span>` : '—'}</td></tr>`;
+    }).join('');
+    dom.programModalBody.innerHTML = `
+      <div class="program-detail-summary">
+        <div class="stat"><div class="v">${formatMoney(row.median || 0)}</div><div>Median / airing</div></div>
+        <div class="stat"><div class="v">${formatMoney(row.avg || 0)}</div><div>Average / airing</div></div>
+        <div class="stat"><div class="v">${formatNumber(records.length)}</div><div>Airings</div></div>
+        <div class="stat"><div class="v">${formatNumber(outlierCount)}</div><div>Outliers</div></div>
+        <div class="stat"><div class="v">${formatNumber(zeroCount)}</div><div>Zero-$ airings</div></div>
+      </div>
+      <div class="program-detail-table-wrap"><table><thead><tr><th>Date</th><th>Fundraiser</th><th>Program</th><th>Start</th><th>Dollars</th><th>Pledges</th><th>Outlier status</th></tr></thead><tbody>${detailRows || '<tr><td colspan="7">No airing detail is available.</td></tr>'}</tbody></table></div>
+      <div class="program-detail-note">${mode === 'outliers' ? 'Flagged outliers are listed first. ' : ''}Outlier flags use Median Absolute Deviation. No airing is removed or discounted from the Median, Average, or Total shown here.</div>`;
+    dom.programModal.classList.remove('hidden');
   }
 
   function bindEvents() {
