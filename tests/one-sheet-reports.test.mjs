@@ -34,12 +34,12 @@ const indexes = A.buildLibraryIndexes([
     placement({ id: 'p2', startMinutes: 1260, lengthMinutes: 60, programId: 'hist-1', programTitle: 'History Special' })
   ] });
   const rows = [
-    { id: 'r1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 300, pledge_count: 3, program_minutes: 60 },
-    { id: 'r2', air_date: '2026-08-29', air_time: '21:00', program_id: 'hist-1', dollars: 100, pledge_count: 1, program_minutes: 60 }
+    { id: 'r1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 300, pledge_count: 3, program_minutes: 30 },
+    { id: 'r2', air_date: '2026-08-29', air_time: '21:00', program_id: 'hist-1', dollars: 100, pledge_count: 1, program_minutes: 240 }
   ];
   const analysis = A.analyzeSchedule(s, rows, indexes);
   assert.equal(analysis.broadcastDollars, 400);
-  assert.equal(analysis.scheduledMinutes, 120);
+  assert.equal(analysis.scheduledMinutes, 120, 'pledge hours must use schedule placements, not uneven imported runtime coverage');
   assert.equal(A.dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes), 200);
   assert.equal(A.pledgesPerHour(analysis.pledges, analysis.scheduledMinutes), 2);
   assert.equal(A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges), 100);
