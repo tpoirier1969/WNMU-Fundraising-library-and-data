@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WNMU One-Sheet Reports</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="config.js"></script>
+  <script defer src="assets/js/one-sheet-analysis.js"></script>
+  <script defer src="assets/js/one-sheet-reports.js"></script>
+</head>
+<body>
+  <div id="report-access-gate" class="report-access-gate hidden"></div>
+  <div id="report-app" class="report-shell hidden">
+    <header class="report-topbar">
+      <div class="report-brand">
+        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
+        <div>
+          <h1 id="report-page-title">One-Sheet Reports</h1>
+          <p id="report-page-subtitle">Printable retrospective fundraiser analysis</p>
+        </div>
+      </div>
+      <div class="report-top-actions">
+        <span id="report-role" class="report-role">Checking access…</span>
+        <a class="report-button" href="reports.html">Report hub</a>
+        <a class="report-button" href="./">Pledge Program Library</a>
+      </div>
+    </header>
+    <main class="report-main">
+      <div class="report-toolbar">
+        <div id="report-controls"></div>
+        <div id="report-status" class="report-status">Checking administrator access…</div>
+      </div>
+      <div id="report-output"></div>
+    </main>
+  </div>
+</body>
+</html>
