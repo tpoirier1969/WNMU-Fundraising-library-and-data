@@ -33,10 +33,7 @@
 
   function dateKey(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
   function seasonForDate(value) {
@@ -92,21 +89,15 @@
     const buckets = new Map();
     (schedules || []).forEach((schedule) => {
       if (!schedule) return;
-      const key = schedule.startDate && schedule.endDate
-        ? `${schedule.startDate}|${schedule.endDate}`
-        : `id:${schedule.id}`;
+      const key = schedule.startDate && schedule.endDate ? `${schedule.startDate}|${schedule.endDate}` : `id:${schedule.id}`;
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(schedule);
     });
     const prepared = [];
     buckets.forEach((items) => {
       const ranked = [...items].sort((a, b) => schedulePreferenceScore(b) - schedulePreferenceScore(a));
-      const best = ranked[0];
-      if (!best) return;
-      prepared.push({
-        ...best,
-        duplicateRangeCount: ranked.length
-      });
+      if (!ranked[0]) return;
+      prepared.push({ ...ranked[0], duplicateRangeCount: ranked.length });
     });
     return prepared.sort((a, b) =>
       text(b.startDate).localeCompare(text(a.startDate))
@@ -152,8 +143,7 @@
   function importedDateKey(row = {}) {
     const direct = text(row.air_date || row.drive_date);
     if (direct) return direct.slice(0, 10);
-    const date = parseDate(row.aired_at);
-    return dateKey(date);
+    return dateKey(parseDate(row.aired_at));
   }
 
   function importedStartMinutes(row = {}) {
@@ -209,31 +199,20 @@
     const titleYearMatch = title.match(/\b(20\d{2})\b/);
     if (titleSeason && titleYearMatch) return { season: titleSeason, year: Number(titleYearMatch[1]) };
     const start = parseDate(schedule.startDate || '');
-    return {
-      season: text(schedule.season || seasonForDate(start)),
-      year: Number(schedule.year || start?.getFullYear() || 0)
-    };
+    return { season: text(schedule.season || seasonForDate(start)), year: Number(schedule.year || start?.getFullYear() || 0) };
   }
 
   function importedRowsForSchedule(schedule = {}, allRows = []) {
     const rows = Array.isArray(allRows) ? allRows : [];
     const start = text(schedule.startDate);
     const end = text(schedule.endDate);
-
     if (start && end) {
       const exactDrive = rows.filter((row) =>
         text(row.drive_start_date).slice(0, 10) === start
         && text(row.drive_end_date).slice(0, 10) === end
       );
       if (exactDrive.length) return exactDrive;
-
-      const inRange = rows.filter((row) => {
-        const key = importedDateKey(row);
-        return Boolean(key && key >= start && key <= end);
-      });
-      if (inRange.length) return inRange;
     }
-
     const identity = scheduleSeasonYear(schedule);
     if (!identity.season || !identity.year) return [];
     return rows.filter((row) => {
@@ -252,12 +231,7 @@
   }
 
   function placementProgramMinutes(placement = {}) {
-    const explicit = Number(
-      placement.lengthMinutes
-      ?? placement.programMinutes
-      ?? placement.program_minutes
-      ?? placement.durationMinutes
-    );
+    const explicit = Number(placement.lengthMinutes ?? placement.programMinutes ?? placement.program_minutes ?? placement.durationMinutes);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
     const start = placementStartMinutes(placement);
     const end = Number(placement.endMinutes ?? placement.end_minutes ?? placement.end);
@@ -269,21 +243,13 @@
     return 30;
   }
 
-  function resultMinutes(result = {}, placement = {}) {
-    const importedMinutes = Number(result.importedRow?.program_minutes);
-    if (Number.isFinite(importedMinutes) && importedMinutes > 0) return importedMinutes;
-    return placementProgramMinutes(placement);
-  }
-
   function identityMatches(row = {}, placement = {}, lib = null) {
     const placementId = text(placement.programId || placement.program_id || lib?.id || '');
     const rowId = text(row.program_id || row.pledge_program_id || row.manual_match_program_id || '');
     if (placementId && rowId && placementId === rowId) return true;
-
     const placementNola = nolaKey(lib?.nola_code || placement.nolaCode || placement.nola_code || placement.nola || '');
     const rowNola = nolaKey(row.nola_code || row.nola || row.program_nola || '');
     if (placementNola && rowNola && placementNola === rowNola) return true;
-
     const placementTitle = lookupKey(lib?.title || placement.programTitle || placement.program_title || placement.title || '');
     const rowTitle = lookupKey(row.matched_library_title || row.program_title || row.title || row.imported_program_title || '');
     return Boolean(placementTitle && rowTitle && placementTitle === rowTitle);
@@ -296,13 +262,11 @@
       const direct = available.find((row) => text(row.row_hash) === hash);
       if (direct) return direct;
     }
-
     const date = text(placement.dateKey || placement.date_key || '');
     if (!date) return null;
     const start = placementStartMinutes(placement);
     const lib = libraryForPlacement(placement, indexes);
     const sameDay = available.filter((row) => importedDateKey(row) === date);
-
     if (Number.isFinite(start)) {
       const exactTime = sameDay.filter((row) => importedStartMinutes(row) === start);
       const exactIdentity = exactTime.filter((row) => identityMatches(row, placement, lib));
@@ -311,7 +275,6 @@
       if (exactTime.length === 1) return exactTime[0];
       if (exactTime.length > 1) return null;
     }
-
     const sameDayIdentity = sameDay.filter((row) => identityMatches(row, placement, lib));
     return sameDayIdentity.length === 1 ? sameDayIdentity[0] : null;
   }
@@ -323,7 +286,6 @@
 
   function placementResult(placement = {}, used = new Set(), importedRows = [], indexes = {}) {
     if (placement?.isNonPledge) return { known: false, dollars: 0, pledges: 0, source: 'non-pledge' };
-
     const imported = importedRowForPlacement(placement, used, importedRows, indexes);
     if (imported) {
       const usedKey = importedUseKey(imported);
@@ -339,7 +301,6 @@
         actualTitle: importedTitle(imported)
       };
     }
-
     const attachedRaw = placement.importedBroadcastDollars;
     const attached = attachedRaw === '' || attachedRaw == null ? null : Number(attachedRaw);
     if (Number.isFinite(attached)) {
@@ -350,18 +311,10 @@
         source: 'attached-report'
       };
     }
-
     const date = text(placement.dateKey || placement.date_key || '');
     if (importedDateHasResults(date, importedRows)) {
-      return {
-        known: true,
-        dollars: 0,
-        pledges: 0,
-        source: 'report-day-zero',
-        implicitZero: true
-      };
+      return { known: true, dollars: 0, pledges: 0, source: 'report-day-zero', implicitZero: true };
     }
-
     if (placement?.manualResultRecorded) {
       return {
         known: true,
@@ -370,7 +323,6 @@
         source: 'manual'
       };
     }
-
     return { known: false, dollars: 0, pledges: 0, source: 'none' };
   }
 
@@ -388,15 +340,7 @@
   function addGroup(map, key, minutes, result) {
     const wanted = text(key) || 'Uncategorized';
     if (!map.has(wanted)) {
-      map.set(wanted, {
-        key: wanted,
-        minutes: 0,
-        scheduled: 0,
-        completed: 0,
-        dollars: 0,
-        pledges: 0,
-        results: []
-      });
+      map.set(wanted, { key: wanted, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0, results: [] });
     }
     const item = map.get(wanted);
     item.minutes += Number(minutes || 0);
@@ -425,32 +369,21 @@
       if (!placement || placement.isNonPledge) return;
       const scheduledTitle = text(placement.programTitle || placement.program_title || placement.title || '');
       if (!scheduledTitle && !placement.programId && !placement.program_id) return;
-
       const scheduledLib = libraryForPlacement(placement, indexes) || {};
       const result = placementResult(placement, used, importedRows, indexes);
       const importedLib = result.importedRow ? libraryForImportedRow(result.importedRow, indexes) || {} : {};
       const lib = Object.keys(importedLib).length ? importedLib : scheduledLib;
-      const minutes = resultMinutes(result, placement);
+
+      // Pledge-hour denominators always come from the saved fundraiser schedule.
+      // Imported rows establish what aired and what it raised, but runtime coverage in
+      // historical reports is not allowed to change the denominator from year to year.
+      const minutes = placementProgramMinutes(placement);
       const scheduledStart = placementStartMinutes(placement);
       const startMinutes = Number.isFinite(result.actualStartMinutes) ? result.actualStartMinutes : scheduledStart;
       const resultDate = text(result.actualDateKey || placement.dateKey || placement.date_key || '');
       const displayTitle = text(result.actualTitle || lib.title || scheduledTitle || 'Untitled program');
-      const topic = text(
-        lib.topic_primary
-        || result.importedRow?.topic_primary
-        || result.importedRow?.topic
-        || placement.topicPrimary
-        || placement.topic_primary
-        || 'Uncategorized'
-      ) || 'Uncategorized';
-      const secondary = text(
-        lib.topic_secondary
-        || result.importedRow?.topic_secondary
-        || result.importedRow?.secondary_topic
-        || placement.topicSecondary
-        || placement.topic_secondary
-        || 'Unspecified'
-      ) || 'Unspecified';
+      const topic = text(lib.topic_primary || result.importedRow?.topic_primary || result.importedRow?.topic || placement.topicPrimary || placement.topic_primary || 'Uncategorized') || 'Uncategorized';
+      const secondary = text(lib.topic_secondary || result.importedRow?.topic_secondary || result.importedRow?.secondary_topic || placement.topicSecondary || placement.topic_secondary || 'Unspecified') || 'Unspecified';
 
       scheduled += 1;
       scheduledMinutes += minutes;
@@ -459,11 +392,9 @@
         attributableDollars += Number(result.dollars || 0);
         attributablePledges += Number(result.pledges || 0);
       }
-
       addGroup(topics, topic, minutes, result);
       const timeKey = Number.isFinite(startMinutes) ? Math.floor(startMinutes / 30) * 30 : null;
       addGroup(times, Number.isFinite(timeKey) ? String(timeKey) : 'Unknown', minutes, result);
-
       placementRows.push({
         dateKey: resultDate,
         startMinutes,
@@ -481,28 +412,12 @@
       });
     });
 
-    placementRows.sort((a, b) =>
-      text(a.dateKey).localeCompare(text(b.dateKey))
-      || Number(a.startMinutes || 0) - Number(b.startMinutes || 0)
-    );
-
+    placementRows.sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
     const meta = schedule.meta || {};
-    const reportedBroadcast = Number(
-      meta.reportedBroadcastTotalDollars
-      ?? meta.importedBroadcastTotalDollars
-      ?? meta.importedProgramSpecificBroadcastTotalDollars
-    );
-    const importedBroadcast = importedRows.reduce(
-      (sum, row) => sum + (Number(row.dollars ?? row.contribution_amount ?? 0) || 0),
-      0
-    );
-    const importedPledges = importedRows.reduce(
-      (sum, row) => sum + (Number(row.pledge_count || row.pledges || 0) || 0),
-      0
-    );
-    const broadcastDollars = importedRows.length
-      ? importedBroadcast
-      : (Number.isFinite(reportedBroadcast) ? reportedBroadcast : attributableDollars);
+    const reportedBroadcast = Number(meta.reportedBroadcastTotalDollars ?? meta.importedBroadcastTotalDollars ?? meta.importedProgramSpecificBroadcastTotalDollars);
+    const importedBroadcast = importedRows.reduce((sum, row) => sum + (Number(row.dollars ?? row.contribution_amount ?? 0) || 0), 0);
+    const importedPledges = importedRows.reduce((sum, row) => sum + (Number(row.pledge_count || row.pledges || 0) || 0), 0);
+    const broadcastDollars = importedRows.length ? importedBroadcast : (Number.isFinite(reportedBroadcast) ? reportedBroadcast : attributableDollars);
     const pledges = importedRows.length ? importedPledges : attributablePledges;
     const onlineDollars = Number(schedule.onlineDollars || 0) || 0;
     const mailDollars = Number(schedule.mailDollars || 0) || 0;
@@ -552,47 +467,37 @@
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(row);
     });
-
-    return [...buckets.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([key, rows]) => {
-        const date = parseDate(key);
-        const minutes = rows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
-        const dollars = rows.reduce((sum, row) => sum + (row.known ? Number(row.dollars || 0) : 0), 0);
-        const pledges = rows.reduce((sum, row) => sum + (row.known ? Number(row.pledges || 0) : 0), 0);
-        const starts = rows.map((row) => Number(row.startMinutes)).filter(Number.isFinite);
-        const ends = rows.map((row) => Number(row.endMinutes)).filter(Number.isFinite);
-        const startMinutes = starts.length ? Math.min(...starts) : null;
-        const endMinutes = ends.length ? Math.max(...ends) : null;
-        return {
-          dateKey: key,
-          date,
-          weekday: date ? date.toLocaleDateString(undefined, { weekday: 'long' }) : 'Unknown day',
-          minutes,
-          dollars,
-          pledges,
-          startMinutes,
-          endMinutes,
-          dollarsPerHour: dollarsPerHour(dollars, minutes),
-          pledgesPerHour: pledgesPerHour(pledges, minutes),
-          rows: [...rows].sort((a, b) => Number(a.startMinutes || 0) - Number(b.startMinutes || 0))
-        };
-      });
+    return [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, rows]) => {
+      const date = parseDate(key);
+      const minutes = rows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const dollars = rows.reduce((sum, row) => sum + (row.known ? Number(row.dollars || 0) : 0), 0);
+      const pledges = rows.reduce((sum, row) => sum + (row.known ? Number(row.pledges || 0) : 0), 0);
+      const starts = rows.map((row) => Number(row.startMinutes)).filter(Number.isFinite);
+      const ends = rows.map((row) => Number(row.endMinutes)).filter(Number.isFinite);
+      const startMinutes = starts.length ? Math.min(...starts) : null;
+      const endMinutes = ends.length ? Math.max(...ends) : null;
+      return {
+        dateKey: key,
+        date,
+        weekday: date ? date.toLocaleDateString(undefined, { weekday: 'long' }) : 'Unknown day',
+        minutes,
+        dollars,
+        pledges,
+        startMinutes,
+        endMinutes,
+        dollarsPerHour: dollarsPerHour(dollars, minutes),
+        pledgesPerHour: pledgesPerHour(pledges, minutes),
+        rows: [...rows].sort((a, b) => Number(a.startMinutes || 0) - Number(b.startMinutes || 0))
+      };
+    });
   }
 
   function firstSaturdayAnchor(analysis = {}) {
-    const importedDays = (analysis.importedRows || [])
-      .map((row) => parseDate(importedDateKey(row)))
-      .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
-      .sort((a, b) => a - b);
-    const placementDays = calendarDays(analysis)
-      .map((day) => day.date)
-      .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
-      .sort((a, b) => a - b);
+    const importedDays = (analysis.importedRows || []).map((row) => parseDate(importedDateKey(row))).filter((date) => date instanceof Date && !Number.isNaN(date.getTime())).sort((a, b) => a - b);
+    const placementDays = calendarDays(analysis).map((day) => day.date).filter((date) => date instanceof Date && !Number.isNaN(date.getTime())).sort((a, b) => a - b);
     const observed = importedDays.length ? importedDays : placementDays;
     const saturday = observed.find((date) => date.getDay() === 6);
     if (saturday) return new Date(saturday.getFullYear(), saturday.getMonth(), saturday.getDate());
-
     const start = observed[0] || parseDate(analysis.schedule?.startDate);
     if (!start) return null;
     const anchor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
@@ -608,8 +513,7 @@
   }
 
   function fundraiserDayOffset(analysis = {}, day = {}) {
-    const anchor = firstSaturdayAnchor(analysis);
-    const anchorSerial = localDateSerial(anchor);
+    const anchorSerial = localDateSerial(firstSaturdayAnchor(analysis));
     const daySerial = localDateSerial(day.date || parseDate(day.dateKey));
     if (!Number.isFinite(anchorSerial) || !Number.isFinite(daySerial)) return null;
     return Math.round(daySerial - anchorSerial);
@@ -631,10 +535,7 @@
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const weekdayIndex = ((6 + value) % 7 + 7) % 7;
     const weekday = weekdays[weekdayIndex];
-    if (value >= 0) {
-      const occurrence = Math.floor(value / 7) + 1;
-      return { title: `${ordinal(occurrence)} ${weekday}`, detail: `Day ${value}` };
-    }
+    if (value >= 0) return { title: `${ordinal(Math.floor(value / 7) + 1)} ${weekday}`, detail: `Day ${value}` };
     return { title: weekday, detail: `Day ${value}` };
   }
 
@@ -647,16 +548,10 @@
       });
       return map;
     });
-
     const offsets = [...new Set(maps.flatMap((map) => [...map.keys()]))]
       .filter((offset) => offset >= -1 && maps.filter((map) => map.has(offset)).length >= Math.min(2, maps.length))
       .sort((a, b) => a - b);
-
-    return offsets.map((offset) => ({
-      offset,
-      label: fundraiserDayLabel(offset),
-      days: maps.map((map) => map.get(offset) || null)
-    }));
+    return offsets.map((offset) => ({ offset, label: fundraiserDayLabel(offset), days: maps.map((map) => map.get(offset) || null) }));
   }
 
   function seasonalOrdinal(value) {
@@ -675,9 +570,7 @@
       analysis,
       date: anchors[index],
       ordinal: ordinals[index],
-      daysFromEarliest: Number.isFinite(ordinals[index]) && Number.isFinite(baseline)
-        ? ordinals[index] - baseline
-        : null
+      daysFromEarliest: Number.isFinite(ordinals[index]) && Number.isFinite(baseline) ? ordinals[index] - baseline : null
     }));
   }
 
@@ -697,20 +590,10 @@
 
   function topicComparisonRows(analyses = []) {
     const keys = new Set();
-    analyses.forEach((analysis) => {
-      (analysis.topics || new Map()).forEach((_value, key) => keys.add(key));
-    });
-
+    analyses.forEach((analysis) => (analysis.topics || new Map()).forEach((_value, key) => keys.add(key)));
     return [...keys].map((key) => {
       const values = analyses.map((analysis) => {
-        const item = analysis.topics?.get(key) || {
-          key,
-          minutes: 0,
-          scheduled: 0,
-          completed: 0,
-          dollars: 0,
-          pledges: 0
-        };
+        const item = analysis.topics?.get(key) || { key, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0 };
         const totalMinutes = Number(analysis.scheduledMinutes || 0);
         return {
           ...item,
@@ -726,11 +609,7 @@
         totalMinutes: values.reduce((sum, value) => sum + Number(value.minutes || 0), 0),
         totalDollars: values.reduce((sum, value) => sum + Number(value.dollars || 0), 0)
       };
-    }).sort((a, b) =>
-      b.totalMinutes - a.totalMinutes
-      || b.totalDollars - a.totalDollars
-      || a.key.localeCompare(b.key)
-    );
+    }).sort((a, b) => b.totalMinutes - a.totalMinutes || b.totalDollars - a.totalDollars || a.key.localeCompare(b.key));
   }
 
   function hourlyPledgeBuckets(analysis = {}) {
@@ -749,19 +628,13 @@
 
   function pledgeWeatherWindowForDate(dateValue, day = null) {
     if (day && Number.isFinite(Number(day.startMinutes)) && Number.isFinite(Number(day.endMinutes))) {
-      const startMinutes = Number(day.startMinutes);
-      const endMinutes = Number(day.endMinutes);
-      const startHour = Math.max(0, Math.min(23, Math.floor(startMinutes / 60)));
-      const endHourExclusive = Math.max(startHour + 1, Math.min(24, Math.ceil(endMinutes / 60)));
+      const startHour = Math.max(0, Math.min(23, Math.floor(Number(day.startMinutes) / 60)));
+      const endHourExclusive = Math.max(startHour + 1, Math.min(24, Math.ceil(Number(day.endMinutes) / 60)));
       return { startHour, endHourExclusive, label: 'fundraising hours' };
     }
     const date = dateValue instanceof Date ? dateValue : parseDate(dateValue);
     const weekend = Boolean(date && (date.getDay() === 0 || date.getDay() === 6));
-    return {
-      startHour: weekend ? 15 : 17,
-      endHourExclusive: 24,
-      label: weekend ? '3 PM-midnight' : '5 PM-midnight'
-    };
+    return { startHour: weekend ? 15 : 17, endHourExclusive: 24, label: weekend ? '3 PM-midnight' : '5 PM-midnight' };
   }
 
   return {
