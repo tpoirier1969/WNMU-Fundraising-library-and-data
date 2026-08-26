@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WNMU One-Sheet Reports</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.105">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.106">
   <style>
     .report-selection{position:relative;min-width:280px}
     .report-fundraiser-picker{position:relative;width:100%}
@@ -22,13 +22,30 @@
     .report-fundraiser-picker .report-check input{margin-top:3px}
     .report-fundraiser-picker .report-check strong{font-size:.9rem}
     .report-fundraiser-picker .report-check small{font-size:.8rem}
+    .daily-matrix .day-row-labels,.daily-matrix .day-value-lines{display:grid;gap:2px;margin-top:4px}
+    .daily-matrix .day-row-labels span{display:block;margin:0;color:#415c69;font-weight:850;line-height:1.25}
+    .daily-matrix .day-value-lines span{display:block;margin:0;color:#17384a;line-height:1.25}
+    .daily-matrix .day-date-value{font-weight:900;color:#17384a;line-height:1.25}
+    .daily-matrix .day-label-detail{margin-top:1px}
+    .topic-empty-message{font-style:normal;text-align:left;line-height:1.3;color:#5d717c}
     @media(max-width:900px){.report-selection{min-width:0}.report-fundraiser-picker .report-checks{position:static;margin-top:5px;max-height:300px}}
-    @media print{.report-fundraiser-picker{display:none!important}}
+    @media print{
+      .report-fundraiser-picker{display:none!important}
+      .comparison-sheet table{font-size:8pt}
+      .comparison-sheet thead th{font-size:8pt}
+      .comparison-sheet td span,.comparison-sheet th small,.comparison-sheet td small{font-size:8pt}
+      .comparison-sheet .topic-programs{font-size:8pt!important}
+      .comparison-sheet .sheet-footer,.comparison-sheet .data-quality-note{font-size:8pt}
+      .comparison-sheet .report-chart svg text,.comparison-sheet .chart-legend,.comparison-sheet .chart-legend strong{font-size:8pt}
+      .comparison-sheet .sheet-title p,.comparison-sheet .report-kicker,.comparison-sheet .section-heading p{font-size:13pt}
+      .comparison-sheet .day-cell strong,.comparison-sheet .topic-performance-line strong{font-size:9pt}
+      .comparison-sheet .day-row-labels span,.comparison-sheet .day-value-lines span{font-size:8pt}
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.105"></script>
-  <script defer src="assets/js/one-sheet-reports.js?v=0.22.105"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.106"></script>
+  <script defer src="assets/js/one-sheet-reports.js?v=0.22.106"></script>
 </head>
 <body>
   <div id="report-access-gate" class="report-access-gate hidden"></div>
@@ -57,6 +74,21 @@
   </div>
   <script>
     (() => {
+      let excludedDurationTitles = [];
+
+      function setText(node, value) {
+        if (!node) return;
+        const next = String(value ?? '');
+        if (node.textContent !== next) node.textContent = next;
+      }
+
+      function textNode(tagName, className, value) {
+        const node = document.createElement(tagName);
+        if (className) node.className = className;
+        node.textContent = String(value ?? '');
+        return node;
+      }
+
       function updatePickerSummary(picker) {
         const checks = picker.querySelector('#report-fundraiser-checks');
         const trigger = picker.querySelector('.report-fundraiser-trigger');
@@ -64,12 +96,10 @@
         const selected = [...checks.querySelectorAll('input[type="checkbox"]:checked')];
         const summary = trigger.querySelector('.report-fundraiser-trigger-summary');
         const count = trigger.querySelector('.report-fundraiser-trigger-count');
-        if (summary) {
-          if (!selected.length) summary.textContent = 'Choose fundraisers';
-          else if (selected.length === 1) summary.textContent = selected[0].closest('.report-check')?.querySelector('strong')?.textContent?.trim() || '1 fundraiser selected';
-          else summary.textContent = `${selected.length} fundraisers selected`;
-        }
-        if (count) count.textContent = String(selected.length);
+        if (!selected.length) setText(summary, 'Choose fundraisers');
+        else if (selected.length === 1) setText(summary, selected[0].closest('.report-check')?.querySelector('strong')?.textContent?.trim() || '1 fundraiser selected');
+        else setText(summary, `${selected.length} fundraisers selected`);
+        setText(count, String(selected.length));
       }
 
       function closePicker(picker) {
@@ -82,6 +112,7 @@
         if (!checks || checks.closest('.report-fundraiser-picker')) return;
         const selection = checks.closest('.report-selection');
         if (!selection) return;
+        excludedDurationTitles = [];
 
         const picker = document.createElement('div');
         picker.className = 'report-fundraiser-picker';
@@ -108,7 +139,141 @@
             trigger.focus();
           }
         });
-        checks.addEventListener('change', () => updatePickerSummary(picker));
+        checks.addEventListener('change', () => {
+          excludedDurationTitles = [];
+          updatePickerSummary(picker);
+        });
+      }
+
+      function captureDurationExclusions() {
+        const modal = document.getElementById('duration-warning-modal');
+        if (!modal) return;
+        const titles = [...modal.querySelectorAll('.duration-warning-list strong')]
+          .map((node) => node.textContent?.trim() || '')
+          .filter((title) => title && !title.startsWith('+ '));
+        if (titles.length) excludedDurationTitles = [...new Set(titles)];
+      }
+
+      function fundraiserDateRanges() {
+        const ranges = new Map();
+        document.querySelectorAll('#report-fundraiser-checks .report-check').forEach((label) => {
+          const title = label.querySelector('strong')?.textContent?.trim() || '';
+          const detail = label.querySelector('small')?.textContent?.trim() || '';
+          const dateRange = detail.split(' · ')[0]?.trim() || '';
+          if (title && dateRange) ranges.set(title, dateRange);
+        });
+        return ranges;
+      }
+
+      function enhanceComparisonHeadings(report) {
+        const ranges = fundraiserDateRanges();
+        report.querySelectorAll('table thead th:not(:first-child)').forEach((heading) => {
+          const title = heading.querySelector('strong')?.textContent?.trim() || '';
+          const small = heading.querySelector('small');
+          const dateRange = ranges.get(title);
+          if (small && dateRange) setText(small, dateRange);
+        });
+      }
+
+      function normalizeIncomePledges(text) {
+        return String(text || '')
+          .replace(/\s+pledges?$/i, '')
+          .replace(' · ', ' / ');
+      }
+
+      function normalizeWeather(text) {
+        const value = String(text || '').trim();
+        if (!value || /^weather\s+—$/i.test(value)) return '— / —';
+        return value.replace(' · ', ' / ');
+      }
+
+      function enhanceDailyMatrix(report) {
+        const table = report.querySelector('.daily-matrix table');
+        if (!table || table.dataset.detailGridEnhanced === 'true') return;
+        table.dataset.detailGridEnhanced = 'true';
+
+        const headers = [...table.querySelectorAll('thead th')];
+        const fundraiserCount = Math.max(1, headers.length - 1);
+        const labelWidth = 26;
+        const dataWidth = (100 - labelWidth) / fundraiserCount;
+        const colgroup = document.createElement('colgroup');
+        const labelCol = document.createElement('col');
+        labelCol.style.width = `${labelWidth}%`;
+        colgroup.appendChild(labelCol);
+        for (let index = 0; index < fundraiserCount; index += 1) {
+          const col = document.createElement('col');
+          col.style.width = `${dataWidth}%`;
+          colgroup.appendChild(col);
+        }
+        table.prepend(colgroup);
+        table.style.tableLayout = 'fixed';
+
+        table.querySelectorAll('tbody tr').forEach((row) => {
+          const cells = [...row.children];
+          const heading = cells[0];
+          if (!heading) return;
+          const title = heading.querySelector('strong')?.textContent?.trim() || '';
+          const detail = (heading.querySelector('small')?.textContent || '')
+            .replace(/\s*·\s*pre-Saturday start/i, '')
+            .trim();
+          const labels = textNode('div', 'day-row-labels', '');
+          ['$ / Hr (avg)', 'Pledge Hours', 'Total Income / No. pledges', 'Temperature / Rainfall']
+            .forEach((label) => labels.appendChild(textNode('span', '', label)));
+          heading.replaceChildren(
+            textNode('strong', '', title),
+            textNode('small', 'day-label-detail', detail),
+            labels
+          );
+
+          cells.slice(1).forEach((cell) => {
+            if (cell.classList.contains('muted-cell')) return;
+            const rate = cell.querySelector('strong')?.textContent?.trim() || '—';
+            const dateAndHours = cell.querySelector('span')?.textContent?.trim() || '';
+            const divider = dateAndHours.lastIndexOf(' · ');
+            const date = divider >= 0 ? dateAndHours.slice(0, divider).trim() : dateAndHours;
+            const pledgeHours = divider >= 0 ? dateAndHours.slice(divider + 3).trim() : '—';
+            const smalls = [...cell.querySelectorAll('small')];
+            const incomePledges = normalizeIncomePledges(smalls[0]?.textContent || '') || '— / —';
+            const weather = normalizeWeather(smalls[1]?.textContent || '');
+            const values = textNode('div', 'day-value-lines', '');
+            [rate, pledgeHours, incomePledges, weather].forEach((value) => values.appendChild(textNode('span', '', value)));
+            cell.replaceChildren(textNode('div', 'day-date-value', date || '—'), values);
+          });
+        });
+      }
+
+      function enhanceTopicMatrix(report) {
+        const section = report.querySelector('.topic-matrix');
+        if (!section) return;
+        const description = section.querySelector('.section-heading p');
+        const common = 'Hours % and Income % show allocation and attributable Broadcast income. Programs shown in bold aired in two or more selected fundraisers.';
+        const note = excludedDurationTitles.length
+          ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${common}`
+          : common;
+        setText(description, note);
+        section.querySelectorAll('tbody td.muted-cell').forEach((cell) => {
+          cell.classList.add('topic-empty-message');
+          setText(cell, 'No programming within this topic occurred during this fundraiser.');
+        });
+      }
+
+      function enhanceComparisonFooter(report) {
+        const footer = report.querySelector('.sheet-footer');
+        if (!footer) return;
+        const channelNote = 'Non-Specific Pledges are not treated as incomplete program/topic data. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.';
+        const note = excludedDurationTitles.length
+          ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${channelNote}`
+          : channelNote;
+        setText(footer, note);
+      }
+
+      function enhanceComparisonReport() {
+        const report = document.querySelector('.comparison-sheet');
+        if (!report) return;
+        enhanceComparisonHeadings(report);
+        enhanceDailyMatrix(report);
+        enhanceTopicMatrix(report);
+        enhanceComparisonFooter(report);
       }
 
       document.addEventListener('click', (event) => {
@@ -117,11 +282,15 @@
         });
       });
 
-      const controls = document.getElementById('report-controls');
-      if (controls) {
-        new MutationObserver(enhanceFundraiserPicker).observe(controls, { childList: true, subtree: true });
-      }
+      const observer = new MutationObserver(() => {
+        captureDurationExclusions();
+        enhanceFundraiserPicker();
+        enhanceComparisonReport();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      captureDurationExclusions();
       enhanceFundraiserPicker();
+      enhanceComparisonReport();
     })();
   </script>
 </body>
