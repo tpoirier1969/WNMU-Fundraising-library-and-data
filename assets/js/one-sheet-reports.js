@@ -10,6 +10,13 @@
     { name: 'Escanaba', latitude: 45.7452, longitude: -87.0646 },
     { name: 'Sault Ste. Marie', latitude: 46.4953, longitude: -84.3453 }
   ];
+  const CHART_STYLES = [
+    { stroke: '#145f91', dash: '' },
+    { stroke: '#7a3e65', dash: '10 5' },
+    { stroke: '#2d6a4f', dash: '3 4' },
+    { stroke: '#9a5b13', dash: '12 4 3 4' },
+    { stroke: '#4f5d75', dash: '7 4' }
+  ];
 
   const state = {
     client: null,
@@ -47,6 +54,13 @@
     });
   }
 
+  function compactMoney(value) {
+    const numeric = Number(value || 0);
+    if (Math.abs(numeric) >= 1000000) return `$${(numeric / 1000000).toFixed(numeric % 1000000 ? 1 : 0)}m`;
+    if (Math.abs(numeric) >= 1000) return `$${(numeric / 1000).toFixed(numeric % 1000 ? 1 : 0)}k`;
+    return money(numeric);
+  }
+
   function count(value, digits = 0) {
     return Number(value || 0).toLocaleString(undefined, {
       minimumFractionDigits: digits,
@@ -78,6 +92,113 @@
     const suffix = hour24 >= 12 ? 'PM' : 'AM';
     const label = `${hour24 % 12 || 12}:${String(minute).padStart(2, '0')} ${suffix}`;
     return dayOffset > 0 ? `${label} +${dayOffset}` : label;
+  }
+
+  function chartLabel(value, maxLength = 17) {
+    const text = String(value || '');
+    return text.length > maxLength ? `${text.slice(0, Math.max(1, maxLength - 1))}…` : text;
+  }
+
+  function niceStep(target) {
+    const safe = Math.max(1, Number(target || 1));
+    const power = 10 ** Math.floor(Math.log10(safe));
+    const ratio = safe / power;
+    const multiplier = ratio <= 1 ? 1 : ratio <= 2 ? 2 : ratio <= 5 ? 5 : 10;
+    return multiplier * power;
+  }
+
+  function chartScale(series = [], tickCount = 4) {
+    const values = series.flatMap((item) => (item.values || []).filter((value) => Number.isFinite(Number(value))).map(Number));
+    const maxValue = Math.max(0, ...values);
+    const step = niceStep((maxValue || 1) / tickCount);
+    const max = Math.max(step, Math.ceil((maxValue || 1) / step) * step);
+    return { max, step };
+  }
+
+  function chartLegend(series = []) {
+    return `<div class="chart-legend">${series.map((item, index) => {
+      const style = CHART_STYLES[index % CHART_STYLES.length];
+      return `<span><svg viewBox="0 0 36 12" aria-hidden="true"><line x1="2" y1="6" x2="34" y2="6" stroke="${style.stroke}" stroke-width="3"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/><circle cx="18" cy="6" r="3" fill="#fff" stroke="${style.stroke}" stroke-width="2"/></svg><strong>${escapeHtml(item.label)}</strong></span>`;
+    }).join('')}</div>`;
+  }
+
+  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '' } = {}) {
+    if (!labels.length || !series.length) return '<div class="chart-empty">No chartable results.</div>';
+    const width = 760;
+    const height = 285;
+    const margin = { left: 70, right: 20, top: 22, bottom: labels.length > 8 ? 86 : 62 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const { max, step } = chartScale(series);
+    const x = (index) => labels.length === 1 ? margin.left + (plotWidth / 2) : margin.left + ((plotWidth * index) / (labels.length - 1));
+    const y = (value) => margin.top + plotHeight - ((Math.max(0, Number(value || 0)) / max) * plotHeight);
+    const tickCount = Math.max(1, Math.round(max / step));
+    const yTicks = Array.from({ length: tickCount + 1 }, (_item, index) => index * step);
+    const rotate = labels.length > 8 || labels.some((label) => String(label).length > 12);
+    const xLabels = labels.map((label, index) => {
+      const xpos = x(index);
+      const ypos = margin.top + plotHeight + 21;
+      const text = escapeHtml(chartLabel(label, rotate ? 15 : 19));
+      return rotate
+        ? `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="end" transform="rotate(-38 ${xpos.toFixed(1)} ${ypos})">${text}</text>`
+        : `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="middle">${text}</text>`;
+    }).join('');
+    const grid = yTicks.map((value) => {
+      const ypos = y(value);
+      return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(compactMoney(value))}</text></g>`;
+    }).join('');
+    const plotted = series.map((item, seriesIndex) => {
+      const style = CHART_STYLES[seriesIndex % CHART_STYLES.length];
+      const values = item.values || [];
+      const segments = [];
+      let segment = [];
+      values.forEach((value, index) => {
+        if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+          if (segment.length) segments.push(segment);
+          segment = [];
+          return;
+        }
+        segment.push([x(index), y(value)]);
+      });
+      if (segment.length) segments.push(segment);
+      const paths = segments.map((points) => `<polyline points="${points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' ')}" fill="none" stroke="${style.stroke}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/>`).join('');
+      const points = values.map((value, index) => {
+        if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
+        return `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(item.label)} · ${escapeHtml(labels[index])}: ${escapeHtml(money(value))}</title></circle>`;
+      }).join('');
+      return `${paths}${points}`;
+    }).join('');
+    return `<div class="report-chart ${escapeHtml(className)}"><svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg>${chartLegend(series)}</div>`;
+  }
+
+  function incomeBarChartSvg(days = []) {
+    if (!days.length) return '<div class="chart-empty">No daily results.</div>';
+    const width = 760;
+    const height = 270;
+    const margin = { left: 70, right: 18, top: 26, bottom: 58 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maxValue = Math.max(1, ...days.map((day) => Number(day.dollars || 0)));
+    const step = niceStep(maxValue / 4);
+    const max = Math.max(step, Math.ceil(maxValue / step) * step);
+    const y = (value) => margin.top + plotHeight - ((Math.max(0, Number(value || 0)) / max) * plotHeight);
+    const tickCount = Math.max(1, Math.round(max / step));
+    const yTicks = Array.from({ length: tickCount + 1 }, (_item, index) => index * step);
+    const grid = yTicks.map((value) => {
+      const ypos = y(value);
+      return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(compactMoney(value))}</text></g>`;
+    }).join('');
+    const slot = plotWidth / days.length;
+    const barWidth = Math.max(12, Math.min(46, slot * 0.68));
+    const bars = days.map((day, index) => {
+      const dollars = Number(day.dollars || 0);
+      const xpos = margin.left + (slot * index) + ((slot - barWidth) / 2);
+      const ypos = y(dollars);
+      const barHeight = Math.max(dollars > 0 ? 2 : 0, margin.top + plotHeight - ypos);
+      const center = xpos + (barWidth / 2);
+      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text></g>`;
+    }).join('');
+    return `<div class="report-chart income-chart"><svg class="income-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily Broadcast income across the fundraiser"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${bars}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg></div>`;
   }
 
   function reportMode() {
@@ -194,7 +315,7 @@
           <div class="report-card-number">02</div>
           <div>
             <h2>Fundraiser Performance Summary</h2>
-            <p>Review one fundraiser’s daily income curve, pledge hours, start/end times, $/hour, pledge response, weather, and topic performance.</p>
+            <p>Review one fundraiser’s daily income curve, pledge hours, $/hour, pledge response, weather, individual program results, and topic performance.</p>
           </div>
           <span>Open report →</span>
         </a>
@@ -261,7 +382,7 @@
           <span>Select 3–5 fundraisers</span>
           <div id="report-fundraiser-checks" class="report-checks">${checks || '<em>No fundraisers in this season.</em>'}</div>
         </div>
-        <button type="button" class="report-button" id="report-print">Print one-sheet</button>
+        <button type="button" class="report-button" id="report-print">Print report</button>
       </div>`;
 
     $('#report-season')?.addEventListener('change', (event) => {
@@ -276,7 +397,7 @@
       input.addEventListener('change', () => {
         if (input.checked && state.selectedIds.size >= 5) {
           input.checked = false;
-          setStatus('A comparison one-sheet can include up to five fundraisers.', 'warn');
+          setStatus('A comparison report can include up to five fundraisers.', 'warn');
           return;
         }
         if (input.checked) state.selectedIds.add(input.value);
@@ -302,10 +423,14 @@
       </header>`;
   }
 
+  function fundraiserColumnHeading(analysis) {
+    return `<strong>${escapeHtml(analysis.schedule.title)}</strong><small>${escapeHtml(String(analysis.schedule.year || ''))}</small>`;
+  }
+
   function metricMatrix(analyses) {
     const policy = A.comparisonChannelPolicy(analyses);
     const timing = A.firstSaturdaySeasonalOffsets(analyses);
-    const head = analyses.map((analysis) => `<th><strong>${escapeHtml(analysis.schedule.title)}</strong><small>${escapeHtml(String(analysis.schedule.year || ''))}</small></th>`).join('');
+    const head = analyses.map((analysis) => `<th>${fundraiserColumnHeading(analysis)}</th>`).join('');
     const row = (label, values, className = '') => `<tr class="${className}"><th>${escapeHtml(label)}</th>${values.map((value) => `<td>${value}</td>`).join('')}</tr>`;
     const timingCells = timing.map((item) => {
       if (!item.date) return '—';
@@ -341,9 +466,21 @@
     return `${temp} · ${precip}`;
   }
 
+  function dailyComparisonChart(analyses, aligned) {
+    return lineChartSvg({
+      labels: aligned.map((entry) => entry.label.title),
+      series: analyses.map((analysis, analysisIndex) => ({
+        label: analysis.schedule.title,
+        values: aligned.map((entry) => entry.days?.[analysisIndex] ? Number(entry.days[analysisIndex].dollars || 0) : null)
+      })),
+      ariaLabel: 'Broadcast dollars by corresponding fundraiser day',
+      className: 'daily-comparison-chart'
+    });
+  }
+
   function dailyMatrix(analyses) {
     const aligned = A.alignedDailyRows(analyses);
-    const head = analyses.map((analysis) => `<th>${escapeHtml(analysis.schedule.year || analysis.schedule.title)}</th>`).join('');
+    const head = analyses.map((analysis) => `<th>${fundraiserColumnHeading(analysis)}</th>`).join('');
     const body = aligned.map((entry) => `
       <tr>
         <th><strong>${escapeHtml(entry.label.title)}</strong><small>${escapeHtml(entry.label.detail)}</small></th>
@@ -358,7 +495,7 @@
         }).join('')}
       </tr>`).join('');
 
-    return `<section class="sheet-section daily-matrix"><div class="section-heading"><div><h2>Corresponding fundraiser days</h2><p>Days align by fundraiser sequence around the first Saturday. Each cell leads with Broadcast $/pledge hour, then actual date, pledge hours, dollars, pledges, and weather.</p></div></div><div class="table-scroll"><table><thead><tr><th>Fundraiser day</th>${head}</tr></thead><tbody>${body || '<tr><td colspan="6">No comparable fundraiser days.</td></tr>'}</tbody></table></div></section>`;
+    return `<section class="sheet-section daily-matrix"><div class="section-heading"><div><h2>Corresponding fundraiser days</h2><p>Days align by fundraiser sequence around the first Saturday. The graph compares Broadcast dollars; the table adds $/hour, pledge hours, pledges, and weather.</p></div></div>${dailyComparisonChart(analyses, aligned)}<div class="table-scroll"><table><thead><tr><th>Fundraiser day</th>${head}</tr></thead><tbody>${body || '<tr><td colspan="6">No comparable fundraiser days.</td></tr>'}</tbody></table></div></section>`;
   }
 
   function topicProgramTitles(analysis, topic) {
@@ -375,15 +512,65 @@
     return titles;
   }
 
-  function topicMatrix(analyses) {
+  function recurringProgramKeys(analyses) {
+    const counts = new Map();
+    (analyses || []).forEach((analysis) => {
+      const seenThisFundraiser = new Set();
+      (analysis?.placementRows || []).forEach((row) => {
+        const title = A.text(row.title || row.plannedTitle || '');
+        const key = title.toLowerCase();
+        if (!key || seenThisFundraiser.has(key)) return;
+        seenThisFundraiser.add(key);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+    return new Set([...counts.entries()].filter(([_key, value]) => value >= 2).map(([key]) => key));
+  }
+
+  function topicProgramMarkup(analysis, topic, recurringKeys) {
+    return topicProgramTitles(analysis, topic).map((title) => {
+      const escaped = escapeHtml(title);
+      return recurringKeys.has(title.toLowerCase()) ? `<strong>${escaped}</strong>` : escaped;
+    }).join(' · ');
+  }
+
+  function topicRankMarkers(rows) {
+    const scored = rows
+      .filter((row) => Number(row.values?.[0]?.minutes || 0) > 0)
+      .map((row) => ({ key: row.key, rate: Number(row.values?.[0]?.dollarsPerHour || 0) }))
+      .sort((a, b) => b.rate - a.rate || String(a.key).localeCompare(String(b.key)));
+    const top = new Set(scored.slice(0, 3).map((item) => item.key));
+    const remaining = scored.filter((item) => !top.has(item.key));
+    const bottom = new Set(remaining.slice(-3).map((item) => item.key));
+    const markers = new Map();
+    top.forEach((key) => markers.set(key, '+'));
+    bottom.forEach((key) => markers.set(key, '−'));
+    return markers;
+  }
+
+  function topicComparisonChart(analyses, rows) {
+    return lineChartSvg({
+      labels: rows.map((row) => row.key),
+      series: analyses.map((analysis, analysisIndex) => ({
+        label: analysis.schedule.title,
+        values: rows.map((row) => Number(row.values?.[analysisIndex]?.minutes || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0)
+      })),
+      ariaLabel: 'Broadcast dollars by topic across selected fundraisers',
+      className: 'topic-comparison-chart'
+    });
+  }
+
+  function topicMatrix(analyses, options = {}) {
     const rows = A.topicComparisonRows(analyses);
-    const maxRates = analyses.map((_analysis, analysisIndex) =>
-      Math.max(1, ...rows.map((row) => Number(row.values?.[analysisIndex]?.dollarsPerHour || 0)))
-    );
-    const head = analyses.map((analysis) => `<th>${escapeHtml(analysis.schedule.year || analysis.schedule.title)}</th>`).join('');
-    const body = rows.map((row) => `
+    const head = analyses.map((analysis) => `<th>${fundraiserColumnHeading(analysis)}</th>`).join('');
+    const recurringKeys = analyses.length > 1 ? recurringProgramKeys(analyses) : new Set();
+    const rankMarkers = options.rankTopics ? topicRankMarkers(rows) : new Map();
+    const body = rows.map((row) => {
+      const marker = rankMarkers.get(row.key) || '';
+      const markerClass = marker === '+' ? 'top' : marker ? 'bottom' : '';
+      return `
       <tr>
-        <th>${escapeHtml(row.key)}</th>
+        <th class="topic-label">${marker ? `<span class="topic-rank ${markerClass}" aria-label="${marker === '+' ? 'Top three topic' : 'Bottom three topic'}">${marker}</span>` : ''}<strong>${escapeHtml(row.key)}</strong></th>
         ${row.values.map((value, analysisIndex) => {
           if (!(Number(value.minutes || 0) > 0)) return '<td class="muted-cell">—</td>';
           const analysis = analyses[analysisIndex];
@@ -392,20 +579,19 @@
           const incomeShare = attributableIncome > 0
             ? Math.max(0, Math.min(100, (Number(value.dollars || 0) / attributableIncome) * 100))
             : 0;
-          const strength = Math.max(0, Math.min(1, Number(value.dollarsPerHour || 0) / maxRates[analysisIndex]));
-          const heatAlpha = (0.08 + (strength * 0.24)).toFixed(3);
-          const titles = topicProgramTitles(analysis, row.key);
+          const programs = topicProgramMarkup(analysis, row.key, recurringKeys);
           return `<td class="topic-cell">
-            <div class="topic-rate" style="background:rgba(14,95,145,${heatAlpha})">${escapeHtml(money(value.dollarsPerHour))}/hr</div>
-            <div class="topic-share-row"><span>Hours</span><div class="topic-share-track"><i class="topic-hours-fill" style="width:${hoursShare.toFixed(1)}%"></i></div><strong>${hoursShare.toFixed(0)}%</strong></div>
-            <div class="topic-share-row"><span>Income</span><div class="topic-share-track"><i class="topic-income-fill" style="width:${incomeShare.toFixed(1)}%"></i></div><strong>${incomeShare.toFixed(0)}%</strong></div>
+            <div class="topic-performance-line"><strong>${escapeHtml(money(value.dollarsPerHour))}/hr</strong><span>Hours ${hoursShare.toFixed(0)}%</span><span>Income ${incomeShare.toFixed(0)}%</span></div>
             <small>${escapeHtml(hours(value.minutes))} · ${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>
-            ${titles.length ? `<small class="topic-programs">${escapeHtml(titles.join(' · '))}</small>` : ''}
+            ${programs ? `<small class="topic-programs">${programs}</small>` : ''}
           </td>`;
         }).join('')}
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
+    const rankNote = options.rankTopics ? ' + marks the top three topics and − the bottom three by Broadcast $/pledge hour.' : '';
+    const chart = analyses.length > 1 ? topicComparisonChart(analyses, rows) : '';
 
-    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Hours and income bars are shares within each fundraiser. Income share uses attributable topic Broadcast dollars. $/hour heat is scaled separately within each fundraiser.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
+    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Each result leads with $/hour, Hours %, and Income %. Income share uses attributable topic Broadcast dollars.${rankNote}${analyses.length > 1 ? ' Programs shown in bold aired in two or more selected fundraisers.' : ''}</p></div></div>${chart}<div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
   async function renderComparisonReport() {
@@ -422,7 +608,7 @@
   }
 
   async function initComparison() {
-    document.title = 'WNMU Fundraiser Comparison One-Sheet';
+    document.title = 'WNMU Fundraiser Comparison Report';
     $('#report-page-title').textContent = 'Fundraiser Comparison';
     $('#report-page-subtitle').textContent = 'Retrospective comparison of 3–5 fundraiser periods';
     state.season = defaultSeason();
@@ -436,7 +622,7 @@
     $('#report-controls').innerHTML = `
       <div class="report-control-row">
         <label class="report-field report-field-grow"><span>Fundraiser</span><select id="report-fundraiser">${options}</select></label>
-        <button type="button" class="report-button" id="report-print">Print one-sheet</button>
+        <button type="button" class="report-button" id="report-print">Print report</button>
       </div>`;
     $('#report-fundraiser')?.addEventListener('change', (event) => {
       state.activeFundraiserId = event.target.value || '';
@@ -452,7 +638,7 @@
       <section class="fundraiser-kpis">
         <div><span>Broadcast $</span><strong>${escapeHtml(money(analysis.broadcastDollars))}</strong></div>
         <div><span>Pledge hours</span><strong>${escapeHtml(hours(analysis.scheduledMinutes))}</strong></div>
-        <div class="primary"><span>Broadcast $ / hour</span><strong>${escapeHtml(money(A.dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes)))}</strong></div>
+        <div><span>Broadcast $ / hour</span><strong>${escapeHtml(money(A.dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes)))}</strong></div>
         <div><span>Pledges</span><strong>${escapeHtml(count(analysis.pledges))}</strong></div>
         <div><span>Pledges / hour</span><strong>${escapeHtml(count(A.pledgesPerHour(analysis.pledges, analysis.scheduledMinutes), 2))}</strong></div>
         <div><span>$ / pledge</span><strong>${escapeHtml(money(A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges)))}</strong></div>
@@ -463,23 +649,15 @@
 
   function dailyIncomeChart(analysis) {
     const days = A.calendarDays(analysis);
-    const max = Math.max(1, ...days.map((day) => Number(day.dollars || 0)));
-    return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars. Each bar also shows the day’s pledge count and Broadcast $/pledge hour.</p></div></div><div class="income-bars">${days.map((day) => {
-      const dollars = Number(day.dollars || 0);
-      const ratio = Math.max(0, Math.min(1, dollars / max));
-      const height = dollars > 0 ? Math.max(2, ratio * 100) : 0;
-      return `<div class="income-bar-item"><div class="income-bar-value">${escapeHtml(money(day.dollars))}<small>${escapeHtml(count(day.pledges))} pledges · ${escapeHtml(money(day.dollarsPerHour))}/hr</small></div><div class="income-bar-track"><div class="income-bar-fill" style="height:${height.toFixed(2)}%" title="${(ratio * 100).toFixed(1)}% of peak daily Broadcast dollars"></div></div><strong>${escapeHtml(formatDate(day.date, false))}</strong><span>${escapeHtml(day.weekday.slice(0, 3))}</span></div>`;
-    }).join('')}</div></section>`;
+    return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars, scaled to the highest day in this fundraiser.</p></div></div>${incomeBarChartSvg(days)}</section>`;
   }
 
   function fundraiserDailyTable(analysis) {
     const days = A.calendarDays(analysis);
     const rows = days.map((day) => {
-      const weekend = day.date && (day.date.getDay() === 0 || day.date.getDay() === 6);
-      return `<tr class="${weekend ? 'weekend-row' : ''}">
-        <th><strong>${escapeHtml(day.weekday)}</strong><small>${escapeHtml(formatDate(day.date))}</small></th>
-        <td>${escapeHtml(formatTime(day.startMinutes))}</td>
-        <td>${escapeHtml(formatTime(day.endMinutes))}</td>
+      const timeRange = `${formatTime(day.startMinutes)}–${formatTime(day.endMinutes)}`;
+      return `<tr>
+        <th><strong>${escapeHtml(day.weekday)}</strong><small>${escapeHtml(formatDate(day.date))} · ${escapeHtml(timeRange)}</small></th>
         <td>${escapeHtml(hours(day.minutes))}</td>
         <td>${escapeHtml(money(day.dollars))}</td>
         <td class="metric-primary">${escapeHtml(money(day.dollarsPerHour))}/hr</td>
@@ -488,20 +666,33 @@
         <td>${escapeHtml(weatherLine(day))}</td>
       </tr>`;
     }).join('');
-    return `<section class="sheet-section fundraiser-days"><h2>Day-by-day operating results</h2><div class="table-scroll"><table><thead><tr><th>Day</th><th>Start</th><th>End</th><th>Hours</th><th>Broadcast $</th><th>$/hr</th><th>Pledges</th><th>Pledges/hr</th><th>Weather</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    return `<section class="sheet-section fundraiser-days"><h2>Day-by-day operating results</h2><div class="table-scroll"><table><thead><tr><th>Day</th><th>Hours</th><th>Broadcast $</th><th>$/hr</th><th>Pledges</th><th>Pledges/hr</th><th>Weather</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
-  function pledgeHourChart(analysis) {
-    const buckets = A.hourlyPledgeBuckets(analysis);
-    const max = Math.max(1, ...buckets.map((row) => row.pledges));
-    return `<section class="sheet-section pledge-hours"><div class="section-heading"><div><h2>Pledges by program start hour</h2><p>Pledge counts are credited to imported airing rows and grouped by the program’s start hour.</p></div></div><div class="pledge-hour-bars">${buckets.map((row) => {
-      const width = Math.max(2, Math.round((Number(row.pledges || 0) / max) * 100));
-      return `<div class="pledge-hour-row"><strong>${escapeHtml(formatTime(row.startMinutes).replace(':00 ', ' '))}</strong><div><i style="width:${width}%"></i></div><span>${escapeHtml(count(row.pledges))} pledges · ${escapeHtml(money(row.dollars))}</span></div>`;
-    }).join('') || '<div class="muted-cell">No pledge-count rows are available.</div>'}</div></section>`;
+  function programResultsTable(analysis) {
+    const rows = [...(analysis.placementRows || [])]
+      .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    const body = rows.map((row) => {
+      const planned = A.text(row.plannedTitle || '');
+      const actual = A.text(row.title || planned || 'Untitled program');
+      const changedTitle = planned && actual && planned.toLowerCase() !== actual.toLowerCase();
+      const result = row.known ? money(row.dollars) : 'Pending';
+      const pledges = row.known ? count(row.pledges) : '—';
+      return `<tr>
+        <td>${escapeHtml(formatDate(row.dateKey, false))}</td>
+        <td><strong>${escapeHtml(formatTime(row.startMinutes))}</strong></td>
+        <td class="program-result-title"><strong>${escapeHtml(actual)}</strong>${changedTitle ? `<small>Planned: ${escapeHtml(planned)}</small>` : ''}</td>
+        <td>${escapeHtml(row.topic || 'Uncategorized')}</td>
+        <td>${escapeHtml(hours(row.minutes))}</td>
+        <td class="${row.known ? 'metric-primary' : 'muted-cell'}">${escapeHtml(result)}</td>
+        <td>${escapeHtml(pledges)}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="sheet-section program-results"><div class="section-heading"><div><h2>Program results</h2><p>Chronological program-level results using authoritative imported evidence when a unique match exists.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Start</th><th>Program</th><th>Topic</th><th>Length</th><th>Broadcast $</th><th>Pledges</th></tr></thead><tbody>${body || '<tr><td colspan="7">No program rows are available.</td></tr>'}</tbody></table></div></section>`;
   }
 
   function singleTopicMatrix(analysis) {
-    return topicMatrix([analysis]);
+    return topicMatrix([analysis], { rankTopics: true });
   }
 
   async function renderFundraiserReport() {
@@ -512,7 +703,7 @@
     }
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
-    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}<div class="sheet-two-column">${pledgeHourChart(analysis)}${singleTopicMatrix(analysis)}</div><footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Pledge-by-hour counts are associated with program start time, not donor transaction time.</footer></article>`;
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicMatrix(analysis)}<footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Program results are factual airing-level outcomes; start-time performance belongs in historical multi-fundraiser analysis where sample size can be shown.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses([analysis]);
     $('#report-output').innerHTML = render();

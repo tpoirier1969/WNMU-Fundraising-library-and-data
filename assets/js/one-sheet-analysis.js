@@ -353,6 +353,31 @@
     }
   }
 
+  function normalizeUnmatchedImportedRow(row = {}, indexes = {}) {
+    const lib = libraryForImportedRow(row, indexes) || {};
+    const rawMinutes = Number(row.program_minutes ?? row.runtime_minutes ?? row.duration_minutes);
+    const minutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? rawMinutes : 0;
+    const startMinutes = importedStartMinutes(row);
+    const title = importedTitle(row) || 'Unattributed Broadcast result';
+    return {
+      dateKey: importedDateKey(row),
+      startMinutes,
+      endMinutes: Number.isFinite(startMinutes) && minutes > 0 ? startMinutes + minutes : null,
+      title,
+      plannedTitle: '',
+      topic: text(lib.topic_primary || row.topic_primary || row.topic || 'Unattributed') || 'Unattributed',
+      secondary: text(lib.topic_secondary || row.topic_secondary || row.secondary_topic || 'Unspecified') || 'Unspecified',
+      daypart: daypartLabel(startMinutes),
+      minutes,
+      known: true,
+      dollars: Number(row.dollars ?? row.contribution_amount ?? 0) || 0,
+      pledges: Number(row.pledge_count || row.pledges || 0) || 0,
+      source: 'report-unmatched',
+      unmatchedImported: true,
+      rowHash: text(row.row_hash || '')
+    };
+  }
+
   function analyzeSchedule(schedule = {}, allAirings = [], indexes = {}) {
     const used = new Set();
     const importedRows = importedRowsForSchedule(schedule, allAirings);
@@ -381,7 +406,9 @@
       const scheduledStart = placementStartMinutes(placement);
       const startMinutes = Number.isFinite(result.actualStartMinutes) ? result.actualStartMinutes : scheduledStart;
       const resultDate = text(result.actualDateKey || placement.dateKey || placement.date_key || '');
-      const displayTitle = text(result.actualTitle || lib.title || scheduledTitle || 'Untitled program');
+      const displayTitle = result.source === 'report'
+        ? text(result.actualTitle || lib.title || scheduledTitle || 'Untitled program')
+        : text(scheduledTitle || lib.title || 'Untitled program');
       const topic = text(lib.topic_primary || result.importedRow?.topic_primary || result.importedRow?.topic || placement.topicPrimary || placement.topic_primary || 'Uncategorized') || 'Uncategorized';
       const secondary = text(lib.topic_secondary || result.importedRow?.topic_secondary || result.importedRow?.secondary_topic || placement.topicSecondary || placement.topic_secondary || 'Unspecified') || 'Unspecified';
 
@@ -412,7 +439,16 @@
       });
     });
 
+    const unmatchedImportedRows = importedRows
+      .filter((row) => {
+        const key = importedUseKey(row);
+        return Boolean(key && !used.has(key));
+      })
+      .map((row) => normalizeUnmatchedImportedRow(row, indexes));
+    placementRows.push(...unmatchedImportedRows);
     placementRows.sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    unmatchedImportedRows.sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+
     const meta = schedule.meta || {};
     const reportedBroadcast = Number(meta.reportedBroadcastTotalDollars ?? meta.importedBroadcastTotalDollars ?? meta.importedProgramSpecificBroadcastTotalDollars);
     const importedBroadcast = importedRows.reduce((sum, row) => sum + (Number(row.dollars ?? row.contribution_amount ?? 0) || 0), 0);
@@ -440,7 +476,8 @@
       topics,
       times,
       placementRows,
-      importedRows
+      importedRows,
+      unmatchedImportedRows
     };
   }
 
@@ -469,11 +506,12 @@
     });
     return [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, rows]) => {
       const date = parseDate(key);
-      const minutes = rows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const scheduledRows = rows.filter((row) => !row.unmatchedImported);
+      const minutes = scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
       const dollars = rows.reduce((sum, row) => sum + (row.known ? Number(row.dollars || 0) : 0), 0);
       const pledges = rows.reduce((sum, row) => sum + (row.known ? Number(row.pledges || 0) : 0), 0);
-      const starts = rows.map((row) => Number(row.startMinutes)).filter(Number.isFinite);
-      const ends = rows.map((row) => Number(row.endMinutes)).filter(Number.isFinite);
+      const starts = scheduledRows.map((row) => Number(row.startMinutes)).filter(Number.isFinite);
+      const ends = scheduledRows.map((row) => Number(row.endMinutes)).filter(Number.isFinite);
       const startMinutes = starts.length ? Math.min(...starts) : null;
       const endMinutes = ends.length ? Math.max(...ends) : null;
       return {
@@ -612,11 +650,12 @@
     }).sort((a, b) => b.totalMinutes - a.totalMinutes || b.totalDollars - a.totalDollars || a.key.localeCompare(b.key));
   }
 
-  function hourlyPledgeBuckets(analysis = {}) {
+  function startTimePledgeBuckets(analysis = {}) {
     const map = new Map();
     (analysis.placementRows || []).forEach((row) => {
       if (!row.known || !Number.isFinite(Number(row.startMinutes))) return;
-      const bucket = Math.floor(Number(row.startMinutes) / 60) * 60;
+      const normalized = ((Number(row.startMinutes) % 1440) + 1440) % 1440;
+      const bucket = Math.floor(normalized / 30) * 30;
       if (!map.has(bucket)) map.set(bucket, { startMinutes: bucket, pledges: 0, dollars: 0, airings: 0 });
       const item = map.get(bucket);
       item.pledges += Number(row.pledges || 0);
@@ -669,7 +708,7 @@
     comparisonChannelPolicy,
     comparableTotal,
     topicComparisonRows,
-    hourlyPledgeBuckets,
+    startTimePledgeBuckets,
     pledgeWeatherWindowForDate
   };
 });
