@@ -119,12 +119,30 @@ const indexes = A.buildLibraryIndexes([
 }
 
 {
+  const analysis = {
+    placementRows: [
+      { startMinutes: 1260, known: true, dollars: 840, pledges: 6 },
+      { startMinutes: 1290, known: true, dollars: 360, pledges: 2 }
+    ]
+  };
+  const buckets = A.startTimePledgeBuckets(analysis);
+  assert.equal(buckets.length, 2, '9:00 PM and 9:30 PM must remain separate start-time buckets');
+  assert.equal(buckets[0].startMinutes, 1260);
+  assert.equal(buckets[0].dollars, 840);
+  assert.equal(buckets[1].startMinutes, 1290);
+  assert.equal(buckets[1].dollars, 360);
+}
+
+{
   const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
   assert.match(reportSource, /Select 3–5 fundraisers/);
   assert.match(reportSource, /state\.selectedIds\.size >= 5/);
   assert.match(reportSource, /Broadcast \$ \/ pledge hour/);
   assert.match(reportSource, /Topic airtime & performance/);
-  assert.match(reportSource, /Pledges by program start hour/);
+  assert.match(reportSource, /function programResultsTable/);
+  assert.match(reportSource, /Program results/);
+  assert.doesNotMatch(reportSource, /Pledges by program start hour/);
+  assert.doesNotMatch(reportSource, /pledgeHourChart/);
 }
 
 console.log('one-sheet reports tests passed');
