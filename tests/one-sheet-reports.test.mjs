@@ -141,6 +141,13 @@ const indexes = A.buildLibraryIndexes([
   assert.match(reportSource, /Topic airtime & performance/);
   assert.match(reportSource, /function programResultsTable/);
   assert.match(reportSource, /Program results/);
+  assert.match(reportSource, /function lineChartSvg/);
+  assert.match(reportSource, /function dailyComparisonChart/);
+  assert.match(reportSource, /function topicComparisonChart/);
+  assert.match(reportSource, /function topicRankMarkers/);
+  assert.match(reportSource, /function recurringProgramKeys/);
+  assert.match(reportSource, /Programs shown in bold aired in two or more selected fundraisers/);
+  assert.match(reportSource, /<th>Day<\/th><th>Hours<\/th><th>Broadcast \$<\/th><th>\$\/hr<\/th><th>Pledges<\/th><th>Pledges\/hr<\/th><th>Weather<\/th>/);
   assert.doesNotMatch(reportSource, /Pledges by program start hour/);
   assert.doesNotMatch(reportSource, /pledgeHourChart/);
 }
