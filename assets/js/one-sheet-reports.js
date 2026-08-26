@@ -30,7 +30,8 @@
     selectedIds: new Set(),
     season: '',
     activeFundraiserId: '',
-    loadingWeather: false
+    loadingWeather: false,
+    durationApprovals: new Set()
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -41,7 +42,7 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/\"/g, '&quot;')
+      .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   }
 
@@ -70,6 +71,10 @@
 
   function hours(minutes) {
     return `${(Number(minutes || 0) / 60).toFixed(1)}h`;
+  }
+
+  function percent(value, digits = 0) {
+    return `${(Number(value || 0) * 100).toFixed(digits)}%`;
   }
 
   function formatDate(value, withYear = true) {
@@ -122,7 +127,7 @@
     }).join('')}</div>`;
   }
 
-  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '' } = {}) {
+  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '', legendTop = false } = {}) {
     if (!labels.length || !series.length) return '<div class="chart-empty">No chartable results.</div>';
     const width = 760;
     const height = 285;
@@ -138,10 +143,10 @@
     const xLabels = labels.map((label, index) => {
       const xpos = x(index);
       const ypos = margin.top + plotHeight + 21;
-      const text = escapeHtml(chartLabel(label, rotate ? 15 : 19));
+      const labelText = escapeHtml(chartLabel(label, rotate ? 15 : 19));
       return rotate
-        ? `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="end" transform="rotate(-38 ${xpos.toFixed(1)} ${ypos})">${text}</text>`
-        : `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="middle">${text}</text>`;
+        ? `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="end" transform="rotate(-38 ${xpos.toFixed(1)} ${ypos})">${labelText}</text>`
+        : `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="middle">${labelText}</text>`;
     }).join('');
     const grid = yTicks.map((value) => {
       const ypos = y(value);
@@ -168,7 +173,9 @@
       }).join('');
       return `${paths}${points}`;
     }).join('');
-    return `<div class="report-chart ${escapeHtml(className)}"><svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg>${chartLegend(series)}</div>`;
+    const legend = chartLegend(series);
+    const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg>`;
+    return `<div class="report-chart ${escapeHtml(className)}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
   }
 
   function incomeBarChartSvg(days = []) {
@@ -276,11 +283,9 @@
     const [scheduleRows, airings, library] = await Promise.all([
       fetchAll('pledge_fundraiser_schedules', 'id,title,start_date,end_date,created_at,updated_at,schedule_data', 'start_date'),
       fetchAll('pledge_program_airings_v2', '*', 'air_date'),
-      fetchAll('pledge_programs_v2', 'id,title,nola_code,topic_primary,topic_secondary')
+      fetchAll('pledge_programs_v2', '*')
     ]);
-
-    state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule))
-      .filter((schedule) => schedule.season && schedule.year);
+    state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule)).filter((schedule) => schedule.season && schedule.year);
     state.airings = airings;
     state.library = library;
     state.indexes = A.buildLibraryIndexes(library);
@@ -296,6 +301,68 @@
     return state.analysesById.get(schedule.id);
   }
 
+  function durationSignature(analyses = []) {
+    return analyses.map((analysis) => analysis.schedule?.id).filter(Boolean).sort().join('|');
+  }
+
+  function removeDurationModal() {
+    $('#duration-warning-modal')?.remove();
+  }
+
+  function missingDurationSummary(analyses = []) {
+    const missing = A.missingDurationPrograms(analyses);
+    const dollars = missing.reduce((sum, item) => sum + Number(item.dollars || 0), 0);
+    const airings = missing.reduce((sum, item) => sum + Number(item.airings || 0), 0);
+    return { missing, dollars, airings };
+  }
+
+  function durationCoverageText(analyses = []) {
+    const summary = missingDurationSummary(analyses);
+    if (!summary.missing.length) return '';
+    return `${summary.airings} program airing${summary.airings === 1 ? '' : 's'} lack a usable saved length and Program Library runtime. Their dollars remain in totals but are excluded from $/hour calculations and rankings.`;
+  }
+
+  async function ensureDurationDecision(analyses = []) {
+    const summary = missingDurationSummary(analyses);
+    if (!summary.missing.length) return true;
+    const signature = durationSignature(analyses);
+    if (state.durationApprovals.has(signature)) return true;
+
+    return new Promise((resolve) => {
+      removeDurationModal();
+      const modal = document.createElement('div');
+      modal.id = 'duration-warning-modal';
+      modal.className = 'report-modal-backdrop';
+      const visible = summary.missing.slice(0, 12);
+      const extra = summary.missing.length - visible.length;
+      modal.innerHTML = `
+        <div class="report-modal" role="dialog" aria-modal="true" aria-labelledby="duration-warning-title">
+          <div class="report-kicker">Data quality warning</div>
+          <h2 id="duration-warning-title">Program length information is missing</h2>
+          <p>These programs do not have a usable saved schedule length or a Program Library runtime. $/hour would be misleading if the report guessed a duration.</p>
+          <div class="duration-warning-list">
+            ${visible.map((item) => `<div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(count(item.airings))} airing${item.airings === 1 ? '' : 's'} · ${escapeHtml(money(item.dollars))} Broadcast $</span></div>`).join('')}
+            ${extra > 0 ? `<div><strong>+ ${extra} more title${extra === 1 ? '' : 's'}</strong></div>` : ''}
+          </div>
+          <p class="report-modal-note">Continue will keep the actual Broadcast dollars and pledges in factual totals, but exclude these airings from duration-based rates and rankings.</p>
+          <div class="report-modal-actions">
+            <button type="button" class="report-button primary" data-action="continue">Continue with incomplete data</button>
+            <button type="button" class="report-button" data-action="library">Return to Pledge Program Library</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      modal.querySelector('[data-action="continue"]')?.addEventListener('click', () => {
+        state.durationApprovals.add(signature);
+        removeDurationModal();
+        resolve(true);
+      });
+      modal.querySelector('[data-action="library"]')?.addEventListener('click', () => {
+        window.location.href = './';
+        resolve(false);
+      });
+    });
+  }
+
   function renderHub() {
     document.title = 'WNMU One-Sheet Reports';
     $('#report-page-title').textContent = 'One-Sheet Reports';
@@ -305,19 +372,15 @@
       <section class="report-hub">
         <a class="report-card-link" href="reports.html?report=comparison">
           <div class="report-card-number">01</div>
-          <div>
-            <h2>Fundraiser Comparison</h2>
-            <p>Compare 3–5 fundraisers by pledge hours, Broadcast $/hour, pledges, corresponding fundraiser days, weather, and topic airtime + performance.</p>
-          </div>
-          <span>Open report →</span>
+          <div><h2>Fundraiser Comparison</h2><p>Compare 2–5 fundraisers by $/pledge hour, Broadcast totals, corresponding fundraiser days, weather, and topic airtime + performance.</p></div><span>Open report →</span>
         </a>
         <a class="report-card-link" href="reports.html?report=fundraiser">
           <div class="report-card-number">02</div>
-          <div>
-            <h2>Fundraiser Performance Summary</h2>
-            <p>Review one fundraiser’s daily income curve, pledge hours, $/hour, pledge response, weather, individual program results, and topic performance.</p>
-          </div>
-          <span>Open report →</span>
+          <div><h2>Fundraiser Performance Summary</h2><p>Review one fundraiser’s daily income curve, program results, pledge-hour productivity, weather, and topic performance.</p></div><span>Open report →</span>
+        </a>
+        <a class="report-card-link" href="reports.html?report=historical">
+          <div class="report-card-number">03</div>
+          <div><h2>Historical Fundraiser Analytics</h2><p>Rank historical performance by season, topic, subtopic, start time, weekday/weekend, daypart, break type, and distributor using median $/hour.</p></div><span>Open report →</span>
         </a>
       </section>`;
   }
@@ -351,16 +414,17 @@
     [...state.selectedIds].forEach((id) => {
       if (!allowedIds.has(id)) state.selectedIds.delete(id);
     });
-    if (state.selectedIds.size >= 3) return;
+    if (state.selectedIds.size >= 2) return;
     state.selectedIds.clear();
-    allowed.slice(0, 3).forEach((schedule) => state.selectedIds.add(schedule.id));
+    allowed.slice(0, Math.min(3, allowed.length)).forEach((schedule) => state.selectedIds.add(schedule.id));
   }
 
   function selectedComparisonAnalyses() {
-    const selected = state.schedules
+    return state.schedules
       .filter((schedule) => state.selectedIds.has(schedule.id))
-      .sort((a, b) => A.text(a.startDate).localeCompare(A.text(b.startDate)));
-    return selected.map(analysisFor).filter(Boolean);
+      .sort((a, b) => A.text(a.startDate).localeCompare(A.text(b.startDate)))
+      .map(analysisFor)
+      .filter(Boolean);
   }
 
   function renderComparisonControls() {
@@ -374,17 +438,12 @@
         <input type="checkbox" value="${escapeHtml(schedule.id)}" ${state.selectedIds.has(schedule.id) ? 'checked' : ''}>
         <span><strong>${escapeHtml(schedule.title)}</strong><small>${escapeHtml(schedulePickerDetails(schedule))}</small></span>
       </label>`).join('');
-
     $('#report-controls').innerHTML = `
       <div class="report-control-row">
         <label class="report-field"><span>Pledge season</span><select id="report-season">${seasonOptions}</select></label>
-        <div class="report-selection">
-          <span>Select 3–5 fundraisers</span>
-          <div id="report-fundraiser-checks" class="report-checks">${checks || '<em>No fundraisers in this season.</em>'}</div>
-        </div>
+        <div class="report-selection"><span>Select 2–5 fundraisers</span><div id="report-fundraiser-checks" class="report-checks">${checks || '<em>No fundraisers in this season.</em>'}</div></div>
         <button type="button" class="report-button" id="report-print">Print report</button>
       </div>`;
-
     $('#report-season')?.addEventListener('change', (event) => {
       state.season = event.target.value || 'all';
       state.selectedIds.clear();
@@ -392,7 +451,6 @@
       renderComparisonControls();
       void renderComparisonReport();
     });
-
     $$('#report-fundraiser-checks input').forEach((input) => {
       input.addEventListener('change', () => {
         if (input.checked && state.selectedIds.size >= 5) {
@@ -410,21 +468,28 @@
 
   function comparisonHeader(analyses) {
     const policy = A.comparisonChannelPolicy(analyses);
-    const season = analyses.every((analysis) => analysis.schedule.season === analyses[0]?.schedule.season)
-      ? analyses[0]?.schedule.season
-      : 'Multi-season';
+    const season = analyses.every((analysis) => analysis.schedule.season === analyses[0]?.schedule.season) ? analyses[0]?.schedule.season : 'Multi-season';
     const years = analyses.map((analysis) => analysis.schedule.year).filter(Boolean);
     const yearRange = years.length ? `${Math.min(...years)}–${Math.max(...years)}` : '';
     const channels = ['Broadcast', policy.includeOnline ? 'Online' : '', policy.includeMail ? 'Mail' : ''].filter(Boolean).join(' + ');
-    return `
-      <header class="sheet-title">
-        <div><div class="report-kicker">WNMU-TV PBS pledge analysis</div><h1>${escapeHtml(season || 'Fundraiser')} Fundraiser Comparison</h1><p>${escapeHtml(yearRange)} · ${analyses.length} fundraisers · Comparable total basis: ${escapeHtml(channels)}</p></div>
-        <div class="sheet-stamp">Generated ${escapeHtml(new Date().toLocaleDateString())}</div>
-      </header>`;
+    return `<header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pledge analysis</div><h1>${escapeHtml(season || 'Fundraiser')} Fundraiser Comparison</h1><p>${escapeHtml(yearRange)} · ${analyses.length} fundraisers · Comparable total basis: ${escapeHtml(channels)}</p></div><div class="sheet-stamp">Generated ${escapeHtml(new Date().toLocaleDateString())}</div></header>`;
   }
 
   function fundraiserColumnHeading(analysis) {
     return `<strong>${escapeHtml(analysis.schedule.title)}</strong><small>${escapeHtml(String(analysis.schedule.year || ''))}</small>`;
+  }
+
+  function rateForAnalysis(analysis) {
+    return A.dollarsPerHour(analysis.rateEligibleDollars, analysis.rateEligibleMinutes);
+  }
+
+  function pledgeRateForAnalysis(analysis) {
+    return A.pledgesPerHour(analysis.rateEligiblePledges, analysis.rateEligibleMinutes);
+  }
+
+  function knownHoursLabel(analysis) {
+    const suffix = analysis.missingDurationRows?.length ? ' known' : '';
+    return `<strong>${escapeHtml(hours(analysis.scheduledMinutes))}${suffix}</strong>`;
   }
 
   function metricMatrix(analyses) {
@@ -439,17 +504,16 @@
     });
     const rows = [
       row('First Saturday', timingCells),
-      row('Pledge hours', analyses.map((a) => `<strong>${escapeHtml(hours(a.scheduledMinutes))}</strong>`), 'metric-hours'),
+      row('Broadcast $ / pledge hour', analyses.map((a) => `<strong>${escapeHtml(money(rateForAnalysis(a)))}/hr</strong>`), 'metric-primary'),
       row('Broadcast $', analyses.map((a) => `<strong>${escapeHtml(money(a.broadcastDollars))}</strong>`)),
-      row('Broadcast $ / pledge hour', analyses.map((a) => `<strong>${escapeHtml(money(A.dollarsPerHour(a.broadcastDollars, a.scheduledMinutes)))}/hr</strong>`), 'metric-primary'),
+      row('Pledge hours', analyses.map(knownHoursLabel), 'metric-hours'),
       row('Pledges', analyses.map((a) => `<strong>${escapeHtml(count(a.pledges))}</strong>`)),
-      row('Pledges / hour', analyses.map((a) => `<strong>${escapeHtml(count(A.pledgesPerHour(a.pledges, a.scheduledMinutes), 2))}</strong>`)),
+      row('Pledges / hour', analyses.map((a) => `<strong>${escapeHtml(count(pledgeRateForAnalysis(a), 2))}</strong>`)),
       row('$ / pledge', analyses.map((a) => `<strong>${escapeHtml(money(A.dollarsPerPledge(a.broadcastDollars, a.pledges)))}</strong>`)),
       row('Comparable total', analyses.map((a) => `<strong>${escapeHtml(money(A.comparableTotal(a, policy)))}</strong>`))
     ];
     if (policy.includeOnline) rows.push(row('Online $', analyses.map((a) => escapeHtml(money(a.onlineDollars)))));
     if (policy.includeMail) rows.push(row('Mail $', analyses.map((a) => escapeHtml(money(a.mailDollars)))));
-
     return `<section class="sheet-section summary-matrix"><h2>Whole-fundraiser comparison</h2><div class="table-scroll"><table><thead><tr><th>Measure</th>${head}</tr></thead><tbody>${rows.join('')}</tbody></table></div></section>`;
   }
 
@@ -474,7 +538,8 @@
         values: aligned.map((entry) => entry.days?.[analysisIndex] ? Number(entry.days[analysisIndex].dollars || 0) : null)
       })),
       ariaLabel: 'Broadcast dollars by corresponding fundraiser day',
-      className: 'daily-comparison-chart'
+      className: 'daily-comparison-chart',
+      legendTop: true
     });
   }
 
@@ -486,15 +551,9 @@
         <th><strong>${escapeHtml(entry.label.title)}</strong><small>${escapeHtml(entry.label.detail)}</small></th>
         ${entry.days.map((day) => {
           if (!day) return '<td class="muted-cell">—</td>';
-          return `<td class="day-cell">
-            <strong>${escapeHtml(money(day.dollarsPerHour))}/hr</strong>
-            <span>${escapeHtml(formatDate(day.date))} · ${escapeHtml(hours(day.minutes))}</span>
-            <small>${escapeHtml(money(day.dollars))} · ${escapeHtml(count(day.pledges))} pledges</small>
-            <small>${escapeHtml(weatherLine(day))}</small>
-          </td>`;
+          return `<td class="day-cell"><strong>${escapeHtml(money(day.dollarsPerHour))}/hr</strong><span>${escapeHtml(formatDate(day.date))} · ${escapeHtml(hours(day.minutes))}</span><small>${escapeHtml(money(day.dollars))} · ${escapeHtml(count(day.pledges))} pledges</small><small>${escapeHtml(weatherLine(day))}</small></td>`;
         }).join('')}
       </tr>`).join('');
-
     return `<section class="sheet-section daily-matrix"><div class="section-heading"><div><h2>Corresponding fundraiser days</h2><p>Days align by fundraiser sequence around the first Saturday. The graph compares Broadcast dollars; the table adds $/hour, pledge hours, pledges, and weather.</p></div></div>${dailyComparisonChart(analyses, aligned)}<div class="table-scroll"><table><thead><tr><th>Fundraiser day</th>${head}</tr></thead><tbody>${body || '<tr><td colspan="6">No comparable fundraiser days.</td></tr>'}</tbody></table></div></section>`;
   }
 
@@ -502,7 +561,7 @@
     const titles = [];
     const seen = new Set();
     (analysis?.placementRows || []).forEach((row) => {
-      if (A.text(row.topic) !== A.text(topic)) return;
+      if (A.lookupKey(row.topic) !== A.lookupKey(topic)) return;
       const title = A.text(row.title || row.plannedTitle || '');
       const key = title.toLowerCase();
       if (!title || seen.has(key)) return;
@@ -514,7 +573,7 @@
 
   function recurringProgramKeys(analyses) {
     const counts = new Map();
-    (analyses || []).forEach((analysis) => {
+    analyses.forEach((analysis) => {
       const seenThisFundraiser = new Set();
       (analysis?.placementRows || []).forEach((row) => {
         const title = A.text(row.title || row.plannedTitle || '');
@@ -527,25 +586,11 @@
     return new Set([...counts.entries()].filter(([_key, value]) => value >= 2).map(([key]) => key));
   }
 
-  function topicProgramMarkup(analysis, topic, recurringKeys) {
+  function topicProgramMarkup(analysis, topic, recurringKeys = new Set()) {
     return topicProgramTitles(analysis, topic).map((title) => {
       const escaped = escapeHtml(title);
       return recurringKeys.has(title.toLowerCase()) ? `<strong>${escaped}</strong>` : escaped;
     }).join(' · ');
-  }
-
-  function topicRankMarkers(rows) {
-    const scored = rows
-      .filter((row) => Number(row.values?.[0]?.minutes || 0) > 0)
-      .map((row) => ({ key: row.key, rate: Number(row.values?.[0]?.dollarsPerHour || 0) }))
-      .sort((a, b) => b.rate - a.rate || String(a.key).localeCompare(String(b.key)));
-    const top = new Set(scored.slice(0, 3).map((item) => item.key));
-    const remaining = scored.filter((item) => !top.has(item.key));
-    const bottom = new Set(remaining.slice(-3).map((item) => item.key));
-    const markers = new Map();
-    top.forEach((key) => markers.set(key, '+'));
-    bottom.forEach((key) => markers.set(key, '−'));
-    return markers;
   }
 
   function topicComparisonChart(analyses, rows) {
@@ -553,55 +598,46 @@
       labels: rows.map((row) => row.key),
       series: analyses.map((analysis, analysisIndex) => ({
         label: analysis.schedule.title,
-        values: rows.map((row) => Number(row.values?.[analysisIndex]?.minutes || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0)
+        values: rows.map((row) => Number(row.values?.[analysisIndex]?.scheduled || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0)
       })),
       ariaLabel: 'Broadcast dollars by topic across selected fundraisers',
       className: 'topic-comparison-chart'
     });
   }
 
-  function topicMatrix(analyses, options = {}) {
+  function comparisonTopicMatrix(analyses) {
     const rows = A.topicComparisonRows(analyses);
     const head = analyses.map((analysis) => `<th>${fundraiserColumnHeading(analysis)}</th>`).join('');
-    const recurringKeys = analyses.length > 1 ? recurringProgramKeys(analyses) : new Set();
-    const rankMarkers = options.rankTopics ? topicRankMarkers(rows) : new Map();
-    const body = rows.map((row) => {
-      const marker = rankMarkers.get(row.key) || '';
-      const markerClass = marker === '+' ? 'top' : marker ? 'bottom' : '';
-      return `
+    const recurringKeys = recurringProgramKeys(analyses);
+    const body = rows.map((row) => `
       <tr>
-        <th class="topic-label">${marker ? `<span class="topic-rank ${markerClass}" aria-label="${marker === '+' ? 'Top three topic' : 'Bottom three topic'}">${marker}</span>` : ''}<strong>${escapeHtml(row.key)}</strong></th>
+        <th class="topic-label"><strong>${escapeHtml(row.key)}</strong></th>
         ${row.values.map((value, analysisIndex) => {
-          if (!(Number(value.minutes || 0) > 0)) return '<td class="muted-cell">—</td>';
+          if (!(Number(value.scheduled || 0) > 0)) return '<td class="muted-cell">—</td>';
           const analysis = analyses[analysisIndex];
           const hoursShare = Math.max(0, Math.min(100, Number(value.share || 0) * 100));
-          const attributableIncome = Number(analysis?.attributableDollars || 0);
-          const incomeShare = attributableIncome > 0
-            ? Math.max(0, Math.min(100, (Number(value.dollars || 0) / attributableIncome) * 100))
-            : 0;
+          const topicIncomeDenominator = [...(analysis.topics?.values?.() || [])].reduce((sum, item) => sum + Number(item.dollars || 0), 0);
+          const incomeShare = topicIncomeDenominator > 0 ? Math.max(0, Math.min(100, (Number(value.dollars || 0) / topicIncomeDenominator) * 100)) : 0;
           const programs = topicProgramMarkup(analysis, row.key, recurringKeys);
-          return `<td class="topic-cell">
-            <div class="topic-performance-line"><strong>${escapeHtml(money(value.dollarsPerHour))}/hr</strong><span>Hours ${hoursShare.toFixed(0)}%</span><span>Income ${incomeShare.toFixed(0)}%</span></div>
-            <small>${escapeHtml(hours(value.minutes))} · ${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>
-            ${programs ? `<small class="topic-programs">${programs}</small>` : ''}
-          </td>`;
+          return `<td class="topic-cell"><div class="topic-performance-line"><strong>${escapeHtml(money(value.dollarsPerHour))}/hr</strong><span>Hours ${hoursShare.toFixed(0)}%</span><span>Income ${incomeShare.toFixed(0)}%</span></div><small>${escapeHtml(hours(value.minutes))} · ${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>${programs ? `<small class="topic-programs">${programs}</small>` : ''}</td>`;
         }).join('')}
-      </tr>`;
-    }).join('');
-    const rankNote = options.rankTopics ? ' + marks the top three topics and − the bottom three by Broadcast $/pledge hour.' : '';
-    const chart = analyses.length > 1 ? topicComparisonChart(analyses, rows) : '';
+      </tr>`).join('');
+    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>$ / hour uses only airings with valid duration. Hours % and Income % show allocation and attributable Broadcast income. Programs shown in bold aired in two or more selected fundraisers.</p></div></div>${topicComparisonChart(analyses, rows)}<div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
+  }
 
-    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Each result leads with $/hour, Hours %, and Income %. Income share uses attributable topic Broadcast dollars.${rankNote}${analyses.length > 1 ? ' Programs shown in bold aired in two or more selected fundraisers.' : ''}</p></div></div>${chart}<div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
+  function durationNoticeSection(analyses) {
+    const text = durationCoverageText(analyses);
+    return text ? `<div class="data-quality-note"><strong>Duration coverage:</strong> ${escapeHtml(text)}</div>` : '';
   }
 
   async function renderComparisonReport() {
     const analyses = selectedComparisonAnalyses();
-    if (analyses.length < 3 || analyses.length > 5) {
-      $('#report-output').innerHTML = `<div class="report-empty"><strong>Select 3–5 fundraisers.</strong><span>${analyses.length} selected.</span></div>`;
+    if (analyses.length < 2 || analyses.length > 5) {
+      $('#report-output').innerHTML = `<div class="report-empty"><strong>Select 2–5 fundraisers.</strong><span>${analyses.length} selected.</span></div>`;
       return;
     }
-
-    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${topicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour = authoritative Broadcast dollars ÷ pledge-schedule hours. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
+    if (!(await ensureDurationDecision(analyses))) return;
+    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${durationNoticeSection(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${comparisonTopicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour excludes airings with missing duration from both the numerator and denominator. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses(analyses);
     $('#report-output').innerHTML = render();
@@ -610,7 +646,7 @@
   async function initComparison() {
     document.title = 'WNMU Fundraiser Comparison Report';
     $('#report-page-title').textContent = 'Fundraiser Comparison';
-    $('#report-page-subtitle').textContent = 'Retrospective comparison of 3–5 fundraiser periods';
+    $('#report-page-subtitle').textContent = 'Retrospective comparison of 2–5 fundraiser periods';
     state.season = defaultSeason();
     ensureDefaultComparisonSelection();
     renderComparisonControls();
@@ -619,11 +655,7 @@
 
   function renderFundraiserControls() {
     const options = state.schedules.map((schedule) => `<option value="${escapeHtml(schedule.id)}" ${state.activeFundraiserId === schedule.id ? 'selected' : ''}>${escapeHtml(scheduleOptionLabel(schedule))}</option>`).join('');
-    $('#report-controls').innerHTML = `
-      <div class="report-control-row">
-        <label class="report-field report-field-grow"><span>Fundraiser</span><select id="report-fundraiser">${options}</select></label>
-        <button type="button" class="report-button" id="report-print">Print report</button>
-      </div>`;
+    $('#report-controls').innerHTML = `<div class="report-control-row"><label class="report-field report-field-grow"><span>Fundraiser</span><select id="report-fundraiser">${options}</select></label><button type="button" class="report-button" id="report-print">Print report</button></div>`;
     $('#report-fundraiser')?.addEventListener('change', (event) => {
       state.activeFundraiserId = event.target.value || '';
       void renderFundraiserReport();
@@ -637,10 +669,10 @@
     return `<header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pledge analysis</div><h1>${escapeHtml(schedule.title)}</h1><p>${escapeHtml(formatDate(schedule.startDate))}–${escapeHtml(formatDate(schedule.endDate))}${firstSaturday ? ` · First Saturday ${escapeHtml(formatDate(firstSaturday))}` : ''}</p></div><div class="sheet-stamp">Fundraiser Performance Summary</div></header>
       <section class="fundraiser-kpis">
         <div><span>Broadcast $</span><strong>${escapeHtml(money(analysis.broadcastDollars))}</strong></div>
-        <div><span>Pledge hours</span><strong>${escapeHtml(hours(analysis.scheduledMinutes))}</strong></div>
-        <div><span>Broadcast $ / hour</span><strong>${escapeHtml(money(A.dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes)))}</strong></div>
+        <div><span>Pledge hours</span><strong>${escapeHtml(hours(analysis.scheduledMinutes))}${analysis.missingDurationRows?.length ? ' known' : ''}</strong></div>
+        <div><span>Broadcast $ / hour</span><strong>${escapeHtml(money(rateForAnalysis(analysis)))}</strong></div>
         <div><span>Pledges</span><strong>${escapeHtml(count(analysis.pledges))}</strong></div>
-        <div><span>Pledges / hour</span><strong>${escapeHtml(count(A.pledgesPerHour(analysis.pledges, analysis.scheduledMinutes), 2))}</strong></div>
+        <div><span>Pledges / hour</span><strong>${escapeHtml(count(pledgeRateForAnalysis(analysis), 2))}</strong></div>
         <div><span>$ / pledge</span><strong>${escapeHtml(money(A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges)))}</strong></div>
         <div><span>Online $</span><strong>${analysis.onlineTracked ? escapeHtml(money(analysis.onlineDollars)) : 'Not tracked'}</strong></div>
         <div><span>Mail $</span><strong>${analysis.mailTracked ? escapeHtml(money(analysis.mailDollars)) : 'Not tracked'}</strong></div>
@@ -649,50 +681,45 @@
 
   function dailyIncomeChart(analysis) {
     const days = A.calendarDays(analysis);
-    return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars, scaled to the highest day in this fundraiser.</p></div></div>${incomeBarChartSvg(days)}</section>`;
+    return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars across the fundraiser.</p></div></div>${incomeBarChartSvg(days)}</section>`;
   }
 
   function fundraiserDailyTable(analysis) {
     const days = A.calendarDays(analysis);
     const rows = days.map((day) => {
       const timeRange = `${formatTime(day.startMinutes)}–${formatTime(day.endMinutes)}`;
-      return `<tr>
-        <th><strong>${escapeHtml(day.weekday)}</strong><small>${escapeHtml(formatDate(day.date))} · ${escapeHtml(timeRange)}</small></th>
-        <td>${escapeHtml(hours(day.minutes))}</td>
-        <td>${escapeHtml(money(day.dollars))}</td>
-        <td class="metric-primary">${escapeHtml(money(day.dollarsPerHour))}/hr</td>
-        <td>${escapeHtml(count(day.pledges))}</td>
-        <td>${escapeHtml(count(day.pledgesPerHour, 2))}</td>
-        <td>${escapeHtml(weatherLine(day))}</td>
-      </tr>`;
+      const weekend = day.weekday === 'Saturday' || day.weekday === 'Sunday';
+      return `<tr class="${weekend ? 'weekend-row' : ''}"><th><strong>${escapeHtml(day.weekday)}</strong><small>${escapeHtml(formatDate(day.date))} · ${escapeHtml(timeRange)}</small></th><td>${escapeHtml(hours(day.minutes))}</td><td>${escapeHtml(money(day.dollars))}</td><td class="metric-primary">${escapeHtml(money(day.dollarsPerHour))}/hr</td><td>${escapeHtml(count(day.pledges))}</td><td>${escapeHtml(count(day.pledgesPerHour, 2))}</td><td>${escapeHtml(weatherLine(day))}</td></tr>`;
     }).join('');
     return `<section class="sheet-section fundraiser-days"><h2>Day-by-day operating results</h2><div class="table-scroll"><table><thead><tr><th>Day</th><th>Hours</th><th>Broadcast $</th><th>$/hr</th><th>Pledges</th><th>Pledges/hr</th><th>Weather</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
   function programResultsTable(analysis) {
-    const rows = [...(analysis.placementRows || [])]
-      .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
-    const body = rows.map((row) => {
-      const planned = A.text(row.plannedTitle || '');
-      const actual = A.text(row.title || planned || 'Untitled program');
-      const changedTitle = planned && actual && planned.toLowerCase() !== actual.toLowerCase();
-      const result = row.known ? money(row.dollars) : 'Pending';
-      const pledges = row.known ? count(row.pledges) : '—';
-      return `<tr>
-        <td>${escapeHtml(formatDate(row.dateKey, false))}</td>
-        <td><strong>${escapeHtml(formatTime(row.startMinutes))}</strong></td>
-        <td class="program-result-title"><strong>${escapeHtml(actual)}</strong>${changedTitle ? `<small>Planned: ${escapeHtml(planned)}</small>` : ''}</td>
+    const rows = A.programResultsRows(analysis);
+    const body = rows.map((row) => `
+      <tr>
+        <th class="program-result-title"><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(count(row.airings))} airing${row.airings === 1 ? '' : 's'}</small></th>
         <td>${escapeHtml(row.topic || 'Uncategorized')}</td>
-        <td>${escapeHtml(hours(row.minutes))}</td>
-        <td class="${row.known ? 'metric-primary' : 'muted-cell'}">${escapeHtml(result)}</td>
-        <td>${escapeHtml(pledges)}</td>
-      </tr>`;
-    }).join('');
-    return `<section class="sheet-section program-results"><div class="section-heading"><div><h2>Program results</h2><p>Chronological program-level results using authoritative imported evidence when a unique match exists.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Start</th><th>Program</th><th>Topic</th><th>Length</th><th>Broadcast $</th><th>Pledges</th></tr></thead><tbody>${body || '<tr><td colspan="7">No program rows are available.</td></tr>'}</tbody></table></div></section>`;
+        <td>${escapeHtml(row.lengthLabel)}</td>
+        <td class="metric-primary">${escapeHtml(money(row.dollars))}</td>
+        <td>${row.rateMinutes > 0 ? `${escapeHtml(money(row.dollarsPerHour))}/hr` : '<span class="missing-rate">N/A</span>'}</td>
+        <td>${escapeHtml(count(row.pledges))}</td>
+      </tr>`).join('');
+    return `<section class="sheet-section program-results"><div class="section-heading"><div><h2>Program results</h2><p>One entry per title, ranked by total Broadcast dollars earned during this fundraiser.</p></div></div><div class="table-scroll"><table><thead><tr><th>Program</th><th>Topic</th><th>Length</th><th>Broadcast $</th><th>$/hr</th><th>Pledges</th></tr></thead><tbody>${body || '<tr><td colspan="6">No program results are available.</td></tr>'}</tbody></table></div></section>`;
   }
 
-  function singleTopicMatrix(analysis) {
-    return topicMatrix([analysis], { rankTopics: true });
+  function singleTopicSummary(analysis) {
+    const rows = A.topicComparisonRows([analysis])
+      .map((row) => ({ row, value: row.values[0] }))
+      .filter((item) => Number(item.value.scheduled || 0) > 0)
+      .sort((a, b) => b.value.dollarsPerHour - a.value.dollarsPerHour || b.value.dollars - a.value.dollars || a.row.key.localeCompare(b.row.key));
+    const totalTopicIncome = rows.reduce((sum, item) => sum + Number(item.value.dollars || 0), 0);
+    const body = rows.map(({ row, value }) => {
+      const incomeShare = totalTopicIncome > 0 ? Number(value.dollars || 0) / totalTopicIncome : 0;
+      const programs = topicProgramMarkup(analysis, row.key);
+      return `<tr><th>${escapeHtml(row.key)}</th><td><strong>${escapeHtml(money(value.dollars))} / ${escapeHtml(money(value.dollarsPerHour))}/hr / ${escapeHtml(percent(incomeShare))} income</strong><span>${escapeHtml(hours(value.minutes))} / ${escapeHtml(percent(value.share))} / ${escapeHtml(count(value.scheduled))} airings</span>${programs ? `<small class="topic-programs">${programs}</small>` : ''}</td></tr>`;
+    }).join('');
+    return `<section class="sheet-section topic-summary"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Topics are ranked by Broadcast $/hour. The first line shows income; the second shows airtime and exposure.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic</th><th>Fundraiser result</th></tr></thead><tbody>${body || '<tr><td colspan="2">No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
   async function renderFundraiserReport() {
@@ -703,7 +730,8 @@
     }
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
-    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicMatrix(analysis)}<footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Program results are factual airing-level outcomes; start-time performance belongs in historical multi-fundraiser analysis where sample size can be shown.</footer></article>`;
+    if (!(await ensureDurationDecision([analysis]))) return;
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program and topic $/hour exclude airings with missing duration from both numerator and denominator. Start-time performance is reserved for historical analytics where sufficient sample size can be required.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses([analysis]);
     $('#report-output').innerHTML = render();
@@ -716,6 +744,75 @@
     state.activeFundraiserId = state.schedules[0]?.id || '';
     renderFundraiserControls();
     await renderFundraiserReport();
+  }
+
+  function historicalControls() {
+    $('#report-controls').innerHTML = `<div class="report-control-row"><div class="historical-control-copy"><strong>All saved fundraiser history</strong><span>Historical rankings use median Broadcast $/hour and minimum evidence rules.</span></div><button type="button" class="report-button" id="report-print">Print report</button></div>`;
+    $('#report-print')?.addEventListener('click', () => window.print());
+  }
+
+  function historicalAnalyses() {
+    return state.schedules.map(analysisFor).filter(Boolean);
+  }
+
+  function historicalHeader(analyses) {
+    const years = analyses.map((analysis) => Number(analysis.schedule?.year || 0)).filter(Boolean);
+    const totalBroadcast = analyses.reduce((sum, analysis) => sum + Number(analysis.broadcastDollars || 0), 0);
+    const totalMinutes = analyses.reduce((sum, analysis) => sum + Number(analysis.scheduledMinutes || 0), 0);
+    const totalAirings = analyses.reduce((sum, analysis) => sum + Number(analysis.scheduled || 0), 0);
+    return `<header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS historical pledge analysis</div><h1>Historical Fundraiser Analytics</h1><p>${years.length ? `${Math.min(...years)}–${Math.max(...years)} · ` : ''}${escapeHtml(count(analyses.length))} fundraisers · ${escapeHtml(count(totalAirings))} scheduled pledge airings</p></div><div class="sheet-stamp">${escapeHtml(money(totalBroadcast))} Broadcast · ${escapeHtml(hours(totalMinutes))} known pledge hours</div></header>`;
+  }
+
+  function historicalKeyLabel(dimension, key) {
+    if (dimension === 'startTime') return formatTime(Number(key));
+    return String(key || 'Unknown');
+  }
+
+  function historicalRankingTable(analyses, dimension, title, description, options = {}) {
+    const rows = A.historicalRanking(analyses, dimension, options);
+    const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class="metric-primary">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
+    return `<section class="sheet-section historical-ranking"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class="table-scroll"><table><thead><tr><th>Group</th><th>Median $/hr</th><th>Avg $/hr</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan="7">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
+  }
+
+  function historicalSeasonTable(analyses) {
+    return historicalRankingTable(
+      analyses,
+      'season',
+      'Performance by fundraiser season',
+      'Season-level performance across the full historical record.',
+      { minAirings: 1, minFundraisers: 1, minTitles: 1 }
+    );
+  }
+
+  function historicalReportBody(analyses) {
+    return [
+      historicalSeasonTable(analyses),
+      historicalRankingTable(analyses, 'topic', 'Topic performance', 'Topics with at least 3 rate-valid airings across at least 2 fundraisers, ranked by median Broadcast $/hour.'),
+      historicalRankingTable(analyses, 'subtopic', 'Subtopic performance', 'Subtopics with at least 3 rate-valid airings across at least 2 fundraisers, ranked by median Broadcast $/hour.'),
+      historicalRankingTable(analyses, 'startTime', 'Start-time performance: slots with sufficient historical evidence', 'Only 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Sparse slots are excluded rather than displayed in the ranking.'),
+      historicalRankingTable(analyses, 'weekpart', 'Weekday / Saturday / Sunday', 'Performance by calendar day type, ranked by median Broadcast $/hour.'),
+      historicalRankingTable(analyses, 'daypart', 'Daypart performance', 'Morning, afternoon, early evening, prime, and overnight performance.'),
+      historicalRankingTable(analyses, 'breakType', 'Live break vs pre-recorded break', 'Uses saved schedule live-break flags only. Imported rows without schedule flags are not used in this comparison.'),
+      historicalRankingTable(analyses, 'distributor', 'Distributor performance', 'Distributors with at least 3 rate-valid airings across at least 2 fundraisers.')
+    ].join('');
+  }
+
+  async function renderHistoricalReport() {
+    const analyses = historicalAnalyses();
+    if (!analyses.length) {
+      $('#report-output').innerHTML = '<div class="report-empty">No fundraiser history is available.</div>';
+      return;
+    }
+    if (!(await ensureDurationDecision(analyses))) return;
+    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use median Broadcast $/hour. Rate calculations exclude airings with missing duration from both numerator and denominator. Start-time rankings require 5 rate-valid airings across 3 fundraisers and 3 distinct titles.</footer></article>`;
+  }
+
+  async function initHistorical() {
+    document.title = 'WNMU Historical Fundraiser Analytics';
+    $('#report-page-title').textContent = 'Historical Fundraiser Analytics';
+    $('#report-page-subtitle').textContent = 'Retrospective patterns across the full pledge record';
+    historicalControls();
+    await renderHistoricalReport();
   }
 
   function weatherEndpointOrder(endDate = '') {
@@ -786,15 +883,12 @@
     }
     const startDate = days[0].dateKey;
     const endDate = days[days.length - 1].dateKey;
-    const settled = await Promise.allSettled(
-      WEATHER_LOCATIONS.map(async (location) => ({
-        location,
-        hourly: await fetchStationWeather(location, startDate, endDate)
-      }))
-    );
+    const settled = await Promise.allSettled(WEATHER_LOCATIONS.map(async (location) => ({
+      location,
+      hourly: await fetchStationWeather(location, startDate, endDate)
+    })));
     const success = settled.filter((entry) => entry.status === 'fulfilled').map((entry) => entry.value);
     if (!success.length) return;
-
     const stationMaps = success.map((entry) => summarizeStationForDays(entry.hourly, days));
     days.forEach((day) => {
       const values = stationMaps.map((map) => map.get(day.dateKey)).filter(Boolean);
@@ -802,9 +896,7 @@
       const precips = values.map((item) => item.precip).filter(Number.isFinite);
       state.weatherByDate.set(day.dateKey, {
         avgTemp: temps.length ? temps.reduce((sum, value) => sum + value, 0) / temps.length : null,
-        precip: precips.length ? precips.reduce((sum, value) => sum + value, 0) / precips.length : null,
-        wetStations: values.filter((item) => Number(item.precip || 0) >= 0.01).length,
-        stations: values.length
+        precip: precips.length ? precips.reduce((sum, value) => sum + value, 0) / precips.length : null
       });
     });
     state.weatherLoadedSchedules.add(id);
@@ -833,6 +925,7 @@
       const mode = reportMode();
       if (mode === 'comparison') await initComparison();
       else if (mode === 'fundraiser') await initFundraiser();
+      else if (mode === 'historical') await initHistorical();
       else renderHub();
     } catch (error) {
       console.error(error);
