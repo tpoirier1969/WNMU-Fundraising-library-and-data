@@ -194,7 +194,7 @@
           <div class="report-card-number">02</div>
           <div>
             <h2>Fundraiser Performance Summary</h2>
-            <p>Review one fundraiser’s daily income curve, pledge hours, start/end times, $/hour, pledge response, weather, and topic performance.</p>
+            <p>Review one fundraiser’s daily income curve, pledge hours, start/end times, $/hour, pledge response, weather, individual program results, and topic performance.</p>
           </div>
           <span>Open report →</span>
         </a>
@@ -261,7 +261,7 @@
           <span>Select 3–5 fundraisers</span>
           <div id="report-fundraiser-checks" class="report-checks">${checks || '<em>No fundraisers in this season.</em>'}</div>
         </div>
-        <button type="button" class="report-button" id="report-print">Print one-sheet</button>
+        <button type="button" class="report-button" id="report-print">Print report</button>
       </div>`;
 
     $('#report-season')?.addEventListener('change', (event) => {
@@ -276,7 +276,7 @@
       input.addEventListener('change', () => {
         if (input.checked && state.selectedIds.size >= 5) {
           input.checked = false;
-          setStatus('A comparison one-sheet can include up to five fundraisers.', 'warn');
+          setStatus('A comparison report can include up to five fundraisers.', 'warn');
           return;
         }
         if (input.checked) state.selectedIds.add(input.value);
@@ -422,7 +422,7 @@
   }
 
   async function initComparison() {
-    document.title = 'WNMU Fundraiser Comparison One-Sheet';
+    document.title = 'WNMU Fundraiser Comparison Report';
     $('#report-page-title').textContent = 'Fundraiser Comparison';
     $('#report-page-subtitle').textContent = 'Retrospective comparison of 3–5 fundraiser periods';
     state.season = defaultSeason();
@@ -436,7 +436,7 @@
     $('#report-controls').innerHTML = `
       <div class="report-control-row">
         <label class="report-field report-field-grow"><span>Fundraiser</span><select id="report-fundraiser">${options}</select></label>
-        <button type="button" class="report-button" id="report-print">Print one-sheet</button>
+        <button type="button" class="report-button" id="report-print">Print report</button>
       </div>`;
     $('#report-fundraiser')?.addEventListener('change', (event) => {
       state.activeFundraiserId = event.target.value || '';
@@ -491,13 +491,26 @@
     return `<section class="sheet-section fundraiser-days"><h2>Day-by-day operating results</h2><div class="table-scroll"><table><thead><tr><th>Day</th><th>Start</th><th>End</th><th>Hours</th><th>Broadcast $</th><th>$/hr</th><th>Pledges</th><th>Pledges/hr</th><th>Weather</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
-  function pledgeHourChart(analysis) {
-    const buckets = A.hourlyPledgeBuckets(analysis);
-    const max = Math.max(1, ...buckets.map((row) => row.pledges));
-    return `<section class="sheet-section pledge-hours"><div class="section-heading"><div><h2>Pledges by program start hour</h2><p>Pledge counts are credited to imported airing rows and grouped by the program’s start hour.</p></div></div><div class="pledge-hour-bars">${buckets.map((row) => {
-      const width = Math.max(2, Math.round((Number(row.pledges || 0) / max) * 100));
-      return `<div class="pledge-hour-row"><strong>${escapeHtml(formatTime(row.startMinutes).replace(':00 ', ' '))}</strong><div><i style="width:${width}%"></i></div><span>${escapeHtml(count(row.pledges))} pledges · ${escapeHtml(money(row.dollars))}</span></div>`;
-    }).join('') || '<div class="muted-cell">No pledge-count rows are available.</div>'}</div></section>`;
+  function programResultsTable(analysis) {
+    const rows = [...(analysis.placementRows || [])]
+      .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    const body = rows.map((row) => {
+      const planned = A.text(row.plannedTitle || '');
+      const actual = A.text(row.title || planned || 'Untitled program');
+      const changedTitle = planned && actual && planned.toLowerCase() !== actual.toLowerCase();
+      const result = row.known ? money(row.dollars) : 'Pending';
+      const pledges = row.known ? count(row.pledges) : '—';
+      return `<tr>
+        <td>${escapeHtml(formatDate(row.dateKey, false))}</td>
+        <td><strong>${escapeHtml(formatTime(row.startMinutes))}</strong></td>
+        <td class="program-result-title"><strong>${escapeHtml(actual)}</strong>${changedTitle ? `<small>Planned: ${escapeHtml(planned)}</small>` : ''}</td>
+        <td>${escapeHtml(row.topic || 'Uncategorized')}</td>
+        <td>${escapeHtml(hours(row.minutes))}</td>
+        <td class="${row.known ? 'metric-primary' : 'muted-cell'}">${escapeHtml(result)}</td>
+        <td>${escapeHtml(pledges)}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="sheet-section program-results"><div class="section-heading"><div><h2>Program results</h2><p>Chronological program-level results. Imported history supplies actual aired title, start time, dollars, and pledges when a unique match exists; populated report-day omissions remain $0.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Start</th><th>Program</th><th>Topic</th><th>Length</th><th>Broadcast $</th><th>Pledges</th></tr></thead><tbody>${body || '<tr><td colspan="7">No program rows are available.</td></tr>'}</tbody></table></div></section>`;
   }
 
   function singleTopicMatrix(analysis) {
@@ -512,7 +525,7 @@
     }
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
-    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}<div class="sheet-two-column">${pledgeHourChart(analysis)}${singleTopicMatrix(analysis)}</div><footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Pledge-by-hour counts are associated with program start time, not donor transaction time.</footer></article>`;
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicMatrix(analysis)}<footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Program results are factual airing-level outcomes; start-time performance belongs in historical multi-fundraiser analysis where sample size can be shown.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses([analysis]);
     $('#report-output').innerHTML = render();
