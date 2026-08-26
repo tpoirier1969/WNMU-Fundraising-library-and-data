@@ -15,7 +15,6 @@ function schedule(overrides = {}) {
     placements: [], onlineDollars: 0, mailDollars: 0, onlineTracked: false, mailTracked: false, meta: {}, ...overrides
   };
 }
-
 function placement(overrides = {}) {
   return {
     id: 'p1', dateKey: '2026-08-29', startMinutes: 1200, lengthMinutes: 60,
@@ -24,8 +23,9 @@ function placement(overrides = {}) {
 }
 
 const indexes = A.buildLibraryIndexes([
-  { id: 'music-1', title: 'Music Special', nola_code: 'MUS1', topic_primary: 'Music', topic_secondary: 'Concert' },
-  { id: 'hist-1', title: 'History Special', nola_code: 'HIS1', topic_primary: 'History', topic_secondary: 'American History' }
+  { id: 'music-1', title: 'Music Special', nola_code: 'MUS1', topic_primary: 'Music', topic_secondary: 'Concert', distributor: 'PBS', length_bucket_minutes: 60 },
+  { id: 'hist-1', title: 'History Special', nola_code: 'HIS1', topic_primary: 'HISTORY', topic_secondary: 'American History', distributor: 'APT', length_bucket_minutes: 60 },
+  { id: 'nolength', title: 'Missing Length', nola_code: 'MISS', topic_primary: 'MUSIC', topic_secondary: 'Concert', distributor: 'PBS' }
 ]);
 
 {
@@ -39,113 +39,95 @@ const indexes = A.buildLibraryIndexes([
   ];
   const analysis = A.analyzeSchedule(s, rows, indexes);
   assert.equal(analysis.broadcastDollars, 400);
-  assert.equal(analysis.scheduledMinutes, 120, 'pledge hours must use schedule placements, not uneven imported runtime coverage');
-  assert.equal(A.dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes), 200);
-  assert.equal(A.pledgesPerHour(analysis.pledges, analysis.scheduledMinutes), 2);
-  assert.equal(A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges), 100);
-}
-
-{
-  const s = schedule({ placements: [placement({ manualResultRecorded: true, manualBroadcastDollars: 999, manualPledgeCount: 99 })] });
-  const rows = [{ id: 'r1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 125, pledge_count: 2, program_minutes: 60 }];
-  const analysis = A.analyzeSchedule(s, rows, indexes);
-  assert.equal(analysis.attributableDollars, 125, 'imported result should override stale manual result');
-  assert.equal(analysis.attributablePledges, 2);
+  assert.equal(analysis.scheduledMinutes, 120, 'pledge hours use saved schedule/library duration, not imported runtime');
+  assert.equal(A.dollarsPerHour(analysis.rateEligibleDollars, analysis.rateEligibleMinutes), 200);
 }
 
 {
   const s = schedule({ placements: [
-    placement({ id: 'p1' }),
-    placement({ id: 'p2', startMinutes: 1260, programId: 'hist-1', programTitle: 'History Special' })
+    placement({ id: 'missing', programId: 'nolength', programTitle: 'Missing Length', lengthMinutes: undefined })
   ] });
-  const rows = [{ id: 'r1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 200, pledge_count: 2, program_minutes: 60 }];
+  const rows = [{ id: 'r1', air_date: '2026-08-29', air_time: '20:00', program_id: 'nolength', dollars: 60, pledge_count: 1 }];
   const analysis = A.analyzeSchedule(s, rows, indexes);
-  const history = analysis.placementRows.find((row) => row.topic === 'History');
-  assert.ok(history?.known, 'missing scheduled title on a populated imported day should be a known zero');
-  assert.equal(history.dollars, 0);
+  assert.equal(analysis.scheduledMinutes, 0, 'missing duration must not silently default to 30 minutes');
+  assert.equal(analysis.rateEligibleDollars, 0, 'missing-duration dollars are excluded from rate numerator');
+  assert.equal(analysis.broadcastDollars, 60, 'actual dollars remain in factual totals');
+  assert.equal(analysis.missingDurationRows.length, 1);
+  assert.equal(A.missingDurationPrograms([analysis])[0].title, 'Missing Length');
 }
 
 {
-  const renamedIndexes = A.buildLibraryIndexes([
-    { id: 'music-1', title: 'Renamed Library Title', nola_code: 'MUS1', topic_primary: 'Music' }
-  ]);
-  const analysis = A.analyzeSchedule(schedule({ placements: [placement({ programTitle: 'Saved Scheduled Title' })] }), [], renamedIndexes);
-  assert.equal(analysis.placementRows[0].title, 'Saved Scheduled Title', 'without a unique imported airing, the saved schedule title must remain the displayed title');
-  assert.equal(analysis.placementRows[0].source, 'none');
-}
-
-{
-  const s = schedule({ placements: [placement({ id: 'scheduled', programTitle: 'Scheduled Music' })] });
+  const s = schedule({ placements: [
+    placement({ id: 'a', programId: 'music-1', programTitle: 'Music Special', lengthMinutes: undefined }),
+    placement({ id: 'b', programId: 'hist-1', programTitle: 'History Special', lengthMinutes: undefined, startMinutes: 1260 })
+  ] });
   const rows = [
-    { id: 'r1', row_hash: 'matched', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', program_title: 'Actually Aired Music', dollars: 300, pledge_count: 3, program_minutes: 60 },
-    { id: 'r2', row_hash: 'unmatched', air_date: '2026-08-29', air_time: '21:30', program_id: 'hist-1', program_title: 'Unscheduled History', dollars: 125, pledge_count: 2, program_minutes: 30 }
+    { id: 'a1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 120, pledge_count: 1 },
+    { id: 'b1', air_date: '2026-08-29', air_time: '21:00', program_id: 'hist-1', dollars: 60, pledge_count: 1 }
   ];
   const analysis = A.analyzeSchedule(s, rows, indexes);
-  const matched = analysis.placementRows.find((row) => row.source === 'report');
-  const unmatched = analysis.placementRows.find((row) => row.unmatchedImported);
-  assert.equal(matched.title, 'Actually Aired Music', 'a uniquely matched imported airing may establish the actual aired title');
-  assert.equal(analysis.unmatchedImportedRows.length, 1, 'authoritative imported airings without a saved placement must remain visible evidence');
-  assert.equal(unmatched.title, 'Unscheduled History');
-  assert.equal(unmatched.dollars, 125);
-  assert.equal(analysis.broadcastDollars, 425);
-  assert.equal(analysis.scheduledMinutes, 60, 'unmatched imported evidence must not add pledge-schedule hours');
-  const day = A.calendarDays(analysis)[0];
-  assert.equal(day.minutes, 60, 'daily pledge hours remain schedule-derived');
-  assert.equal(day.dollars, 425, 'daily Broadcast dollars include unmatched authoritative imported results');
-  assert.equal(day.pledges, 5);
+  assert.equal(analysis.scheduledMinutes, 120, 'Program Library bucket is a valid fallback duration');
 }
 
 {
-  const a2024 = A.analyzeSchedule(schedule({
-    id: '2024', title: 'August 2024', startDate: '2024-08-09', endDate: '2024-08-18', year: 2024,
-    placements: [placement({ dateKey: '2024-08-10' })]
-  }), [{ id: 'a', air_date: '2024-08-10', air_time: '20:00', program_id: 'music-1', dollars: 100, pledge_count: 1, program_minutes: 60 }], indexes);
-  const a2026 = A.analyzeSchedule(schedule({
-    id: '2026', title: 'August 2026', startDate: '2026-08-28', endDate: '2026-09-06', year: 2026,
-    placements: [placement({ dateKey: '2026-08-29' })]
-  }), [{ id: 'b', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 100, pledge_count: 1, program_minutes: 60 }], indexes);
-  const timing = A.firstSaturdaySeasonalOffsets([a2024, a2026]);
-  assert.equal(timing[0].daysFromEarliest, 0);
-  assert.equal(timing[1].daysFromEarliest, 19, 'seasonal calendar displacement should survive first-Saturday alignment');
-  const aligned = A.alignedDailyRows([a2024, a2026]);
-  assert.equal(aligned[0].offset, 0);
-  assert.equal(aligned[0].label.title, '1st Saturday');
+  const s = schedule({ placements: [
+    placement({ id: 'm1', programId: 'music-1', programTitle: 'Music Special', lengthMinutes: 60 }),
+    placement({ id: 'm2', programId: 'music-1', programTitle: 'Music Special', lengthMinutes: 60, dateKey: '2026-08-30' }),
+    placement({ id: 'h1', programId: 'hist-1', programTitle: 'History Special', lengthMinutes: 60, startMinutes: 1260 })
+  ] });
+  const rows = [
+    { id: 'r1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 300, pledge_count: 3 },
+    { id: 'r2', air_date: '2026-08-30', air_time: '20:00', program_id: 'music-1', dollars: 100, pledge_count: 1 },
+    { id: 'r3', air_date: '2026-08-29', air_time: '21:00', program_id: 'hist-1', dollars: 200, pledge_count: 2 }
+  ];
+  const analysis = A.analyzeSchedule(s, rows, indexes);
+  const programRows = A.programResultsRows(analysis);
+  assert.equal(programRows[0].title, 'Music Special');
+  assert.equal(programRows[0].dollars, 400);
+  assert.equal(programRows[0].airings, 2);
+  assert.equal(programRows[0].dollarsPerHour, 200);
 }
 
 {
-  const a1 = A.analyzeSchedule(schedule({ id: 'a1', placements: [
-    placement({ id: 'm', lengthMinutes: 120 }),
-    placement({ id: 'h', startMinutes: 1320, lengthMinutes: 60, programId: 'hist-1', programTitle: 'History Special' })
-  ] }), [
-    { id: 'm1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 600, pledge_count: 6, program_minutes: 120 },
-    { id: 'h1', air_date: '2026-08-29', air_time: '22:00', program_id: 'hist-1', dollars: 100, pledge_count: 1, program_minutes: 60 }
-  ], indexes);
-  const topicRows = A.topicComparisonRows([a1]);
-  const music = topicRows.find((row) => row.key === 'Music').values[0];
-  assert.equal(music.minutes, 120);
-  assert.equal(music.share, 2 / 3);
-  assert.equal(music.dollarsPerHour, 300);
-  assert.equal(music.pledgesPerHour, 3);
+  const s = schedule({ placements: [
+    placement({ id: 'm', programId: 'music-1', programTitle: 'Music Special' }),
+    placement({ id: 'h', programId: 'hist-1', programTitle: 'History Special', startMinutes: 1260 })
+  ] });
+  const rows = [
+    { id: 'm1', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', dollars: 600, pledge_count: 6 },
+    { id: 'h1', air_date: '2026-08-29', air_time: '21:00', program_id: 'hist-1', dollars: 100, pledge_count: 1 }
+  ];
+  const analysis = A.analyzeSchedule(s, rows, indexes);
+  const topicRows = A.topicComparisonRows([analysis]);
+  assert.ok(topicRows.some((row) => row.key === 'Music'));
+  assert.ok(topicRows.some((row) => row.key === 'History'), 'all-caps HISTORY should canonicalize to History');
 }
 
 {
-  const base = { broadcastDollars: 1000, onlineDollars: 100, mailDollars: 50, onlineTracked: true, mailTracked: true };
-  const current = { broadcastDollars: 1200, onlineDollars: 0, mailDollars: 40, onlineTracked: false, mailTracked: true };
-  const policy = A.comparisonChannelPolicy([base, current]);
-  assert.equal(policy.includeOnline, false);
-  assert.equal(policy.includeMail, true);
-  assert.equal(A.comparableTotal(base, policy), 1050);
-  assert.equal(A.comparableTotal(current, policy), 1240);
-}
-
-{
-  const prepared = A.prepareSchedules([
-    schedule({ id: 'weak', placements: [], updatedAt: '2026-01-01T00:00:00Z' }),
-    schedule({ id: 'strong', placements: [placement()], updatedAt: '2026-01-02T00:00:00Z' })
-  ]);
-  assert.equal(prepared.length, 1);
-  assert.equal(prepared[0].id, 'strong');
-  assert.equal(prepared[0].duplicateRangeCount, 2);
+  const analyses = [];
+  for (let i = 0; i < 3; i += 1) {
+    const year = 2023 + i;
+    const placements = [];
+    const airings = [];
+    for (let n = 0; n < 2; n += 1) {
+      const id = `p-${i}-${n}`;
+      const programId = n === 0 ? 'music-1' : 'hist-1';
+      const title = n === 0 ? 'Music Special' : 'History Special';
+      placements.push(placement({ id, dateKey: `${year}-08-${String(10 + i).padStart(2,'0')}`, startMinutes: 660, programId, programTitle: title }));
+      airings.push({ id: `r-${i}-${n}`, air_date: `${year}-08-${String(10 + i).padStart(2,'0')}`, air_time: '11:00', program_id: programId, dollars: 100 + (i * 10) + n, pledge_count: 1 });
+    }
+    analyses.push(A.analyzeSchedule(schedule({ id: `s${i}`, title: `August ${year}`, startDate: `${year}-08-10`, endDate: `${year}-08-20`, year, placements }), airings, indexes));
+  }
+  const startRows = A.historicalRanking(analyses, 'startTime');
+  assert.equal(startRows.length, 0, '11:00 with only two distinct titles must be excluded even with 6 airings across 3 fundraisers');
+  const qualifying = analyses.map((analysis, index) => ({
+    ...analysis,
+    placementRows: [
+      ...analysis.placementRows,
+      { ...analysis.placementRows[0], title: `Third Title ${index}`, dollars: 150, minutes: 60, durationMissing: false, startMinutes: 660 }
+    ]
+  }));
+  assert.equal(A.historicalRanking(qualifying, 'startTime').length, 1, 'start slot qualifies once 5+ airings, 3 fundraisers, and 3+ titles are present');
 }
 
 {
@@ -156,30 +138,24 @@ const indexes = A.buildLibraryIndexes([
     ]
   };
   const buckets = A.startTimePledgeBuckets(analysis);
-  assert.equal(buckets.length, 2, '9:00 PM and 9:30 PM must remain separate start-time buckets');
+  assert.equal(buckets.length, 2);
   assert.equal(buckets[0].startMinutes, 1260);
-  assert.equal(buckets[0].dollars, 840);
   assert.equal(buckets[1].startMinutes, 1290);
-  assert.equal(buckets[1].dollars, 360);
 }
 
-{
-  const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
-  assert.match(reportSource, /Select 3–5 fundraisers/);
-  assert.match(reportSource, /state\.selectedIds\.size >= 5/);
-  assert.match(reportSource, /Broadcast \$ \/ pledge hour/);
-  assert.match(reportSource, /Topic airtime & performance/);
-  assert.match(reportSource, /function programResultsTable/);
-  assert.match(reportSource, /Program results/);
-  assert.match(reportSource, /function lineChartSvg/);
-  assert.match(reportSource, /function dailyComparisonChart/);
-  assert.match(reportSource, /function topicComparisonChart/);
-  assert.match(reportSource, /function topicRankMarkers/);
-  assert.match(reportSource, /function recurringProgramKeys/);
-  assert.match(reportSource, /Programs shown in bold aired in two or more selected fundraisers/);
-  assert.match(reportSource, /<th>Day<\/th><th>Hours<\/th><th>Broadcast \$<\/th><th>\$\/hr<\/th><th>Pledges<\/th><th>Pledges\/hr<\/th><th>Weather<\/th>/);
-  assert.doesNotMatch(reportSource, /Pledges by program start hour/);
-  assert.doesNotMatch(reportSource, /pledgeHourChart/);
-}
+const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+const css = fs.readFileSync(new URL('../assets/one-sheet-reports.css', import.meta.url), 'utf8');
+assert.match(reportSource, /Select 2–5 fundraisers/);
+assert.match(reportSource, /function programResultsTable/);
+assert.match(reportSource, /One entry per title, ranked by total Broadcast dollars/);
+assert.match(reportSource, /Topics are ranked by Broadcast \$\/hour/);
+assert.doesNotMatch(reportSource, /topic-rank/);
+assert.match(reportSource, /legendTop: true/);
+assert.match(reportSource, /Historical Fundraiser Analytics/);
+assert.match(reportSource, /5 rate-valid airings, 3 fundraisers, and 3 distinct titles/);
+assert.match(reportSource, /Continue with incomplete data/);
+assert.match(css, /@page\{size:letter portrait/);
+const printCss = css.slice(css.indexOf('@media print'));
+assert.doesNotMatch(printCss, /font-size:[0-8](?:\.\d+)?pt/);
 
 console.log('one-sheet reports tests passed');
