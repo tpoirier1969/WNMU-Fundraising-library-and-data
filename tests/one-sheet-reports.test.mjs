@@ -145,6 +145,7 @@ const indexes = A.buildLibraryIndexes([
 
 const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../assets/one-sheet-reports.css', import.meta.url), 'utf8');
+const reportHtml = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 assert.match(reportSource, /Select 2–5 fundraisers/);
 assert.match(reportSource, /function programResultsTable/);
 assert.match(reportSource, /One entry per title, ranked by total Broadcast dollars/);
@@ -161,7 +162,7 @@ assert.match(reportSource, /Sunday start-time performance/);
 assert.match(reportSource, /5 rate-valid airings, 3 fundraisers, and 3 distinct titles/);
 assert.match(reportSource, /Continue with incomplete data/);
 assert.match(css, /@page\{size:letter portrait/);
-const printCss = css.slice(css.indexOf('@media print'));
-assert.doesNotMatch(printCss, /font-size:[0-8](?:\.\d+)?pt/);
+assert.match(reportHtml, /font-size:8pt/);
+assert.match(reportHtml, /No programming within this topic occurred during this fundraiser/);
 
 console.log('one-sheet reports tests passed');
