@@ -1270,8 +1270,6 @@
       if (!sourceHash) return placement;
       const next = { ...placement };
       delete next.importedBroadcastDollars;
-      delete next.importedPledges;
-      delete next.importedBroadcastPledges;
       return next;
     });
   }
