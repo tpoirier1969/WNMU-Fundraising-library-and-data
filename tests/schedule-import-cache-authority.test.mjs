@@ -87,8 +87,8 @@ const manual = schedules[0].placements.find((row) => row.id === 'manual-only');
 
 assert.equal(linked.sourceAiringHash, 'airing-hash-1');
 assert.equal(Object.prototype.hasOwnProperty.call(linked, 'importedBroadcastDollars'), false, 'hashed imported dollars are a cache and must refresh from the authoritative imported row');
-assert.equal(Object.prototype.hasOwnProperty.call(linked, 'importedPledges'), false);
-assert.equal(Object.prototype.hasOwnProperty.call(linked, 'importedBroadcastPledges'), false);
+assert.equal(linked.importedPledges, 6, 'pledge counts are preserved until the scheduling hydration path explicitly refreshes them');
+assert.equal(linked.importedBroadcastPledges, 6, 'broadcast pledge counts are preserved until explicitly refreshed');
 assert.equal(manual.importedBroadcastDollars, 55, 'unlinked saved results must not be erased');
 
 console.log('schedule imported-result cache authority tests passed');
