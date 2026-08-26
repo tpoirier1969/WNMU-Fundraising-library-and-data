@@ -66,6 +66,36 @@ const indexes = A.buildLibraryIndexes([
 }
 
 {
+  const renamedIndexes = A.buildLibraryIndexes([
+    { id: 'music-1', title: 'Renamed Library Title', nola_code: 'MUS1', topic_primary: 'Music' }
+  ]);
+  const analysis = A.analyzeSchedule(schedule({ placements: [placement({ programTitle: 'Saved Scheduled Title' })] }), [], renamedIndexes);
+  assert.equal(analysis.placementRows[0].title, 'Saved Scheduled Title', 'without a unique imported airing, the saved schedule title must remain the displayed title');
+  assert.equal(analysis.placementRows[0].source, 'none');
+}
+
+{
+  const s = schedule({ placements: [placement({ id: 'scheduled', programTitle: 'Scheduled Music' })] });
+  const rows = [
+    { id: 'r1', row_hash: 'matched', air_date: '2026-08-29', air_time: '20:00', program_id: 'music-1', program_title: 'Actually Aired Music', dollars: 300, pledge_count: 3, program_minutes: 60 },
+    { id: 'r2', row_hash: 'unmatched', air_date: '2026-08-29', air_time: '21:30', program_id: 'hist-1', program_title: 'Unscheduled History', dollars: 125, pledge_count: 2, program_minutes: 30 }
+  ];
+  const analysis = A.analyzeSchedule(s, rows, indexes);
+  const matched = analysis.placementRows.find((row) => row.source === 'report');
+  const unmatched = analysis.placementRows.find((row) => row.unmatchedImported);
+  assert.equal(matched.title, 'Actually Aired Music', 'a uniquely matched imported airing may establish the actual aired title');
+  assert.equal(analysis.unmatchedImportedRows.length, 1, 'authoritative imported airings without a saved placement must remain visible evidence');
+  assert.equal(unmatched.title, 'Unscheduled History');
+  assert.equal(unmatched.dollars, 125);
+  assert.equal(analysis.broadcastDollars, 425);
+  assert.equal(analysis.scheduledMinutes, 60, 'unmatched imported evidence must not add pledge-schedule hours');
+  const day = A.calendarDays(analysis)[0];
+  assert.equal(day.minutes, 60, 'daily pledge hours remain schedule-derived');
+  assert.equal(day.dollars, 425, 'daily Broadcast dollars include unmatched authoritative imported results');
+  assert.equal(day.pledges, 5);
+}
+
+{
   const a2024 = A.analyzeSchedule(schedule({
     id: '2024', title: 'August 2024', startDate: '2024-08-09', endDate: '2024-08-18', year: 2024,
     placements: [placement({ dateKey: '2024-08-10' })]
