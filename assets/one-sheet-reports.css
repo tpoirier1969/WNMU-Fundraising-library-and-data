@@ -43,10 +43,16 @@ button,select,input{font:inherit}
   .sheet-title{padding-bottom:5px}.sheet-title h1{font-size:15pt}.sheet-title p{font-size:6.5pt}
   .sheet-section>h2,.section-heading{padding:3px 5px}.sheet-section h2{font-size:7.5pt}.section-heading p{font-size:5pt}
   table{font-size:5.8pt}th,td{padding:2.5px 3px}thead th{font-size:5.2pt}td span,th small,td small{font-size:4.8pt}
-  
   .fundraiser-kpis{gap:3px}.fundraiser-kpis>div{padding:4px}.fundraiser-kpis span{font-size:4.8pt}.fundraiser-kpis strong{font-size:7pt}
   .income-bars{height:112px;padding:5px}.income-bar-value{font-size:5pt}.income-bar-value small{font-size:4.3pt}.income-bar-item>strong{font-size:4.8pt}.income-bar-item>span{font-size:4.3pt}
   .pledge-hour-row{font-size:4.8pt;grid-template-columns:38px 1fr 82px}
   .sheet-footer{font-size:4.5pt}
-  .comparison-sheet,.fundraiser-sheet{break-inside:avoid;page-break-inside:avoid}
+
+  /* Let the full report paginate, but keep meaningful report blocks intact. */
+  .comparison-sheet,.fundraiser-sheet{break-inside:auto;page-break-inside:auto}
+  .sheet-title,.fundraiser-kpis,.sheet-section,.sheet-two-column,.sheet-footer{break-inside:avoid-page;page-break-inside:avoid}
+  .sheet-section>h2,.section-heading{break-after:avoid-page;page-break-after:avoid}
+  table{break-inside:auto;page-break-inside:auto}
+  thead{display:table-header-group}
+  tr,.income-bar-item,.pledge-hour-row{break-inside:avoid-page;page-break-inside:avoid}
 }

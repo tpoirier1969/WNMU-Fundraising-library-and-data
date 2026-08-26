@@ -19,6 +19,10 @@ assert.match(reports, /weekend-row/);
 assert.match(css, /rgba\(0,0,0,\.10\)/);
 assert.match(css, /topic-hours-fill/);
 assert.match(css, /topic-income-fill/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.99/);
+assert.match(css, /\.comparison-sheet,\.fundraiser-sheet\{break-inside:auto;page-break-inside:auto\}/);
+assert.match(css, /\.sheet-title,\.fundraiser-kpis,\.sheet-section,\.sheet-two-column,\.sheet-footer\{break-inside:avoid-page;page-break-inside:avoid\}/);
+assert.match(css, /thead\{display:table-header-group\}/);
+assert.match(css, /tr,\.income-bar-item,\.pledge-hour-row\{break-inside:avoid-page;page-break-inside:avoid\}/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.100/);
 
 console.log('one-sheet report refinements tests passed');
