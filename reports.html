@@ -76,6 +76,19 @@
     (() => {
       let excludedDurationTitles = [];
 
+      function setText(node, value) {
+        if (!node) return;
+        const next = String(value ?? '');
+        if (node.textContent !== next) node.textContent = next;
+      }
+
+      function textNode(tagName, className, value) {
+        const node = document.createElement(tagName);
+        if (className) node.className = className;
+        node.textContent = String(value ?? '');
+        return node;
+      }
+
       function updatePickerSummary(picker) {
         const checks = picker.querySelector('#report-fundraiser-checks');
         const trigger = picker.querySelector('.report-fundraiser-trigger');
@@ -83,12 +96,10 @@
         const selected = [...checks.querySelectorAll('input[type="checkbox"]:checked')];
         const summary = trigger.querySelector('.report-fundraiser-trigger-summary');
         const count = trigger.querySelector('.report-fundraiser-trigger-count');
-        if (summary) {
-          if (!selected.length) summary.textContent = 'Choose fundraisers';
-          else if (selected.length === 1) summary.textContent = selected[0].closest('.report-check')?.querySelector('strong')?.textContent?.trim() || '1 fundraiser selected';
-          else summary.textContent = `${selected.length} fundraisers selected`;
-        }
-        if (count) count.textContent = String(selected.length);
+        if (!selected.length) setText(summary, 'Choose fundraisers');
+        else if (selected.length === 1) setText(summary, selected[0].closest('.report-check')?.querySelector('strong')?.textContent?.trim() || '1 fundraiser selected');
+        else setText(summary, `${selected.length} fundraisers selected`);
+        setText(count, String(selected.length));
       }
 
       function closePicker(picker) {
@@ -101,6 +112,7 @@
         if (!checks || checks.closest('.report-fundraiser-picker')) return;
         const selection = checks.closest('.report-selection');
         if (!selection) return;
+        excludedDurationTitles = [];
 
         const picker = document.createElement('div');
         picker.className = 'report-fundraiser-picker';
@@ -127,7 +139,10 @@
             trigger.focus();
           }
         });
-        checks.addEventListener('change', () => updatePickerSummary(picker));
+        checks.addEventListener('change', () => {
+          excludedDurationTitles = [];
+          updatePickerSummary(picker);
+        });
       }
 
       function captureDurationExclusions() {
@@ -156,7 +171,7 @@
           const title = heading.querySelector('strong')?.textContent?.trim() || '';
           const small = heading.querySelector('small');
           const dateRange = ranges.get(title);
-          if (small && dateRange) small.textContent = dateRange;
+          if (small && dateRange) setText(small, dateRange);
         });
       }
 
@@ -201,7 +216,14 @@
           const detail = (heading.querySelector('small')?.textContent || '')
             .replace(/\s*·\s*pre-Saturday start/i, '')
             .trim();
-          heading.innerHTML = `<strong>${title}</strong><small class="day-label-detail">${detail}</small><div class="day-row-labels"><span>$ / Hr (avg)</span><span>Pledge Hours</span><span>Total Income / No. pledges</span><span>Temperature / Rainfall</span></div>`;
+          const labels = textNode('div', 'day-row-labels', '');
+          ['$ / Hr (avg)', 'Pledge Hours', 'Total Income / No. pledges', 'Temperature / Rainfall']
+            .forEach((label) => labels.appendChild(textNode('span', '', label)));
+          heading.replaceChildren(
+            textNode('strong', '', title),
+            textNode('small', 'day-label-detail', detail),
+            labels
+          );
 
           cells.slice(1).forEach((cell) => {
             if (cell.classList.contains('muted-cell')) return;
@@ -211,9 +233,11 @@
             const date = divider >= 0 ? dateAndHours.slice(0, divider).trim() : dateAndHours;
             const pledgeHours = divider >= 0 ? dateAndHours.slice(divider + 3).trim() : '—';
             const smalls = [...cell.querySelectorAll('small')];
-            const incomePledges = normalizeIncomePledges(smalls[0]?.textContent || '');
+            const incomePledges = normalizeIncomePledges(smalls[0]?.textContent || '') || '— / —';
             const weather = normalizeWeather(smalls[1]?.textContent || '');
-            cell.innerHTML = `<div class="day-date-value">${date || '—'}</div><div class="day-value-lines"><span>${rate}</span><span>${pledgeHours}</span><span>${incomePledges || '— / —'}</span><span>${weather}</span></div>`;
+            const values = textNode('div', 'day-value-lines', '');
+            [rate, pledgeHours, incomePledges, weather].forEach((value) => values.appendChild(textNode('span', '', value)));
+            cell.replaceChildren(textNode('div', 'day-date-value', date || '—'), values);
           });
         });
       }
@@ -223,14 +247,13 @@
         if (!section) return;
         const description = section.querySelector('.section-heading p');
         const common = 'Hours % and Income % show allocation and attributable Broadcast income. Programs shown in bold aired in two or more selected fundraisers.';
-        if (description) {
-          description.textContent = excludedDurationTitles.length
-            ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${common}`
-            : common;
-        }
+        const note = excludedDurationTitles.length
+          ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${common}`
+          : common;
+        setText(description, note);
         section.querySelectorAll('tbody td.muted-cell').forEach((cell) => {
           cell.classList.add('topic-empty-message');
-          cell.textContent = 'No programming within this topic occurred during this fundraiser.';
+          setText(cell, 'No programming within this topic occurred during this fundraiser.');
         });
       }
 
@@ -238,16 +261,15 @@
         const footer = report.querySelector('.sheet-footer');
         if (!footer) return;
         const channelNote = 'Non-Specific Pledges are not treated as incomplete program/topic data. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.';
-        footer.textContent = excludedDurationTitles.length
+        const note = excludedDurationTitles.length
           ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${channelNote}`
           : channelNote;
+        setText(footer, note);
       }
 
       function enhanceComparisonReport() {
         const report = document.querySelector('.comparison-sheet');
         if (!report) return;
-        const qualityNote = report.querySelector('.data-quality-note');
-        if (!qualityNote && !document.getElementById('duration-warning-modal')) excludedDurationTitles = [];
         enhanceComparisonHeadings(report);
         enhanceDailyMatrix(report);
         enhanceTopicMatrix(report);
