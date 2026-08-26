@@ -5,11 +5,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WNMU One-Sheet Reports</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.104">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.105">
+  <style>
+    .report-selection{position:relative;min-width:280px}
+    .report-fundraiser-picker{position:relative;width:100%}
+    .report-fundraiser-trigger{width:100%;min-height:38px;display:flex;align-items:center;gap:9px;border:1px solid #aebfc7;border-radius:7px;background:#fff;color:#17384a;padding:6px 9px;text-align:left;cursor:pointer}
+    .report-fundraiser-trigger:hover,.report-fundraiser-trigger:focus-visible{border-color:#6f9bb2;outline:none;box-shadow:0 0 0 2px rgb(20 95 145 / 12%)}
+    .report-fundraiser-trigger-summary{flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .report-fundraiser-trigger-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:24px;padding:0 7px;border-radius:999px;background:#eef4f7;color:#31586e;font-size:.8rem;font-weight:900}
+    .report-fundraiser-trigger-arrow{font-size:.9rem;color:#536a76;transition:transform .15s ease}
+    .report-fundraiser-picker.open .report-fundraiser-trigger-arrow{transform:rotate(180deg)}
+    .report-fundraiser-picker .report-checks{display:none;position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:80;max-height:340px;overflow:auto;padding:6px;background:#fff;border:1px solid #aebfc7;border-radius:8px;box-shadow:0 12px 28px rgb(23 56 74 / 18%)}
+    .report-fundraiser-picker.open .report-checks{display:grid;gap:2px}
+    .report-fundraiser-picker .report-check{width:100%;border:0;border-radius:5px;padding:7px 8px;align-items:flex-start}
+    .report-fundraiser-picker .report-check:hover{background:#f1f6f8}
+    .report-fundraiser-picker .report-check input{margin-top:3px}
+    .report-fundraiser-picker .report-check strong{font-size:.9rem}
+    .report-fundraiser-picker .report-check small{font-size:.8rem}
+    @media(max-width:900px){.report-selection{min-width:0}.report-fundraiser-picker .report-checks{position:static;margin-top:5px;max-height:300px}}
+    @media print{.report-fundraiser-picker{display:none!important}}
+  </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.104"></script>
-  <script defer src="assets/js/one-sheet-reports.js?v=0.22.104"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.105"></script>
+  <script defer src="assets/js/one-sheet-reports.js?v=0.22.105"></script>
 </head>
 <body>
   <div id="report-access-gate" class="report-access-gate hidden"></div>
@@ -36,5 +55,74 @@
       <div id="report-output"></div>
     </main>
   </div>
+  <script>
+    (() => {
+      function updatePickerSummary(picker) {
+        const checks = picker.querySelector('#report-fundraiser-checks');
+        const trigger = picker.querySelector('.report-fundraiser-trigger');
+        if (!checks || !trigger) return;
+        const selected = [...checks.querySelectorAll('input[type="checkbox"]:checked')];
+        const summary = trigger.querySelector('.report-fundraiser-trigger-summary');
+        const count = trigger.querySelector('.report-fundraiser-trigger-count');
+        if (summary) {
+          if (!selected.length) summary.textContent = 'Choose fundraisers';
+          else if (selected.length === 1) summary.textContent = selected[0].closest('.report-check')?.querySelector('strong')?.textContent?.trim() || '1 fundraiser selected';
+          else summary.textContent = `${selected.length} fundraisers selected`;
+        }
+        if (count) count.textContent = String(selected.length);
+      }
+
+      function closePicker(picker) {
+        picker?.classList.remove('open');
+        picker?.querySelector('.report-fundraiser-trigger')?.setAttribute('aria-expanded', 'false');
+      }
+
+      function enhanceFundraiserPicker() {
+        const checks = document.getElementById('report-fundraiser-checks');
+        if (!checks || checks.closest('.report-fundraiser-picker')) return;
+        const selection = checks.closest('.report-selection');
+        if (!selection) return;
+
+        const picker = document.createElement('div');
+        picker.className = 'report-fundraiser-picker';
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'report-fundraiser-trigger';
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-controls', 'report-fundraiser-checks');
+        trigger.innerHTML = '<span class="report-fundraiser-trigger-summary">Choose fundraisers</span><span class="report-fundraiser-trigger-count">0</span><span class="report-fundraiser-trigger-arrow" aria-hidden="true">▼</span>';
+
+        selection.insertBefore(picker, checks);
+        picker.append(trigger, checks);
+        updatePickerSummary(picker);
+
+        trigger.addEventListener('click', () => {
+          const opening = !picker.classList.contains('open');
+          document.querySelectorAll('.report-fundraiser-picker.open').forEach((other) => { if (other !== picker) closePicker(other); });
+          picker.classList.toggle('open', opening);
+          trigger.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        });
+        trigger.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            closePicker(picker);
+            trigger.focus();
+          }
+        });
+        checks.addEventListener('change', () => updatePickerSummary(picker));
+      }
+
+      document.addEventListener('click', (event) => {
+        document.querySelectorAll('.report-fundraiser-picker.open').forEach((picker) => {
+          if (!picker.contains(event.target)) closePicker(picker);
+        });
+      });
+
+      const controls = document.getElementById('report-controls');
+      if (controls) {
+        new MutationObserver(enhanceFundraiserPicker).observe(controls, { childList: true, subtree: true });
+      }
+      enhanceFundraiserPicker();
+    })();
+  </script>
 </body>
 </html>
