@@ -353,6 +353,31 @@
     }
   }
 
+  function normalizeUnmatchedImportedRow(row = {}, indexes = {}) {
+    const lib = libraryForImportedRow(row, indexes) || {};
+    const rawMinutes = Number(row.program_minutes ?? row.runtime_minutes ?? row.duration_minutes);
+    const minutes = Number.isFinite(rawMinutes) && rawMinutes > 0 ? rawMinutes : null;
+    const startMinutes = importedStartMinutes(row);
+    const title = importedTitle(row) || 'Unattributed Broadcast result';
+    return {
+      dateKey: importedDateKey(row),
+      startMinutes,
+      endMinutes: Number.isFinite(startMinutes) && Number.isFinite(minutes) ? startMinutes + minutes : null,
+      title,
+      plannedTitle: '',
+      topic: text(lib.topic_primary || row.topic_primary || row.topic || 'Unattributed') || 'Unattributed',
+      secondary: text(lib.topic_secondary || row.topic_secondary || row.secondary_topic || 'Unspecified') || 'Unspecified',
+      daypart: daypartLabel(startMinutes),
+      minutes,
+      known: true,
+      dollars: Number(row.dollars ?? row.contribution_amount ?? 0) || 0,
+      pledges: Number(row.pledge_count || row.pledges || 0) || 0,
+      source: 'report-unmatched',
+      unmatchedImported: true,
+      rowHash: text(row.row_hash || '')
+    };
+  }
+
   function analyzeSchedule(schedule = {}, allAirings = [], indexes = {}) {
     const used = new Set();
     const importedRows = importedRowsForSchedule(schedule, allAirings);
@@ -413,6 +438,13 @@
     });
 
     placementRows.sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    const unmatchedImportedRows = importedRows
+      .filter((row) => {
+        const key = importedUseKey(row);
+        return Boolean(key && !used.has(key));
+      })
+      .map((row) => normalizeUnmatchedImportedRow(row, indexes))
+      .sort((a, b) => text(a.dateKey).localeCompare(text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
     const meta = schedule.meta || {};
     const reportedBroadcast = Number(meta.reportedBroadcastTotalDollars ?? meta.importedBroadcastTotalDollars ?? meta.importedProgramSpecificBroadcastTotalDollars);
     const importedBroadcast = importedRows.reduce((sum, row) => sum + (Number(row.dollars ?? row.contribution_amount ?? 0) || 0), 0);
@@ -440,7 +472,8 @@
       topics,
       times,
       placementRows,
-      importedRows
+      importedRows,
+      unmatchedImportedRows
     };
   }
 
