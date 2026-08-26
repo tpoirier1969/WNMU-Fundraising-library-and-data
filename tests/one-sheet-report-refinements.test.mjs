@@ -49,8 +49,13 @@ assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 const printCss = css.slice(css.indexOf('@media print'));
 assert.doesNotMatch(printCss, /font-size:[0-8](?:\.\d+)?pt/, 'print styles must not use type smaller than 9pt');
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.104/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.104/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.104/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.105/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.105/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.105/);
+assert.match(reportHtml, /report-fundraiser-picker/);
+assert.match(reportHtml, /report-fundraiser-trigger/);
+assert.match(reportHtml, /function enhanceFundraiserPicker/);
+assert.match(reportHtml, /function updatePickerSummary/);
+assert.match(reportHtml, /MutationObserver\(enhanceFundraiserPicker\)/);
 
 console.log('one-sheet report refinements tests passed');
