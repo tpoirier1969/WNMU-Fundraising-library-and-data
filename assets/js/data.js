@@ -1264,6 +1264,18 @@
     }
   }
 
+  function refreshableSchedulePlacements(placements = []) {
+    return (Array.isArray(placements) ? placements : []).map((placement) => {
+      const sourceHash = utils.normalizeText(placement?.sourceAiringHash || placement?.source_airing_hash || '');
+      if (!sourceHash) return placement;
+      const next = { ...placement };
+      delete next.importedBroadcastDollars;
+      delete next.importedPledges;
+      delete next.importedBroadcastPledges;
+      return next;
+    });
+  }
+
   async function fetchSchedulesRemote() {
     const { data, error } = await state.client
       .from(constants.SCHEDULES_TABLE)
@@ -1282,7 +1294,7 @@
       dayEndMinutes: Number(row.schedule_data?.dayEndMinutes ?? (Number(row.day_end_hour ?? constants.DEFAULT_DAY_END_HOUR) * 60) ?? constants.DEFAULT_DAY_END_MINUTES),
       createdAt: row.created_at || '',
       updatedAt: row.updated_at || '',
-      placements: Array.isArray(row.schedule_data?.placements) ? row.schedule_data.placements : [],
+      placements: refreshableSchedulePlacements(row.schedule_data?.placements),
       slotNotes: row.schedule_data?.slotNotes || {},
       onlineDollars: Number(row.schedule_data?.onlineDollars || 0) || 0,
       mailDollars: Number(row.schedule_data?.mailDollars || 0) || 0,
