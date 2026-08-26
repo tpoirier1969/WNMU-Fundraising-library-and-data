@@ -612,11 +612,12 @@
     }).sort((a, b) => b.totalMinutes - a.totalMinutes || b.totalDollars - a.totalDollars || a.key.localeCompare(b.key));
   }
 
-  function hourlyPledgeBuckets(analysis = {}) {
+  function startTimePledgeBuckets(analysis = {}) {
     const map = new Map();
     (analysis.placementRows || []).forEach((row) => {
       if (!row.known || !Number.isFinite(Number(row.startMinutes))) return;
-      const bucket = Math.floor(Number(row.startMinutes) / 60) * 60;
+      const normalized = ((Number(row.startMinutes) % 1440) + 1440) % 1440;
+      const bucket = Math.floor(normalized / 30) * 30;
       if (!map.has(bucket)) map.set(bucket, { startMinutes: bucket, pledges: 0, dollars: 0, airings: 0 });
       const item = map.get(bucket);
       item.pledges += Number(row.pledges || 0);
@@ -669,7 +670,7 @@
     comparisonChannelPolicy,
     comparableTotal,
     topicComparisonRows,
-    hourlyPledgeBuckets,
+    startTimePledgeBuckets,
     pledgeWeatherWindowForDate
   };
 });
