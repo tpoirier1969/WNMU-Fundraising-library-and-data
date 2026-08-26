@@ -86,6 +86,21 @@
       if(airings||graph){const node=disclosure(doc,'results','Air Details & Results');(airings||graph).before(node);const body=node.querySelector('.library-detail-section-body');if(airings)body.append(airings);if(graph)body.append(graph)}
       if(allFields){allFields.id='library-hidden-all-fields';allFields.setAttribute('aria-hidden','true')}
     }
+    function injectReportsLink(doc){
+      const actions=doc.querySelector('.topbar-actions');
+      if(!actions||doc.getElementById('one-sheet-reports-link'))return;
+      const link=doc.createElement('a');
+      link.id='one-sheet-reports-link';
+      link.href=`reports.html?v=${VERSION}`;
+      link.className='ghost hidden';
+      link.dataset.adminOnly='true';
+      link.textContent='Report Center';
+      link.style.textDecoration='none';
+      link.style.display='inline-flex';
+      link.style.alignItems='center';
+      link.style.justifyContent='center';
+      actions.insertBefore(link,doc.getElementById('refresh-button')||null);
+    }
     function injectAssets(doc){
       const css=doc.createElement('link');css.rel='stylesheet';css.href=`assets/library-split-default.css?v=${VERSION}`;doc.head.append(css);
       const popupCss=doc.createElement('link');popupCss.rel='stylesheet';popupCss.href=`assets/library-detail-popup-restore.css?v=${VERSION}`;doc.head.append(popupCss);
@@ -107,7 +122,7 @@
       doc.querySelectorAll('script[src]').forEach((script)=>script.setAttribute('src',versioned(script.getAttribute('src')||'')));
       doc.querySelectorAll('link[rel~="stylesheet"][href]').forEach((link)=>link.setAttribute('href',versioned(link.getAttribute('href')||'')));
       const flag=doc.getElementById('version-flag'),footer=doc.getElementById('footer-version');if(flag)flag.textContent=LABEL;if(footer)footer.textContent=LABEL;
-      buildSplit(doc);injectAssets(doc);
+      buildSplit(doc);injectReportsLink(doc);injectAssets(doc);
       document.open();document.write('<!doctype html>'+doc.documentElement.outerHTML);document.close();
     }catch(error){console.error(error);setStatus(`The Pledge Program Library could not start: ${error.message||error}`)}
   })();

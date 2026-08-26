@@ -34,7 +34,7 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
+      .replace(/\"/g, '&quot;')
       .replace(/'/g, '&#39;');
   }
 
@@ -96,17 +96,16 @@
     const gate = $('#report-access-gate');
     const app = $('#report-app');
     if (app) app.classList.add('hidden');
-    if (gate) {
-      gate.classList.remove('hidden');
-      gate.innerHTML = `
-        <div class="report-gate-card">
-          <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
-          <div class="report-kicker">Admin report center</div>
-          <h1>Admin access required</h1>
-          <p>${escapeHtml(message || 'Sign in as an administrator from the Pledge Program Library, then return to this page.')}</p>
-          <a class="report-button primary" href="./">Open Pledge Program Library</a>
-        </div>`;
-    }
+    if (!gate) return;
+    gate.classList.remove('hidden');
+    gate.innerHTML = `
+      <div class="report-gate-card">
+        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
+        <div class="report-kicker">Admin report center</div>
+        <h1>Admin access required</h1>
+        <p>${escapeHtml(message || 'Sign in as an administrator from the Pledge Program Library, then return to this page.')}</p>
+        <a class="report-button primary" href="./">Open Pledge Program Library</a>
+      </div>`;
   }
 
   function makeClient() {
@@ -212,7 +211,13 @@
   }
 
   function scheduleOptionLabel(schedule) {
-    return `${schedule.title} · ${formatDate(schedule.startDate)}–${formatDate(schedule.endDate, false)}`;
+    const analysis = analysisFor(schedule);
+    return `${schedule.title} · ${formatDate(schedule.startDate)}–${formatDate(schedule.endDate, false)} · ${hours(analysis?.scheduledMinutes || 0)} · ${money(analysis?.broadcastDollars || 0)}`;
+  }
+
+  function schedulePickerDetails(schedule) {
+    const analysis = analysisFor(schedule);
+    return `${formatDate(schedule.startDate)}–${formatDate(schedule.endDate, false)} · ${hours(analysis?.scheduledMinutes || 0)} · ${money(analysis?.broadcastDollars || 0)} Broadcast`;
   }
 
   function comparisonSchedules() {
@@ -246,7 +251,7 @@
     const checks = available.map((schedule) => `
       <label class="report-check">
         <input type="checkbox" value="${escapeHtml(schedule.id)}" ${state.selectedIds.has(schedule.id) ? 'checked' : ''}>
-        <span><strong>${escapeHtml(schedule.title)}</strong><small>${escapeHtml(formatDate(schedule.startDate))}–${escapeHtml(formatDate(schedule.endDate, false))}</small></span>
+        <span><strong>${escapeHtml(schedule.title)}</strong><small>${escapeHtml(schedulePickerDetails(schedule))}</small></span>
       </label>`).join('');
 
     $('#report-controls').innerHTML = `
@@ -356,44 +361,51 @@
     return `<section class="sheet-section daily-matrix"><div class="section-heading"><div><h2>Corresponding fundraiser days</h2><p>Days align by fundraiser sequence around the first Saturday. Each cell leads with Broadcast $/pledge hour, then actual date, pledge hours, dollars, pledges, and weather.</p></div></div><div class="table-scroll"><table><thead><tr><th>Fundraiser day</th>${head}</tr></thead><tbody>${body || '<tr><td colspan="6">No comparable fundraiser days.</td></tr>'}</tbody></table></div></section>`;
   }
 
+  function topicProgramTitles(analysis, topic) {
+    const titles = [];
+    const seen = new Set();
+    (analysis?.placementRows || []).forEach((row) => {
+      if (A.text(row.topic) !== A.text(topic)) return;
+      const title = A.text(row.title || row.plannedTitle || '');
+      const key = title.toLowerCase();
+      if (!title || seen.has(key)) return;
+      seen.add(key);
+      titles.push(title);
+    });
+    return titles;
+  }
+
   function topicMatrix(analyses) {
     const rows = A.topicComparisonRows(analyses);
-    const maxRate = Math.max(1, ...rows.flatMap((row) => row.values.map((value) => Number(value.dollarsPerHour || 0))));
+    const maxRates = analyses.map((_analysis, analysisIndex) =>
+      Math.max(1, ...rows.map((row) => Number(row.values?.[analysisIndex]?.dollarsPerHour || 0)))
+    );
     const head = analyses.map((analysis) => `<th>${escapeHtml(analysis.schedule.year || analysis.schedule.title)}</th>`).join('');
     const body = rows.map((row) => `
       <tr>
         <th>${escapeHtml(row.key)}</th>
-        ${row.values.map((value) => {
+        ${row.values.map((value, analysisIndex) => {
           if (!(Number(value.minutes || 0) > 0)) return '<td class="muted-cell">—</td>';
-          const share = Math.max(0, Math.min(100, Number(value.share || 0) * 100));
-          const strength = Math.max(0, Math.min(1, Number(value.dollarsPerHour || 0) / maxRate));
-          const alpha = (0.035 + (strength * 0.18)).toFixed(3);
-          return `<td class="topic-cell" style="background:linear-gradient(90deg,rgba(14,95,145,.14) 0 ${share.toFixed(1)}%,rgba(255,255,255,0) ${share.toFixed(1)}% 100%),rgba(14,95,145,${alpha})">
-            <strong>${escapeHtml(hours(value.minutes))} · ${escapeHtml(money(value.dollarsPerHour))}/hr</strong>
-            <span>${share.toFixed(0)}% of pledge hours</span>
-            <small>${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>
+          const analysis = analyses[analysisIndex];
+          const hoursShare = Math.max(0, Math.min(100, Number(value.share || 0) * 100));
+          const attributableIncome = Number(analysis?.attributableDollars || 0);
+          const incomeShare = attributableIncome > 0
+            ? Math.max(0, Math.min(100, (Number(value.dollars || 0) / attributableIncome) * 100))
+            : 0;
+          const strength = Math.max(0, Math.min(1, Number(value.dollarsPerHour || 0) / maxRates[analysisIndex]));
+          const heatAlpha = (0.08 + (strength * 0.24)).toFixed(3);
+          const titles = topicProgramTitles(analysis, row.key);
+          return `<td class="topic-cell">
+            <div class="topic-rate" style="background:rgba(14,95,145,${heatAlpha})">${escapeHtml(money(value.dollarsPerHour))}/hr</div>
+            <div class="topic-share-row"><span>Hours</span><div class="topic-share-track"><i class="topic-hours-fill" style="width:${hoursShare.toFixed(1)}%"></i></div><strong>${hoursShare.toFixed(0)}%</strong></div>
+            <div class="topic-share-row"><span>Income</span><div class="topic-share-track"><i class="topic-income-fill" style="width:${incomeShare.toFixed(1)}%"></i></div><strong>${incomeShare.toFixed(0)}%</strong></div>
+            <small>${escapeHtml(hours(value.minutes))} · ${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>
+            ${titles.length ? `<small class="topic-programs">${escapeHtml(titles.join(' · '))}</small>` : ''}
           </td>`;
         }).join('')}
       </tr>`).join('');
 
-    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Bar width = share of fundraiser pledge hours. Cell intensity and printed rate = Broadcast $/pledge hour. Total topic dollars, pledges, and airings remain visible.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
-  }
-
-  function overallWeatherMatrix(analyses) {
-    const rows = analyses.map((analysis) => {
-      const days = A.calendarDays(analysis);
-      const weather = days.map((day) => weatherForDay(day.dateKey)).filter(Boolean);
-      if (!weather.length) return { analysis, avgTemp: null, precip: null, wetDays: null, days: 0 };
-      const temps = weather.map((item) => item.avgTemp).filter(Number.isFinite);
-      return {
-        analysis,
-        avgTemp: temps.length ? temps.reduce((sum, value) => sum + value, 0) / temps.length : null,
-        precip: weather.reduce((sum, item) => sum + (Number(item.precip || 0) || 0), 0),
-        wetDays: weather.filter((item) => Number(item.precip || 0) >= 0.01).length,
-        days: weather.length
-      };
-    });
-    return `<section class="sheet-section weather-strip"><h2>Weather across pledge hours</h2><div class="weather-cards">${rows.map((row) => `<div><strong>${escapeHtml(row.analysis.schedule.year || row.analysis.schedule.title)}</strong><span>${Number.isFinite(row.avgTemp) ? `${Math.round(row.avgTemp)}°F avg` : 'Weather unavailable'}</span><small>${Number.isFinite(row.precip) ? `${row.precip.toFixed(row.precip < 0.1 ? 2 : 1)} in composite precip · ${row.wetDays}/${row.days} wet days` : '—'}</small></div>`).join('')}</div></section>`;
+    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Hours and income bars are shares within each fundraiser. Income share uses attributable topic Broadcast dollars. $/hour heat is scaled separately within each fundraiser.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
   async function renderComparisonReport() {
@@ -403,9 +415,10 @@
       return;
     }
 
-    $('#report-output').innerHTML = `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${topicMatrix(analyses)}${overallWeatherMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour = authoritative Broadcast dollars ÷ pledge-schedule hours. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
+    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${topicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour = authoritative Broadcast dollars ÷ pledge-schedule hours. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
+    $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses(analyses);
-    $('#report-output').innerHTML = `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${topicMatrix(analyses)}${overallWeatherMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour = authoritative Broadcast dollars ÷ pledge-schedule hours. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
+    $('#report-output').innerHTML = render();
   }
 
   async function initComparison() {
@@ -450,26 +463,31 @@
 
   function dailyIncomeChart(analysis) {
     const days = A.calendarDays(analysis);
-    const max = Math.max(1, ...days.map((day) => day.dollars));
+    const max = Math.max(1, ...days.map((day) => Number(day.dollars || 0)));
     return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars. Each bar also shows the day’s pledge count and Broadcast $/pledge hour.</p></div></div><div class="income-bars">${days.map((day) => {
-      const height = Math.max(4, Math.round((Number(day.dollars || 0) / max) * 100));
-      return `<div class="income-bar-item"><div class="income-bar-value">${escapeHtml(money(day.dollars))}<small>${escapeHtml(count(day.pledges))} pledges · ${escapeHtml(money(day.dollarsPerHour))}/hr</small></div><div class="income-bar-track"><div class="income-bar-fill" style="height:${height}%"></div></div><strong>${escapeHtml(formatDate(day.date, false))}</strong><span>${escapeHtml(day.weekday.slice(0, 3))}</span></div>`;
+      const dollars = Number(day.dollars || 0);
+      const ratio = Math.max(0, Math.min(1, dollars / max));
+      const height = dollars > 0 ? Math.max(2, ratio * 100) : 0;
+      return `<div class="income-bar-item"><div class="income-bar-value">${escapeHtml(money(day.dollars))}<small>${escapeHtml(count(day.pledges))} pledges · ${escapeHtml(money(day.dollarsPerHour))}/hr</small></div><div class="income-bar-track"><div class="income-bar-fill" style="height:${height.toFixed(2)}%" title="${(ratio * 100).toFixed(1)}% of peak daily Broadcast dollars"></div></div><strong>${escapeHtml(formatDate(day.date, false))}</strong><span>${escapeHtml(day.weekday.slice(0, 3))}</span></div>`;
     }).join('')}</div></section>`;
   }
 
   function fundraiserDailyTable(analysis) {
     const days = A.calendarDays(analysis);
-    const rows = days.map((day) => `<tr>
-      <th><strong>${escapeHtml(day.weekday)}</strong><small>${escapeHtml(formatDate(day.date))}</small></th>
-      <td>${escapeHtml(formatTime(day.startMinutes))}</td>
-      <td>${escapeHtml(formatTime(day.endMinutes))}</td>
-      <td>${escapeHtml(hours(day.minutes))}</td>
-      <td>${escapeHtml(money(day.dollars))}</td>
-      <td class="metric-primary">${escapeHtml(money(day.dollarsPerHour))}/hr</td>
-      <td>${escapeHtml(count(day.pledges))}</td>
-      <td>${escapeHtml(count(day.pledgesPerHour, 2))}</td>
-      <td>${escapeHtml(weatherLine(day))}</td>
-    </tr>`).join('');
+    const rows = days.map((day) => {
+      const weekend = day.date && (day.date.getDay() === 0 || day.date.getDay() === 6);
+      return `<tr class="${weekend ? 'weekend-row' : ''}">
+        <th><strong>${escapeHtml(day.weekday)}</strong><small>${escapeHtml(formatDate(day.date))}</small></th>
+        <td>${escapeHtml(formatTime(day.startMinutes))}</td>
+        <td>${escapeHtml(formatTime(day.endMinutes))}</td>
+        <td>${escapeHtml(hours(day.minutes))}</td>
+        <td>${escapeHtml(money(day.dollars))}</td>
+        <td class="metric-primary">${escapeHtml(money(day.dollarsPerHour))}/hr</td>
+        <td>${escapeHtml(count(day.pledges))}</td>
+        <td>${escapeHtml(count(day.pledgesPerHour, 2))}</td>
+        <td>${escapeHtml(weatherLine(day))}</td>
+      </tr>`;
+    }).join('');
     return `<section class="sheet-section fundraiser-days"><h2>Day-by-day operating results</h2><div class="table-scroll"><table><thead><tr><th>Day</th><th>Start</th><th>End</th><th>Hours</th><th>Broadcast $</th><th>$/hr</th><th>Pledges</th><th>Pledges/hr</th><th>Weather</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
@@ -494,9 +512,10 @@
     }
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
-    $('#report-output').innerHTML = `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}<div class="sheet-two-column">${pledgeHourChart(analysis)}${singleTopicMatrix(analysis)}</div><footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Pledge-by-hour counts are associated with program start time, not donor transaction time.</footer></article>`;
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}<div class="sheet-two-column">${pledgeHourChart(analysis)}${singleTopicMatrix(analysis)}</div><footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Pledge-by-hour counts are associated with program start time, not donor transaction time.</footer></article>`;
+    $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses([analysis]);
-    $('#report-output').innerHTML = `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}<div class="sheet-two-column">${pledgeHourChart(analysis)}${singleTopicMatrix(analysis)}</div><footer class="sheet-footer">Daily $/hour is Broadcast dollars ÷ pledge-schedule hours for that day. Pledge-by-hour counts are associated with program start time, not donor transaction time.</footer></article>`;
+    $('#report-output').innerHTML = render();
   }
 
   async function initFundraiser() {
