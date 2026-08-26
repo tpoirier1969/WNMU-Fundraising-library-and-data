@@ -309,8 +309,27 @@
     $('#duration-warning-modal')?.remove();
   }
 
+  function isNonSpecificLabel(value) {
+    const key = A.lookupKey(value);
+    const compact = key.replace(/\s+/g, '');
+    return compact === 'nspl'
+      || key === 'non specific'
+      || key === 'non specific pledge'
+      || key === 'non specific pledges'
+      || key === 'non specific web pledge'
+      || key === 'non specific web pledges';
+  }
+
+  function rowIsNonSpecific(row = {}) {
+    return [row.title, row.plannedTitle, row.topic].some((value) => isNonSpecificLabel(value));
+  }
+
+  function meaningfulMissingDurationRows(analysis = {}) {
+    return (analysis.missingDurationRows || []).filter((row) => !rowIsNonSpecific(row));
+  }
+
   function missingDurationSummary(analyses = []) {
-    const missing = A.missingDurationPrograms(analyses);
+    const missing = A.missingDurationPrograms(analyses).filter((item) => !isNonSpecificLabel(item.title));
     const dollars = missing.reduce((sum, item) => sum + Number(item.dollars || 0), 0);
     const airings = missing.reduce((sum, item) => sum + Number(item.airings || 0), 0);
     return { missing, dollars, airings };
@@ -380,7 +399,7 @@
         </a>
         <a class="report-card-link" href="reports.html?report=historical">
           <div class="report-card-number">03</div>
-          <div><h2>Historical Fundraiser Analytics</h2><p>Rank historical performance by season, topic, subtopic, start time, weekday/weekend, daypart, break type, and distributor using median $/hour.</p></div><span>Open report →</span>
+          <div><h2>Historical Fundraiser Analytics</h2><p>Rank historical performance by season, topic, subtopic, start time by day type, weekday/weekend, daypart, break type, and distributor using median $/hour.</p></div><span>Open report →</span>
         </a>
       </section>`;
   }
@@ -488,7 +507,7 @@
   }
 
   function knownHoursLabel(analysis) {
-    const suffix = analysis.missingDurationRows?.length ? ' known' : '';
+    const suffix = meaningfulMissingDurationRows(analysis).length ? ' known' : '';
     return `<strong>${escapeHtml(hours(analysis.scheduledMinutes))}${suffix}</strong>`;
   }
 
@@ -637,7 +656,7 @@
       return;
     }
     if (!(await ensureDurationDecision(analyses))) return;
-    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${durationNoticeSection(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${comparisonTopicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour excludes airings with missing duration from both the numerator and denominator. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
+    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${durationNoticeSection(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${comparisonTopicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour excludes airings with missing duration from both the numerator and denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses(analyses);
     $('#report-output').innerHTML = render();
@@ -666,10 +685,11 @@
   function fundraiserSummary(analysis) {
     const schedule = analysis.schedule;
     const firstSaturday = A.firstSaturdayAnchor(analysis);
+    const meaningfulMissing = meaningfulMissingDurationRows(analysis);
     return `<header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pledge analysis</div><h1>${escapeHtml(schedule.title)}</h1><p>${escapeHtml(formatDate(schedule.startDate))}–${escapeHtml(formatDate(schedule.endDate))}${firstSaturday ? ` · First Saturday ${escapeHtml(formatDate(firstSaturday))}` : ''}</p></div><div class="sheet-stamp">Fundraiser Performance Summary</div></header>
       <section class="fundraiser-kpis">
         <div><span>Broadcast $</span><strong>${escapeHtml(money(analysis.broadcastDollars))}</strong></div>
-        <div><span>Pledge hours</span><strong>${escapeHtml(hours(analysis.scheduledMinutes))}${analysis.missingDurationRows?.length ? ' known' : ''}</strong></div>
+        <div><span>Pledge hours</span><strong>${escapeHtml(hours(analysis.scheduledMinutes))}${meaningfulMissing.length ? ' known' : ''}</strong></div>
         <div><span>Broadcast $ / hour</span><strong>${escapeHtml(money(rateForAnalysis(analysis)))}</strong></div>
         <div><span>Pledges</span><strong>${escapeHtml(count(analysis.pledges))}</strong></div>
         <div><span>Pledges / hour</span><strong>${escapeHtml(count(pledgeRateForAnalysis(analysis), 2))}</strong></div>
@@ -731,7 +751,7 @@
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
     if (!(await ensureDurationDecision([analysis]))) return;
-    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program and topic $/hour exclude airings with missing duration from both numerator and denominator. Start-time performance is reserved for historical analytics where sufficient sample size can be required.</footer></article>`;
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program and topic $/hour exclude airings with missing duration from both numerator and denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time performance is reserved for historical analytics where sufficient sample size can be required.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses([analysis]);
     $('#report-output').innerHTML = render();
@@ -784,12 +804,36 @@
     );
   }
 
+  function weekpartForDate(dateValue) {
+    const date = A.parseDate(dateValue);
+    if (!date) return 'Unknown';
+    if (date.getDay() === 6) return 'Saturday';
+    if (date.getDay() === 0) return 'Sunday';
+    return 'Weekday';
+  }
+
+  function analysesForWeekpart(analyses, weekpart) {
+    return analyses.map((analysis) => ({
+      ...analysis,
+      placementRows: (analysis.placementRows || []).filter((row) => weekpartForDate(row.dateKey) === weekpart)
+    }));
+  }
+
+  function historicalStartTimeTables(analyses) {
+    const description = (weekpart) => `Only ${weekpart.toLowerCase()} 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Sparse slots are excluded rather than displayed in the ranking.`;
+    return [
+      historicalRankingTable(analysesForWeekpart(analyses, 'Weekday'), 'startTime', 'Weekday start-time performance', description('Weekday')),
+      historicalRankingTable(analysesForWeekpart(analyses, 'Saturday'), 'startTime', 'Saturday start-time performance', description('Saturday')),
+      historicalRankingTable(analysesForWeekpart(analyses, 'Sunday'), 'startTime', 'Sunday start-time performance', description('Sunday'))
+    ].join('');
+  }
+
   function historicalReportBody(analyses) {
     return [
       historicalSeasonTable(analyses),
       historicalRankingTable(analyses, 'topic', 'Topic performance', 'Topics with at least 3 rate-valid airings across at least 2 fundraisers, ranked by median Broadcast $/hour.'),
       historicalRankingTable(analyses, 'subtopic', 'Subtopic performance', 'Subtopics with at least 3 rate-valid airings across at least 2 fundraisers, ranked by median Broadcast $/hour.'),
-      historicalRankingTable(analyses, 'startTime', 'Start-time performance: slots with sufficient historical evidence', 'Only 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Sparse slots are excluded rather than displayed in the ranking.'),
+      historicalStartTimeTables(analyses),
       historicalRankingTable(analyses, 'weekpart', 'Weekday / Saturday / Sunday', 'Performance by calendar day type, ranked by median Broadcast $/hour.'),
       historicalRankingTable(analyses, 'daypart', 'Daypart performance', 'Morning, afternoon, early evening, prime, and overnight performance.'),
       historicalRankingTable(analyses, 'breakType', 'Live break vs pre-recorded break', 'Uses saved schedule live-break flags only. Imported rows without schedule flags are not used in this comparison.'),
@@ -804,7 +848,7 @@
       return;
     }
     if (!(await ensureDurationDecision(analyses))) return;
-    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use median Broadcast $/hour. Rate calculations exclude airings with missing duration from both numerator and denominator. Start-time rankings require 5 rate-valid airings across 3 fundraisers and 3 distinct titles.</footer></article>`;
+    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use median Broadcast $/hour. Rate calculations exclude true program airings with missing duration from both numerator and denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 fundraisers and 3 distinct titles.</footer></article>`;
   }
 
   async function initHistorical() {
