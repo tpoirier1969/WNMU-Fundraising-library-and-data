@@ -30,29 +30,40 @@ button,select,input{font:inherit}
 .fundraiser-kpis{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px}.fundraiser-kpis>div{border:1px solid #d4dfe4;border-radius:7px;padding:6px;background:#f9fbfc}.fundraiser-kpis .primary{background:#eaf5fa;border-color:#9fc7da}.fundraiser-kpis span{display:block;font-size:.55rem;text-transform:uppercase;color:var(--muted);font-weight:800}.fundraiser-kpis strong{font-size:.82rem}
 .income-curve{padding-bottom:5px}.income-bars{display:flex;align-items:flex-end;gap:4px;padding:8px;height:145px}.income-bar-item{flex:1;min-width:38px;height:100%;display:grid;grid-template-rows:auto 1fr auto auto;text-align:center;gap:2px}.income-bar-value{font-size:.56rem;font-weight:900;min-height:28px}.income-bar-value small{display:block;color:var(--muted);font-weight:600;font-size:.48rem}.income-bar-track{height:100%;display:flex;align-items:flex-end;background:#f2f5f7;border-radius:4px 4px 0 0;overflow:hidden}.income-bar-fill{width:100%;background:#3d789d;min-height:2px}.income-bar-item>strong{font-size:.54rem}.income-bar-item>span{font-size:.49rem;color:var(--muted)}
 .fundraiser-days table{font-size:.61rem}.fundraiser-days th,.fundraiser-days td{padding:3px 4px;white-space:nowrap}
-.sheet-two-column{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:8px}.sheet-two-column .sheet-section{height:100%}
-.pledge-hour-bars{padding:6px;display:grid;gap:3px}.pledge-hour-row{display:grid;grid-template-columns:48px 1fr 105px;align-items:center;gap:5px;font-size:.57rem}.pledge-hour-row>div{height:9px;background:#edf2f4;border-radius:5px;overflow:hidden}.pledge-hour-row i{display:block;height:100%;background:#3d789d;border-radius:5px}.pledge-hour-row span{color:var(--muted);text-align:right}
+.program-results table{table-layout:fixed}.program-results th:nth-child(1),.program-results td:nth-child(1){width:9%}.program-results th:nth-child(2),.program-results td:nth-child(2){width:9%}.program-results th:nth-child(3),.program-results td:nth-child(3){width:40%}.program-results th:nth-child(4),.program-results td:nth-child(4){width:15%}.program-results th:nth-child(5),.program-results td:nth-child(5){width:8%}.program-results th:nth-child(6),.program-results td:nth-child(6){width:11%}.program-results th:nth-child(7),.program-results td:nth-child(7){width:8%}.program-result-title{white-space:normal}
 .muted-cell{color:#94a4ad;text-align:center}
-@media(max-width:900px){.report-control-row{align-items:stretch;flex-direction:column}.report-hub{grid-template-columns:1fr}.fundraiser-kpis{grid-template-columns:repeat(2,1fr)}.sheet-two-column{grid-template-columns:1fr}.one-sheet{border-radius:0;padding:8px}.report-main{padding:10px}.report-topbar{position:static}.report-checks{max-height:none}}
+@media(max-width:900px){.report-control-row{align-items:stretch;flex-direction:column}.report-hub{grid-template-columns:1fr}.fundraiser-kpis{grid-template-columns:repeat(2,1fr)}.one-sheet{border-radius:0;padding:8px}.report-main{padding:10px}.report-topbar{position:static}.report-checks{max-height:none}}
 @media print{
-  @page{size:landscape;margin:.25in}
-  html,body{background:#fff!important}
+  @page{size:letter landscape;margin:.32in}
+  html,body{background:#fff!important;font-size:10pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .report-topbar,.report-toolbar{display:none!important}
-  .report-main{padding:0;max-width:none}
-  .one-sheet{border:0;box-shadow:none;border-radius:0;padding:0;gap:5px}
-  .sheet-title{padding-bottom:5px}.sheet-title h1{font-size:15pt}.sheet-title p{font-size:6.5pt}
-  .sheet-section>h2,.section-heading{padding:3px 5px}.sheet-section h2{font-size:7.5pt}.section-heading p{font-size:5pt}
-  table{font-size:5.8pt}th,td{padding:2.5px 3px}thead th{font-size:5.2pt}td span,th small,td small{font-size:4.8pt}
-  .fundraiser-kpis{gap:3px}.fundraiser-kpis>div{padding:4px}.fundraiser-kpis span{font-size:4.8pt}.fundraiser-kpis strong{font-size:7pt}
-  .income-bars{height:112px;padding:5px}.income-bar-value{font-size:5pt}.income-bar-value small{font-size:4.3pt}.income-bar-item>strong{font-size:4.8pt}.income-bar-item>span{font-size:4.3pt}
-  .pledge-hour-row{font-size:4.8pt;grid-template-columns:38px 1fr 82px}
-  .sheet-footer{font-size:4.5pt}
+  .report-main{padding:0;max-width:none;width:auto;margin:0}
+  .one-sheet{border:0;box-shadow:none;border-radius:0;padding:0;gap:7px;width:100%}
+  .table-scroll{overflow:visible}
+  .sheet-title{padding-bottom:6px}.sheet-title h1{font-size:14pt}.sheet-title p{font-size:7.2pt}.sheet-stamp{font-size:7pt}
+  .report-kicker{font-size:6pt}
+  .sheet-section{border-radius:4px}
+  .sheet-section>h2,.section-heading{padding:4px 6px}.sheet-section h2{font-size:8.5pt}.section-heading p{font-size:6.2pt;line-height:1.25}
+  table{font-size:7pt;line-height:1.2}th,td{padding:3.5px 4px}thead th{font-size:6.4pt}td span,th small,td small{font-size:5.9pt;line-height:1.22}
+  .summary-matrix table,.daily-matrix table,.topic-matrix table{table-layout:fixed}
+  .summary-matrix th:first-child,.daily-matrix th:first-child,.topic-matrix th:first-child{width:16%}
+  .day-cell{min-width:0}.day-cell strong{font-size:7.4pt}
+  .topic-cell{min-width:0}.topic-rate{font-size:7pt;padding:2px 4px}.topic-share-row{grid-template-columns:34px 1fr 26px;font-size:5.9pt}.topic-share-row>strong{font-size:5.9pt}.topic-share-track{height:5px}.topic-programs{font-size:5.7pt!important}
+  .fundraiser-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.fundraiser-kpis>div{padding:5px}.fundraiser-kpis span{font-size:5.9pt}.fundraiser-kpis strong{font-size:8.2pt}
+  .income-bars{height:118px;padding:6px}.income-bar-value{font-size:6.2pt;min-height:30px}.income-bar-value small{font-size:5.2pt}.income-bar-item>strong{font-size:5.8pt}.income-bar-item>span{font-size:5.2pt}
+  .fundraiser-days table{font-size:6.6pt}.fundraiser-days th,.fundraiser-days td{padding:3px 3.5px}
+  .program-results table{font-size:6.8pt}.program-results thead th{font-size:6.2pt}.program-results td,.program-results th{padding:3px 4px}
+  .sheet-footer{font-size:5.8pt;padding-top:5px}
 
-  /* Let the full report paginate, but keep meaningful report blocks intact. */
+  /* The report may span Letter pages, but coherent blocks and rows should not be sliced. */
   .comparison-sheet,.fundraiser-sheet{break-inside:auto;page-break-inside:auto}
-  .sheet-title,.fundraiser-kpis,.sheet-section,.sheet-two-column,.sheet-footer{break-inside:avoid-page;page-break-inside:avoid}
+  .sheet-title,.fundraiser-kpis,.income-curve,.summary-matrix,.sheet-footer{break-inside:avoid-page;page-break-inside:avoid}
   .sheet-section>h2,.section-heading{break-after:avoid-page;page-break-after:avoid}
-  table{break-inside:auto;page-break-inside:auto}
+  .daily-matrix,.fundraiser-days,.program-results,.topic-matrix,table{break-inside:auto;page-break-inside:auto}
   thead{display:table-header-group}
-  tr,.income-bar-item,.pledge-hour-row{break-inside:avoid-page;page-break-inside:avoid}
+  tr,.income-bar-item{break-inside:avoid-page;page-break-inside:avoid}
+
+  /* Dense evidence gets a clean second-page start instead of being crushed onto page one. */
+  .fundraiser-sheet .program-results{break-before:page;page-break-before:always}
+  .comparison-sheet .topic-matrix{break-before:page;page-break-before:always}
 }
