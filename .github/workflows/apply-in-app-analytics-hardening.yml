@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Scope the guarded patch
+        run: python .github/tmp/scope_start_time_patch.py
       - name: Apply guarded source patch
         run: python .github/tmp/apply_in_app_analytics_hardening.py
       - name: Run full regression suite
@@ -27,7 +29,7 @@ jobs:
         run: |
           git config user.name "WNMU Analytics Hardening"
           git config user.email "actions@users.noreply.github.com"
-          git rm .github/workflows/apply-in-app-analytics-hardening.yml .github/tmp/apply_in_app_analytics_hardening.py
+          git rm .github/workflows/apply-in-app-analytics-hardening.yml .github/tmp/apply_in_app_analytics_hardening.py .github/tmp/scope_start_time_patch.py
           git add assets/js/ui-analytics.js assets/js/ui-fundraiser-comparison.js tests/performance-analytics.test.mjs tests/fundraiser-comparison.test.mjs
           git commit -m "Harden in-app pledge analytics core"
           git push origin HEAD:audit/in-app-analytics-hardening-2026-08-27
