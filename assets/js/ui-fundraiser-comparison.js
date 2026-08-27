@@ -35,6 +35,13 @@
   const text = (value) => String(value ?? '').trim();
   const lookupKey = (value) => text(value).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
   const nolaKey = (value) => text(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const canonicalCategory = (value, fallback = '') => {
+    const raw = text(value);
+    if (!raw) return fallback;
+    return raw.split(/([\s\-/&]+)/).map((part) => /^[A-Za-z]+$/.test(part)
+      ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`
+      : part).join('');
+  };
   const money = (value) => Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   const number = (value) => Number(value || 0).toLocaleString();
   const signedMoney = (value) => `${Number(value || 0) > 0 ? '+' : ''}${money(value)}`;
@@ -245,6 +252,15 @@ function scheduleSeasonYear(schedule = {}) {
 }
 
 function importedRowsForSchedule(schedule = {}) {
+  const start = text(schedule.startDate || schedule.start_date || '');
+  const end = text(schedule.endDate || schedule.end_date || '');
+  if (start && end) {
+    const exact = (state.airings || []).filter((row) =>
+      text(row.drive_start_date || '').slice(0, 10) === start
+      && text(row.drive_end_date || '').slice(0, 10) === end
+    );
+    if (exact.length) return exact;
+  }
   const identity = scheduleSeasonYear(schedule);
   if (!identity.season || !identity.year) return [];
   return (state.airings || []).filter((row) => {
@@ -325,17 +341,6 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
     };
   }
 
-  const attachedRaw = placement.importedBroadcastDollars;
-  const attached = attachedRaw === '' || attachedRaw == null ? null : Number(attachedRaw);
-  if (Number.isFinite(attached)) {
-    return {
-      known: true,
-      dollars: attached,
-      pledges: Number(placement.importedPledges || placement.importedBroadcastPledges || 0) || 0,
-      source: 'attached-report'
-    };
-  }
-
   const dateKey = text(placement.dateKey || placement.date_key || '');
   if (importedDateHasResults(dateKey, importedRows)) {
     return {
@@ -344,6 +349,17 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
       pledges: 0,
       source: 'report-day-zero',
       implicitZero: true
+    };
+  }
+
+  const attachedRaw = placement.importedBroadcastDollars;
+  const attached = attachedRaw === '' || attachedRaw == null ? null : Number(attachedRaw);
+  if (Number.isFinite(attached)) {
+    return {
+      known: true,
+      dollars: attached,
+      pledges: Number(placement.importedPledges || placement.importedBroadcastPledges || 0) || 0,
+      source: 'attached-report'
     };
   }
 
@@ -358,7 +374,16 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
 
   return { known: false, dollars: 0, pledges: 0, source: 'none' };
 }
-  function programMinutes(placement = {}) {
+  function libraryRuntimeMinutes(row = {}) {
+    const seconds = Number(row.actual_runtime_seconds ?? row.runtime_seconds ?? row.actual_runtime);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds / 60);
+    const direct = Number(row.actual_runtime_minutes ?? row.runtime_minutes ?? row.length_minutes);
+    if (Number.isFinite(direct) && direct > 0) return Math.round(direct);
+    const bucket = Number(row.length_bucket_minutes ?? row.lengthBucketMinutes ?? row.length_bucket);
+    return Number.isFinite(bucket) && bucket > 0 ? bucket : null;
+  }
+
+  function programMinutes(placement = {}, lib = {}) {
     const explicit = Number(placement.lengthMinutes ?? placement.programMinutes ?? placement.program_minutes ?? placement.durationMinutes);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
     const start = placementStartMinutes(placement);
@@ -368,7 +393,8 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
       if (diff < 0) diff += 1440;
       if (diff > 0) return diff;
     }
-    return 30;
+    const libraryMinutes = libraryRuntimeMinutes(lib);
+    return Number.isFinite(libraryMinutes) && libraryMinutes > 0 ? libraryMinutes : 0;
   }
 
   function timeLabel(minutes) {
@@ -404,16 +430,23 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
     return 'Overnight';
   }
 
-  function addGroup(map, key, minutes, result) {
-    if (!map.has(key)) map.set(key, { key, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0, results: [] });
+  function addGroup(map, key, minutes, result, durationMissing = false) {
+    if (!map.has(key)) map.set(key, { key, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0, rateDollars: 0, ratePledges: 0, rateMinutes: 0, rateAirings: 0, missingDurationCount: 0, results: [] });
     const item = map.get(key);
     item.minutes += Number(minutes || 0);
     item.scheduled += 1;
+    if (durationMissing) item.missingDurationCount += 1;
     if (result.known) {
       item.completed += 1;
       item.dollars += Number(result.dollars || 0);
       item.pledges += Number(result.pledges || 0);
       item.results.push(Number(result.dollars || 0));
+      if (!durationMissing && Number(minutes || 0) > 0) {
+        item.rateDollars += Number(result.dollars || 0);
+        item.ratePledges += Number(result.pledges || 0);
+        item.rateMinutes += Number(minutes || 0);
+        item.rateAirings += 1;
+      }
     }
   }
 
@@ -428,33 +461,42 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
   let scheduledMinutes = 0;
   let attributableDollars = 0;
   let attributablePledges = 0;
+  let rateEligibleDollars = 0;
+  let rateEligiblePledges = 0;
+  let rateEligibleMinutes = 0;
 
   (schedule.placements || []).forEach((placement) => {
     if (!placement || placement.isNonPledge) return;
     const scheduledTitle = text(placement.programTitle || placement.program_title || placement.title || '');
     if (!scheduledTitle && !placement.programId) return;
     const scheduledLib = libraryRowForPlacement(placement) || {};
-    const minutes = programMinutes(placement);
     const scheduledStartMinutes = placementStartMinutes(placement);
     const result = placementResult(placement, used, importedRows);
     const importedLib = result.importedRow ? libraryRowForImportedRow(result.importedRow) || {} : {};
     const lib = Object.keys(importedLib).length ? importedLib : scheduledLib;
+    const minutes = programMinutes(placement, lib);
+    const durationMissing = !(Number(minutes) > 0);
     const startMinutes = Number.isFinite(result.actualStartMinutes) ? result.actualStartMinutes : scheduledStartMinutes;
     const dateKey = text(result.actualDateKey || placement.dateKey || placement.date_key || '');
     const displayTitle = text(result.actualTitle || lib.title || scheduledTitle || 'Untitled program');
-    const topic = text(lib.topic_primary || result.importedRow?.topic_primary || result.importedRow?.topic || placement.topicPrimary || placement.topic_primary || 'Uncategorized') || 'Uncategorized';
-    const secondary = text(lib.topic_secondary || result.importedRow?.topic_secondary || result.importedRow?.secondary_topic || placement.topicSecondary || placement.topic_secondary || 'Unspecified') || 'Unspecified';
+    const topic = canonicalCategory(lib.topic_primary || result.importedRow?.topic_primary || result.importedRow?.topic || placement.topicPrimary || placement.topic_primary || 'Uncategorized', 'Uncategorized');
+    const secondary = canonicalCategory(lib.topic_secondary || result.importedRow?.topic_secondary || result.importedRow?.secondary_topic || placement.topicSecondary || placement.topic_secondary || 'Unspecified', 'Unspecified');
     const daypart = daypartLabel(startMinutes);
 
     scheduled += 1;
-    scheduledMinutes += minutes;
+    scheduledMinutes += Number(minutes || 0);
     if (result.known) {
       completed += 1;
-      attributableDollars += result.dollars;
-      attributablePledges += result.pledges;
+      attributableDollars += Number(result.dollars || 0);
+      attributablePledges += Number(result.pledges || 0);
+      if (!durationMissing) {
+        rateEligibleDollars += Number(result.dollars || 0);
+        rateEligiblePledges += Number(result.pledges || 0);
+        rateEligibleMinutes += Number(minutes || 0);
+      }
     }
-    addGroup(topics, topic, minutes, result);
-    addGroup(times, timeBucketLabel(startMinutes), minutes, result);
+    addGroup(topics, topic, minutes, result, durationMissing);
+    addGroup(times, timeBucketLabel(startMinutes), minutes, result, durationMissing);
     placementRows.push({
       dateKey,
       startMinutes,
@@ -464,6 +506,7 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
       secondary,
       daypart,
       minutes,
+      durationMissing,
       known: Boolean(result.known),
       dollars: Number(result.dollars || 0),
       pledges: Number(result.pledges || 0),
@@ -492,6 +535,10 @@ function placementResult(placement = {}, used = new Set(), importedRows = state.
     scheduledMinutes,
     attributableDollars,
     attributablePledges,
+    rateEligibleDollars,
+    rateEligiblePledges,
+    rateEligibleMinutes,
+    missingDurationCount: placementRows.filter((row) => row.durationMissing).length,
     broadcastDollars,
     unattributedBroadcast: broadcastDollars - attributableDollars,
     onlineDollars,

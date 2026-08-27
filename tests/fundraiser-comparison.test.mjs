@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-fundraiser-comparison.js', import.me
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.fundraiserComparisonUi = { ensureReady };';
 assert.ok(source.includes(exportMarker), 'comparison test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, analyzeSchedule, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable, medianValue, outlierSummary, groupStrength, pledgeWeatherWindowForDate, stationPledgeWindowSummaries, setAirings: (rows) => { state.airings = rows; state.analysisCache.clear(); } };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__comparisonTestHooks = { daypartLabel, overallRevenueDecomposition, comparisonChannelPolicy, comparableTotalForPolicy, topicRevenueDecomposition, subtopicRevenueDecomposition, placementResult, programMinutes, libraryRuntimeMinutes, canonicalCategory, analyzeSchedule, alignedDailyContextRows, fundraiserDayOffset, fundraiserDayLabel, dailyContextAnalyses, weatherDateIsFetchable, medianValue, outlierSummary, groupStrength, pledgeWeatherWindowForDate, stationPledgeWindowSummaries, setAirings: (rows) => { state.airings = rows; state.analysisCache.clear(); } };`);
 
 const context = {
   window: {
@@ -266,4 +266,46 @@ test('raw imported Broadcast dollars override stale saved fundraiser totals', ()
   assert.equal(analysis.attributableDollars, 500);
   assert.equal(analysis.placementRows[0].title, 'Actual Program');
   hooks.setAirings([]);
+});
+
+
+test('Comparison Lab never guesses a 30-minute duration', () => {
+  assert.equal(hooks.programMinutes({ startMinutes: 1200 }, {}), 0);
+  assert.equal(hooks.programMinutes({ startMinutes: 1200, endMinutes: 1260 }, {}), 60);
+  assert.equal(hooks.programMinutes({ startMinutes: 1200 }, { length_bucket_minutes: 90 }), 90);
+});
+
+test('Comparison Lab current report-day evidence beats stale attached imported dollars', () => {
+  const importedRows = [{ id: 'reported', air_date: '2026-08-08', air_time: '20:00', program_title: 'Reported Program', dollars: 500, pledge_count: 2 }];
+  const result = hooks.placementResult({ dateKey: '2026-08-08', startMinutes: 1260, programTitle: 'Scheduled But Missing', importedBroadcastDollars: 840, importedFromReport: true }, new Set(), importedRows);
+  assert.equal(result.source, 'report-day-zero');
+  assert.equal(result.dollars, 0);
+});
+
+test('Comparison Lab category normalization collapses mixed topic casing', () => {
+  assert.equal(hooks.canonicalCategory('MUSIC'), 'Music');
+  assert.equal(hooks.canonicalCategory('Music'), 'Music');
+  assert.equal(hooks.canonicalCategory('MuSiC'), 'Music');
+});
+
+test('missing-duration dollars stay factual but are excluded from Comparison Lab rate accounting', () => {
+  hooks.setAirings([]);
+  const analysis = hooks.analyzeSchedule({
+    id: 's1', title: 'August 2026', startDate: '2026-08-08', endDate: '2026-08-08',
+    placements: [
+      { id: 'a', dateKey: '2026-08-08', startMinutes: 1200, lengthMinutes: 60, programTitle: 'Known', topicPrimary: 'MUSIC', manualResultRecorded: true, manualBroadcastDollars: 100 },
+      { id: 'b', dateKey: '2026-08-08', startMinutes: 1260, programTitle: 'Unknown Length', topicPrimary: 'MuSiC', manualResultRecorded: true, manualBroadcastDollars: 200 }
+    ]
+  });
+  assert.equal(analysis.scheduledMinutes, 60);
+  assert.equal(analysis.attributableDollars, 300);
+  assert.equal(analysis.rateEligibleMinutes, 60);
+  assert.equal(analysis.rateEligibleDollars, 100);
+  assert.equal(analysis.missingDurationCount, 1);
+  assert.equal(analysis.topics.size, 1);
+  const music = [...analysis.topics.values()][0];
+  assert.equal(music.key, 'Music');
+  assert.equal(music.dollars, 300);
+  assert.equal(music.rateDollars, 100);
+  assert.equal(music.rateMinutes, 60);
 });

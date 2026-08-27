@@ -32,6 +32,9 @@
   const SEASON_CODE = { March: 'M', June: 'J', August: 'A', December: 'D' };
   const WEAK_BROADCASTS = 3;
   const WEAK_SEASONS = 2;
+  const START_TIME_MIN_AIRINGS = 5;
+  const START_TIME_MIN_FUNDRAISERS = 3;
+  const START_TIME_MIN_TITLES = 3;
   const LONG_PAUSE_YEARS = 2;
   const HOLIDAY_RE = /christmas|holiday|holidays|xmas|thanksgiving|new year|hanukkah|kwanzaa/i;
   const ANALYTICS_COHORT_STORAGE_KEY = App.constants.ANALYTICS_COHORT_STORAGE_KEY || 'wnmuPledgeAnalyticsCohortV1';
@@ -100,6 +103,13 @@
   function text(value) { return String(value ?? '').trim(); }
   function lookupKey(value) { return text(value).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }
   function nolaKey(value) { return text(value).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+  function canonicalCategory(value, fallback = '') {
+    const raw = text(value);
+    if (!raw) return fallback;
+    return raw.split(/([\s\-/&]+)/).map((part) => /^[A-Za-z]+$/.test(part)
+      ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`
+      : part).join('');
+  }
   function firstNonEmpty(...values) {
     for (const value of values) {
       if (value === 0 || value === false) return value;
@@ -528,16 +538,41 @@
     return active.sort((a, b) => `${text(a.startDate)}|${text(a.endDate)}`.localeCompare(`${text(b.startDate)}|${text(b.endDate)}`));
   }
 
-  function buildDriveSeasonRecords(schedules = []) {
+  function airingRecordsForSchedule(schedule = {}, airingRecords = []) {
+    const start = text(schedule.startDate || '');
+    const end = text(schedule.endDate || '');
+    if (start && end) {
+      const exact = airingRecords.filter((record) =>
+        text(record.row?.drive_start_date || '').slice(0, 10) === start
+        && text(record.row?.drive_end_date || '').slice(0, 10) === end
+      );
+      if (exact.length) return exact;
+    }
+    const date = parseLocalDate(schedule.startDate || schedule.endDate || '');
+    const season = pledgeSeason(date);
+    const year = date ? date.getFullYear() : 0;
+    if (!season || !year) return [];
+    return airingRecords.filter((record) => record.season === season && Number(record.year) === Number(year));
+  }
+
+  function buildDriveSeasonRecords(schedules = [], airingRecords = []) {
     return schedules.map((schedule) => {
       const date = parseLocalDate(schedule.startDate || schedule.endDate || '');
       const season = pledgeSeason(date);
       const year = date ? date.getFullYear() : '';
-      const broadcastDollars = scheduleBroadcastTotal(schedule);
+      const imported = airingRecordsForSchedule(schedule, airingRecords);
+      const broadcastDollars = imported.length
+        ? imported.reduce((sum, record) => sum + Number(record.dollars || 0), 0)
+        : scheduleBroadcastTotal(schedule);
+      const pledges = imported.length
+        ? imported.reduce((sum, record) => sum + Number(record.pledges || 0), 0)
+        : schedulePledgeTotal(schedule);
       const onlineDollars = Number(schedule.onlineDollars || 0) || 0;
       const mailDollars = Number(schedule.mailDollars || 0) || 0;
       const dollars = broadcastDollars + onlineDollars + mailDollars;
-      const broadcastCount = (schedule.placements || []).filter((placement) => placementDollars(placement) > 0).length;
+      const broadcastCount = imported.length
+        ? imported.length
+        : (schedule.placements || []).filter((placement) => placementDollars(placement) > 0).length;
       return {
         id: schedule.id || '',
         title: season || schedule.title || 'Unknown season',
@@ -550,7 +585,7 @@
         broadcastDollars,
         onlineDollars,
         mailDollars,
-        pledges: schedulePledgeTotal(schedule),
+        pledges,
         broadcasts: broadcastCount,
         avg: broadcastCount ? broadcastDollars / broadcastCount : 0,
         topic: 'All pledge giving',
@@ -559,8 +594,8 @@
         daypart: '',
         weekpart: '',
         mode: 'drive-total',
-        sourceLabel: 'Saved fundraiser schedule total',
-        records: []
+        sourceLabel: imported.length ? 'Current imported fundraiser history' : 'Saved fundraiser schedule fallback',
+        records: imported
       };
     }).filter((record) => record.date && record.season && record.dollars > 0);
   }
@@ -756,7 +791,7 @@
         row.nola,
         row.match_method
       );
-      const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''));
+      const rawTopic = nonSpecific ? 'Non-Specific' : canonicalCategory(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''), '');
       const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
       const record = {
         id: row.id || '',
@@ -768,7 +803,7 @@
         importedTitle,
         nola: text(firstNonEmpty(lib.nola_code, row.nola_code, row.nola, '')),
         topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
-        secondaryTopic: text(firstNonEmpty(lib.topic_secondary, row.topic_secondary, row.secondary_topic, '')),
+        secondaryTopic: canonicalCategory(firstNonEmpty(lib.topic_secondary, row.topic_secondary, row.secondary_topic, ''), ''),
         topicMissing,
         isNonSpecific: nonSpecific,
         distributor: text(lib.distributor || row.distributor || ''),
@@ -941,15 +976,15 @@
         dollars = Number(matched.dollars || 0) || 0;
         pledges = Number(matched.pledges || 0) || 0;
         if (matchedDollarKey) usedAiringDollarMatches.add(matchedDollarKey);
-      } else if (Number.isFinite(attachedImportedDollars)) {
-        resultSource = 'attached-report';
-        dollars = attachedImportedDollars;
-        pledges = Number(attachedImportedPledges || 0) || 0;
       } else if (sameDayReported) {
         resultSource = 'report-day-zero';
         dollars = 0;
         pledges = 0;
         diagnostics.implicitZeroRows += 1;
+      } else if (Number.isFinite(attachedImportedDollars)) {
+        resultSource = 'attached-report';
+        dollars = attachedImportedDollars;
+        pledges = Number(attachedImportedPledges || 0) || 0;
       } else if (savedDollars != null) {
         resultSource = placement.manualResultRecorded ? 'manual' : 'saved-result';
         dollars = Number(savedDollars || 0) || 0;
@@ -971,7 +1006,7 @@
         || {};
       const title = text(firstNonEmpty(matched?.title, lib.title, rawTitleText, 'Untitled'));
       const nonSpecific = isNonSpecificPledgeBucket(title, lib.nola_code, matched?.nola, placement.nolaCode, placement.nola_code, placement.nola);
-      const rawTopic = nonSpecific ? 'Non-Specific' : text(firstNonEmpty(matched?.topic, lib.topic_primary, ''));
+      const rawTopic = nonSpecific ? 'Non-Specific' : canonicalCategory(firstNonEmpty(matched?.topic, lib.topic_primary, ''), '');
       const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
       const actualDateKey = text(firstNonEmpty(matched?.dateKey, scheduledDateKey));
       const actualDate = matched?.date instanceof Date && !Number.isNaN(matched.date.getTime()) ? matched.date : (parseLocalDate(actualDateKey) || scheduledDate);
@@ -986,6 +1021,7 @@
       }
       out.push({
         id: placement.id || text(matched?.sourceAiringHash) || hash || `${schedule.id}|${actualDateKey}|${actualStartMinutes}|${title}`,
+        scheduleId: text(schedule.id || ''),
         row: matched?.row || {},
         programId: pid,
         programOpenId: text(firstNonEmpty(matched?.programOpenId, lib.id, pid, '')),
@@ -995,7 +1031,7 @@
         importedTitle: matched?.importedTitle || title,
         nola: text(firstNonEmpty(matched?.nola, lib.nola_code, placement.nolaCode, placement.nola_code, placement.nola, '')),
         topic: nonSpecific ? 'Non-Specific' : (topicMissing ? 'Uncategorized' : rawTopic),
-        secondaryTopic: text(firstNonEmpty(matched?.secondaryTopic, lib.topic_secondary, placement.topicSecondary, placement.topic_secondary, '')),
+        secondaryTopic: canonicalCategory(firstNonEmpty(matched?.secondaryTopic, lib.topic_secondary, placement.topicSecondary, placement.topic_secondary, ''), ''),
         topicMissing,
         isNonSpecific: nonSpecific,
         distributor: text(firstNonEmpty(matched?.distributor, lib.distributor, placement.distributor, '')),
@@ -1646,18 +1682,40 @@ function outlierSummary(values = []) {
     return Number.isFinite(value) ? value : 99999;
   }
 
+  function startTimeEvidence(records = []) {
+    const rateValid = records.filter((record) => Number(durationFromRecord(record)) > 0);
+    const fundraisers = new Set(rateValid.map((record) => text(record.scheduleId || record.scheduleTitle || record.fundraiser || '')).filter(Boolean));
+    const titles = new Set(rateValid.map((record) => programIdentityKey(record)).filter(Boolean));
+    return {
+      rateAirings: rateValid.length,
+      fundraiserCount: fundraisers.size,
+      titleCount: titles.size,
+      sufficient: rateValid.length >= START_TIME_MIN_AIRINGS
+        && fundraisers.size >= START_TIME_MIN_FUNDRAISERS
+        && titles.size >= START_TIME_MIN_TITLES
+    };
+  }
+
   function startTimeRead(rows = []) {
     if (!rows.length) return 'No start-time records match the current filters.';
-    const useful = rows.filter((row) => Number(row.broadcasts || 0) >= 3);
-    const bestUseful = useful[0] || rows[0];
-    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b> from the saved fundraiser schedules, not from pledge-report timestamps. Each scheduled airing carries its attached imported or manual broadcast result. Completed <b>$0 broadcasts still count as airings</b>.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best current bucket with useful sample size: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; median <b>${formatMoney(bestUseful.median || 0)}</b>, average <b>${formatMoney(bestUseful.avg || 0)}</b>, total <b>${formatMoney(bestUseful.dollars || 0)}</b>, across <b>${formatNumber(bestUseful.broadcasts || 0)}</b> airing(s).<br><br>Use Pledge season = March/June/August/December, plus Primary and Secondary topic, to test specific scheduling arguments.`;
+    const useful = rows.filter((row) => !row.weak);
+    if (!useful.length) {
+      return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. No current bucket meets the historical evidence threshold of <b>${START_TIME_MIN_AIRINGS} rate-valid airings across ${START_TIME_MIN_FUNDRAISERS} fundraisers and ${START_TIME_MIN_TITLES} distinct titles</b>. Sparse buckets remain visible only when weak evidence is shown.`;
+    }
+    const bestUseful = useful[0];
+    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Imported fundraiser history supplies completed results; saved Scheduling placements preserve completed report-day $0s, and unreported days remain pending. A bucket is considered usable only with <b>${START_TIME_MIN_AIRINGS}+ rate-valid airings, ${START_TIME_MIN_FUNDRAISERS}+ fundraisers, and ${START_TIME_MIN_TITLES}+ distinct titles</b>. Missing-duration rows cannot make a bucket qualify.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best qualified bucket: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; median <b>${formatMoney(bestUseful.median || 0)}</b>, average <b>${formatMoney(bestUseful.avg || 0)}</b>, total <b>${formatMoney(bestUseful.dollars || 0)}</b>, with <b>${formatNumber(bestUseful.rateAirings || 0)}</b> rate-valid airing(s) across <b>${formatNumber(bestUseful.fundraiserCount || 0)}</b> fundraiser(s) and <b>${formatNumber(bestUseful.titleCount || 0)}</b> title(s).`;
   }
 
   function rowsStartTimes() {
     return applyEvidence([...groupBy(filteredRecordsFor('startTimes'), startTimeLabel)]
       .map(([title, records]) => {
         const row = summarizeGroup(title, records);
+        const evidence = startTimeEvidence(records);
         row.startMinutes = records.map((record) => Number(record.startMinutes)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b)[0];
+        row.rateAirings = evidence.rateAirings;
+        row.fundraiserCount = evidence.fundraiserCount;
+        row.titleCount = evidence.titleCount;
+        row.weak = !evidence.sufficient;
         return row;
       })
       .filter((row) => row.title !== 'Unknown start time')
@@ -1949,7 +2007,7 @@ function outlierSummary(values = []) {
       summary: 'Broadcast proceeds by the actual imported start time when report evidence exists, while saved Scheduling placements preserve report-day $0s.',
       graphTitle: 'Start time buckets',
       tableTitle: 'Start time performance',
-      tableNote: 'Imported fundraiser history is the factual source for completed airing date, time, title, and dollars. Saved Scheduling placements are retained so a scheduled title missing from an otherwise populated imported report day counts as a completed $0 at its scheduled slot. A schedule day with no imported fundraiser rows remains pending and is excluded until results exist. Use Pledge season plus Primary/Secondary topic to test March, June, August, or December scheduling arguments. Rights and title filters are intentionally not part of this view.',
+      tableNote: 'Imported fundraiser history is the factual source for completed airing date, time, title, and dollars. Saved Scheduling placements retain completed report-day $0s; unreported days remain pending. Historical evidence rules match the printed Historical Analytics report: at least 5 rate-valid airings across 3 fundraisers and 3 distinct titles. Missing-duration rows cannot qualify a start slot. Use Pledge season plus Primary/Secondary topic to test scheduling arguments.',
       source: 'schedule',
       rows: rowsStartTimes,
       metricDriven: true,
@@ -1964,6 +2022,7 @@ function outlierSummary(values = []) {
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
+        ['Evidence', (row) => `${formatNumber(row.rateAirings || 0)} valid · ${formatNumber(row.fundraiserCount || 0)} drives · ${formatNumber(row.titleCount || 0)} titles`, '', (row) => row.rateAirings || 0],
         ['Season mix', (row) => escapeHtml(row.mix), '', (row) => row.seasons || 0]
       ]
     },
@@ -2350,7 +2409,7 @@ function outlierSummary(values = []) {
     state.schedules = dedupeSchedulesByDateRange(normalizedSchedules);
     state.records = buildRecords(airings, libraryRows, state.schedules);
     state.scheduleRecords = buildScheduleRecords(state.schedules, libraryRows, state.records);
-    state.driveSeasonRecords = buildDriveSeasonRecords(state.schedules);
+    state.driveSeasonRecords = buildDriveSeasonRecords(state.schedules, state.records);
     rebuildFilterOptions();
     render();
     const scheduleLiveCount = state.scheduleRecords.filter((record) => record.liveState === 'live').length;

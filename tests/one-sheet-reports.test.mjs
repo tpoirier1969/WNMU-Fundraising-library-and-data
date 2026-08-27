@@ -149,7 +149,7 @@ const reportHtml = fs.readFileSync(new URL('../reports.html', import.meta.url), 
 assert.match(reportSource, /Select 2–5 fundraisers/);
 assert.match(reportSource, /function programResultsTable/);
 assert.match(reportSource, /One entry per title, ranked by total Broadcast dollars/);
-assert.match(reportSource, /Topics are ranked by Broadcast \$\/hour/);
+assert.match(reportSource, /Program topics are ranked by Broadcast \$\/hour/);
 assert.doesNotMatch(reportSource, /topic-rank/);
 assert.match(reportSource, /legendTop: true/);
 assert.match(reportSource, /Historical Fundraiser Analytics/);

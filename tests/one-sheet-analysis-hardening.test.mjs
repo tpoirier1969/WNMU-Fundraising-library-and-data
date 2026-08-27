@@ -127,6 +127,10 @@ assert.match(reportSource, /Rate-eligible hours/);
 assert.match(reportSource, /rate base/);
 assert.match(reportSource, /Topic attribution:/);
 assert.match(reportSource, /Regional weather/);
+assert.match(reportSource, /function nonSpecificSummary/);
+assert.match(reportSource, /filter\(\(row\) => !rowIsNonSpecific\(row\)\)/);
+assert.match(reportSource, /Non-Specific Pledges are shown as their own giving category/);
+assert.match(reportSource, /not tied to a specific program/);
 assert.match(reportSource, /unknown results and airings with missing duration/);
 
 console.log('one-sheet analytics hardening tests passed');
