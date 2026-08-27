@@ -122,4 +122,11 @@ assert.ok(A, 'analysis API should load');
   assert.equal(ranking.length, 0, 'missing-duration rows must not supply fundraiser/title diversity for start-time qualification');
 }
 
+const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+assert.match(reportSource, /Rate-eligible hours/);
+assert.match(reportSource, /rate base/);
+assert.match(reportSource, /Topic attribution:/);
+assert.match(reportSource, /Regional weather/);
+assert.match(reportSource, /unknown results and airings with missing duration/);
+
 console.log('one-sheet analytics hardening tests passed');
