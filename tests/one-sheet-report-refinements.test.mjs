@@ -6,7 +6,7 @@ const css = fs.readFileSync(new URL('../assets/one-sheet-reports.css', import.me
 const index = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const reportHtml = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 
-assert.match(index, /data\.adminOnly='true'/);
+assert.match(index, /dataset\.adminOnly='true'/);
 assert.match(index, /textContent='Report Center'/);
 assert.match(reports, /schedulePickerDetails/);
 assert.match(reports, /function lineChartSvg/);
@@ -35,7 +35,7 @@ assert.match(reports, /Sunday start-time performance/);
 assert.doesNotMatch(reports, /Start-time performance: slots with sufficient historical evidence/);
 assert.match(reports, /Continue with incomplete data/);
 assert.match(reports, /Return to Pledge Program Library/);
-assert.match(reports, /<th>Day<\/th><th>Hours<\/th><th>Broadcast \$<\/th><th>\$\/hr<\/th><th>Pledges<\/th><th>Pledges\/hr<\/th><th>Weather<\/th>/);
+assert.match(reports, /<th>Day<\/th><th>Hours<\/th><th>Broadcast \$<\/th><th>\$\/hr<\/th><th>Pledges<\/th><th>Pledges\/hr<\/th><th>Regional weather<\/th>/);
 assert.doesNotMatch(reports, /pledgeHourChart/);
 
 assert.match(css, /@page\{size:letter portrait;margin:\.35in\}/);
@@ -59,11 +59,11 @@ assert.match(reportHtml, /function enhanceComparisonReport/);
 assert.match(reportHtml, /function enhanceDailyMatrix/);
 assert.match(reportHtml, /function enhanceTopicMatrix/);
 assert.match(reportHtml, /\$ \/ Hr \(avg\)/);
-assert.match(reportHtml, /Pledge Hours/);
-assert.match(reportHtml, /Total Income \/ No\. pledges/);
-assert.match(reportHtml, /Temperature \/ Rainfall/);
+assert.match(reportHtml, /Pledge hours \/ rate base/);
+assert.match(reportHtml, /Total income \/ No\. pledges/);
+assert.match(reportHtml, /Regional temp \/ rainfall/);
 assert.match(reportHtml, /No programming within this topic occurred during this fundraiser/);
-assert.match(reportHtml, /Excluded from \$\/hour analytics because duration is missing/);
+assert.doesNotMatch(reportHtml, /Excluded from \$\/hour analytics because duration is missing/);
 assert.match(reportHtml, /pre-Saturday start/i);
 assert.match(reportHtml, /font-size:8pt/);
 assert.match(reportHtml, /font-size:13pt/);
