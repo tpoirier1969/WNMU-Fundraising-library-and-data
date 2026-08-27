@@ -324,6 +324,17 @@
         actualTitle: importedTitle(imported)
       };
     }
+
+    // Current imported report coverage is authoritative. If this date is present in
+    // the report but this scheduled placement is not, it is a completed $0 even if
+    // an older saved placement still carries stale imported dollars.
+    const date = text(placement.dateKey || placement.date_key || '');
+    if (importedDateHasResults(date, importedRows)) {
+      return { known: true, dollars: 0, pledges: 0, source: 'report-day-zero', implicitZero: true };
+    }
+
+    // Attached imported dollars remain a fallback only when no current imported
+    // evidence is available for that fundraiser date.
     const attachedRaw = placement.importedBroadcastDollars;
     const attached = attachedRaw === '' || attachedRaw == null ? null : Number(attachedRaw);
     if (Number.isFinite(attached)) {
@@ -333,10 +344,6 @@
         pledges: Number(placement.importedPledges || placement.importedBroadcastPledges || 0) || 0,
         source: 'attached-report'
       };
-    }
-    const date = text(placement.dateKey || placement.date_key || '');
-    if (importedDateHasResults(date, importedRows)) {
-      return { known: true, dollars: 0, pledges: 0, source: 'report-day-zero', implicitZero: true };
     }
     if (placement?.manualResultRecorded) {
       return {
@@ -389,14 +396,15 @@
   }
 
   function addGroup(map, key, minutes, result, durationMissing = false) {
-    const wanted = canonicalCategory(key);
-    if (!map.has(wanted)) {
-      map.set(wanted, {
-        key: wanted, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0,
-        rateDollars: 0, ratePledges: 0, rateAirings: 0, missingDurationCount: 0, results: []
+    const label = canonicalCategory(key);
+    const groupKey = lookupKey(label) || label;
+    if (!map.has(groupKey)) {
+      map.set(groupKey, {
+        key: label, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0,
+        rateDollars: 0, ratePledges: 0, rateMinutes: 0, rateAirings: 0, missingDurationCount: 0, results: []
       });
     }
-    const item = map.get(wanted);
+    const item = map.get(groupKey);
     item.minutes += Number(minutes || 0);
     item.scheduled += 1;
     if (durationMissing) item.missingDurationCount += 1;
@@ -408,6 +416,7 @@
       if (!durationMissing && Number(minutes || 0) > 0) {
         item.rateDollars += Number(result.dollars || 0);
         item.ratePledges += Number(result.pledges || 0);
+        item.rateMinutes += Number(minutes || 0);
         item.rateAirings += 1;
       }
     }
@@ -589,8 +598,10 @@
     return [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, rows]) => {
       const scheduledRows = rows.filter((row) => row.countsTowardScheduleMinutes !== false);
       const minutes = scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
-      const eligibleDollars = scheduledRows.reduce((sum, row) => sum + (row.known && !row.durationMissing ? Number(row.dollars || 0) : 0), 0);
-      const eligiblePledges = scheduledRows.reduce((sum, row) => sum + (row.known && !row.durationMissing ? Number(row.pledges || 0) : 0), 0);
+      const rateRows = scheduledRows.filter((row) => row.known && !row.durationMissing && Number(row.minutes) > 0);
+      const rateMinutes = rateRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const eligibleDollars = rateRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      const eligiblePledges = rateRows.reduce((sum, row) => sum + Number(row.pledges || 0), 0);
       const dollars = rows.reduce((sum, row) => sum + (row.known ? Number(row.dollars || 0) : 0), 0);
       const pledges = rows.reduce((sum, row) => sum + (row.known ? Number(row.pledges || 0) : 0), 0);
       const starts = scheduledRows.map((row) => Number(row.startMinutes)).filter(Number.isFinite);
@@ -601,10 +612,11 @@
         date,
         weekday: date ? date.toLocaleDateString(undefined, { weekday: 'long' }) : key,
         minutes,
+        rateMinutes,
         dollars,
         pledges,
-        dollarsPerHour: dollarsPerHour(eligibleDollars, minutes),
-        pledgesPerHour: pledgesPerHour(eligiblePledges, minutes),
+        dollarsPerHour: dollarsPerHour(eligibleDollars, rateMinutes),
+        pledgesPerHour: pledgesPerHour(eligiblePledges, rateMinutes),
         startMinutes: starts.length ? Math.min(...starts) : null,
         endMinutes: ends.length ? Math.max(...ends) : null,
         missingDurationCount: scheduledRows.filter((row) => row.durationMissing).length
@@ -627,7 +639,9 @@
 
   function firstSaturdaySeasonalOffsets(analyses = []) {
     const items = analyses.map((analysis) => ({ analysis, date: firstSaturdayAnchor(analysis) }));
-    const seasonalDay = (date) => date ? (date.getMonth() * 31) + date.getDate() : null;
+    const seasonalDay = (date) => date
+      ? Math.round(Date.UTC(2000, date.getMonth(), date.getDate()) / 86400000)
+      : null;
     const valid = items.map((item) => seasonalDay(item.date)).filter(Number.isFinite);
     const earliest = valid.length ? Math.min(...valid) : 0;
     return items.map((item) => ({
@@ -709,14 +723,14 @@
         });
         item = item || {
           key: display, minutes: 0, scheduled: 0, completed: 0, dollars: 0, pledges: 0,
-          rateDollars: 0, ratePledges: 0, rateAirings: 0, missingDurationCount: 0
+          rateDollars: 0, ratePledges: 0, rateMinutes: 0, rateAirings: 0, missingDurationCount: 0
         };
         const totalMinutes = Number(analysis.scheduledMinutes || 0);
         return {
           ...item,
           share: totalMinutes > 0 ? Number(item.minutes || 0) / totalMinutes : 0,
-          dollarsPerHour: dollarsPerHour(item.rateDollars, item.minutes),
-          pledgesPerHour: pledgesPerHour(item.ratePledges, item.minutes),
+          dollarsPerHour: dollarsPerHour(item.rateDollars, item.rateMinutes),
+          pledgesPerHour: pledgesPerHour(item.ratePledges, item.rateMinutes),
           dollarsPerPledge: dollarsPerPledge(item.dollars, item.pledges)
         };
       });
@@ -857,7 +871,9 @@
           rateMinutes: 0,
           rates: [],
           fundraisers: new Set(),
-          titles: new Set()
+          titles: new Set(),
+          rateFundraisers: new Set(),
+          rateTitles: new Set()
         });
       }
       const item = groups.get(normalized);
@@ -870,6 +886,8 @@
         item.rateDollars += Number(row.dollars || 0);
         item.rateMinutes += Number(row.minutes || 0);
         item.rates.push(dollarsPerHour(row.dollars, row.minutes));
+        item.rateFundraisers.add(row.fundraiserId);
+        item.rateTitles.add(lookupKey(row.title));
       }
     });
 
@@ -884,13 +902,13 @@
       key: item.key,
       airings: item.airings,
       rateAirings: item.rateAirings,
-      fundraisers: item.fundraisers.size,
-      titles: item.titles.size,
+      fundraisers: item.rateFundraisers.size,
+      titles: item.rateTitles.size,
       broadcastDollars: item.totalDollars,
       medianDollarsPerHour: median(item.rates),
       averageDollarsPerHour: dollarsPerHour(item.rateDollars, item.rateMinutes),
       minutes: item.rateMinutes,
-      sufficient: item.rateAirings >= minAirings && item.fundraisers.size >= minFundraisers && item.titles.size >= minTitles
+      sufficient: item.rateAirings >= minAirings && item.rateFundraisers.size >= minFundraisers && item.rateTitles.size >= minTitles
     })).filter((item) => item.sufficient)
       .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.rateAirings - a.rateAirings || String(a.key).localeCompare(String(b.key)));
   }
