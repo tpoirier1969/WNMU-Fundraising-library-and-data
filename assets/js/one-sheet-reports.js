@@ -341,8 +341,21 @@
     return `${summary.airings} program airing${summary.airings === 1 ? '' : 's'} lack a usable saved length and Program Library runtime. Their dollars remain in totals but are excluded from $/hour calculations and rankings.`;
   }
 
+  function nonSpecificRows(analysis = {}) {
+    return (analysis.unmatchedImportedRows || []).filter((row) => rowIsNonSpecific(row));
+  }
+
+  function nonSpecificSummary(analysis = {}) {
+    const rows = nonSpecificRows(analysis);
+    return {
+      rows: rows.length,
+      dollars: rows.reduce((sum, row) => sum + Number(row.dollars || 0), 0),
+      pledges: rows.reduce((sum, row) => sum + Number(row.pledges || 0), 0)
+    };
+  }
+
   function unmatchedBroadcastSummary(analysis = {}) {
-    const rows = analysis.unmatchedImportedRows || [];
+    const rows = (analysis.unmatchedImportedRows || []).filter((row) => !rowIsNonSpecific(row));
     return {
       rows: rows.length,
       dollars: rows.reduce((sum, row) => sum + Number(row.dollars || 0), 0),
@@ -642,32 +655,52 @@
       labels: rows.map((row) => row.key),
       series: analyses.map((analysis, analysisIndex) => ({
         label: analysis.schedule.title,
-        values: rows.map((row) => Number(row.values?.[analysisIndex]?.scheduled || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0)
+        values: rows.map((row) => row.isNonSpecific
+          ? Number(row.values?.[analysisIndex]?.dollars || 0)
+          : (Number(row.values?.[analysisIndex]?.scheduled || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0))
       })),
-      ariaLabel: 'Broadcast dollars by topic across selected fundraisers',
+      ariaLabel: 'Broadcast dollars by topic and non-specific giving across selected fundraisers',
       className: 'topic-comparison-chart'
     });
   }
 
+  function topicIncomeDenominator(analysis = {}) {
+    const topicDollars = [...(analysis.topics?.values?.() || [])].reduce((sum, item) => sum + Number(item.dollars || 0), 0);
+    return topicDollars + Number(nonSpecificSummary(analysis).dollars || 0);
+  }
+
   function comparisonTopicMatrix(analyses) {
     const rows = A.topicComparisonRows(analyses);
+    const nonSpecific = {
+      key: 'Non-Specific Pledges',
+      isNonSpecific: true,
+      values: analyses.map((analysis) => {
+        const summary = nonSpecificSummary(analysis);
+        return { dollars: summary.dollars, pledges: summary.pledges, rows: summary.rows, scheduled: 0, minutes: 0, rateMinutes: 0, share: 0 };
+      })
+    };
+    if (nonSpecific.values.some((value) => Number(value.dollars || 0) > 0 || Number(value.pledges || 0) > 0 || Number(value.rows || 0) > 0)) rows.push(nonSpecific);
     const head = analyses.map((analysis) => `<th>${fundraiserColumnHeading(analysis)}</th>`).join('');
     const recurringKeys = recurringProgramKeys(analyses);
     const body = rows.map((row) => `
       <tr>
         <th class="topic-label"><strong>${escapeHtml(row.key)}</strong></th>
         ${row.values.map((value, analysisIndex) => {
-          if (!(Number(value.scheduled || 0) > 0)) return '<td class="muted-cell">—</td>';
           const analysis = analyses[analysisIndex];
+          const incomeBase = topicIncomeDenominator(analysis);
+          const incomeShare = incomeBase > 0 ? Math.max(0, Math.min(100, (Number(value.dollars || 0) / incomeBase) * 100)) : 0;
+          if (row.isNonSpecific) {
+            if (!(Number(value.rows || 0) > 0 || Number(value.dollars || 0) > 0 || Number(value.pledges || 0) > 0)) return '<td class="muted-cell">—</td>';
+            return `<td class="topic-cell non-specific-topic"><div class="topic-performance-line"><strong>Not applicable</strong><span>Hours N/A</span><span>Income ${incomeShare.toFixed(0)}%</span></div><small>${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · not tied to a specific program</small></td>`;
+          }
+          if (!(Number(value.scheduled || 0) > 0)) return '<td class="muted-cell">—</td>';
           const hoursShare = Math.max(0, Math.min(100, Number(value.share || 0) * 100));
-          const topicIncomeDenominator = [...(analysis.topics?.values?.() || [])].reduce((sum, item) => sum + Number(item.dollars || 0), 0);
-          const incomeShare = topicIncomeDenominator > 0 ? Math.max(0, Math.min(100, (Number(value.dollars || 0) / topicIncomeDenominator) * 100)) : 0;
           const programs = topicProgramMarkup(analysis, row.key, recurringKeys);
           const rateBase = rateBaseSuffix(value.rateMinutes, value.minutes);
           return `<td class="topic-cell"><div class="topic-performance-line"><strong>${escapeHtml(money(value.dollarsPerHour))}/hr</strong><span>Hours ${hoursShare.toFixed(0)}%</span><span>Income ${incomeShare.toFixed(0)}%</span></div><small>${escapeHtml(hours(value.minutes))}${escapeHtml(rateBase)} · ${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>${programs ? `<small class="topic-programs">${programs}</small>` : ''}</td>`;
         }).join('')}
       </tr>`).join('');
-    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>$ / hour uses only airings with valid duration and known results. Hours % and Income % show scheduled allocation and attributable Broadcast income. Programs shown in bold aired in two or more selected fundraisers.</p></div></div>${topicComparisonChart(analyses, rows)}<div class="table-scroll"><table><thead><tr><th>Topic</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
+    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>$ / hour uses only program airings with valid duration and known results. Non-Specific Pledges are shown as their own giving category; because those donations are not tied to a program, airtime and $/hour are not applicable. Income % includes Non-Specific Pledges in the giving-category denominator. Programs shown in bold aired in two or more selected fundraisers.</p></div></div>${topicComparisonChart(analyses, rows)}<div class="table-scroll"><table><thead><tr><th>Topic / giving category</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
   function durationNoticeSection(analyses) {
@@ -747,7 +780,7 @@
   }
 
   function programResultsTable(analysis) {
-    const rows = A.programResultsRows(analysis);
+    const rows = A.programResultsRows(analysis).filter((row) => !isNonSpecificLabel(row.title) && !isNonSpecificLabel(row.topic));
     const body = rows.map((row) => `
       <tr>
         <th class="program-result-title"><strong>${escapeHtml(row.title)}</strong><small>${escapeHtml(count(row.airings))} airing${row.airings === 1 ? '' : 's'}</small></th>
@@ -765,14 +798,19 @@
       .map((row) => ({ row, value: row.values[0] }))
       .filter((item) => Number(item.value.scheduled || 0) > 0)
       .sort((a, b) => b.value.dollarsPerHour - a.value.dollarsPerHour || b.value.dollars - a.value.dollars || a.row.key.localeCompare(b.row.key));
-    const totalTopicIncome = rows.reduce((sum, item) => sum + Number(item.value.dollars || 0), 0);
-    const body = rows.map(({ row, value }) => {
+    const nonSpecific = nonSpecificSummary(analysis);
+    const totalTopicIncome = rows.reduce((sum, item) => sum + Number(item.value.dollars || 0), 0) + Number(nonSpecific.dollars || 0);
+    const topicBody = rows.map(({ row, value }) => {
       const incomeShare = totalTopicIncome > 0 ? Number(value.dollars || 0) / totalTopicIncome : 0;
       const programs = topicProgramMarkup(analysis, row.key);
       const rateBase = rateBaseSuffix(value.rateMinutes, value.minutes);
       return `<tr><th>${escapeHtml(row.key)}</th><td><strong>${escapeHtml(money(value.dollars))} / ${escapeHtml(money(value.dollarsPerHour))}/hr / ${escapeHtml(percent(incomeShare))} income</strong><span>${escapeHtml(hours(value.minutes))}${escapeHtml(rateBase)} / ${escapeHtml(percent(value.share))} / ${escapeHtml(count(value.scheduled))} airings</span>${programs ? `<small class="topic-programs">${programs}</small>` : ''}</td></tr>`;
     }).join('');
-    return `<section class="sheet-section topic-summary"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Topics are ranked by Broadcast $/hour. The first line shows attributable income; the second shows scheduled airtime, the rate base when different, and exposure.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic</th><th>Fundraiser result</th></tr></thead><tbody>${body || '<tr><td colspan="2">No topic data.</td></tr>'}</tbody></table></div></section>`;
+    const nonSpecificBody = nonSpecific.rows || nonSpecific.dollars || nonSpecific.pledges
+      ? `<tr class="non-specific-topic"><th>Non-Specific Pledges</th><td><strong>${escapeHtml(money(nonSpecific.dollars))} / ${escapeHtml(percent(totalTopicIncome > 0 ? nonSpecific.dollars / totalTopicIncome : 0))} income</strong><span>No program airtime · $/hour N/A · ${escapeHtml(count(nonSpecific.pledges))} pledges</span></td></tr>`
+      : '';
+    const body = `${topicBody}${nonSpecificBody}`;
+    return `<section class="sheet-section topic-summary"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Program topics are ranked by Broadcast $/hour. Non-Specific Pledges appear as a separate giving category with no program airtime or $/hour.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic / giving category</th><th>Fundraiser result</th></tr></thead><tbody>${body || '<tr><td colspan="2">No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
   async function renderFundraiserReport() {

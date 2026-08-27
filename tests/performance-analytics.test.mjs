@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-analytics.js', import.meta.url);
 let source = fs.readFileSync(sourcePath, 'utf8');
 const exportMarker = '  App.analyticsUi = { ensureReady, openCohort, reload };';
 assert.ok(source.includes(exportMarker), 'analytics test export marker must exist');
-source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__analyticsTestHooks = { daypartFromMinutes, medianValue, outlierSummary, summarizeGroup, distributionLabel, buildAiringRecordLookup, findAiringForSchedulePlacement, buildScheduleRecords, dedupeSchedulesByDateRange, getScheduleAudit: () => state.scheduleAudit, getMetric: () => state.metric };`);
+source = source.replace(exportMarker, `${exportMarker}\n  globalThis.__analyticsTestHooks = { daypartFromMinutes, medianValue, outlierSummary, summarizeGroup, distributionLabel, buildAiringRecordLookup, findAiringForSchedulePlacement, buildScheduleRecords, dedupeSchedulesByDateRange, canonicalCategory, startTimeEvidence, buildDriveSeasonRecords, getScheduleAudit: () => state.scheduleAudit, getMetric: () => state.metric };`);
 
 const storage = new Map();
 const context = {
@@ -174,5 +174,52 @@ test('scheduled title omitted from a populated imported day becomes zero, while 
 test('start-time analytics copy states imported history is authoritative and documents report-day zero handling', () => {
   const text = fs.readFileSync(sourcePath, 'utf8');
   assert.match(text, /Imported fundraiser history is the factual source/);
-  assert.match(text, /missing from an otherwise populated imported report day counts as a completed \$0/);
+  assert.match(text, /Saved Scheduling placements retain completed report-day \$0s/);
+});
+
+
+test('current imported report-day coverage beats a stale attached imported dollar value', () => {
+  const schedules = [{ id: 's1', title: 'August 2026', placements: [
+    { id: 'actual', dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260, programId: 'p1', programTitle: 'Actual Show' },
+    { id: 'stale', dateKey: '2026-08-08', startMinutes: 1260, endMinutes: 1320, programId: 'p2', programTitle: 'Missing Show', importedBroadcastDollars: 840, importedFromReport: true }
+  ] }];
+  const library = [
+    { id: 'p1', title: 'Actual Show', topic_primary: 'Music' },
+    { id: 'p2', title: 'Missing Show', topic_primary: 'History' }
+  ];
+  const imported = [{ id: 'a1', dateKey: '2026-08-08', date: new Date(2026, 7, 8), startMinutes: 1200, title: 'Actual Show', importedTitle: 'Actual Show', programId: 'p1', programOpenId: 'p1', dollars: 500, pledges: 2 }];
+  const rows = hooks.buildScheduleRecords(schedules, library, imported);
+  const stale = rows.find((row) => row.plannedTitle === 'Missing Show');
+  assert.ok(stale);
+  assert.equal(stale.resultSource, 'report-day-zero');
+  assert.equal(stale.dollars, 0);
+});
+
+test('topic category normalization collapses inconsistent casing', () => {
+  assert.equal(hooks.canonicalCategory('MUSIC'), 'Music');
+  assert.equal(hooks.canonicalCategory('Music'), 'Music');
+  assert.equal(hooks.canonicalCategory('MuSiC'), 'Music');
+  assert.equal(hooks.canonicalCategory('HISTORY'), 'History');
+});
+
+test('start-time evidence requires rate-valid airings, three fundraisers, and three titles', () => {
+  const make = (scheduleId, title, durationMinutes = 60) => ({ scheduleId, scheduleTitle: scheduleId, fundraiser: scheduleId, title, programId: title, programOpenId: title, durationMinutes });
+  const twoTitles = [make('a', 'One'), make('a', 'Two'), make('b', 'One'), make('b', 'Two'), make('c', 'One'), make('c', 'Two')];
+  assert.equal(hooks.startTimeEvidence(twoTitles).sufficient, false);
+  assert.equal(hooks.startTimeEvidence([...twoTitles, make('c', 'Three')]).sufficient, true);
+  const missingDurationDiversity = [make('a', 'One'), make('a', 'Two'), make('a', 'Three'), make('a', 'Four'), make('a', 'Five'), make('b', 'Six', 0), make('c', 'Seven', 0)];
+  assert.equal(hooks.startTimeEvidence(missingDurationDiversity).sufficient, false);
+});
+
+test('season overview uses current imported Broadcast totals over stale saved schedule totals', () => {
+  const schedules = [{ id: 's1', title: 'August 2026', startDate: '2026-08-08', endDate: '2026-08-16', placements: [], onlineDollars: 100, mailDollars: 50, meta: { reportedBroadcastTotalDollars: 9999 } }];
+  const imported = [
+    { row: { drive_start_date: '2026-08-08', drive_end_date: '2026-08-16' }, season: 'August', year: 2026, dollars: 400, pledges: 2 },
+    { row: { drive_start_date: '2026-08-08', drive_end_date: '2026-08-16' }, season: 'August', year: 2026, dollars: 300, pledges: 1 }
+  ];
+  const rows = hooks.buildDriveSeasonRecords(schedules, imported);
+  assert.equal(rows[0].broadcastDollars, 700);
+  assert.equal(rows[0].dollars, 850);
+  assert.equal(rows[0].pledges, 3);
+  assert.equal(rows[0].sourceLabel, 'Current imported fundraiser history');
 });
