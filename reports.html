@@ -74,8 +74,6 @@
   </div>
   <script>
     (() => {
-      let excludedDurationTitles = [];
-
       function setText(node, value) {
         if (!node) return;
         const next = String(value ?? '');
@@ -112,7 +110,6 @@
         if (!checks || checks.closest('.report-fundraiser-picker')) return;
         const selection = checks.closest('.report-selection');
         if (!selection) return;
-        excludedDurationTitles = [];
 
         const picker = document.createElement('div');
         picker.className = 'report-fundraiser-picker';
@@ -139,19 +136,7 @@
             trigger.focus();
           }
         });
-        checks.addEventListener('change', () => {
-          excludedDurationTitles = [];
-          updatePickerSummary(picker);
-        });
-      }
-
-      function captureDurationExclusions() {
-        const modal = document.getElementById('duration-warning-modal');
-        if (!modal) return;
-        const titles = [...modal.querySelectorAll('.duration-warning-list strong')]
-          .map((node) => node.textContent?.trim() || '')
-          .filter((title) => title && !title.startsWith('+ '));
-        if (titles.length) excludedDurationTitles = [...new Set(titles)];
+        checks.addEventListener('change', () => updatePickerSummary(picker));
       }
 
       function fundraiserDateRanges() {
@@ -182,8 +167,11 @@
       }
 
       function normalizeWeather(text) {
-        const value = String(text || '').trim();
-        if (!value || /^weather\s+—$/i.test(value)) return '— / —';
+        const value = String(text || '')
+          .trim()
+          .replace(/^regional\s+weather\s*/i, '')
+          .replace(/^weather\s*/i, '');
+        if (!value || value === '—') return '— / —';
         return value.replace(' · ', ' / ');
       }
 
@@ -217,7 +205,7 @@
             .replace(/\s*·\s*pre-Saturday start/i, '')
             .trim();
           const labels = textNode('div', 'day-row-labels', '');
-          ['$ / Hr (avg)', 'Pledge Hours', 'Total Income / No. pledges', 'Temperature / Rainfall']
+          ['$ / Hr (avg)', 'Pledge hours / rate base', 'Total income / No. pledges', 'Regional temp / rainfall']
             .forEach((label) => labels.appendChild(textNode('span', '', label)));
           heading.replaceChildren(
             textNode('strong', '', title),
@@ -229,15 +217,15 @@
             if (cell.classList.contains('muted-cell')) return;
             const rate = cell.querySelector('strong')?.textContent?.trim() || '—';
             const dateAndHours = cell.querySelector('span')?.textContent?.trim() || '';
-            const divider = dateAndHours.lastIndexOf(' · ');
-            const date = divider >= 0 ? dateAndHours.slice(0, divider).trim() : dateAndHours;
-            const pledgeHours = divider >= 0 ? dateAndHours.slice(divider + 3).trim() : '—';
+            const parts = dateAndHours.split(' · ').map((value) => value.trim()).filter(Boolean);
+            const date = parts.shift() || '—';
+            const pledgeHours = parts.length ? parts.join(' / ') : '—';
             const smalls = [...cell.querySelectorAll('small')];
             const incomePledges = normalizeIncomePledges(smalls[0]?.textContent || '') || '— / —';
             const weather = normalizeWeather(smalls[1]?.textContent || '');
             const values = textNode('div', 'day-value-lines', '');
             [rate, pledgeHours, incomePledges, weather].forEach((value) => values.appendChild(textNode('span', '', value)));
-            cell.replaceChildren(textNode('div', 'day-date-value', date || '—'), values);
+            cell.replaceChildren(textNode('div', 'day-date-value', date), values);
           });
         });
       }
@@ -245,26 +233,10 @@
       function enhanceTopicMatrix(report) {
         const section = report.querySelector('.topic-matrix');
         if (!section) return;
-        const description = section.querySelector('.section-heading p');
-        const common = 'Hours % and Income % show allocation and attributable Broadcast income. Programs shown in bold aired in two or more selected fundraisers.';
-        const note = excludedDurationTitles.length
-          ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${common}`
-          : common;
-        setText(description, note);
         section.querySelectorAll('tbody td.muted-cell').forEach((cell) => {
           cell.classList.add('topic-empty-message');
           setText(cell, 'No programming within this topic occurred during this fundraiser.');
         });
-      }
-
-      function enhanceComparisonFooter(report) {
-        const footer = report.querySelector('.sheet-footer');
-        if (!footer) return;
-        const channelNote = 'Non-Specific Pledges are not treated as incomplete program/topic data. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser.';
-        const note = excludedDurationTitles.length
-          ? `Excluded from $/hour analytics because duration is missing: ${excludedDurationTitles.join('; ')}. ${channelNote}`
-          : channelNote;
-        setText(footer, note);
       }
 
       function enhanceComparisonReport() {
@@ -273,7 +245,6 @@
         enhanceComparisonHeadings(report);
         enhanceDailyMatrix(report);
         enhanceTopicMatrix(report);
-        enhanceComparisonFooter(report);
       }
 
       document.addEventListener('click', (event) => {
@@ -283,12 +254,10 @@
       });
 
       const observer = new MutationObserver(() => {
-        captureDurationExclusions();
         enhanceFundraiserPicker();
         enhanceComparisonReport();
       });
       observer.observe(document.body, { childList: true, subtree: true });
-      captureDurationExclusions();
       enhanceFundraiserPicker();
       enhanceComparisonReport();
     })();
