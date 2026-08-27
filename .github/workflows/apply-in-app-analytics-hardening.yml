@@ -23,6 +23,8 @@ jobs:
         run: python .github/tmp/scope_start_time_patch.py
       - name: Apply guarded source patch
         run: python .github/tmp/apply_in_app_analytics_hardening.py
+      - name: Guard postprocess script
+        run: python .github/tmp/fix_postprocess_typo.py
       - name: Repair fixtures and separate non-specific pledge giving
         run: python .github/tmp/postprocess_analytics_and_non_specific.py
       - name: Run full regression suite
@@ -31,7 +33,7 @@ jobs:
         run: |
           git config user.name "WNMU Analytics Hardening"
           git config user.email "actions@users.noreply.github.com"
-          git rm .github/workflows/apply-in-app-analytics-hardening.yml .github/tmp/apply_in_app_analytics_hardening.py .github/tmp/scope_start_time_patch.py .github/tmp/postprocess_analytics_and_non_specific.py
+          git rm .github/workflows/apply-in-app-analytics-hardening.yml .github/tmp/apply_in_app_analytics_hardening.py .github/tmp/scope_start_time_patch.py .github/tmp/postprocess_analytics_and_non_specific.py .github/tmp/fix_postprocess_typo.py
           git add assets/js/ui-analytics.js assets/js/ui-fundraiser-comparison.js assets/js/one-sheet-reports.js tests/performance-analytics.test.mjs tests/fundraiser-comparison.test.mjs tests/one-sheet-analysis-hardening.test.mjs
           git commit -m "Harden in-app analytics and classify non-specific pledges"
           git push origin HEAD:audit/in-app-analytics-hardening-2026-08-27
