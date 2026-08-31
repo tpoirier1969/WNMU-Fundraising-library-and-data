@@ -37,6 +37,17 @@
         App.performanceUi?.renderAll();
       }
 
+      const historyRefresh = App.data.refreshAiringHistory?.();
+      if (historyRefresh?.then) {
+        historyRefresh.then(() => {
+          App.listUi.buildFilterOptions();
+          App.listUi.applyLibraryView();
+          App.workspaceUi?.refreshScaffoldSummary();
+        }).catch((error) => {
+          console.warn('Background air-date history enrichment failed.', error);
+        });
+      }
+
       const probeStatus = App.data.getProbeStatusMessage();
       if (state.configVersionMismatch) {
         setBuildMeta(`${state.configVersionMismatch} ${probeStatus}`);
@@ -46,7 +57,7 @@
       if (options.preserveDetail && state.selectedProgramId && !els.detailModal.classList.contains('hidden')) {
         await App.detailUi.loadProgramDetail(state.selectedProgramId, { preserveMode: state.detailEditMode });
       }
-      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} source rows. Scheduling title match is ready.`);
+      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} source rows. Air-date history is updating in the background.`);
     } catch (error) {
       console.error(error);
       const rawMessage = error?.message || 'Load failed.';

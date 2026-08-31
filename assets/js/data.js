@@ -326,6 +326,34 @@
     });
   }
 
+  let libraryAiringHistoryPromise = null;
+
+  function applyLibraryAiringHistory(airingsRows = []) {
+    const historyIndex = buildAiringHistoryIndex(airingsRows);
+    state.baseRows = attachAiringHistory(state.baseRows, historyIndex);
+    state.rawRows = attachAiringHistory(state.rawRows, historyIndex);
+    return state.rawRows;
+  }
+
+  async function refreshAiringHistory() {
+    const sharedRows = Array.isArray(state.scheduleImportedAiringsCache)
+      ? state.scheduleImportedAiringsCache
+      : null;
+    if (sharedRows) return applyLibraryAiringHistory(sharedRows);
+    if (libraryAiringHistoryPromise) return libraryAiringHistoryPromise;
+
+    libraryAiringHistoryPromise = (async () => {
+      const airingsRows = await fetchAllRows(constants.AIRINGS_TABLE);
+      return applyLibraryAiringHistory(airingsRows);
+    })();
+
+    try {
+      return await libraryAiringHistoryPromise;
+    } finally {
+      libraryAiringHistoryPromise = null;
+    }
+  }
+
   async function refreshRawRows() {
     const source = await chooseLibrarySource();
     let baseRows = [];
@@ -357,14 +385,6 @@
       state.rawRows = mergedRows;
     }
 
-    try {
-      const airingsRows = await fetchAllRows(constants.AIRINGS_TABLE);
-      const historyIndex = buildAiringHistoryIndex(airingsRows);
-      state.baseRows = attachAiringHistory(state.baseRows, historyIndex);
-      state.rawRows = attachAiringHistory(mergedRows, historyIndex);
-    } catch (error) {
-      console.warn('Air-date history enrichment failed.', error);
-    }
     state.fieldAudit = buildFieldAudit(state.rawRows);
     resetDetailCaches();
     return state.rawRows;
@@ -1715,6 +1735,7 @@
     fetchAllRows,
     chooseLibrarySource,
     refreshRawRows,
+    refreshAiringHistory,
     getProbeStatusMessage,
     fetchProgramDetail,
     fetchProgramDetailsBatch,
