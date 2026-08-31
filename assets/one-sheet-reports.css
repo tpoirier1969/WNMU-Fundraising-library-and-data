@@ -48,3 +48,6 @@ button,select,input{font:inherit}.hidden{display:none!important}.report-shell{mi
   .topic-summary tbody th,.topic-summary tbody td>strong{font-size:10pt}.topic-summary tbody td>span{font-size:9pt}
   .comparison-sheet,.fundraiser-sheet,.historical-sheet{break-inside:auto;page-break-inside:auto}.sheet-title,.fundraiser-kpis,.report-chart,.sheet-footer,.data-quality-note{break-inside:avoid-page;page-break-inside:avoid}.sheet-section>h2,.section-heading{break-after:avoid-page;page-break-after:avoid}.daily-matrix,.fundraiser-days,.program-results,.topic-matrix,.topic-summary,.historical-ranking,table{break-inside:auto;page-break-inside:auto}thead{display:table-header-group}tr{break-inside:avoid-page;page-break-inside:avoid}
 }
+
+.preflight-program-link{font-weight:850;color:#145f91;text-decoration:underline;text-underline-offset:2px}
+.preflight-program-link:hover,.preflight-program-link:focus-visible{color:#0b456d;text-decoration-thickness:2px}

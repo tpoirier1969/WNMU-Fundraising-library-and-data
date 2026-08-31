@@ -48,3 +48,42 @@ assert.equal(cleanHealth.status, 'pass');
 assert.equal(cleanHealth.failures, 0);
 
 console.log('data health preflight tests passed');
+
+
+assert.ok(A.canonicalizeImportedAirings, 'canonicalizeImportedAirings should be exported');
+const rawDuplicateAirings = [
+  {
+    id: 'old', row_hash: 'old-hash', station: 'WNMU', imported_program_title: 'Imported Alias',
+    air_date: '2026-08-08', air_time: '20:00', drive_start_date: '2026-08-08', drive_end_date: '2026-08-18',
+    dollars: 75, updated_at: '2026-08-20T12:00:00Z'
+  },
+  {
+    id: 'new', row_hash: 'new-hash', station: 'WNMU', imported_program_title: 'Imported Alias', matched_library_title: 'Matched Program',
+    program_id: 'p-match', air_date: '2026-08-08', air_time: '20:00', drive_start_date: '2026-08-08', drive_end_date: '2026-08-18',
+    dollars: 80, updated_at: '2026-08-21T12:00:00Z', match_method: 'manual_library'
+  }
+];
+const canonical = A.canonicalizeImportedAirings(rawDuplicateAirings);
+assert.equal(canonical.length, 1, 'superseded observations with the same imported identity/date/time should collapse');
+assert.equal(canonical[0].row_hash, 'new-hash', 'newer manually matched observation should win canonicalization');
+
+const matchedSchedule = A.normalizeSchedule({
+  id: 'matched-schedule', title: 'August 2026', start_date: '2026-08-08', end_date: '2026-08-18',
+  schedule_data: { placements: [{ dateKey: '2026-08-08', startMinutes: 1200, programId: 'p-match', programTitle: 'Matched Program', lengthMinutes: 60 }] }
+});
+const matchedLibrary = [{ id: 'p-match', title: 'Matched Program', topic_primary: 'Music', length_bucket_minutes: 60 }];
+const matchedAnalysis = A.analyzeSchedule(matchedSchedule, canonical, A.buildLibraryIndexes(matchedLibrary));
+assert.equal(matchedAnalysis.unmatchedImportedRows.length, 0, 'canonical manually matched row should attach to its scheduled Program Library record');
+assert.equal(matchedAnalysis.broadcastDollars, 80);
+
+const actionableHealth = A.dataHealthReport([matchedSchedule], [{
+  schedule: matchedSchedule,
+  importedRows: canonical,
+  placementRows: [{ known: true, dollars: 80, durationMissing: true, title: 'Matched Program', programId: 'p-match', dateKey: '2026-08-08' }],
+  unmatchedImportedRows: [],
+  missingDurationRows: [{ known: true, dollars: 80, durationMissing: true, title: 'Matched Program', programId: 'p-match', dateKey: '2026-08-08' }],
+  scheduled: 1
+}], canonical, matchedLibrary);
+const actionableMissing = actionableHealth.checks.find((check) => check.id === 'missing-duration').details[0];
+assert.equal(actionableMissing.programId, 'p-match', 'actionable Preflight details should preserve Program Library IDs for deep links');
+assert.equal(actionableMissing.title, 'Matched Program');
