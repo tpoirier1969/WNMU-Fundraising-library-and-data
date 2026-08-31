@@ -40,6 +40,18 @@ jobs:
           PY
       - name: Apply guarded patch
         run: python tools/apply-preflight-v022111.py
+      - name: Refresh renamed hover-helper test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tests/one-sheet-reports.test.mjs')
+          s = p.read_text()
+          old = "assert.match(reportSource, /function titlesForFundraiserDay/);"
+          new = "assert.match(reportSource, /function programResultsForFundraiserDay/);"
+          if old not in s:
+              raise SystemExit('stale titlesForFundraiserDay assertion not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
       - name: Run regression tests
         run: node --test tests/*.test.mjs
       - name: Commit canonical preflight release
