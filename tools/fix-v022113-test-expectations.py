@@ -15,5 +15,8 @@ new_version = r'0\.22\.113'
 occurrences = text.count(old_version)
 if occurrences != 3:
     raise SystemExit(f'expected 3 report asset version assertions, found {occurrences}')
-refine.write_text(text.replace(old_version, new_version))
-print('v0.22.113 stale test expectations fixed')
+text = text.replace(old_version, new_version)
+text = text.replace('reportsSource', 'reports')
+text = text.replace('htmlSource', 'reportHtml')
+refine.write_text(text)
+print('v0.22.113 stale test expectations and assertion variable names fixed')
