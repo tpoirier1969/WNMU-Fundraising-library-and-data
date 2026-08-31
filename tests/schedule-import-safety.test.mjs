@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -194,6 +194,54 @@ function importedDuplicate(id = 'dup') {
     meta: { autoCreatedFromReports: true, importedFromReports: true }
   };
 }
+
+test('Scheduling refresh replaces stale positive Actual with current imported zero', () => {
+  resetState();
+  state.rawRows = [libraryRow('p1', 'Reported Program')];
+  const placement = {
+    id: 'planned', importedFromReport: true, programId: 'p1', programTitle: 'Reported Program',
+    dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260,
+    sourceAiringHash: 'r1', importedBroadcastDollars: 840,
+    manualResultRecorded: true, manualBroadcastDollars: 99, manualPledgeCount: 2
+  };
+  const schedule = targetSchedule([placement]);
+  const changed = hooks.reconcileSchedulePlacementResults(schedule, [importedRow({ hash: 'r1', dollars: 0 })]);
+  assert.equal(changed, true);
+  assert.equal(schedule.placements[0].importedBroadcastDollars, 0);
+  assert.equal(schedule.placements[0].manualResultRecorded, false);
+  assert.equal(schedule.placements[0].manualBroadcastDollars, 0);
+});
+
+test('Scheduling refresh follows a corrected imported row when its hash changes but slot is unique', () => {
+  resetState();
+  state.rawRows = [libraryRow('p1', 'Reported Program')];
+  const placement = {
+    id: 'planned', importedFromReport: true, programId: 'p1', programTitle: 'Old Planned Title',
+    dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260,
+    sourceAiringHash: 'old-hash', importedBroadcastDollars: 840
+  };
+  const schedule = targetSchedule([placement]);
+  const changed = hooks.reconcileSchedulePlacementResults(schedule, [importedRow({ hash: 'new-hash', dollars: 360 })]);
+  assert.equal(changed, true);
+  assert.equal(schedule.placements[0].importedBroadcastDollars, 360);
+  assert.equal(schedule.placements[0].sourceAiringHash, 'new-hash');
+  assert.equal(schedule.placements[0].programTitle, 'Old Planned Title');
+});
+
+test('Scheduling refresh treats a scheduled title omitted from a populated imported day as Actual zero', () => {
+  resetState();
+  state.rawRows = [libraryRow('p1', 'Planned Program'), libraryRow('p2', 'Other Program')];
+  const placement = {
+    id: 'planned', importedFromReport: true, programId: 'p1', programTitle: 'Planned Program',
+    dateKey: '2026-08-08', startMinutes: 1200, endMinutes: 1260,
+    sourceAiringHash: 'stale-hash', importedBroadcastDollars: 840
+  };
+  const schedule = targetSchedule([placement]);
+  const changed = hooks.reconcileSchedulePlacementResults(schedule, [importedRow({ hash: 'other-hash', programId: 'p2', title: 'Other Program', time: '21:00', dollars: 250 })]);
+  assert.equal(changed, true);
+  assert.equal(schedule.placements[0].importedBroadcastDollars, 0);
+  assert.equal(schedule.placements[0].sourceAiringHash, '');
+});
 
 test('ordinary Results Import remains explicitly non-mutating', () => {
   assert.match(imports, /Results Import never creates, merges, repairs, or changes fundraiser schedules\./);
