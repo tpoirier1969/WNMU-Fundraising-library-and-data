@@ -1047,6 +1047,72 @@
   }
 
 
+  function ensurePreflightProgramEditor() {
+    let backdrop = document.getElementById('preflight-program-editor-backdrop');
+    if (backdrop) return backdrop;
+    backdrop = document.createElement('div');
+    backdrop.id = 'preflight-program-editor-backdrop';
+    backdrop.className = 'preflight-program-editor-backdrop hidden';
+    backdrop.innerHTML = `<section class="preflight-program-editor-modal" role="dialog" aria-modal="true" aria-labelledby="preflight-program-editor-title">
+      <header class="preflight-program-editor-head">
+        <div><div class="report-kicker">Pledge Program Library editor</div><h2 id="preflight-program-editor-title">Program details</h2></div>
+        <button type="button" class="report-button" id="preflight-program-editor-close">Close & refresh Preflight</button>
+      </header>
+      <div class="preflight-program-editor-body"><iframe id="preflight-program-editor-frame" title="Pledge Program Library detail editor"></iframe></div>
+    </section>`;
+    document.body.append(backdrop);
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) void closePreflightProgramEditor();
+    });
+    backdrop.querySelector('#preflight-program-editor-close')?.addEventListener('click', () => { void closePreflightProgramEditor(); });
+    return backdrop;
+  }
+
+  function openPreflightProgramEditor(programId, title = '') {
+    const id = A.text(programId || '');
+    if (!id) return;
+    const backdrop = ensurePreflightProgramEditor();
+    const frame = backdrop.querySelector('#preflight-program-editor-frame');
+    const heading = backdrop.querySelector('#preflight-program-editor-title');
+    if (heading) heading.textContent = title ? `Edit ${title}` : 'Edit program';
+    if (frame) frame.src = `./?openProgram=${encodeURIComponent(id)}&detailOnly=1&from=preflight`;
+    backdrop.classList.remove('hidden');
+    document.body.classList.add('preflight-program-editor-open');
+    backdrop.querySelector('#preflight-program-editor-close')?.focus();
+  }
+
+  async function closePreflightProgramEditor({ refresh = true } = {}) {
+    const backdrop = document.getElementById('preflight-program-editor-backdrop');
+    if (!backdrop || backdrop.classList.contains('hidden')) return;
+    backdrop.classList.add('hidden');
+    document.body.classList.remove('preflight-program-editor-open');
+    const frame = backdrop.querySelector('#preflight-program-editor-frame');
+    if (frame) frame.src = 'about:blank';
+    if (refresh && reportMode() === 'preflight') {
+      if ($('#report-status')) $('#report-status').textContent = 'Refreshing Preflight after program edit…';
+      await loadData();
+      renderPreflightReport();
+      if ($('#report-status')) $('#report-status').textContent = 'Preflight refreshed.';
+    }
+  }
+
+  function bindPreflightProgramEditor() {
+    const output = $('#report-output');
+    if (!output || output.dataset.preflightEditorBound === 'true') return;
+    output.dataset.preflightEditorBound = 'true';
+    output.addEventListener('click', (event) => {
+      const button = event.target?.closest?.('[data-preflight-program-id]');
+      if (!button) return;
+      openPreflightProgramEditor(button.getAttribute('data-preflight-program-id') || '', button.getAttribute('data-preflight-program-title') || button.textContent || '');
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !document.getElementById('preflight-program-editor-backdrop')?.classList.contains('hidden')) {
+        event.preventDefault();
+        void closePreflightProgramEditor();
+      }
+    });
+  }
+
   function preflightControls() {
     $('#report-controls').innerHTML = `<div class="report-control-row"><div class="historical-control-copy"><strong>Full historical dataset</strong><span>Preflight uses the same saved schedules, imported pledge results, and Program Library records as the reports.</span></div><button type="button" class="report-button" id="report-print">Print preflight</button></div>`;
     $('#report-print')?.addEventListener('click', () => window.print());
@@ -1064,10 +1130,12 @@
       const title = A.text(item.title || '');
       const programId = A.text(item.programId || '');
       const detail = A.text(item.detail || item.text || '');
+      const mismatchTypes = Array.isArray(item.mismatchTypes) ? item.mismatchTypes.filter(Boolean) : [];
       const titleMarkup = programId && title
-        ? `<a class="preflight-program-link" href="./?openProgram=${encodeURIComponent(programId)}" target="_blank" rel="noopener" title="Open ${escapeHtml(title)} in the Pledge Program Library">${escapeHtml(title)}</a>`
+        ? `<button type="button" class="preflight-program-link" data-preflight-program-id="${escapeHtml(programId)}" data-preflight-program-title="${escapeHtml(title)}" title="Edit ${escapeHtml(title)}">${escapeHtml(title)}</button>`
         : escapeHtml(title);
-      return `${titleMarkup}${detail ? `${titleMarkup ? ' · ' : ''}${escapeHtml(detail)}` : ''}` || '—';
+      const tags = mismatchTypes.length ? `<span class="preflight-mismatch-tags">${mismatchTypes.map((type) => `<span class="preflight-mismatch-tag">${escapeHtml(type)}</span>`).join('')}</span>` : '';
+      return `<span class="preflight-detail-line">${titleMarkup}${tags}${detail ? `<span class="preflight-detail-copy">${escapeHtml(detail)}</span>` : ''}</span>` || '—';
     };
     const detailMarkup = details.length
       ? `<details ${check.severity !== 'info' && check.count ? 'open' : ''}><summary>${escapeHtml(count(details.length))} detail${details.length === 1 ? '' : 's'}</summary><ul>${details.map((item) => `<li>${detailItemMarkup(item)}</li>`).join('')}</ul></details>`
@@ -1114,6 +1182,7 @@
     $('#report-page-subtitle').textContent = 'Report-readiness checks across the full pledge dataset';
     preflightControls();
     renderPreflightReport();
+    bindPreflightProgramEditor();
   }
 
   function weatherEndpointOrder(endDate = '') {

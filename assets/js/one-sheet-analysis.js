@@ -544,6 +544,9 @@
       unmatchedImported: true,
       liveBreak: false,
       rowHash: text(row.row_hash || ''),
+      importedSourceTitle: text(row.imported_program_title || row.program_title || row.title || ''),
+      importedMatchedTitle: text(row.matched_library_title || ''),
+      importedNola: text(row.nola_code || row.nola || row.program_nola || ''),
       programId: text(lib.id || row.program_id || row.pledge_program_id || '')
     };
   }
@@ -1102,6 +1105,127 @@
       .map((item) => `${item.title}${item.nola ? ` (${item.nola.toUpperCase()})` : ''}: ${item.rows} imported row${item.rows === 1 ? '' : 's'} could map to ${item.candidates} Library records${item.sampleDate ? `; sample ${item.sampleDate}` : ''}`);
   }
 
+  function preflightClockLabel(minutes) {
+    const value = Number(minutes);
+    if (!Number.isFinite(value)) return 'unknown time';
+    const normalized = ((Math.round(value) % 1440) + 1440) % 1440;
+    const hour24 = Math.floor(normalized / 60);
+    const minute = normalized % 60;
+    const suffix = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = hour24 % 12 || 12;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+  }
+
+  function preflightSavedPlacementDollars(placement = {}) {
+    const imported = placement?.importedBroadcastDollars;
+    if (imported !== '' && imported != null && Number.isFinite(Number(imported))) return Number(imported);
+    if (placement?.manualResultRecorded && Number.isFinite(Number(placement?.manualBroadcastDollars))) return Number(placement.manualBroadcastDollars);
+    return null;
+  }
+
+  function preflightUnmatchedDiagnostic(row = {}, analysis = {}, indexes = {}) {
+    const importedTitle = text(row?.importedSourceTitle || row?.title || 'Unidentified imported result');
+    const resolvedTitle = text(row?.title || importedTitle);
+    const importedDate = text(row?.dateKey || '');
+    const importedStart = Number(row?.startMinutes);
+    const importedDollars = Number(row?.dollars || 0) || 0;
+    const importedProgramId = text(row?.programId || '');
+    const placements = (analysis?.schedule?.placements || [])
+      .filter((placement) => !placement?.isNonPledge)
+      .map((placement) => {
+        const lib = libraryForPlacement(placement, indexes) || {};
+        return {
+          placement,
+          dateKey: text(placement?.dateKey || placement?.date_key || ''),
+          startMinutes: placementStartMinutes(placement),
+          title: text(lib?.title || placement?.programTitle || placement?.program_title || placement?.title || 'Untitled program'),
+          programId: text(lib?.id || placement?.programId || placement?.program_id || ''),
+          savedDollars: preflightSavedPlacementDollars(placement)
+        };
+      });
+
+    const identityMatches = (candidate) => {
+      if (!candidate) return false;
+      if (importedProgramId && candidate.programId && importedProgramId === candidate.programId) return true;
+      const candidateKey = lookupKey(candidate.title);
+      return Boolean(candidateKey && [importedTitle, resolvedTitle].some((value) => lookupKey(value) === candidateKey));
+    };
+    const sameDate = placements.filter((candidate) => importedDate && candidate.dateKey === importedDate);
+    const sameDateTime = sameDate.filter((candidate) => Number.isFinite(importedStart) && Number.isFinite(candidate.startMinutes) && candidate.startMinutes === importedStart);
+    const sameIdentity = placements.filter(identityMatches);
+    const sameDateIdentity = sameDate.filter(identityMatches);
+    const sameIdentityTime = sameIdentity.filter((candidate) => Number.isFinite(importedStart) && Number.isFinite(candidate.startMinutes) && candidate.startMinutes === importedStart);
+
+    let candidate = null;
+    let ambiguous = false;
+    const unique = (rows) => rows.length === 1 ? rows[0] : null;
+    candidate = unique(sameDateTime.filter(identityMatches))
+      || unique(sameDateTime)
+      || unique(sameDateIdentity)
+      || unique(sameIdentityTime)
+      || unique(sameIdentity)
+      || unique(sameDate);
+    if (!candidate) {
+      ambiguous = sameDateTime.length > 1 || sameDateIdentity.length > 1 || sameIdentity.length > 1 || sameDate.length > 1;
+    }
+
+    const mismatchTypes = [];
+    const parts = [];
+    const addMismatch = (type, message) => {
+      if (!mismatchTypes.includes(type)) mismatchTypes.push(type);
+      if (message) parts.push(message);
+    };
+
+    if (candidate) {
+      const rawTitleKey = lookupKey(importedTitle);
+      const scheduledTitleKey = lookupKey(candidate.title);
+      if (rawTitleKey && scheduledTitleKey && rawTitleKey !== scheduledTitleKey) {
+        addMismatch('Title match problem', `Title: imported “${importedTitle}” vs scheduled “${candidate.title}”`);
+      }
+      if (importedDate && candidate.dateKey && importedDate !== candidate.dateKey) {
+        addMismatch('Air date mismatch', `Air date: imported ${importedDate} vs scheduled ${candidate.dateKey}`);
+      }
+      if (Number.isFinite(importedStart) && Number.isFinite(candidate.startMinutes) && importedStart !== candidate.startMinutes) {
+        addMismatch('Air time mismatch', `Air time: imported ${preflightClockLabel(importedStart)} vs scheduled ${preflightClockLabel(candidate.startMinutes)}`);
+      }
+      if (Number.isFinite(candidate.savedDollars) && Math.abs(candidate.savedDollars - importedDollars) > 0.01) {
+        addMismatch('Dollar mismatch', `Dollars: imported $${importedDollars.toFixed(2)} vs saved $${candidate.savedDollars.toFixed(2)}`);
+      }
+      if (!mismatchTypes.length) {
+        addMismatch('No unique scheduled match', 'The imported row resembles a scheduled placement, but it was not the unique row consumed by the current matching rules.');
+      }
+    } else {
+      if (!sameDate.length) addMismatch('Air date mismatch', `Air date: imported ${importedDate || 'unknown'}; no scheduled pledge placement exists on that date.`);
+      if (!sameIdentity.length) addMismatch('Title match problem', `Title: imported “${importedTitle}”; no scheduled placement has the same Program Library identity/title.`);
+      if (sameDate.length && Number.isFinite(importedStart) && !sameDate.some((candidate) => Number.isFinite(candidate.startMinutes) && candidate.startMinutes === importedStart)) {
+        const scheduledTimes = [...new Set(sameDate.map((candidate) => candidate.startMinutes).filter(Number.isFinite).map(preflightClockLabel))];
+        addMismatch('Air time mismatch', `Air time: imported ${preflightClockLabel(importedStart)}${scheduledTimes.length ? `; scheduled that day: ${scheduledTimes.join(', ')}` : ''}`);
+      }
+      if (ambiguous) addMismatch('Ambiguous schedule slot', 'More than one scheduled placement is plausible, so the imported row cannot be assigned confidently.');
+      if (!mismatchTypes.length) addMismatch('No unique scheduled match', 'No unique scheduled pledge placement could be identified for this imported result.');
+    }
+
+    return {
+      title: resolvedTitle || importedTitle,
+      programId: importedProgramId,
+      mismatchTypes,
+      detail: `${analysis?.schedule?.title || 'Fundraiser'} · imported ${importedDate || 'unknown date'}${Number.isFinite(importedStart) ? ` ${preflightClockLabel(importedStart)}` : ''} · $${importedDollars.toFixed(2)} · ${parts.join(' · ')}`,
+      imported: {
+        title: importedTitle,
+        dateKey: importedDate,
+        startMinutes: Number.isFinite(importedStart) ? importedStart : null,
+        dollars: importedDollars
+      },
+      scheduled: candidate ? {
+        title: candidate.title,
+        programId: candidate.programId,
+        dateKey: candidate.dateKey,
+        startMinutes: Number.isFinite(candidate.startMinutes) ? candidate.startMinutes : null,
+        dollars: Number.isFinite(candidate.savedDollars) ? candidate.savedDollars : null
+      } : null
+    };
+  }
+
   function dataHealthReport(schedules = [], analyses = [], airings = [], library = []) {
     const checks = [];
     const add = (id, label, severity, summary, details = [], countOverride = null) => {
@@ -1116,7 +1240,12 @@
       const represented = (analysis.placementRows || []).reduce((sum, row) => sum + (row?.known ? Number(row?.dollars || 0) : 0), 0);
       const difference = represented - imported;
       if (Math.abs(difference) > 0.01) {
-        reconciliation.push(`${analysis.schedule?.title || 'Fundraiser'}: imported ${imported.toFixed(2)}, represented ${represented.toFixed(2)}, difference ${difference.toFixed(2)}`);
+        reconciliation.push({
+          title: text(analysis.schedule?.title || 'Fundraiser'),
+          programId: '',
+          mismatchTypes: ['Dollar mismatch'],
+          detail: `Imported Broadcast $${imported.toFixed(2)} vs analyzed $${represented.toFixed(2)} · difference $${difference.toFixed(2)}`
+        });
       }
     });
     add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
@@ -1135,6 +1264,7 @@
     add('missing-duration', 'Missing program durations', 'fail', missingDurations.length ? 'Programs without a saved schedule length or reliable Program Library runtime are excluded from $/hour analytics.' : 'Every scheduled program used by the reports has a usable duration.', missingDurations);
 
     const unmatchedPrograms = [];
+    const healthIndexes = buildLibraryIndexes(library);
     let nonSpecificRows = 0;
     let nonSpecificDollars = 0;
     (analyses || []).forEach((analysis) => {
@@ -1144,11 +1274,7 @@
           nonSpecificDollars += Number(row?.dollars || 0);
           return;
         }
-        unmatchedPrograms.push({
-          title: text(row?.title || 'Unidentified imported result'),
-          programId: text(row?.programId || ''),
-          detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'} · $${Number(row?.dollars || 0).toFixed(2)}`
-        });
+        unmatchedPrograms.push(preflightUnmatchedDiagnostic(row, analysis, healthIndexes));
       });
     });
     add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length ? 'Imported program results remain that cannot be assigned confidently to a scheduled program/topic.' : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);

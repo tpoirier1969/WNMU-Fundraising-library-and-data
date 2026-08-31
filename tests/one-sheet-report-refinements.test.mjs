@@ -57,9 +57,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.113/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.113/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.113/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.114/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.114/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.114/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -83,7 +83,19 @@ console.log('one-sheet report refinements tests passed');
 
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
-assert.match(reports, /openProgram=\$\{encodeURIComponent\(programId\)\}/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.113/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.113/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.114/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.114/);
+
+
+assert.match(reports, /data-preflight-program-id/);
+assert.match(reports, /function openPreflightProgramEditor/);
+assert.match(reports, /preflight-program-editor-frame/);
+assert.match(reports, /detailOnly=1/);
+assert.match(reports, /Close & refresh Preflight/);
+assert.match(reports, /preflight-mismatch-tag/);
+assert.doesNotMatch(reports, /class=\"preflight-program-link\" href=/);
+assert.match(index, /const DETAIL_ONLY=/);
+assert.match(index, /library-detail-only/);
+assert.match(index, /#detail-close-button\{display:none!important\}/);
+assert.match(css, /\.preflight-program-editor-backdrop\{/);

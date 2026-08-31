@@ -87,3 +87,28 @@ const actionableHealth = A.dataHealthReport([matchedSchedule], [{
 const actionableMissing = actionableHealth.checks.find((check) => check.id === 'missing-duration').details[0];
 assert.equal(actionableMissing.programId, 'p-match', 'actionable Preflight details should preserve Program Library IDs for deep links');
 assert.equal(actionableMissing.title, 'Matched Program');
+
+
+const mismatchSchedule = A.normalizeSchedule({
+  id: 'mismatch', title: 'Mismatch Drive', start_date: '2026-08-08', end_date: '2026-08-18',
+  schedule_data: { placements: [{ dateKey: '2026-08-08', startMinutes: 1200, programTitle: 'Expected Program', importedBroadcastDollars: 35, lengthMinutes: 60 }] }
+});
+const mismatchAnalysis = {
+  schedule: mismatchSchedule,
+  importedRows: [{ row_hash: 'mismatch-row', air_date: '2026-08-08', air_time: '20:30', dollars: 40, imported_program_title: 'Wrong Imported Title' }],
+  placementRows: [],
+  unmatchedImportedRows: [{ title: 'Wrong Imported Title', importedSourceTitle: 'Wrong Imported Title', programId: '', dateKey: '2026-08-08', startMinutes: 1230, dollars: 40, unmatchedImported: true, known: true }],
+  missingDurationRows: [],
+  scheduled: 1
+};
+const mismatchHealth = A.dataHealthReport([mismatchSchedule], [mismatchAnalysis], mismatchAnalysis.importedRows, []);
+const mismatchDetail = mismatchHealth.checks.find((check) => check.id === 'unmatched-imported').details[0];
+assert.ok(mismatchDetail.mismatchTypes.includes('Title match problem'));
+assert.ok(mismatchDetail.mismatchTypes.includes('Air time mismatch'));
+assert.ok(mismatchDetail.mismatchTypes.includes('Dollar mismatch'));
+assert.match(mismatchDetail.detail, /Wrong Imported Title/);
+assert.match(mismatchDetail.detail, /Expected Program/);
+assert.match(mismatchDetail.detail, /8:30 PM/);
+assert.match(mismatchDetail.detail, /8:00 PM/);
+assert.match(mismatchDetail.detail, /\$40\.00/);
+assert.match(mismatchDetail.detail, /\$35\.00/);

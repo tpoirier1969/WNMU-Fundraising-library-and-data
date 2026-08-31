@@ -49,5 +49,20 @@ button,select,input{font:inherit}.hidden{display:none!important}.report-shell{mi
   .comparison-sheet,.fundraiser-sheet,.historical-sheet{break-inside:auto;page-break-inside:auto}.sheet-title,.fundraiser-kpis,.report-chart,.sheet-footer,.data-quality-note{break-inside:avoid-page;page-break-inside:avoid}.sheet-section>h2,.section-heading{break-after:avoid-page;page-break-after:avoid}.daily-matrix,.fundraiser-days,.program-results,.topic-matrix,.topic-summary,.historical-ranking,table{break-inside:auto;page-break-inside:auto}thead{display:table-header-group}tr{break-inside:avoid-page;page-break-inside:avoid}
 }
 
-.preflight-program-link{font-weight:850;color:#145f91;text-decoration:underline;text-underline-offset:2px}
-.preflight-program-link:hover,.preflight-program-link:focus-visible{color:#0b456d;text-decoration-thickness:2px}
+
+.preflight-program-link{appearance:none;border:0;background:none;padding:0;margin:0;font:inherit;font-weight:850;color:#145f91;text-decoration:underline;text-underline-offset:2px;cursor:pointer;text-align:left}
+.preflight-program-link:hover,.preflight-program-link:focus-visible{color:#0b456d;text-decoration-thickness:2px;outline-offset:2px}
+.preflight-detail-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.preflight-detail-copy{flex-basis:100%;color:#425e6d}
+.preflight-mismatch-tags{display:inline-flex;flex-wrap:wrap;gap:4px}
+.preflight-mismatch-tag{display:inline-flex;align-items:center;border:1px solid #d2a8a8;border-radius:999px;background:#fff4f4;color:#8a2e2e;padding:1px 7px;font-size:.78rem;font-weight:850}
+.preflight-program-editor-backdrop{position:fixed;inset:0;z-index:5000;background:rgb(12 31 42 / 58%);display:grid;place-items:center;padding:22px}
+.preflight-program-editor-backdrop.hidden{display:none}
+.preflight-program-editor-modal{width:min(1180px,96vw);height:min(900px,94vh);background:#fff;border-radius:14px;box-shadow:0 24px 70px rgb(0 0 0 / 30%);overflow:hidden;display:grid;grid-template-rows:auto 1fr}
+.preflight-program-editor-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid #d7e2e7;background:#f8fbfc}
+.preflight-program-editor-head h2{margin:2px 0 0;font-size:1.15rem;color:#17384a}
+.preflight-program-editor-body{min-height:0;background:#fff}
+.preflight-program-editor-body iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+body.preflight-program-editor-open{overflow:hidden}
+@media(max-width:720px){.preflight-program-editor-backdrop{padding:0}.preflight-program-editor-modal{width:100vw;height:100vh;border-radius:0}.preflight-program-editor-head{align-items:flex-start;flex-direction:column}}
+@media print{.preflight-program-editor-backdrop{display:none!important}.preflight-program-link{color:inherit;text-decoration:none}.preflight-mismatch-tag{font-size:8pt}}
