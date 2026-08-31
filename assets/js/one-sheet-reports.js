@@ -503,6 +503,10 @@
           <div class="report-card-number">03</div>
           <div><h2>Historical Fundraiser Analytics</h2><p>Rank historical performance by season, topic, subtopic, start time by day type, weekday/weekend, daypart, break type, and distributor using median $/hour.</p></div><span>Open report →</span>
         </a>
+        <a class="report-card-link" href="reports.html?report=preflight">
+          <div class="report-card-number">04</div>
+          <div><h2>Data Health / Preflight</h2><p>Check report readiness, Broadcast reconciliation, durations, unmatched imports, duplicate fundraisers, topic taxonomy, source links, channel tracking, and historical sample coverage.</p></div><span>Run preflight →</span>
+        </a>
       </section>`;
   }
 
@@ -651,26 +655,31 @@
   function weatherLine(day) {
     if (!day) return '';
     const weather = weatherForDay(day.dateKey);
-    if (!weather) return 'Weather —';
+    if (!weather) return '—';
     const temp = Number.isFinite(weather.avgTemp) ? `${Math.round(weather.avgTemp)}°F` : '—';
     const precip = Number.isFinite(weather.precip) ? `${weather.precip.toFixed(weather.precip < 0.1 ? 2 : 1)} in` : '—';
     return `${temp} · ${precip}`;
   }
 
-  function titlesForFundraiserDay(analysis, day) {
+  function programResultsForFundraiserDay(analysis, day) {
     const dateKey = A.text(day?.dateKey || '');
     if (!dateKey) return [];
-    const seen = new Set();
-    return [...(analysis?.placementRows || [])]
+    const groups = new Map();
+    [...(analysis?.placementRows || [])]
       .filter((row) => A.text(row.dateKey) === dateKey && !rowIsNonSpecific(row))
       .sort((a, b) => Number(a.startMinutes ?? 99999) - Number(b.startMinutes ?? 99999))
-      .map((row) => A.text(row.title || row.plannedTitle || ''))
-      .filter((title) => {
+      .forEach((row) => {
+        const title = A.text(row.title || row.plannedTitle || '');
         const key = title.toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
+        if (!key) return;
+        if (!groups.has(key)) groups.set(key, { title, dollars: 0, known: false });
+        const item = groups.get(key);
+        if (row.known) {
+          item.known = true;
+          item.dollars += Number(row.dollars || 0);
+        }
       });
+    return [...groups.values()];
   }
 
   function dailyComparisonChart(analyses, aligned) {
@@ -684,8 +693,10 @@
           if (!day) return null;
           return {
             title: analysis.schedule.title,
-            detail: `${formatDate(day.date)} · ${entry.label.title} · ${money(day.dollars)} Broadcast`,
-            lines: titlesForFundraiserDay(analysis, day)
+            detail: `${formatDate(day.date)} · ${entry.label.title} · ${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,
+            lines: programResultsForFundraiserDay(analysis, day).map((item) => item.known
+              ? `${item.title} — ${money(item.dollars)}`
+              : `${item.title} — result unavailable`)
           };
         })
       })),
@@ -1030,6 +1041,56 @@
     await renderHistoricalReport();
   }
 
+
+  function preflightControls() {
+    $('#report-controls').innerHTML = `<div class="report-control-row"><div class="historical-control-copy"><strong>Full historical dataset</strong><span>Preflight uses the same saved schedules, imported pledge results, and Program Library records as the reports.</span></div><button type="button" class="report-button" id="report-print">Print preflight</button></div>`;
+    $('#report-print')?.addEventListener('click', () => window.print());
+  }
+
+  function preflightCheckMarkup(check) {
+    const statusLabel = check.severity === 'fail'
+      ? (check.count ? 'Needs attention' : 'Pass')
+      : check.severity === 'warn'
+        ? (check.count ? 'Warning' : 'Clear')
+        : 'Information';
+    const details = Array.isArray(check.details) ? check.details : [];
+    const detailMarkup = details.length
+      ? `<details ${check.severity !== 'info' && check.count ? 'open' : ''}><summary>${escapeHtml(count(details.length))} detail${details.length === 1 ? '' : 's'}</summary><ul>${details.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>`
+      : '';
+    return `<section class="preflight-check severity-${escapeHtml(check.severity)} ${check.count ? 'has-findings' : 'clear'}"><div class="preflight-check-head"><div><h2>${escapeHtml(check.label)}</h2><p>${escapeHtml(check.summary)}</p></div><span class="preflight-status">${escapeHtml(statusLabel)}${check.count ? ` · ${escapeHtml(count(check.count))}` : ''}</span></div>${detailMarkup}</section>`;
+  }
+
+  function renderPreflightReport() {
+    const analyses = historicalAnalyses();
+    const health = A.dataHealthReport(state.schedules, analyses, state.airings, state.library);
+    const passed = health.status === 'pass';
+    const headline = passed ? 'PASS' : 'REVIEW REQUIRED';
+    const bannerCopy = passed
+      ? (health.warnings ? `No blocking report-data defects detected. ${health.warnings} warning categor${health.warnings === 1 ? 'y' : 'ies'} remains for cleanup or verification.` : 'No blocking report-data defects or warnings were detected.')
+      : `${health.failures} blocking check${health.failures === 1 ? '' : 's'} require attention before treating the report set as fully clean.`;
+    const metrics = health.metrics || {};
+    $('#report-output').innerHTML = `<article class="one-sheet preflight-sheet">
+      <header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS report readiness</div><h1>Data Health / Preflight</h1><p>Automated consistency checks across the Pledge Library, Scheduler history, imported pledge results, and report analytics.</p></div><div class="sheet-stamp">Generated ${escapeHtml(new Date().toLocaleDateString())}</div></header>
+      <section class="preflight-banner ${passed ? 'pass' : 'review'}"><strong>${escapeHtml(headline)}</strong><span>${escapeHtml(bannerCopy)}</span></section>
+      <section class="preflight-metrics">
+        <div><span>Fundraisers</span><strong>${escapeHtml(count(metrics.fundraisers))}</strong></div>
+        <div><span>Imported rows</span><strong>${escapeHtml(count(metrics.importedRows))}</strong></div>
+        <div><span>Scheduled airings</span><strong>${escapeHtml(count(metrics.scheduledAirings))}</strong></div>
+        <div><span>Library programs</span><strong>${escapeHtml(count(metrics.libraryPrograms))}</strong></div>
+      </section>
+      <div class="preflight-checks">${(health.checks || []).map(preflightCheckMarkup).join('')}</div>
+      <footer class="sheet-footer">PASS means no blocking defects were found in Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges. Warnings identify cleanup or verification work that does not currently invalidate the printed report math. Non-Specific Pledges are treated as a valid giving category, not an attribution error.</footer>
+    </article>`;
+  }
+
+  async function initPreflight() {
+    document.title = 'WNMU Data Health / Preflight';
+    $('#report-page-title').textContent = 'Data Health / Preflight';
+    $('#report-page-subtitle').textContent = 'Report-readiness checks across the full pledge dataset';
+    preflightControls();
+    renderPreflightReport();
+  }
+
   function weatherEndpointOrder(endDate = '') {
     const end = A.parseDate(endDate);
     const ageDays = end ? (Date.now() - end.getTime()) / 86400000 : 9999;
@@ -1141,6 +1202,7 @@
       if (mode === 'comparison') await initComparison();
       else if (mode === 'fundraiser') await initFundraiser();
       else if (mode === 'historical') await initHistorical();
+      else if (mode === 'preflight') await initPreflight();
       else renderHub();
     } catch (error) {
       console.error(error);
