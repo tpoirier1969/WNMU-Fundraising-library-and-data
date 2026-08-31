@@ -489,7 +489,6 @@
     };
   }
 
-  const importedBroadcastHydration = new Map();
   const importedScheduleTotalsHydration = new Map();
 
   function importedRowsForSchedule(schedule = {}, rows = []) {
@@ -507,12 +506,25 @@
       const stamp = utils.normalizeText(row?.updated_at || row?.created_at || row?.imported_at || '');
       return stamp > latest ? stamp : latest;
     }, '');
+    const placementResultState = (Array.isArray(schedule?.placements) ? schedule.placements : [])
+      .map((placement) => [
+        utils.normalizeText(placement?.id || ''),
+        utils.normalizeText(placement?.sourceAiringHash || ''),
+        String(Number(placement?.importedBroadcastDollars || 0) || 0),
+        normalizePlacementBoolean(placement?.manualResultRecorded, false) ? '1' : '0',
+        String(Number(placement?.manualBroadcastDollars || 0) || 0),
+        String(Number(placement?.manualPledgeCount || 0) || 0)
+      ].join(':'))
+      .sort()
+      .join(',');
     return [
       utils.normalizeText(schedule?.id),
       utils.normalizeText(schedule?.startDate),
       utils.normalizeText(schedule?.endDate),
       String(Array.isArray(rows) ? rows.length : 0),
-      latestStamp
+      latestStamp,
+      placementResultState,
+      'placement-results-v3'
     ].join('|');
   }
 
@@ -525,7 +537,7 @@
       importedProgramSpecificBroadcastTotalDollars: Number(totals.importedProgramSpecificBroadcastTotalDollars || 0) || 0,
       importedNonSpecificBroadcastTotalDollars: Number(totals.importedNonSpecificBroadcastTotalDollars || 0) || 0,
       importedPledgesTotal: Number(totals.importedPledgesTotal || 0) || 0,
-      reportedBroadcastTotalDollars: Number(totals.reportedBroadcastTotalDollars || 0) || Number(currentMeta.reportedBroadcastTotalDollars || 0) || 0,
+      reportedBroadcastTotalDollars: Number(totals.reportedBroadcastTotalDollars || 0) || 0,
       importedTotalsHydratedFromAirings: true,
       importedTotalsHydratedAt: new Date().toISOString(),
       importedTotalsHydratedSignature: signature
@@ -533,6 +545,62 @@
     const changed = JSON.stringify(currentMeta) !== JSON.stringify(nextMeta);
     schedule.meta = nextMeta;
     schedule.__importedTotalsSignature = signature;
+    return changed;
+  }
+
+  function currentImportedEvidenceForPlacement(placement = {}, rows = []) {
+    if (!placement || placement.isNonPledge || placementLooksNonSpecific(placement)) return null;
+    const programRows = (Array.isArray(rows) ? rows : []).filter((row) => !importedRowIsNonSpecific(row));
+    if (!programRows.length) return null;
+
+    const sourceHash = utils.normalizeText(placement?.sourceAiringHash || '');
+    if (sourceHash) {
+      const hashRows = programRows.filter((row) => utils.normalizeText(row?.row_hash || '') === sourceHash);
+      if (hashRows.length) {
+        return { kind: 'airing', row: hashRows.reduce((best, row) => choosePreferredImportedRow(best, row)) };
+      }
+    }
+
+    const directMatches = programRows.filter((row) => importedPlacementLooksLikeRow(placement, row));
+    if (directMatches.length) {
+      return { kind: 'airing', row: directMatches.reduce((best, row) => choosePreferredImportedRow(best, row)) };
+    }
+
+    const dateKey = utils.normalizeText(placement?.dateKey || '');
+    const startMinutes = Number(placement?.startMinutes);
+    if (!(dateKey && Number.isFinite(startMinutes))) return null;
+    const slotRows = programRows.filter((row) => importedRowDateKey(row) === dateKey && Number(importedRowStartMinutes(row)) === startMinutes);
+    if (slotRows.length === 1) return { kind: 'airing', row: slotRows[0] };
+    if (slotRows.length > 1) return null;
+
+    const dateHasProgramResults = programRows.some((row) => importedRowDateKey(row) === dateKey);
+    return dateHasProgramResults ? { kind: 'report-day-zero', row: null } : null;
+  }
+
+  function reconcileSchedulePlacementResults(schedule = {}, rows = []) {
+    if (!Array.isArray(schedule?.placements) || !schedule.placements.length) return false;
+    let changed = false;
+    schedule.placements = schedule.placements.map((placement) => {
+      const evidence = currentImportedEvidenceForPlacement(placement, rows);
+      if (!evidence) return placement;
+      const row = evidence.row || {};
+      const next = {
+        ...placement,
+        importedFromReport: true,
+        importedBroadcastDollars: evidence.kind === 'airing' ? (Number(row?.dollars || 0) || 0) : 0,
+        sourceAiringHash: evidence.kind === 'airing' ? (utils.normalizeText(row?.row_hash || '') || placement?.sourceAiringHash || '') : '',
+        sourceImportBatchId: evidence.kind === 'airing' ? (utils.normalizeText(row?.import_batch_id || '') || placement?.sourceImportBatchId || '') : (placement?.sourceImportBatchId || ''),
+        sourceName: evidence.kind === 'airing' ? (utils.normalizeText(row?.source_file_name || '') || placement?.sourceName || '') : (placement?.sourceName || ''),
+        sourceLabel: placement?.sourceLabel || 'Imported report',
+        manualResultRecorded: false,
+        manualBroadcastDollars: 0,
+        manualPledgeCount: 0,
+        manualResultUpdatedAt: ''
+      };
+      const keys = ['importedFromReport', 'importedBroadcastDollars', 'sourceAiringHash', 'sourceImportBatchId', 'sourceName', 'sourceLabel', 'manualResultRecorded', 'manualBroadcastDollars', 'manualPledgeCount', 'manualResultUpdatedAt'];
+      if (keys.some((key) => next[key] !== placement[key])) changed = true;
+      return next;
+    });
     return changed;
   }
 
@@ -547,8 +615,10 @@
         if (schedule.__importedTotalsSignature === signature || schedule?.meta?.importedTotalsHydratedSignature === signature) return;
         const relevantRows = importedRowsForSchedule(schedule, rows);
         const totals = summarizeImportedRows(relevantRows);
-        const changed = applyImportedTotalsToSchedule(schedule, totals, signature);
-        if (changed) {
+        const totalsChanged = applyImportedTotalsToSchedule(schedule, totals, signature);
+        const placementsChanged = reconcileSchedulePlacementResults(schedule, relevantRows);
+        if (totalsChanged || placementsChanged) {
+          await persistSchedules(schedule);
           renderScheduleForm();
           renderHomeDriveSummary();
           renderScheduledProgramDetails();
@@ -801,55 +871,7 @@
   }
 
   async function ensureScheduleBroadcastTotal(schedule) {
-    if (!schedule?.id) return;
-    const alreadyHasImported = scheduleImportedAiringTotal(schedule) > 0;
-    const alreadyHasReported = scheduleReportedBroadcastTotal(schedule) > 0;
-    if (alreadyHasImported && alreadyHasReported) return;
-    if (!(schedule?.placements || []).some((placement) => placement.importedFromReport)) return;
-    if (importedBroadcastHydration.has(schedule.id)) return importedBroadcastHydration.get(schedule.id);
-    const task = (async () => {
-      try {
-        const importedRows = state.imports?.airingsRows?.length ? state.imports.airingsRows : await App.data.fetchImportedAirings();
-        if (!Array.isArray(importedRows) || !importedRows.length) return;
-        const placementHashes = new Set((schedule.placements || []).map((placement) => String(placement.sourceAiringHash || '')).filter(Boolean));
-        const importedKey = String(schedule?.meta?.importedFundraiserKey || '').toLowerCase();
-        const placementFiles = new Set((schedule.placements || []).map((placement) => utils.normalizeLookupKey(placement?.sourceName || '')).filter(Boolean));
-        const belongingRows = importedRows.filter((row) => {
-          const rowHash = String(row?.row_hash || '');
-          const rowFileKey = utils.normalizeLookupKey(row?.source_file_name || '');
-          const rowKey = importedScheduleKey(row);
-          return (placementHashes.size && placementHashes.has(rowHash)) || (importedKey && rowKey === importedKey) || (rowFileKey && placementFiles.has(rowFileKey));
-        });
-        const totals = summarizeImportedRows(belongingRows);
-        if (!(totals.importedBroadcastTotalDollars > 0) && !(totals.reportedBroadcastTotalDollars > 0)) return;
-        schedule.meta = {
-          ...(schedule.meta || {}),
-          importedBroadcastTotalDollars: totals.importedBroadcastTotalDollars > 0 ? totals.importedBroadcastTotalDollars : Number(schedule?.meta?.importedBroadcastTotalDollars || 0) || 0,
-          importedProgramSpecificBroadcastTotalDollars: totals.importedProgramSpecificBroadcastTotalDollars > 0 ? totals.importedProgramSpecificBroadcastTotalDollars : Number(schedule?.meta?.importedProgramSpecificBroadcastTotalDollars || 0) || 0,
-          importedNonSpecificBroadcastTotalDollars: totals.importedNonSpecificBroadcastTotalDollars > 0 ? totals.importedNonSpecificBroadcastTotalDollars : Number(schedule?.meta?.importedNonSpecificBroadcastTotalDollars || 0) || 0,
-          importedPledgesTotal: totals.importedPledgesTotal > 0 ? totals.importedPledgesTotal : Number(schedule?.meta?.importedPledgesTotal || 0) || 0,
-          reportedBroadcastTotalDollars: totals.reportedBroadcastTotalDollars > 0 ? totals.reportedBroadcastTotalDollars : Number(schedule?.meta?.reportedBroadcastTotalDollars || 0) || 0
-        };
-        if ((schedule.placements || []).length) {
-          const byHash = new Map(importedRows.map((row) => [String(row?.row_hash || ''), Number(row?.dollars || 0) || 0]));
-          schedule.placements = (schedule.placements || []).map((placement) => {
-            if (Number.isFinite(Number(placement?.importedBroadcastDollars)) && Number(placement.importedBroadcastDollars) > 0) return placement;
-            const hydrated = byHash.get(String(placement?.sourceAiringHash || ''));
-            return Number.isFinite(hydrated) && hydrated > 0 ? { ...placement, importedBroadcastDollars: hydrated } : placement;
-          });
-        }
-        await persistSchedules(schedule);
-        renderScheduleList();
-        renderScheduleForm();
-        renderScheduledProgramDetails();
-      } catch (error) {
-        console.warn('Unable to hydrate imported broadcast total for schedule.', error);
-      } finally {
-        importedBroadcastHydration.delete(schedule.id);
-      }
-    })();
-    importedBroadcastHydration.set(schedule.id, task);
-    return task;
+    return ensureScheduleImportedTotals(schedule);
   }
 
   function scheduleGrandTotal(schedule = {}) {
