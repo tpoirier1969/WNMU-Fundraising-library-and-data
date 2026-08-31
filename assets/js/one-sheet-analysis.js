@@ -82,6 +82,8 @@
       goalDollars: Number(data.goalDollars ?? row.goal_dollars ?? row.goalDollars ?? 0) || 0,
       onlineTracked: Boolean(data.onlineTracked ?? meta.onlineTracked ?? onlineDollars > 0),
       mailTracked: Boolean(data.mailTracked ?? meta.mailTracked ?? mailDollars > 0),
+      onlineTrackedExplicit: data.onlineTracked !== undefined || meta.onlineTracked !== undefined,
+      mailTrackedExplicit: data.mailTracked !== undefined || meta.mailTracked !== undefined,
       meta,
       season: seasonForDate(startDate),
       year: start?.getFullYear() || 0
@@ -936,6 +938,185 @@
     })).sort((a, b) => b.dollars - a.dollars || a.title.localeCompare(b.title));
   }
 
+  function isNonSpecificDataLabel(value) {
+    const key = lookupKey(value);
+    const compact = key.replace(/\s+/g, '');
+    return compact === 'nspl'
+      || key === 'non specific'
+      || key === 'non specific pledge'
+      || key === 'non specific pledges'
+      || key === 'non specific web pledge'
+      || key === 'non specific web pledges';
+  }
+
+  function compactIdentityKey(value) {
+    return text(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function preflightCaseCollisions(rows = [], field = '', label = '') {
+    const groups = new Map();
+    (rows || []).forEach((row) => {
+      const raw = text(row?.[field]);
+      const key = lookupKey(raw);
+      if (!raw || !key) return;
+      if (!groups.has(key)) groups.set(key, new Set());
+      groups.get(key).add(raw);
+    });
+    return [...groups.entries()]
+      .filter(([_key, values]) => values.size > 1)
+      .map(([_key, values]) => `${label}: ${[...values].sort().join(' / ')}`);
+  }
+
+  function preflightAmbiguousIdentities(airings = [], library = []) {
+    const byTitle = new Map();
+    const byNola = new Map();
+    (library || []).forEach((row) => {
+      const titleKey = lookupKey(row?.title);
+      const nola = compactIdentityKey(row?.nola_code);
+      if (titleKey) {
+        if (!byTitle.has(titleKey)) byTitle.set(titleKey, []);
+        byTitle.get(titleKey).push(row);
+      }
+      if (nola) {
+        if (!byNola.has(nola)) byNola.set(nola, []);
+        byNola.get(nola).push(row);
+      }
+    });
+    const groups = new Map();
+    (airings || []).forEach((row) => {
+      const explicitId = text(row?.pledge_program_id || row?.manual_match_program_id || row?.program_id || '');
+      if (explicitId) return;
+      const title = text(row?.matched_library_title || row?.program_title || row?.title || row?.imported_program_title || '');
+      if (!title || isNonSpecificDataLabel(title)) return;
+      const titleKey = lookupKey(title);
+      const nola = compactIdentityKey(row?.nola_code || row?.nola || row?.program_nola || '');
+      const nolaRows = nola ? (byNola.get(nola) || []) : [];
+      const titleRows = titleKey ? (byTitle.get(titleKey) || []) : [];
+      let candidates = [];
+      if (nola && titleKey) {
+        candidates = nolaRows.filter((candidate) => lookupKey(candidate?.title) === titleKey);
+        if (!candidates.length) candidates = nolaRows;
+      } else if (nola) candidates = nolaRows;
+      else candidates = titleRows;
+      if (candidates.length <= 1) return;
+      const key = `${titleKey}|${nola}`;
+      if (!groups.has(key)) groups.set(key, { title, nola, rows: 0, candidates: candidates.length, sampleDate: importedDateKey(row) });
+      groups.get(key).rows += 1;
+    });
+    return [...groups.values()]
+      .sort((a, b) => b.rows - a.rows || a.title.localeCompare(b.title))
+      .map((item) => `${item.title}${item.nola ? ` (${item.nola.toUpperCase()})` : ''}: ${item.rows} imported row${item.rows === 1 ? '' : 's'} could map to ${item.candidates} Library records${item.sampleDate ? `; sample ${item.sampleDate}` : ''}`);
+  }
+
+  function dataHealthReport(schedules = [], analyses = [], airings = [], library = []) {
+    const checks = [];
+    const add = (id, label, severity, summary, details = [], countOverride = null) => {
+      const count = countOverride === null ? details.length : Number(countOverride || 0);
+      checks.push({ id, label, severity, summary, count, details });
+    };
+
+    const reconciliation = [];
+    (analyses || []).forEach((analysis) => {
+      if (!(analysis?.importedRows || []).length) return;
+      const imported = (analysis.importedRows || []).reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+      const represented = (analysis.placementRows || []).reduce((sum, row) => sum + (row?.known ? Number(row?.dollars || 0) : 0), 0);
+      const difference = represented - imported;
+      if (Math.abs(difference) > 0.01) {
+        reconciliation.push(`${analysis.schedule?.title || 'Fundraiser'}: imported ${imported.toFixed(2)}, represented ${represented.toFixed(2)}, difference ${difference.toFixed(2)}`);
+      }
+    });
+    add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
+
+    const missingDurations = [];
+    (analyses || []).forEach((analysis) => {
+      (analysis?.missingDurationRows || []).forEach((row) => {
+        if ([row?.title, row?.plannedTitle, row?.topic].some(isNonSpecificDataLabel)) return;
+        missingDurations.push(`${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'} · ${text(row?.title || row?.plannedTitle || 'Untitled program')}`);
+      });
+    });
+    add('missing-duration', 'Missing program durations', 'fail', missingDurations.length ? 'Programs without a saved schedule length or reliable Program Library runtime are excluded from $/hour analytics.' : 'Every scheduled program used by the reports has a usable duration.', missingDurations);
+
+    const unmatchedPrograms = [];
+    let nonSpecificRows = 0;
+    let nonSpecificDollars = 0;
+    (analyses || []).forEach((analysis) => {
+      (analysis?.unmatchedImportedRows || []).forEach((row) => {
+        if ([row?.title, row?.plannedTitle, row?.topic].some(isNonSpecificDataLabel)) {
+          nonSpecificRows += 1;
+          nonSpecificDollars += Number(row?.dollars || 0);
+          return;
+        }
+        unmatchedPrograms.push(`${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'} · ${text(row?.title || 'Unidentified imported result')} · $${Number(row?.dollars || 0).toFixed(2)}`);
+      });
+    });
+    add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length ? 'Imported program results remain that cannot be assigned confidently to a scheduled program/topic.' : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
+
+    const duplicateRanges = (schedules || [])
+      .filter((schedule) => Number(schedule?.duplicateRangeCount || 1) > 1)
+      .map((schedule) => `${schedule.title || 'Fundraiser'} · ${schedule.startDate || '?'}–${schedule.endDate || '?'} · ${schedule.duplicateRangeCount} records share this date range`);
+    add('duplicate-ranges', 'Duplicate fundraiser date ranges', 'fail', duplicateRanges.length ? 'Multiple saved fundraiser records share an identical date range; analytics keeps the preferred record and suppresses the others.' : 'No duplicate fundraiser date ranges were detected.', duplicateRanges);
+
+    const airingHashes = new Set((airings || []).map((row) => text(row?.row_hash)).filter(Boolean));
+    const staleHashes = [];
+    (schedules || []).forEach((schedule) => {
+      (schedule?.placements || []).forEach((placement) => {
+        const hash = text(placement?.sourceAiringHash || placement?.source_airing_hash || '');
+        if (!hash || airingHashes.has(hash)) return;
+        staleHashes.push(`${schedule.title || 'Fundraiser'} · ${text(placement?.dateKey || placement?.date_key || '?')} · ${text(placement?.programTitle || placement?.program_title || placement?.title || 'Untitled program')}`);
+      });
+    });
+    add('stale-hashes', 'Stale imported-airing links', 'warn', staleHashes.length ? 'Saved placements reference imported row hashes that are no longer present. Current reports can often rematch by date/time/identity, but these links should be reviewed.' : 'No saved imported-airing hashes point to missing rows.', staleHashes);
+
+    const ambiguousIdentities = preflightAmbiguousIdentities(airings, library);
+    add('ambiguous-identities', 'Potential ambiguous imported identities', 'warn', ambiguousIdentities.length ? 'Some imported rows without an explicit Program Library ID have more than one plausible Library record.' : 'No multi-candidate imported identities were detected among rows lacking an explicit Library ID.', ambiguousIdentities);
+
+    const topicCollisions = [
+      ...preflightCaseCollisions(library, 'topic_primary', 'Primary topic'),
+      ...preflightCaseCollisions(library, 'topic_secondary', 'Secondary topic')
+    ];
+    add('topic-case', 'Topic/subtopic case collisions', 'warn', topicCollisions.length ? 'Stored topic labels differ only by capitalization. Analytics combines them case-insensitively, but the source taxonomy should be cleaned.' : 'No topic or subtopic capitalization collisions were detected.', topicCollisions);
+
+    const channelTracking = [];
+    (schedules || []).forEach((schedule) => {
+      if (!schedule?.onlineTrackedExplicit && Number(schedule?.onlineDollars || 0) === 0) channelTracking.push(`${schedule.title || 'Fundraiser'}: Online tracking is not explicitly recorded; $0 cannot distinguish tracked-zero from not tracked.`);
+      if (!schedule?.mailTrackedExplicit && Number(schedule?.mailDollars || 0) === 0) channelTracking.push(`${schedule.title || 'Fundraiser'}: Mail tracking is not explicitly recorded; $0 cannot distinguish tracked-zero from not tracked.`);
+    });
+    add('channel-tracking', 'Online/Mail tracking state', 'warn', channelTracking.length ? 'Some historical fundraiser records rely on inferred channel tracking state.' : 'Online and Mail tracking state is explicitly recorded for all saved fundraisers.', channelTracking);
+
+    const splitForWeekpart = (weekpart) => (analyses || []).map((analysis) => ({
+      ...analysis,
+      placementRows: (analysis?.placementRows || []).filter((row) => {
+        const date = parseDate(row?.dateKey);
+        if (!date) return false;
+        if (weekpart === 'Saturday') return date.getDay() === 6;
+        if (weekpart === 'Sunday') return date.getDay() === 0;
+        return date.getDay() >= 1 && date.getDay() <= 5;
+      })
+    }));
+    const coverage = ['Weekday', 'Saturday', 'Sunday'].map((weekpart) => ({
+      weekpart,
+      slots: historicalRanking(splitForWeekpart(weekpart), 'startTime').length
+    }));
+    add('start-time-coverage', 'Historical start-time sample coverage', 'info', 'Qualifying 30-minute start slots use the same 5-airing / 3-fundraiser / 3-title evidence rule as Historical Analytics.', coverage.map((item) => `${item.weekpart}: ${item.slots} qualifying start slot${item.slots === 1 ? '' : 's'}`), coverage.reduce((sum, item) => sum + item.slots, 0));
+
+    add('non-specific', 'Non-Specific Pledges', 'info', 'Non-Specific Pledges are a legitimate giving category, not an attribution error; they have no program airtime or $/hour.', [`${nonSpecificRows} imported row${nonSpecificRows === 1 ? '' : 's'} · $${nonSpecificDollars.toFixed(2)} Broadcast`], nonSpecificRows);
+
+    const failures = checks.filter((check) => check.severity === 'fail' && check.count > 0).length;
+    const warnings = checks.filter((check) => check.severity === 'warn' && check.count > 0).length;
+    return {
+      status: failures ? 'review' : 'pass',
+      failures,
+      warnings,
+      checks,
+      metrics: {
+        fundraisers: (analyses || []).length,
+        importedRows: (analyses || []).reduce((sum, analysis) => sum + Number(analysis?.importedRows?.length || 0), 0),
+        libraryPrograms: (library || []).length,
+        scheduledAirings: (analyses || []).reduce((sum, analysis) => sum + Number(analysis?.scheduled || 0), 0)
+      }
+    };
+  }
+
   return {
     SEASONS,
     text,
@@ -969,6 +1150,7 @@
     programResultsRows,
     historicalRows,
     historicalRanking,
-    missingDurationPrograms
+    missingDurationPrograms,
+    dataHealthReport
   };
 });

@@ -36,9 +36,14 @@ assert.doesNotMatch(reports, /Start-time performance: slots with sufficient hist
 assert.match(reports, /Continue with incomplete data/);
 assert.match(reports, /Affected title/);
 assert.match(reports, /function bindChartTooltips/);
-assert.match(reports, /function titlesForFundraiserDay/);
+assert.match(reports, /function programResultsForFundraiserDay/);
+assert.match(reports, /Regional \${weatherLine\(day\)}/);
+assert.match(reports, /item\.title} — \${money\(item\.dollars\)}/);
 assert.match(reports, /data-chart-tooltip/);
 assert.match(reports, /Return to Pledge Program Library/);
+assert.match(reports, /Data Health \/ Preflight/);
+assert.match(reports, /function renderPreflightReport/);
+assert.match(reports, /A\.dataHealthReport/);
 assert.match(reports, /<th>Day<\/th><th>Hours<\/th><th>Broadcast \$<\/th><th>\$\/hr<\/th><th>Pledges<\/th><th>Pledges\/hr<\/th><th>Regional weather<\/th>/);
 assert.doesNotMatch(reports, /pledgeHourChart/);
 
@@ -52,9 +57,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.110/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.110/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.110/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.111/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.111/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.111/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
