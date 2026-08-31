@@ -1,0 +1,35 @@
+name: Tighten Scheduling result-state signature
+
+on:
+  push:
+    branches:
+      - fix/scheduling-authoritative-actuals-v022109
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scheduling-authoritative-actuals-v022109
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply signature guard
+        run: python .github/tmp/tighten_scheduling_signature.py
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit canonical guard
+        run: |
+          git config user.name "WNMU Scheduling Hardening"
+          git config user.email "actions@users.noreply.github.com"
+          git rm -f .github/workflows/tighten-scheduling-signature.yml .github/tmp/tighten_scheduling_signature.py
+          git add assets/js/ui-scheduling.js tests/schedule-import-safety.test.mjs
+          git commit -m "Refresh Scheduling authority after result-state changes"
+          git push origin HEAD:fix/scheduling-authoritative-actuals-v022109
