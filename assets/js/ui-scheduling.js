@@ -506,13 +506,25 @@
       const stamp = utils.normalizeText(row?.updated_at || row?.created_at || row?.imported_at || '');
       return stamp > latest ? stamp : latest;
     }, '');
+    const placementResultState = (Array.isArray(schedule?.placements) ? schedule.placements : [])
+      .map((placement) => [
+        utils.normalizeText(placement?.id || ''),
+        utils.normalizeText(placement?.sourceAiringHash || ''),
+        String(Number(placement?.importedBroadcastDollars || 0) || 0),
+        normalizePlacementBoolean(placement?.manualResultRecorded, false) ? '1' : '0',
+        String(Number(placement?.manualBroadcastDollars || 0) || 0),
+        String(Number(placement?.manualPledgeCount || 0) || 0)
+      ].join(':'))
+      .sort()
+      .join(',');
     return [
       utils.normalizeText(schedule?.id),
       utils.normalizeText(schedule?.startDate),
       utils.normalizeText(schedule?.endDate),
       String(Array.isArray(rows) ? rows.length : 0),
       latestStamp,
-      'placement-results-v2'
+      placementResultState,
+      'placement-results-v3'
     ].join('|');
   }
 

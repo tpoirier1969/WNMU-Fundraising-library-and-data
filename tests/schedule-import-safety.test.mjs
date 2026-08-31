@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -194,6 +194,22 @@ function importedDuplicate(id = 'dup') {
     meta: { autoCreatedFromReports: true, importedFromReports: true }
   };
 }
+
+test('Scheduling imported-result signature changes when placement result state changes', () => {
+  resetState();
+  const placement = {
+    id: 'planned', importedFromReport: true, programId: 'p1', programTitle: 'Reported Program',
+    dateKey: '2026-08-08', startMinutes: 1200, sourceAiringHash: 'r1', importedBroadcastDollars: 100,
+    manualResultRecorded: false, manualBroadcastDollars: 0, manualPledgeCount: 0
+  };
+  const schedule = targetSchedule([placement]);
+  const rows = [importedRow({ hash: 'r1', dollars: 100 })];
+  const before = hooks.importedTotalsSignature(schedule, rows);
+  schedule.placements[0].manualResultRecorded = true;
+  schedule.placements[0].manualBroadcastDollars = 25;
+  const after = hooks.importedTotalsSignature(schedule, rows);
+  assert.notEqual(after, before);
+});
 
 test('Scheduling refresh replaces stale positive Actual with current imported zero', () => {
   resetState();
