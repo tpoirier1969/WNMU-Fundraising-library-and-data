@@ -170,6 +170,100 @@
     return title ? indexes.byTitle?.get(title) || null : null;
   }
 
+  function importedSourceIdentityCode(row = {}) {
+    const raw = row?.raw_payload && typeof row.raw_payload === 'object' ? row.raw_payload : {};
+    return text(
+      row?.source_report_code
+      || row?.imported_report_code
+      || row?.imported_nola_code
+      || raw?.nola_code
+      || raw?.nola
+      || raw?.program_nola
+      || raw?.program_code
+      || raw?.episode_code
+      || ''
+    );
+  }
+
+  function importedAiringIdentity(row = {}) {
+    const sourceCode = nolaKey(importedSourceIdentityCode(row));
+    if (sourceCode) return `source_code:${sourceCode}`;
+    const sourceTitle = lookupKey(row?.imported_program_title || row?.program_title || row?.title || row?.name || '');
+    return sourceTitle ? `source_title:${sourceTitle}` : '';
+  }
+
+  function importedNaturalKey(row = {}) {
+    const identity = importedAiringIdentity(row);
+    if (!identity) return '';
+    return [
+      lookupKey(row?.station || ''),
+      identity,
+      importedDateKey(row),
+      text(row?.air_time || '')
+    ].join('|').toLowerCase();
+  }
+
+  function validImportedDateKey(yearValue, monthValue, dayValue) {
+    const year = Number(yearValue);
+    const month = Number(monthValue);
+    const day = Number(dayValue);
+    if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+    const key = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const probe = new Date(`${key}T12:00:00Z`);
+    if (Number.isNaN(probe.getTime())) return '';
+    if (probe.getUTCFullYear() !== year || probe.getUTCMonth() + 1 !== month || probe.getUTCDate() !== day) return '';
+    return key;
+  }
+
+  function importedReportCoverageEnd(row = {}) {
+    const direct = text(row?.drive_end_date || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(direct)) return direct;
+    const sourceText = [row?.fundraiser_label, row?.source_file_name].map(text).filter(Boolean).join(' ');
+    if (!sourceText) return '';
+    const found = [];
+    for (const match of sourceText.matchAll(/\b(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)\b/g)) {
+      const key = validImportedDateKey(match[1], match[2], match[3]);
+      if (key) found.push(key);
+    }
+    for (const match of sourceText.matchAll(/\b([01]\d)([0-3]\d)(\d{2})\b/g)) {
+      const key = validImportedDateKey(`20${match[3]}`, match[1], match[2]);
+      if (key) found.push(key);
+    }
+    for (const match of sourceText.matchAll(/\b([01]\d)([0-3]\d)(20\d{2})\b/g)) {
+      const key = validImportedDateKey(match[3], match[1], match[2]);
+      if (key) found.push(key);
+    }
+    return found.sort().slice(-1)[0] || '';
+  }
+
+  function importedAiringTimestamp(row = {}) {
+    for (const value of [row?.updated_at, row?.imported_at, row?.created_at]) {
+      const stamp = Date.parse(value || '');
+      if (Number.isFinite(stamp)) return stamp;
+    }
+    return 0;
+  }
+
+  function canonicalizeImportedAirings(rows = []) {
+    const chosen = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+      const naturalKey = importedNaturalKey(row) || `raw:${text(row?.id || row?.row_hash || index)}`;
+      const candidate = {
+        row,
+        index,
+        reportEnd: importedReportCoverageEnd(row),
+        timestamp: importedAiringTimestamp(row)
+      };
+      const current = chosen.get(naturalKey);
+      const wins = !current
+        || candidate.reportEnd > current.reportEnd
+        || (candidate.reportEnd === current.reportEnd && candidate.timestamp > current.timestamp)
+        || (candidate.reportEnd === current.reportEnd && candidate.timestamp === current.timestamp && candidate.index > current.index);
+      if (wins) chosen.set(naturalKey, candidate);
+    });
+    return [...chosen.values()].sort((a, b) => a.index - b.index).map((entry) => entry.row);
+  }
+
   function importedDateKey(row = {}) {
     const direct = text(row.air_date || row.drive_date);
     if (direct) return direct.slice(0, 10);
@@ -1031,7 +1125,11 @@
     (analyses || []).forEach((analysis) => {
       (analysis?.missingDurationRows || []).forEach((row) => {
         if ([row?.title, row?.plannedTitle, row?.topic].some(isNonSpecificDataLabel)) return;
-        missingDurations.push(`${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'} · ${text(row?.title || row?.plannedTitle || 'Untitled program')}`);
+        missingDurations.push({
+          title: text(row?.title || row?.plannedTitle || 'Untitled program'),
+          programId: text(row?.programId || ''),
+          detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'}`
+        });
       });
     });
     add('missing-duration', 'Missing program durations', 'fail', missingDurations.length ? 'Programs without a saved schedule length or reliable Program Library runtime are excluded from $/hour analytics.' : 'Every scheduled program used by the reports has a usable duration.', missingDurations);
@@ -1046,7 +1144,11 @@
           nonSpecificDollars += Number(row?.dollars || 0);
           return;
         }
-        unmatchedPrograms.push(`${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'} · ${text(row?.title || 'Unidentified imported result')} · $${Number(row?.dollars || 0).toFixed(2)}`);
+        unmatchedPrograms.push({
+          title: text(row?.title || 'Unidentified imported result'),
+          programId: text(row?.programId || ''),
+          detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'} · $${Number(row?.dollars || 0).toFixed(2)}`
+        });
       });
     });
     add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length ? 'Imported program results remain that cannot be assigned confidently to a scheduled program/topic.' : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
@@ -1062,7 +1164,11 @@
       (schedule?.placements || []).forEach((placement) => {
         const hash = text(placement?.sourceAiringHash || placement?.source_airing_hash || '');
         if (!hash || airingHashes.has(hash)) return;
-        staleHashes.push(`${schedule.title || 'Fundraiser'} · ${text(placement?.dateKey || placement?.date_key || '?')} · ${text(placement?.programTitle || placement?.program_title || placement?.title || 'Untitled program')}`);
+        staleHashes.push({
+          title: text(placement?.programTitle || placement?.program_title || placement?.title || 'Untitled program'),
+          programId: text(placement?.programId || placement?.program_id || ''),
+          detail: `${schedule.title || 'Fundraiser'} · ${text(placement?.dateKey || placement?.date_key || '?')}`
+        });
       });
     });
     add('stale-hashes', 'Stale imported-airing links', 'warn', staleHashes.length ? 'Saved placements reference imported row hashes that are no longer present. Current reports can often rematch by date/time/identity, but these links should be reviewed.' : 'No saved imported-airing hashes point to missing rows.', staleHashes);
@@ -1128,6 +1234,7 @@
     normalizeSchedule,
     prepareSchedules,
     buildLibraryIndexes,
+    canonicalizeImportedAirings,
     libraryRuntimeMinutes,
     placementDuration,
     placementResult,

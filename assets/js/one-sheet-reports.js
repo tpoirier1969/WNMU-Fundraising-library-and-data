@@ -22,6 +22,8 @@
     client: null,
     schedules: [],
     airings: [],
+    rawAiringsCount: 0,
+    supersededAiringsCount: 0,
     library: [],
     indexes: null,
     analysesById: new Map(),
@@ -350,7 +352,10 @@
       fetchAll('pledge_programs_v2', '*')
     ]);
     state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule)).filter((schedule) => schedule.season && schedule.year);
-    state.airings = airings;
+    const canonicalAirings = A.canonicalizeImportedAirings ? A.canonicalizeImportedAirings(airings) : airings;
+    state.rawAiringsCount = airings.length;
+    state.supersededAiringsCount = Math.max(0, airings.length - canonicalAirings.length);
+    state.airings = canonicalAirings;
     state.library = library;
     state.indexes = A.buildLibraryIndexes(library);
     state.analysesById.clear();
@@ -1054,8 +1059,18 @@
         ? (check.count ? 'Warning' : 'Clear')
         : 'Information';
     const details = Array.isArray(check.details) ? check.details : [];
+    const detailItemMarkup = (item) => {
+      if (!item || typeof item !== 'object') return escapeHtml(item);
+      const title = A.text(item.title || '');
+      const programId = A.text(item.programId || '');
+      const detail = A.text(item.detail || item.text || '');
+      const titleMarkup = programId && title
+        ? `<a class="preflight-program-link" href="./?openProgram=${encodeURIComponent(programId)}" target="_blank" rel="noopener" title="Open ${escapeHtml(title)} in the Pledge Program Library">${escapeHtml(title)}</a>`
+        : escapeHtml(title);
+      return `${titleMarkup}${detail ? `${titleMarkup ? ' · ' : ''}${escapeHtml(detail)}` : ''}` || '—';
+    };
     const detailMarkup = details.length
-      ? `<details ${check.severity !== 'info' && check.count ? 'open' : ''}><summary>${escapeHtml(count(details.length))} detail${details.length === 1 ? '' : 's'}</summary><ul>${details.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>`
+      ? `<details ${check.severity !== 'info' && check.count ? 'open' : ''}><summary>${escapeHtml(count(details.length))} detail${details.length === 1 ? '' : 's'}</summary><ul>${details.map((item) => `<li>${detailItemMarkup(item)}</li>`).join('')}</ul></details>`
       : '';
     return `<section class="preflight-check severity-${escapeHtml(check.severity)} ${check.count ? 'has-findings' : 'clear'}"><div class="preflight-check-head"><div><h2>${escapeHtml(check.label)}</h2><p>${escapeHtml(check.summary)}</p></div><span class="preflight-status">${escapeHtml(statusLabel)}${check.count ? ` · ${escapeHtml(count(check.count))}` : ''}</span></div>${detailMarkup}</section>`;
   }
@@ -1063,6 +1078,16 @@
   function renderPreflightReport() {
     const analyses = historicalAnalyses();
     const health = A.dataHealthReport(state.schedules, analyses, state.airings, state.library);
+    if (state.supersededAiringsCount > 0) {
+      health.checks.unshift({
+        id: 'superseded-imports',
+        label: 'Superseded imported observations',
+        severity: 'info',
+        summary: 'Older duplicate/superseded imported observations were ignored before reports and Preflight analyzed the current pledge history.',
+        count: state.supersededAiringsCount,
+        details: [`${count(state.supersededAiringsCount)} of ${count(state.rawAiringsCount)} raw imported rows were superseded by a newer observation with the same station/program/date/time identity.`]
+      });
+    }
     const passed = health.status === 'pass';
     const headline = passed ? 'PASS' : 'REVIEW REQUIRED';
     const bannerCopy = passed
