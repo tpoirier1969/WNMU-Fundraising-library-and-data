@@ -1,0 +1,36 @@
+name: Apply preflight v0.22.111
+
+on:
+  push:
+    branches:
+      - feature/data-health-preflight-v022111
+    paths:
+      - tools/apply-preflight-v022111.py
+      - .github/workflows/apply-preflight-v022111.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/data-health-preflight-v022111
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply guarded patch
+        run: python tools/apply-preflight-v022111.py
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit canonical preflight release
+        run: |
+          rm tools/apply-preflight-v022111.py .github/workflows/apply-preflight-v022111.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release v0.22.111 Data Health preflight"
+          git push origin HEAD:feature/data-health-preflight-v022111
