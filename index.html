@@ -19,6 +19,7 @@
     const status=document.getElementById('split-boot-status');
     const setStatus=(message)=>{if(status)status.textContent=message};
     let VERSION='', LABEL='';
+    const DETAIL_ONLY=new URL(window.location.href).searchParams.get('detailOnly')==='1';
     try {
       setStatus('Checking application version…');
       const versionResponse=await fetch(`version.json?_=${Date.now()}`,{cache:'no-store'});
@@ -86,6 +87,36 @@
       if(airings||graph){const node=disclosure(doc,'results','Air Details & Results');(airings||graph).before(node);const body=node.querySelector('.library-detail-section-body');if(airings)body.append(airings);if(graph)body.append(graph)}
       if(allFields){allFields.id='library-hidden-all-fields';allFields.setAttribute('aria-hidden','true')}
     }
+    function applyDetailOnly(doc){
+      if(!DETAIL_ONLY)return;
+      doc.body.classList.add('library-detail-only');
+      const style=doc.createElement('style');
+      style.id='library-detail-only-style';
+      style.textContent=`
+        body.library-detail-only{margin:0!important;background:#fff!important;min-height:100vh;overflow:auto!important}
+        body.library-detail-only .topbar,
+        body.library-detail-only .workspace-switcher,
+        body.library-detail-only .controls,
+        body.library-detail-only .list-panel,
+        body.library-detail-only #library-split-mobile-switcher,
+        body.library-detail-only #library-split-divider,
+        body.library-detail-only #library-split-add-button,
+        body.library-detail-only #loading-banner,
+        body.library-detail-only #update-banner,
+        body.library-detail-only #version-gate,
+        body.library-detail-only footer,
+        body.library-detail-only [data-workspace-pane]:not([data-workspace-pane="library"]){display:none!important}
+        body.library-detail-only .app-shell{display:block!important;max-width:none!important;margin:0!important;padding:0!important}
+        body.library-detail-only [data-workspace-pane="library"]{display:block!important;margin:0!important;padding:0!important}
+        body.library-detail-only #library-split-detail-host{display:block!important;position:static!important;width:100%!important;max-width:none!important;min-width:0!important;height:auto!important;border:0!important;padding:0!important;margin:0!important}
+        body.library-detail-only #detail-backdrop{display:none!important}
+        body.library-detail-only #detail-modal,body.library-detail-only #detail-modal.hidden{display:block!important;position:static!important;inset:auto!important;width:100%!important;max-width:none!important;height:auto!important;max-height:none!important;margin:0!important;padding:0!important}
+        body.library-detail-only #detail-modal .detail-modal-card{width:100%!important;max-width:none!important;min-height:100vh!important;max-height:none!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+        body.library-detail-only #detail-close-button{display:none!important}
+        body.library-detail-only.modal-open{overflow:auto!important}
+      `;
+      doc.head.append(style);
+    }
     function injectReportsLink(doc){
       const actions=doc.querySelector('.topbar-actions');
       if(!actions||doc.getElementById('one-sheet-reports-link'))return;
@@ -122,7 +153,7 @@
       doc.querySelectorAll('script[src]').forEach((script)=>script.setAttribute('src',versioned(script.getAttribute('src')||'')));
       doc.querySelectorAll('link[rel~="stylesheet"][href]').forEach((link)=>link.setAttribute('href',versioned(link.getAttribute('href')||'')));
       const flag=doc.getElementById('version-flag'),footer=doc.getElementById('footer-version');if(flag)flag.textContent=LABEL;if(footer)footer.textContent=LABEL;
-      buildSplit(doc);injectReportsLink(doc);injectAssets(doc);
+      buildSplit(doc);injectReportsLink(doc);injectAssets(doc);applyDetailOnly(doc);
       document.open();document.write('<!doctype html>'+doc.documentElement.outerHTML);document.close();
     }catch(error){console.error(error);setStatus(`The Pledge Program Library could not start: ${error.message||error}`)}
   })();
