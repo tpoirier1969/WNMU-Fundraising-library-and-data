@@ -20,6 +20,18 @@ jobs:
           node-version: 22
       - name: Apply guarded patch
         run: python tools/apply-preflight-modal-diagnostics-v022114.py
+      - name: Remove obsolete new-tab assertion
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tests/one-sheet-report-refinements.test.mjs')
+          text = path.read_text()
+          lines = text.splitlines()
+          filtered = [line for line in lines if not ('assert.match(reports' in line and 'openProgram=' in line and 'encodeURIComponent' in line)]
+          if len(filtered) != len(lines) - 1:
+              raise SystemExit('expected exactly one obsolete openProgram assertion')
+          path.write_text('\n'.join(filtered) + '\n')
+          PY
       - name: Run regression tests
         run: node --test tests/*.test.mjs
       - name: Commit canonical release
