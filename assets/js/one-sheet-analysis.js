@@ -805,7 +805,7 @@
       return {
         ...item,
         lengthMinutes: uniqueLengths.length === 1 ? uniqueLengths[0] : null,
-        lengthLabel: !item.durationValues.length ? 'Missing' : uniqueLengths.length === 1 ? `${uniqueLengths[0]} min` : 'Varies',
+        lengthLabel: !item.durationValues.length ? 'Length missing' : uniqueLengths.length === 1 ? `${uniqueLengths[0]} min` : 'Varies',
         dollarsPerHour: dollarsPerHour(item.rateDollars, item.rateMinutes)
       };
     }).sort((a, b) => b.dollars - a.dollars || b.dollarsPerHour - a.dollarsPerHour || a.title.localeCompare(b.title));

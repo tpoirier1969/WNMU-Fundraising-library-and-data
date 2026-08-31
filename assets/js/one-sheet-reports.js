@@ -169,13 +169,77 @@
       const paths = segments.map((points) => `<polyline points="${points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' ')}" fill="none" stroke="${style.stroke}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/>`).join('');
       const points = values.map((value, index) => {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
-        return `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(item.label)} · ${escapeHtml(labels[index])}: ${escapeHtml(money(value))}</title></circle>`;
+        const tooltip = item.tooltips?.[index] || null;
+        const title = `${item.label} · ${labels[index]}: ${money(value)}`;
+        if (!tooltip) return `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(title)}</title></circle>`;
+        const payload = encodeURIComponent(JSON.stringify(tooltip));
+        return `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(payload)}"><circle class="chart-node-hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="11"/><circle class="chart-node-marker" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(title)}</title></circle></g>`;
       }).join('');
       return `${paths}${points}`;
     }).join('');
     const legend = chartLegend(series);
     const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg>`;
     return `<div class="report-chart ${escapeHtml(className)}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
+  }
+
+  function chartTooltipElement() {
+    let tooltip = document.getElementById('chart-hover-tooltip');
+    if (tooltip) return tooltip;
+    tooltip = document.createElement('div');
+    tooltip.id = 'chart-hover-tooltip';
+    tooltip.className = 'chart-hover-tooltip hidden';
+    tooltip.setAttribute('role', 'status');
+    document.body.appendChild(tooltip);
+    return tooltip;
+  }
+
+  function positionChartTooltip(tooltip, clientX, clientY) {
+    const gap = 14;
+    const pad = 10;
+    tooltip.style.left = `${clientX + gap}px`;
+    tooltip.style.top = `${clientY + gap}px`;
+    const rect = tooltip.getBoundingClientRect();
+    let left = clientX + gap;
+    let top = clientY + gap;
+    if (left + rect.width > window.innerWidth - pad) left = Math.max(pad, clientX - rect.width - gap);
+    if (top + rect.height > window.innerHeight - pad) top = Math.max(pad, clientY - rect.height - gap);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
+  function showChartTooltip(node, clientX, clientY) {
+    const encoded = node?.getAttribute('data-chart-tooltip') || '';
+    if (!encoded) return;
+    let payload;
+    try {
+      payload = JSON.parse(decodeURIComponent(encoded));
+    } catch (_error) {
+      return;
+    }
+    const tooltip = chartTooltipElement();
+    const lines = Array.isArray(payload.lines) ? payload.lines.filter(Boolean) : [];
+    tooltip.innerHTML = `<strong>${escapeHtml(payload.title || '')}</strong>${payload.detail ? `<span>${escapeHtml(payload.detail)}</span>` : ''}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : '<em>No program titles recorded for this day.</em>'}`;
+    tooltip.classList.remove('hidden');
+    positionChartTooltip(tooltip, clientX, clientY);
+  }
+
+  function hideChartTooltip() {
+    document.getElementById('chart-hover-tooltip')?.classList.add('hidden');
+  }
+
+  function bindChartTooltips(root = document) {
+    $$('.chart-node[data-chart-tooltip]', root).forEach((node) => {
+      if (node.dataset.tooltipBound === 'true') return;
+      node.dataset.tooltipBound = 'true';
+      node.addEventListener('mouseenter', (event) => showChartTooltip(node, event.clientX, event.clientY));
+      node.addEventListener('mousemove', (event) => positionChartTooltip(chartTooltipElement(), event.clientX, event.clientY));
+      node.addEventListener('mouseleave', hideChartTooltip);
+      node.addEventListener('focus', () => {
+        const rect = node.getBoundingClientRect();
+        showChartTooltip(node, rect.left + (rect.width / 2), rect.top + (rect.height / 2));
+      });
+      node.addEventListener('blur', hideChartTooltip);
+    });
   }
 
   function incomeBarChartSvg(days = []) {
@@ -338,7 +402,13 @@
   function durationCoverageText(analyses = []) {
     const summary = missingDurationSummary(analyses);
     if (!summary.missing.length) return '';
-    return `${summary.airings} program airing${summary.airings === 1 ? '' : 's'} lack a usable saved length and Program Library runtime. Their dollars remain in totals but are excluded from $/hour calculations and rankings.`;
+    const titles = [...new Set(summary.missing.map((item) => A.text(item.title)).filter(Boolean))];
+    const visible = titles.slice(0, 8);
+    const extra = Math.max(0, titles.length - visible.length);
+    const affected = visible.length
+      ? ` Affected title${titles.length === 1 ? '' : 's'}: ${visible.join(', ')}${extra ? `, plus ${extra} more` : ''}.`
+      : '';
+    return `${summary.airings} program airing${summary.airings === 1 ? '' : 's'} lack both a usable saved schedule length and a reliable Program Library runtime.${affected} Their Broadcast dollars and pledges remain in factual totals, but those airings are excluded from $/hour calculations and rankings.`;
   }
 
   function nonSpecificRows(analysis = {}) {
@@ -390,7 +460,7 @@
         <div class="report-modal" role="dialog" aria-modal="true" aria-labelledby="duration-warning-title">
           <div class="report-kicker">Data quality warning</div>
           <h2 id="duration-warning-title">Program length information is missing</h2>
-          <p>These programs do not have a usable saved schedule length or a Program Library runtime. $/hour would be misleading if the report guessed a duration.</p>
+          <p>These programs have neither a usable saved schedule length nor a reliable Program Library runtime. $/hour would be misleading if the report guessed a duration.</p>
           <div class="duration-warning-list">
             ${visible.map((item) => `<div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(count(item.airings))} airing${item.airings === 1 ? '' : 's'} · ${escapeHtml(money(item.dollars))} Broadcast $</span></div>`).join('')}
             ${extra > 0 ? `<div><strong>+ ${extra} more title${extra === 1 ? '' : 's'}</strong></div>` : ''}
@@ -587,12 +657,37 @@
     return `${temp} · ${precip}`;
   }
 
+  function titlesForFundraiserDay(analysis, day) {
+    const dateKey = A.text(day?.dateKey || '');
+    if (!dateKey) return [];
+    const seen = new Set();
+    return [...(analysis?.placementRows || [])]
+      .filter((row) => A.text(row.dateKey) === dateKey && !rowIsNonSpecific(row))
+      .sort((a, b) => Number(a.startMinutes ?? 99999) - Number(b.startMinutes ?? 99999))
+      .map((row) => A.text(row.title || row.plannedTitle || ''))
+      .filter((title) => {
+        const key = title.toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
   function dailyComparisonChart(analyses, aligned) {
     return lineChartSvg({
       labels: aligned.map((entry) => entry.label.title),
       series: analyses.map((analysis, analysisIndex) => ({
         label: analysis.schedule.title,
-        values: aligned.map((entry) => entry.days?.[analysisIndex] ? Number(entry.days[analysisIndex].dollars || 0) : null)
+        values: aligned.map((entry) => entry.days?.[analysisIndex] ? Number(entry.days[analysisIndex].dollars || 0) : null),
+        tooltips: aligned.map((entry) => {
+          const day = entry.days?.[analysisIndex] || null;
+          if (!day) return null;
+          return {
+            title: analysis.schedule.title,
+            detail: `${formatDate(day.date)} · ${entry.label.title} · ${money(day.dollars)} Broadcast`,
+            lines: titlesForFundraiserDay(analysis, day)
+          };
+        })
       })),
       ariaLabel: 'Broadcast dollars by corresponding fundraiser day',
       className: 'daily-comparison-chart',
@@ -700,7 +795,10 @@
           return `<td class="topic-cell"><div class="topic-performance-line"><strong>${escapeHtml(money(value.dollarsPerHour))}/hr</strong><span>Hours ${hoursShare.toFixed(0)}%</span><span>Income ${incomeShare.toFixed(0)}%</span></div><small>${escapeHtml(hours(value.minutes))}${escapeHtml(rateBase)} · ${escapeHtml(money(value.dollars))} · ${escapeHtml(count(value.pledges))} pledges · ${escapeHtml(count(value.scheduled))} airings</small>${programs ? `<small class="topic-programs">${programs}</small>` : ''}</td>`;
         }).join('')}
       </tr>`).join('');
-    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>$ / hour uses only program airings with valid duration and known results. Non-Specific Pledges are shown as their own giving category; because those donations are not tied to a program, airtime and $/hour are not applicable. Income % includes Non-Specific Pledges in the giving-category denominator. Programs shown in bold aired in two or more selected fundraisers.</p></div></div>${topicComparisonChart(analyses, rows)}<div class="table-scroll"><table><thead><tr><th>Topic / giving category</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
+    const durationCopy = analyses.some((analysis) => meaningfulMissingDurationRows(analysis).length)
+      ? 'Programs excluded from $/hour because duration is unavailable are named in the Duration coverage note above. '
+      : '';
+    return `<section class="sheet-section topic-matrix"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>${durationCopy}Non-Specific Pledges are shown as their own giving category; because those donations are not tied to a program, airtime and $/hour are not applicable. Income % includes Non-Specific Pledges in the giving-category denominator. Programs shown in bold aired in two or more selected fundraisers.</p></div></div>${topicComparisonChart(analyses, rows)}<div class="table-scroll"><table><thead><tr><th>Topic / giving category</th>${head}</tr></thead><tbody>${body || '<tr><td>No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
   function durationNoticeSection(analyses) {
@@ -721,8 +819,10 @@
     if (!(await ensureDurationDecision(analyses))) return;
     const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${durationNoticeSection(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${comparisonTopicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour excludes unknown results and airings with missing duration from both numerator and denominator; Rate-eligible hours show that exact denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
     $('#report-output').innerHTML = render();
+    bindChartTooltips($('#report-output'));
     await ensureWeatherForAnalyses(analyses);
     $('#report-output').innerHTML = render();
+    bindChartTooltips($('#report-output'));
   }
 
   async function initComparison() {
