@@ -54,6 +54,7 @@ const indexes = A.buildLibraryIndexes([
   assert.equal(analysis.broadcastDollars, 60, 'actual dollars remain in factual totals');
   assert.equal(analysis.missingDurationRows.length, 1);
   assert.equal(A.missingDurationPrograms([analysis])[0].title, 'Missing Length');
+  assert.equal(A.programResultsRows(analysis)[0].lengthLabel, 'Length missing');
 }
 
 {
@@ -161,6 +162,10 @@ assert.match(reportSource, /Saturday start-time performance/);
 assert.match(reportSource, /Sunday start-time performance/);
 assert.match(reportSource, /5 rate-valid airings, 3 fundraisers, and 3 distinct titles/);
 assert.match(reportSource, /Continue with incomplete data/);
+assert.match(reportSource, /Affected title/);
+assert.match(reportSource, /function bindChartTooltips/);
+assert.match(reportSource, /function titlesForFundraiserDay/);
+assert.match(reportSource, /data-chart-tooltip/);
 assert.match(css, /@page\{size:letter portrait/);
 assert.match(reportHtml, /font-size:8pt/);
 assert.match(reportHtml, /No programming within this topic occurred during this fundraiser/);
