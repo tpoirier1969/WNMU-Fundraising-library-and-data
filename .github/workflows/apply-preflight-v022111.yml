@@ -22,6 +22,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Align temporary patch guard with v0.22.110 print CSS
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply-preflight-v022111.py')
+          s = p.read_text()
+          bad = '''replace_once(css, "  .report-topbar,.report-toolbar,.report-modal-backdrop{display:none!important}", "  .report-topbar,.report-toolbar,.report-modal-backdrop,.chart-hover-tooltip{display:none!important}")\n'''
+          if bad not in s:
+              raise SystemExit('expected temporary CSS guard not found')
+          p.write_text(s.replace(bad, '', 1))
+          PY
       - name: Apply guarded patch
         run: python tools/apply-preflight-v022111.py
       - name: Run regression tests
