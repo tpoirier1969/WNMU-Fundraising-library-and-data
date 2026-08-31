@@ -21,6 +21,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Correct test-hook target in guarded patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/tmp/apply_scheduling_authoritative_actuals.py')
+          text = path.read_text()
+          bad = '''export_old = "globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair };"\nexport_new = "globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults };"\nif export_old not in source:\n    raise SystemExit('schedule test hook marker not found')\nsource = source.replace(export_old, export_new, 1)\nsource_path.write_text(source)\n\ntest_path = Path('tests/schedule-import-safety.test.mjs')\ntests = test_path.read_text()\n'''
+          good = '''source_path.write_text(source)\n\ntest_path = Path('tests/schedule-import-safety.test.mjs')\ntests = test_path.read_text()\nhook_old = "source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair };\\n\\n${exportMarker}`);"\nhook_new = "source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults };\\n\\n${exportMarker}`);"\nif hook_old not in tests:\n    raise SystemExit('schedule test hook injection line not found')\ntests = tests.replace(hook_old, hook_new, 1)\n'''
+          if bad not in text:
+              raise SystemExit('bad test-hook patch block not found')
+          path.write_text(text.replace(bad, good, 1))
+          PY
       - name: Apply guarded patch
         run: python .github/tmp/apply_scheduling_authoritative_actuals.py
       - name: Run regression tests
