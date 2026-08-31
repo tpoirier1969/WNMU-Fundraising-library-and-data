@@ -1,0 +1,35 @@
+name: Apply Scheduling authoritative actuals fix
+
+on:
+  push:
+    branches:
+      - fix/scheduling-authoritative-actuals-v022109
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scheduling-authoritative-actuals-v022109
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply guarded patch
+        run: python .github/tmp/apply_scheduling_authoritative_actuals.py
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit canonical fix
+        run: |
+          git config user.name "WNMU Scheduling Hardening"
+          git config user.email "actions@users.noreply.github.com"
+          git rm -f .github/workflows/apply-scheduling-authoritative-actuals.yml .github/tmp/apply_scheduling_authoritative_actuals.py
+          git add assets/js/ui-scheduling.js tests/schedule-import-safety.test.mjs version.json
+          git commit -m "Make Scheduling actuals follow imported evidence"
+          git push origin HEAD:fix/scheduling-authoritative-actuals-v022109
