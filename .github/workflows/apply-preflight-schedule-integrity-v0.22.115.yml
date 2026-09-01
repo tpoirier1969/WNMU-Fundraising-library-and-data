@@ -24,6 +24,7 @@ jobs:
         run: |
           python -m py_compile tools/apply_preflight_schedule_integrity_v022115.py
           python tools/apply_preflight_schedule_integrity_v022115.py
+          sed -i 's/0\.22\.114/0.22.115/g' tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs
       - name: Validate
         run: |
           node --check assets/js/one-sheet-analysis.js
