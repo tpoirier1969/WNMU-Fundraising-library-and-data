@@ -5,10 +5,9 @@ on:
   push:
     branches:
       - main
-      - release/v0.22.120-stray-event-schedules
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   node-tests:
@@ -21,94 +20,5 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply v0.22.120 source correction
-        shell: bash
-        run: |
-          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
-            exit 0
-          fi
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              data = p.read_text()
-              if data.count(old) != 1:
-                  raise SystemExit(f'{path}: expected one match for {old[:80]!r}, found {data.count(old)}')
-              p.write_text(data.replace(old, new, 1))
-
-          def regex_once(path, pattern, replacement):
-              p = Path(path)
-              data = p.read_text()
-              changed, count = re.subn(pattern, replacement, data, count=1, flags=re.S)
-              if count != 1:
-                  raise SystemExit(f'{path}: regex match count {count} for {pattern[:80]!r}')
-              p.write_text(changed)
-
-          def replace_version(path):
-              p = Path(path)
-              data = p.read_text()
-              changed = data.replace('0.22.119', '0.22.120').replace(r'0\.22\.119', r'0\.22\.120')
-              if changed == data:
-                  raise SystemExit(f'{path}: no v0.22.119 version marker found')
-              p.write_text(changed)
-
-          analysis = 'assets/js/one-sheet-analysis.js'
-          replace_once(analysis, 'const REPORT_ONLY_EVENT_MAX_DAYS = 2;', 'const REPORT_ONLY_EVENT_MAX_DAYS = 1;')
-          replace_once(analysis, "mismatchTypes: ['Missing main fundraiser schedule'],", "mismatchTypes: ['Missing fundraiser schedule'],")
-          replace_once(analysis, "add('report-only-events', 'Imported-only special pledge events', 'info', reportOnlyEvents.length ? 'One- and two-day pledge events without a manual Scheduler fundraiser are valid report-only special events. They are kept separate from normal fundraiser drives and included in report analysis.' : 'No imported-only one- or two-day special pledge events were detected.', reportOnlyEvents);", "add('report-only-events', 'Single-day imported-only pledge events', 'info', reportOnlyEvents.length ? 'An isolated single-day pledge event without a manual Scheduler fundraiser remains informational. Two-day and longer uncovered pledge periods use the missing-schedule repair flow so they can become real Scheduler records.' : 'No imported-only single-day pledge events were detected.', reportOnlyEvents);")
-          replace_once(analysis, "add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Repair the main fundraiser calendar before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a manual Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; one- and two-day imported-only special events are handled separately.`, scheduleCoverage);", "add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Use schedule repair to create the missing fundraiser record before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; isolated single-day imported events remain informational.`, scheduleCoverage);")
-
-          test = 'tests/data-health-preflight.test.mjs'
-          replace_once(test, "assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 2, 'one- and two-day imported-only events should remain valid special events');", "assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 1, 'only isolated single-day imported events remain report-only; two-day and longer periods require schedule recovery');")
-
-          short_lines = [
-              "assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, shortDistinctRows[0]), false, 'an explicit standalone two-day event must not be swallowed by a nearby main drive merely because it is within three days');",
-              "const shortHealth = A.dataHealthReport(",
-              "  [boundarySchedule],",
-              "  [A.analyzeSchedule(boundarySchedule, shortDistinctRows, A.buildLibraryIndexes(offSeasonLibrary))],",
-              "  shortDistinctRows,",
-              "  offSeasonLibrary",
-              ");",
-              "const shortCoverage = shortHealth.checks.find((check) => check.id === 'schedule-coverage');",
-              "assert.equal(shortCoverage.count, 1, 'a distinct two-day imported event should require a recovered Scheduler record');",
-              "assert.equal(shortCoverage.details[0].repair?.startDate, '2026-08-20');",
-              "assert.equal(shortCoverage.details[0].repair?.endDate, '2026-08-21');",
-              "assert.equal(shortHealth.checks.find((check) => check.id === 'report-only-events').count, 0, 'two-day events must not remain report-only');",
-              "",
-              "const threeDayRows = [",
-              "  { row_hash: 'three-1', air_date: '2026-09-10', air_time: '20:00', drive_start_date: '2026-09-10', drive_end_date: '2026-09-12', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 40, pledge_count: 1 },",
-              "  { row_hash: 'three-2', air_date: '2026-09-11', air_time: '20:00', drive_start_date: '2026-09-10', drive_end_date: '2026-09-12', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 50, pledge_count: 1 },",
-              "  { row_hash: 'three-3', air_date: '2026-09-12', air_time: '20:00', drive_start_date: '2026-09-10', drive_end_date: '2026-09-12', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 60, pledge_count: 1 }",
-              "];",
-              "const threeDayHealth = A.dataHealthReport([], [], threeDayRows, offSeasonLibrary);",
-              "const threeDayCoverage = threeDayHealth.checks.find((check) => check.id === 'schedule-coverage');",
-              "assert.equal(threeDayCoverage.count, 1, 'a distinct three-day imported event should require a recovered Scheduler record');",
-              "assert.equal(threeDayCoverage.details[0].repair?.startDate, '2026-09-10');",
-              "assert.equal(threeDayCoverage.details[0].repair?.endDate, '2026-09-12');"
-          ]
-          regex_once(test, r"assert\.equal\(A\.scheduleOwnsImportedRow\(boundarySchedule, shortDistinctRows\[0\]\).*?assert\.equal\(shortSpecials\[0\]\.endDate, '2026-08-21'\);", '\n'.join(short_lines))
-
-          jan_lines = [
-              "const importedOnlyCoverage = importedOnlyHealth.checks.find((check) => check.id === 'schedule-coverage');",
-              "assert.equal(importedOnlyCoverage.count, 1, 'a genuine two-day imported-only pledge event should be recovered as a Scheduler record');",
-              "assert.equal(importedOnlyCoverage.details[0].repair?.startDate, '2016-01-03');",
-              "assert.equal(importedOnlyCoverage.details[0].repair?.endDate, '2016-01-04');",
-              "assert.equal(importedOnlyHealth.checks.find((check) => check.id === 'report-only-events').count, 0, 'a two-day event must not remain report-only');",
-              "assert.equal(importedOnlyHealth.status, 'review', 'an uncovered two-day event should remain blocking until its missing schedule is created');"
-          ]
-          regex_once(test, r"assert\.equal\(importedOnlyHealth\.checks\.find\(\(check\) => check\.id === 'schedule-coverage'\).*?assert\.equal\(importedOnlyHealth\.status, 'pass'.*?;", '\n'.join(jan_lines))
-
-          for path in ['version.json', 'reports.html', 'tests/library-load-performance.test.mjs', 'tests/one-sheet-report-refinements.test.mjs', 'tests/one-sheet-reports.test.mjs']:
-              replace_version(path)
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/js/one-sheet-analysis.js tests/data-health-preflight.test.mjs version.json reports.html tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs
-          if ! git diff --cached --quiet; then
-            git commit -m "Recover stray multi-day pledge events as schedules (v0.22.120)"
-            git push origin HEAD:release/v0.22.120-stray-event-schedules
-          fi
       - name: Run regression tests
         run: node --test tests/*.test.mjs
