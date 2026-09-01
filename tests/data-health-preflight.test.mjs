@@ -48,6 +48,15 @@ const cleanAnalysis = { schedule: cleanSchedule, importedRows: [{ row_hash: 'r1'
 const cleanHealth = A.dataHealthReport([cleanSchedule], [cleanAnalysis], [{ row_hash: 'r1', air_date: '2026-08-01', dollars: 25, program_id: 'p1' }], [{ id: 'p1', title: 'Clean Program', topic_primary: 'Music', topic_secondary: 'Concert' }]);
 assert.equal(cleanHealth.status, 'pass');
 assert.equal(cleanHealth.failures, 0);
+
+const unknownSchedule = { id: 'unknown', title: 'Unknown Results Drive', startDate: '2026-08-01', endDate: '2026-08-01', placements: [], onlineTrackedExplicit: true, mailTrackedExplicit: true };
+const unknownAnalysis = { schedule: unknownSchedule, importedRows: [], placementRows: [{ known: false, dollars: 0, durationMissing: false, title: 'No Result Yet', programId: 'p-unknown', dateKey: '2026-08-01', startMinutes: 1200, minutes: 60, countsTowardScheduleMinutes: true }], unmatchedImportedRows: [], missingDurationRows: [], scheduled: 1 };
+const unknownHealth = A.dataHealthReport([unknownSchedule], [unknownAnalysis], [], [{ id: 'p-unknown', title: 'No Result Yet', length_bucket_minutes: 60 }]);
+const unknownCheck = unknownHealth.checks.find((check) => check.id === 'unknown-results');
+assert.equal(unknownCheck.count, 1, 'a scheduled pledge airing without a result must be a blocking Preflight defect');
+assert.equal(unknownHealth.status, 'review');
+assert.equal(cleanHealth.checks.find((check) => check.id === 'unknown-results').count, 0, 'known results must pass the unknown-result check');
+
 assert.equal(A.canonicalCategory('MUSIC'), 'Music');
 assert.equal(A.canonicalCategory('music'), 'Music');
 assert.equal(A.canonicalCategory('MuSiC'), 'Music');
