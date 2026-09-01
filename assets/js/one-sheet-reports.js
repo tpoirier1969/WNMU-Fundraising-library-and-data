@@ -11,11 +11,11 @@
     { name: 'Sault Ste. Marie', latitude: 46.4953, longitude: -84.3453 }
   ];
   const CHART_STYLES = [
-    { stroke: '#145f91', dash: '' },
-    { stroke: '#7a3e65', dash: '10 5' },
-    { stroke: '#2d6a4f', dash: '3 4' },
-    { stroke: '#9a5b13', dash: '12 4 3 4' },
-    { stroke: '#4f5d75', dash: '7 4' }
+    { stroke: '#145f91', dash: '', width: 4 },
+    { stroke: '#7a3e65', dash: '12 5', width: 3 },
+    { stroke: '#2d6a4f', dash: '2 5', width: 3.5 },
+    { stroke: '#9a5b13', dash: '12 4 2 4', width: 4 },
+    { stroke: '#4f5d75', dash: '6 3', width: 2.5 }
   ];
 
   const CHART_NODE_OVERLAP_DISTANCE = 10;
@@ -127,7 +127,7 @@
   function chartLegend(series = []) {
     return `<div class="chart-legend">${series.map((item, index) => {
       const style = CHART_STYLES[index % CHART_STYLES.length];
-      return `<span><svg viewBox="0 0 36 12" aria-hidden="true"><line x1="2" y1="6" x2="34" y2="6" stroke="${style.stroke}" stroke-width="3"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/><circle cx="18" cy="6" r="3" fill="#fff" stroke="${style.stroke}" stroke-width="2"/></svg><strong>${escapeHtml(item.label)}</strong></span>`;
+      return `<span><svg viewBox="0 0 36 12" aria-hidden="true"><line x1="2" y1="6" x2="34" y2="6" stroke="${style.stroke}" stroke-width="${style.width}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/><circle cx="18" cy="6" r="3" fill="#fff" stroke="${style.stroke}" stroke-width="2"/></svg><strong>${escapeHtml(item.label)}</strong></span>`;
     }).join('')}</div>`;
   }
 
@@ -182,7 +182,7 @@
         segment.push([x(index), y(value)]);
       });
       if (segment.length) segments.push(segment);
-      const paths = segments.map((points) => `<polyline points="${points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' ')}" fill="none" stroke="${style.stroke}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/>`).join('');
+      const paths = segments.map((points) => `<polyline points="${points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' ')}" fill="none" stroke="${style.stroke}" stroke-width="${style.width}" stroke-linejoin="round" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/>`).join('');
       const points = values.map((value, index) => {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
         const tooltip = tooltipForPoint(seriesIndex, index, item.tooltips?.[index] || null);
@@ -265,8 +265,8 @@
   function incomeBarChartSvg(days = []) {
     if (!days.length) return '<div class="chart-empty">No daily results.</div>';
     const width = 760;
-    const height = 286;
-    const margin = { left: 70, right: 18, top: 26, bottom: 74 };
+    const height = 304;
+    const margin = { left: 70, right: 18, top: 26, bottom: 92 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
     const maxValue = Math.max(1, ...days.map((day) => Number(day.dollars || 0)));
@@ -287,7 +287,8 @@
       const ypos = y(dollars);
       const barHeight = Math.max(dollars > 0 ? 2 : 0, margin.top + plotHeight - ypos);
       const center = xpos + (barWidth / 2);
-      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label">${escapeHtml(weatherLine(day))}</text></g>`;
+      const weather = weatherParts(day);
+      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-temp">${escapeHtml(weather.temp)}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 68}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-precip">${escapeHtml(weather.precip)}</text></g>`;
     }).join('');
     return `<div class="report-chart income-chart"><svg class="income-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily Broadcast income across the fundraiser"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${bars}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg></div>`;
   }
@@ -692,13 +693,20 @@
     return state.weatherByDate.get(dateKey) || null;
   }
 
-  function weatherLine(day) {
-    if (!day) return '';
+  function weatherParts(day) {
+    if (!day) return { temp: '', precip: '' };
     const weather = weatherForDay(day.dateKey);
-    if (!weather) return '—';
-    const temp = Number.isFinite(weather.avgTemp) ? `${Math.round(weather.avgTemp)}°F` : '—';
-    const precip = Number.isFinite(weather.precip) ? `${weather.precip.toFixed(weather.precip < 0.1 ? 2 : 1)} in` : '—';
-    return `${temp} · ${precip}`;
+    if (!weather) return { temp: '—', precip: '—' };
+    return {
+      temp: Number.isFinite(weather.avgTemp) ? `${Math.round(weather.avgTemp)}°F` : '—',
+      precip: Number.isFinite(weather.precip) ? `${weather.precip.toFixed(weather.precip < 0.1 ? 2 : 1)} in` : '—'
+    };
+  }
+
+  function weatherLine(day) {
+    const weather = weatherParts(day);
+    if (!(weather.temp || weather.precip)) return '';
+    return `${weather.temp} · ${weather.precip}`;
   }
 
   function programResultsForFundraiserDay(analysis, day) {
@@ -1012,8 +1020,10 @@
 
   function historicalRankingTable(analyses, dimension, title, description, options = {}) {
     const rows = A.historicalRanking(analyses, dimension, options);
+    const medianHeading = options.rateUnit === 'fundraiser' ? 'Median fundraiser $/hr' : 'Median $/hr';
+    const averageHeading = options.rateUnit === 'fundraiser' ? 'Avg fundraiser $/hr' : 'Avg $/hr';
     const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class="metric-primary">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
-    return `<section class="sheet-section historical-ranking"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class="table-scroll"><table><thead><tr><th>Group</th><th>Median $/hr</th><th>Avg $/hr</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan="7">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
+    return `<section class="sheet-section historical-ranking"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class="table-scroll"><table><thead><tr><th>Group</th><th>${escapeHtml(medianHeading)}</th><th>${escapeHtml(averageHeading)}</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan="7">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
   }
 
   function historicalSeasonTable(analyses) {
@@ -1021,8 +1031,8 @@
       analyses,
       'season',
       'Performance by fundraiser season',
-      'Season-level performance across the full historical record.',
-      { minAirings: 1, minFundraisers: 1, minTitles: 1 }
+      'Each fundraiser contributes one $/pledge-hour observation. Median and average therefore describe the typical fundraiser in that season, not the typical individual program airing.',
+      { minAirings: 1, minFundraisers: 1, minTitles: 1, rateUnit: 'fundraiser' }
     );
   }
 

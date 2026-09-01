@@ -1010,7 +1010,46 @@
     }
   }
 
+  function historicalSeasonRanking(analyses = [], options = {}) {
+    const groups = new Map();
+    (analyses || []).forEach((analysis) => {
+      const key = canonicalCategory(analysis?.schedule?.season || seasonForDate(analysis?.schedule?.startDate), 'Special events');
+      const normalized = lookupKey(key);
+      if (!groups.has(normalized)) groups.set(normalized, { key, rates: [], rateAirings: 0, broadcastDollars: 0, fundraisers: new Set(), titles: new Set() });
+      const scheduledRows = (analysis?.placementRows || []).filter((row) => row?.countsTowardScheduleMinutes !== false);
+      const complete = scheduledRows.length > 0 && scheduledRows.every((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0);
+      if (!complete) return;
+      const rateMinutes = scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const rateDollars = scheduledRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      if (!(rateMinutes > 0)) return;
+      const item = groups.get(normalized);
+      item.rates.push(dollarsPerHour(rateDollars, rateMinutes));
+      item.rateAirings += scheduledRows.length;
+      item.broadcastDollars += Number(analysis?.broadcastDollars || rateDollars || 0);
+      item.fundraisers.add(text(analysis?.schedule?.id || analysis?.schedule?.title));
+      scheduledRows.forEach((row) => {
+        const title = lookupKey(row?.title || row?.plannedTitle || '');
+        if (title) item.titles.add(title);
+      });
+    });
+    const minFundraisers = Number(options.minFundraisers ?? 1);
+    return [...groups.values()].map((item) => ({
+      key: item.key,
+      airings: item.rateAirings,
+      rateAirings: item.rateAirings,
+      fundraisers: item.fundraisers.size,
+      titles: item.titles.size,
+      broadcastDollars: item.broadcastDollars,
+      medianDollarsPerHour: median(item.rates),
+      averageDollarsPerHour: item.rates.length ? item.rates.reduce((sum, value) => sum + value, 0) / item.rates.length : 0,
+      minutes: 0,
+      sufficient: item.fundraisers.size >= minFundraisers
+    })).filter((item) => item.sufficient)
+      .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.fundraisers - a.fundraisers || String(a.key).localeCompare(String(b.key)));
+  }
+
   function historicalRanking(analyses = [], dimension, options = {}) {
+    if (dimension === 'season') return historicalSeasonRanking(analyses, options);
     const rows = historicalRows(analyses);
     const groups = new Map();
     rows.forEach((row) => {
@@ -1500,6 +1539,20 @@
       }
     });
     add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
+
+    const unknownResults = [];
+    (analyses || []).forEach((analysis) => {
+      (analysis?.placementRows || []).forEach((row) => {
+        if (row?.countsTowardScheduleMinutes === false || row?.known) return;
+        unknownResults.push({
+          title: text(row?.title || row?.plannedTitle || 'Untitled program'),
+          programId: text(row?.programId || ''),
+          mismatchTypes: ['Unknown result'],
+          detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'}${Number.isFinite(Number(row?.startMinutes)) ? ` ${preflightClockLabel(row.startMinutes)}` : ''} · no Broadcast result is recorded for this scheduled pledge airing`
+        });
+      });
+    });
+    add('unknown-results', 'Unknown scheduled program results', 'fail', unknownResults.length ? 'Scheduled pledge airings exist without a known Broadcast result. Resolve them before trusting fundraiser $/hour analytics.' : 'Every scheduled pledge airing in completed fundraiser history has a known Broadcast result, including explicit $0 results.', unknownResults);
 
     const missingDurations = [];
     (analyses || []).forEach((analysis) => {

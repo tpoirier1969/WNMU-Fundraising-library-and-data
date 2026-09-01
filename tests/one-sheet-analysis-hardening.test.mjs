@@ -144,12 +144,28 @@ assert.ok(A, 'analysis API should load');
   assert.equal(thursdayRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0), 2701, 'the program lines for the plotted Thursday must reconcile to that day’s Broadcast point');
 }
 
+{
+  const seasonAnalyses = [
+    { schedule: { id: 'june-a', title: 'June A', season: 'June', startDate: '2024-06-01' }, broadcastDollars: 1000, placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 600, dollars: 1000, title: 'A' }] },
+    { schedule: { id: 'june-b', title: 'June B', season: 'June', startDate: '2025-06-01' }, broadcastDollars: 300, placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 300, title: 'B' }] },
+    { schedule: { id: 'june-c', title: 'June C', season: 'June', startDate: '2026-06-01' }, broadcastDollars: 500, placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 500, title: 'C' }] }
+  ];
+  const season = A.historicalRanking(seasonAnalyses, 'season', { minFundraisers: 1 });
+  assert.equal(season.length, 1);
+  assert.equal(season[0].medianDollarsPerHour, 300, 'season median must be the median of fundraiser-level $/hr values');
+  assert.equal(season[0].averageDollarsPerHour, 300, 'season average must give each fundraiser equal weight rather than weighting by pledge hours');
+  assert.equal(season[0].fundraisers, 3);
+}
+
 const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
-const reportHarnessSource = reportSource.replace("  document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });", "  globalThis.__reportHarness = { lineChartSvg };");
+const reportHarnessSource = reportSource.replace("  document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });", "  globalThis.__reportHarness = { lineChartSvg, CHART_STYLES };");
 const reportSandbox = { console, window: {}, document: { addEventListener() {} }, Date, Map, Set, Math, Number, String, Array, Object, RegExp };
 vm.createContext(reportSandbox);
 vm.runInContext(reportHarnessSource, reportSandbox);
 assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');
+assert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 5);
+const monochromeStyles = reportSandbox.__reportHarness.CHART_STYLES.map((style) => `${style.dash}|${style.width}`);
+assert.equal(new Set(monochromeStyles).size, 5, 'all five series must remain distinguishable when color is removed');
 const overlapHtml = reportSandbox.__reportHarness.lineChartSvg({
   labels: ['1st Saturday'],
   series: [
