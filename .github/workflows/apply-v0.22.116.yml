@@ -1,0 +1,173 @@
+name: Apply v0.22.116 off-season fundraiser fix
+
+on:
+  push:
+    branches:
+      - fix/preflight-repair-persistence-v0.22.116
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/preflight-repair-persistence-v0.22.116
+      - name: Apply production source changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          reports = Path('assets/js/one-sheet-reports.js')
+          text = reports.read_text()
+
+          old = "state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule)).filter((schedule) => schedule.season && schedule.year);"
+          new = "state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule)).filter((schedule) => schedule.startDate && schedule.endDate && schedule.year);"
+          if old not in text:
+              raise SystemExit('Expected season-only loader filter was not found.')
+          text = text.replace(old, new, 1)
+
+          old = """  function seasonsAvailable() {
+    return A.SEASONS.filter((season) => state.schedules.some((schedule) => schedule.season === season));
+  }
+
+  function defaultSeason() {
+    const latest = state.schedules[0];
+    return latest?.season || seasonsAvailable()[0] || 'all';
+  }
+"""
+          new = """  function seasonsAvailable() {
+    const seasons = A.SEASONS.filter((season) => state.schedules.some((schedule) => schedule.season === season));
+    if (state.schedules.some((schedule) => !schedule.season)) seasons.push('Special events');
+    return seasons;
+  }
+
+  function defaultSeason() {
+    const latest = state.schedules[0];
+    return latest ? (latest.season || 'Special events') : (seasonsAvailable()[0] || 'all');
+  }
+"""
+          if old not in text:
+              raise SystemExit('Expected seasonsAvailable/defaultSeason block was not found.')
+          text = text.replace(old, new, 1)
+
+          old = """  function comparisonSchedules() {
+    return state.schedules.filter((schedule) => state.season === 'all' || schedule.season === state.season);
+  }
+"""
+          new = """  function comparisonSchedules() {
+    return state.schedules.filter((schedule) => {
+      if (state.season === 'all') return true;
+      if (state.season === 'Special events') return !schedule.season;
+      return schedule.season === state.season;
+    });
+  }
+"""
+          if old not in text:
+              raise SystemExit('Expected comparisonSchedules block was not found.')
+          text = text.replace(old, new, 1)
+
+          old = """    const { error } = await state.client.from('pledge_fundraiser_schedules').insert({
+      id,
+      title: resolvedTitle,
+      start_date: preview.startDate,
+      end_date: preview.endDate,
+      day_start_hour: 7,
+      day_end_hour: 25,
+      schedule_data: scheduleData,
+      updated_at: now
+    });
+    if (error) throw error;
+    closePreflightScheduleRepair();
+    await loadData();
+    renderPreflightReport();
+"""
+          new = """    const { data: createdRows, error } = await state.client.from('pledge_fundraiser_schedules').insert({
+      id,
+      title: resolvedTitle,
+      start_date: preview.startDate,
+      end_date: preview.endDate,
+      day_start_hour: 7,
+      day_end_hour: 25,
+      schedule_data: scheduleData,
+      updated_at: now
+    }).select('id,title,start_date,end_date');
+    if (error) throw error;
+    const created = Array.isArray(createdRows) ? createdRows[0] : null;
+    if (!created || A.text(created.id) !== id || A.text(created.start_date) !== preview.startDate || A.text(created.end_date) !== preview.endDate) {
+      throw new Error('Supabase did not confirm the newly created fundraiser schedule. Nothing will be treated as repaired until the saved row can be read back.');
+    }
+    closePreflightScheduleRepair();
+    await loadData();
+    if (!state.schedules.some((schedule) => schedule.id === id)) {
+      throw new Error(`The fundraiser was saved as ${id}, but the report loader did not retain it. Refresh before attempting another repair.`);
+    }
+    renderPreflightReport();
+"""
+          if old not in text:
+              raise SystemExit('Expected Preflight schedule insert block was not found.')
+          text = text.replace(old, new, 1)
+          reports.write_text(text)
+
+          report_html = Path('reports.html')
+          html = report_html.read_text().replace('0.22.115', '0.22.116')
+          report_html.write_text(html)
+
+          for path in Path('tests').glob('*.test.mjs'):
+              t = path.read_text()
+              if '0.22.115' in t:
+                  path.write_text(t.replace('0.22.115', '0.22.116'))
+
+          refinements = Path('tests/one-sheet-report-refinements.test.mjs')
+          t = refinements.read_text()
+          marker = "assert.match(reports, /function renderPreflightReport/);\n"
+          addition = """assert.match(reports, /function renderPreflightReport/);
+assert.doesNotMatch(reports, /schedule\\.season && schedule\\.year/, 'off-season fundraiser schedules must not be discarded by the report loader');
+assert.match(reports, /schedule\\.startDate && schedule\\.endDate && schedule\\.year/, 'report loader should retain every valid dated fundraiser, including special events');
+assert.match(reports, /Special events/, 'comparison controls should expose off-season fundraiser events');
+assert.match(reports, /Supabase did not confirm the newly created fundraiser schedule/, 'Preflight repair should verify the database write');
+assert.match(reports, /report loader did not retain it/, 'Preflight repair should verify the saved schedule remains visible after reload');
+"""
+          if marker not in t:
+              raise SystemExit('Could not find report refinement assertion marker.')
+          t = t.replace(marker, addition, 1)
+          refinements.write_text(t)
+
+          health_test = Path('tests/data-health-preflight.test.mjs')
+          t = health_test.read_text()
+          marker = "console.log('data health preflight tests passed');\n"
+          addition = """const offSeasonSchedule = A.normalizeSchedule({
+  id: 'jan-special', title: 'January Special Event', start_date: '2016-01-03', end_date: '2016-01-04',
+  schedule_data: { placements: [{ dateKey: '2016-01-03', startMinutes: 1200, programId: 'jan-program', programTitle: 'January Special', lengthMinutes: 60 }] }
+});
+assert.equal(offSeasonSchedule.season, '', 'January special event should remain off-season rather than being mislabeled as a normal pledge season');
+assert.equal(offSeasonSchedule.year, 2016);
+const offSeasonAirings = [{ row_hash: 'jan-row', air_date: '2016-01-03', air_time: '20:00', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 1460, pledge_count: 9 }];
+const offSeasonLibrary = [{ id: 'jan-program', title: 'January Special', topic_primary: 'Music', length_bucket_minutes: 60 }];
+const offSeasonAnalysis = A.analyzeSchedule(offSeasonSchedule, offSeasonAirings, A.buildLibraryIndexes(offSeasonLibrary));
+const offSeasonHealth = A.dataHealthReport([offSeasonSchedule], [offSeasonAnalysis], offSeasonAirings, offSeasonLibrary);
+assert.equal(offSeasonHealth.checks.find((check) => check.id === 'schedule-coverage').count, 0, 'a saved off-season fundraiser must cover its imported air dates normally');
+
+console.log('data health preflight tests passed');
+"""
+          if marker not in t:
+              raise SystemExit('Could not find data-health test marker.')
+          t = t.replace(marker, addition, 1)
+          health_test.write_text(t)
+
+          Path('version.json').write_text(json.dumps({'appVersion': '0.22.116', 'releasedAt': '2026-09-01'}, separators=(',', ':')) + '\n')
+          PY
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit applied changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js reports.html tests version.json
+          git diff --cached --check
+          git commit -m "Fix off-season fundraiser repair persistence v0.22.116"
+          git push origin HEAD:fix/preflight-repair-persistence-v0.22.116
