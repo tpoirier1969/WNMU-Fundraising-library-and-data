@@ -22,9 +22,11 @@ jobs:
         with:
           node-version: '22'
       - name: Apply v0.22.120 source correction
-        if: github.ref == 'refs/heads/release/v0.22.120-stray-event-schedules' && github.actor != 'github-actions[bot]'
         shell: bash
         run: |
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
           python - <<'PY'
           from pathlib import Path
 
@@ -44,23 +46,25 @@ jobs:
               p.write_text(data.replace(old, new))
 
           analysis = 'assets/js/one-sheet-analysis.js'
-          replace_once(analysis,
-              'const REPORT_ONLY_EVENT_MAX_DAYS = 2;',
-              'const REPORT_ONLY_EVENT_MAX_DAYS = 1;')
-          replace_once(analysis,
-              "mismatchTypes: ['Missing main fundraiser schedule'],",
-              "mismatchTypes: ['Missing fundraiser schedule'],")
-          replace_once(analysis,
+          replace_once(analysis, 'const REPORT_ONLY_EVENT_MAX_DAYS = 2;', 'const REPORT_ONLY_EVENT_MAX_DAYS = 1;')
+          replace_once(analysis, "mismatchTypes: ['Missing main fundraiser schedule'],", "mismatchTypes: ['Missing fundraiser schedule'],")
+          replace_once(
+              analysis,
               "add('report-only-events', 'Imported-only special pledge events', 'info', reportOnlyEvents.length ? 'One- and two-day pledge events without a manual Scheduler fundraiser are valid report-only special events. They are kept separate from normal fundraiser drives and included in report analysis.' : 'No imported-only one- or two-day special pledge events were detected.', reportOnlyEvents);",
-              "add('report-only-events', 'Single-day imported-only pledge events', 'info', reportOnlyEvents.length ? 'An isolated single-day pledge event without a manual Scheduler fundraiser remains informational. Two-day and longer uncovered pledge periods use the missing-schedule repair flow so they can become real Scheduler records.' : 'No imported-only single-day pledge events were detected.', reportOnlyEvents);")
-          replace_once(analysis,
+              "add('report-only-events', 'Single-day imported-only pledge events', 'info', reportOnlyEvents.length ? 'An isolated single-day pledge event without a manual Scheduler fundraiser remains informational. Two-day and longer uncovered pledge periods use the missing-schedule repair flow so they can become real Scheduler records.' : 'No imported-only single-day pledge events were detected.', reportOnlyEvents);"
+          )
+          replace_once(
+              analysis,
               "add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Repair the main fundraiser calendar before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a manual Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; one- and two-day imported-only special events are handled separately.`, scheduleCoverage);",
-              "add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Use schedule repair to create the missing fundraiser record before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; isolated single-day imported events remain informational.`, scheduleCoverage);")
+              "add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Use schedule repair to create the missing fundraiser record before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; isolated single-day imported events remain informational.`, scheduleCoverage);"
+          )
 
           test = 'tests/data-health-preflight.test.mjs'
-          replace_once(test,
+          replace_once(
+              test,
               "assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 2, 'one- and two-day imported-only events should remain valid special events');",
-              "assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 1, 'only isolated single-day imported events remain report-only; two-day and longer periods require schedule recovery');")
+              "assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 1, 'only isolated single-day imported events remain report-only; two-day and longer periods require schedule recovery');"
+          )
 
           old_short = """assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, shortDistinctRows[0]), false, 'an explicit standalone one- or two-day event must not be swallowed by a nearby main drive merely because it is within three days');
 const shortSpecials = A.reportOnlySchedulesFromAirings([boundarySchedule], shortDistinctRows, A.buildLibraryIndexes(offSeasonLibrary));
