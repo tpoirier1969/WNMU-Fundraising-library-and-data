@@ -21,16 +21,254 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply v0.22.123 historical-rate correction
+      - name: Apply v0.22.123 report corrections
         shell: bash
         run: |
           if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then exit 0; fi
-          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKZGVmIHJlcGxhY2Vfb25jZShwYXRoLCBvbGQsIG5ldyk6CiAgICBwID0gUGF0aChwYXRoKQogICAgZGF0YSA9IHAucmVhZF90ZXh0KCkKICAgIGNvdW50ID0gZGF0YS5jb3VudChvbGQpCiAgICBpZiBjb3VudCAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7cGF0aH06IGV4cGVjdGVkIG9uZSBtYXRjaCwgZm91bmQge2NvdW50fToge29sZFs6MTIwXSFyfSIpCiAgICBwLndyaXRlX3RleHQoZGF0YS5yZXBsYWNlKG9sZCwgbmV3LCAxKSkKCmRlZiByZXBsYWNlX3ZlcnNpb24ocGF0aCk6CiAgICBwID0gUGF0aChwYXRoKQogICAgZGF0YSA9IHAucmVhZF90ZXh0KCkKICAgIGNoYW5nZWQgPSBkYXRhLnJlcGxhY2UoIjAuMjIuMTIyIiwgIjAuMjIuMTIzIikucmVwbGFjZShyIjBcLjIyXC4xMjIiLCByIjBcLjIyXC4xMjMiKQogICAgaWYgY2hhbmdlZCA9PSBkYXRhOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7cGF0aH06IG5vIHYwLjIyLjEyMiB2ZXJzaW9uIG1hcmtlciBmb3VuZCIpCiAgICBwLndyaXRlX3RleHQoY2hhbmdlZCkKCmFuYWx5c2lzID0gImFzc2V0cy9qcy9vbmUtc2hlZXQtYW5hbHlzaXMuanMiCnJhbmtpbmdfYW5jaG9yID0gIiIiICBmdW5jdGlvbiBoaXN0b3JpY2FsUmFua2luZyhhbmFseXNlcyA9IFtdLCBkaW1lbnNpb24sIG9wdGlvbnMgPSB7fSkgewogICAgY29uc3Qgcm93cyA9IGhpc3RvcmljYWxSb3dzKGFuYWx5c2VzKTsKIiIiCnJhbmtpbmdfcmVwbGFjZW1lbnQgPSAiIiIgIGZ1bmN0aW9uIGhpc3RvcmljYWxTZWFzb25SYW5raW5nKGFuYWx5c2VzID0gW10sIG9wdGlvbnMgPSB7fSkgewogICAgY29uc3QgZ3JvdXBzID0gbmV3IE1hcCgpOwogICAgKGFuYWx5c2VzIHx8IFtdKS5mb3JFYWNoKChhbmFseXNpcykgPT4gewogICAgICBjb25zdCBrZXkgPSBjYW5vbmljYWxDYXRlZ29yeShhbmFseXNpcz8uc2NoZWR1bGU/LnNlYXNvbiB8fCBzZWFzb25Gb3JEYXRlKGFuYWx5c2lzPy5zY2hlZHVsZT8uc3RhcnREYXRlKSwgJ1NwZWNpYWwgZXZlbnRzJyk7CiAgICAgIGNvbnN0IG5vcm1hbGl6ZWQgPSBsb29rdXBLZXkoa2V5KTsKICAgICAgaWYgKCFncm91cHMuaGFzKG5vcm1hbGl6ZWQpKSB7CiAgICAgICAgZ3JvdXBzLnNldChub3JtYWxpemVkLCB7CiAgICAgICAgICBrZXksCiAgICAgICAgICByYXRlczogW10sCiAgICAgICAgICByYXRlQWlyaW5nczogMCwKICAgICAgICAgIGJyb2FkY2FzdERvbGxhcnM6IDAsCiAgICAgICAgICBmdW5kcmFpc2VyczogbmV3IFNldCgpLAogICAgICAgICAgdGl0bGVzOiBuZXcgU2V0KCkKICAgICAgICB9KTsKICAgICAgfQogICAgICBjb25zdCBpdGVtID0gZ3JvdXBzLmdldChub3JtYWxpemVkKTsKICAgICAgaXRlbS5icm9hZGNhc3REb2xsYXJzICs9IE51bWJlcihhbmFseXNpcz8uYnJvYWRjYXN0RG9sbGFycyB8fCAwKTsKICAgICAgY29uc3Qgc2NoZWR1bGVkUm93cyA9IChhbmFseXNpcz8ucGxhY2VtZW50Um93cyB8fCBbXSkuZmlsdGVyKChyb3cpID0+IHJvdz8uY291bnRzVG93YXJkU2NoZWR1bGVNaW51dGVzICE9PSBmYWxzZSk7CiAgICAgIGNvbnN0IHJhdGVSb3dzID0gc2NoZWR1bGVkUm93cy5maWx0ZXIoKHJvdykgPT4gcm93Py5rbm93biAmJiAhcm93Py5kdXJhdGlvbk1pc3NpbmcgJiYgTnVtYmVyKHJvdz8ubWludXRlcykgPiAwKTsKICAgICAgaXRlbS5yYXRlQWlyaW5ncyArPSByYXRlUm93cy5sZW5ndGg7CiAgICAgIHJhdGVSb3dzLmZvckVhY2goKHJvdykgPT4gewogICAgICAgIGNvbnN0IHRpdGxlID0gbG9va3VwS2V5KHJvdz8udGl0bGUgfHwgcm93Py5wbGFubmVkVGl0bGUgfHwgJycpOwogICAgICAgIGlmICh0aXRsZSkgaXRlbS50aXRsZXMuYWRkKHRpdGxlKTsKICAgICAgfSk7CiAgICAgIGNvbnN0IGNvbXBsZXRlID0gc2NoZWR1bGVkUm93cy5sZW5ndGggPiAwCiAgICAgICAgJiYgc2NoZWR1bGVkUm93cy5ldmVyeSgocm93KSA9PiByb3c/Lmtub3duICYmICFyb3c/LmR1cmF0aW9uTWlzc2luZyAmJiBOdW1iZXIocm93Py5taW51dGVzKSA+IDApOwogICAgICBpZiAoIWNvbXBsZXRlKSByZXR1cm47CiAgICAgIGNvbnN0IHJhdGVNaW51dGVzID0gcmF0ZVJvd3MucmVkdWNlKChzdW0sIHJvdykgPT4gc3VtICsgTnVtYmVyKHJvdy5taW51dGVzIHx8IDApLCAwKTsKICAgICAgY29uc3QgcmF0ZURvbGxhcnMgPSByYXRlUm93cy5yZWR1Y2UoKHN1bSwgcm93KSA9PiBzdW0gKyBOdW1iZXIocm93LmRvbGxhcnMgfHwgMCksIDApOwogICAgICBpZiAoIShyYXRlTWludXRlcyA+IDApKSByZXR1cm47CiAgICAgIGl0ZW0ucmF0ZXMucHVzaChkb2xsYXJzUGVySG91cihyYXRlRG9sbGFycywgcmF0ZU1pbnV0ZXMpKTsKICAgICAgaXRlbS5mdW5kcmFpc2Vycy5hZGQodGV4dChhbmFseXNpcz8uc2NoZWR1bGU/LmlkIHx8IGFuYWx5c2lzPy5zY2hlZHVsZT8udGl0bGUpKTsKICAgIH0pOwoKICAgIGNvbnN0IG1pbkZ1bmRyYWlzZXJzID0gTnVtYmVyKG9wdGlvbnMubWluRnVuZHJhaXNlcnMgPz8gMSk7CiAgICByZXR1cm4gWy4uLmdyb3Vwcy52YWx1ZXMoKV0ubWFwKChpdGVtKSA9PiAoewogICAgICBrZXk6IGl0ZW0ua2V5LAogICAgICBhaXJpbmdzOiBpdGVtLnJhdGVBaXJpbmdzLAogICAgICByYXRlQWlyaW5nczogaXRlbS5yYXRlQWlyaW5ncywKICAgICAgZnVuZHJhaXNlcnM6IGl0ZW0uZnVuZHJhaXNlcnMuc2l6ZSwKICAgICAgdGl0bGVzOiBpdGVtLnRpdGxlcy5zaXplLAogICAgICBicm9hZGNhc3REb2xsYXJzOiBpdGVtLmJyb2FkY2FzdERvbGxhcnMsCiAgICAgIG1lZGlhbkRvbGxhcnNQZXJIb3VyOiBtZWRpYW4oaXRlbS5yYXRlcyksCiAgICAgIGF2ZXJhZ2VEb2xsYXJzUGVySG91cjogaXRlbS5yYXRlcy5sZW5ndGggPyBpdGVtLnJhdGVzLnJlZHVjZSgoc3VtLCB2YWx1ZSkgPT4gc3VtICsgdmFsdWUsIDApIC8gaXRlbS5yYXRlcy5sZW5ndGggOiAwLAogICAgICBtaW51dGVzOiAwLAogICAgICBzdWZmaWNpZW50OiBpdGVtLmZ1bmRyYWlzZXJzLnNpemUgPj0gbWluRnVuZHJhaXNlcnMKICAgIH0pKS5maWx0ZXIoKGl0ZW0pID0+IGl0ZW0uc3VmZmljaWVudCkKICAgICAgLnNvcnQoKGEsIGIpID0+IGIubWVkaWFuRG9sbGFyc1BlckhvdXIgLSBhLm1lZGlhbkRvbGxhcnNQZXJIb3VyIHx8IGIuZnVuZHJhaXNlcnMgLSBhLmZ1bmRyYWlzZXJzIHx8IFN0cmluZyhhLmtleSkubG9jYWxlQ29tcGFyZShTdHJpbmcoYi5rZXkpKSk7CiAgfQoKICBmdW5jdGlvbiBoaXN0b3JpY2FsUmFua2luZyhhbmFseXNlcyA9IFtdLCBkaW1lbnNpb24sIG9wdGlvbnMgPSB7fSkgewogICAgaWYgKGRpbWVuc2lvbiA9PT0gJ3NlYXNvbicpIHJldHVybiBoaXN0b3JpY2FsU2Vhc29uUmFua2luZyhhbmFseXNlcywgb3B0aW9ucyk7CiAgICBjb25zdCByb3dzID0gaGlzdG9yaWNhbFJvd3MoYW5hbHlzZXMpOwoiIiIKcmVwbGFjZV9vbmNlKGFuYWx5c2lzLCByYW5raW5nX2FuY2hvciwgcmFua2luZ19yZXBsYWNlbWVudCkKCmhlYWx0aF9hbmNob3IgPSAiIiIgICAgYWRkKCdicm9hZGNhc3QtcmVjb25jaWxpYXRpb24nLCAnQnJvYWRjYXN0IHJlY29uY2lsaWF0aW9uJywgJ2ZhaWwnLCByZWNvbmNpbGlhdGlvbi5sZW5ndGggPyAnSW1wb3J0ZWQgQnJvYWRjYXN0IHRvdGFscyBkbyBub3QgZnVsbHkgcmVjb25jaWxlIHRvIHRoZSBhbmFseXplZCByZXN1bHQgcm93cy4nIDogJ0ltcG9ydGVkIEJyb2FkY2FzdCB0b3RhbHMgcmVjb25jaWxlIHRvIHRoZSBhbmFseXplZCByZXN1bHQgcm93cy4nLCByZWNvbmNpbGlhdGlvbik7CgogICAgY29uc3QgbWlzc2luZ0R1cmF0aW9ucyA9IFtdOwoiIiIKaGVhbHRoX3JlcGxhY2VtZW50ID0gIiIiICAgIGFkZCgnYnJvYWRjYXN0LXJlY29uY2lsaWF0aW9uJywgJ0Jyb2FkY2FzdCByZWNvbmNpbGlhdGlvbicsICdmYWlsJywgcmVjb25jaWxpYXRpb24ubGVuZ3RoID8gJ0ltcG9ydGVkIEJyb2FkY2FzdCB0b3RhbHMgZG8gbm90IGZ1bGx5IHJlY29uY2lsZSB0byB0aGUgYW5hbHl6ZWQgcmVzdWx0IHJvd3MuJyA6ICdJbXBvcnRlZCBCcm9hZGNhc3QgdG90YWxzIHJlY29uY2lsZSB0byB0aGUgYW5hbHl6ZWQgcmVzdWx0IHJvd3MuJywgcmVjb25jaWxpYXRpb24pOwoKICAgIGNvbnN0IHVua25vd25SZXN1bHRzID0gW107CiAgICAoYW5hbHlzZXMgfHwgW10pLmZvckVhY2goKGFuYWx5c2lzKSA9PiB7CiAgICAgIChhbmFseXNpcz8ucGxhY2VtZW50Um93cyB8fCBbXSkuZm9yRWFjaCgocm93KSA9PiB7CiAgICAgICAgaWYgKHJvdz8uY291bnRzVG93YXJkU2NoZWR1bGVNaW51dGVzID09PSBmYWxzZSB8fCByb3c/Lmtub3duKSByZXR1cm47CiAgICAgICAgdW5rbm93blJlc3VsdHMucHVzaCh7CiAgICAgICAgICB0aXRsZTogdGV4dChyb3c/LnRpdGxlIHx8IHJvdz8ucGxhbm5lZFRpdGxlIHx8ICdVbnRpdGxlZCBwcm9ncmFtJyksCiAgICAgICAgICBwcm9ncmFtSWQ6IHRleHQocm93Py5wcm9ncmFtSWQgfHwgJycpLAogICAgICAgICAgbWlzbWF0Y2hUeXBlczogWydVbmtub3duIHJlc3VsdCddLAogICAgICAgICAgZGV0YWlsOiBgJHthbmFseXNpcy5zY2hlZHVsZT8udGl0bGUgfHwgJ0Z1bmRyYWlzZXInfSDCtyAke3Jvdz8uZGF0ZUtleSB8fCAndW5rbm93biBkYXRlJ30ke051bWJlci5pc0Zpbml0ZShOdW1iZXIocm93Py5zdGFydE1pbnV0ZXMpKSA/IGAgJHtwcmVmbGlnaHRDbG9ja0xhYmVsKHJvdy5zdGFydE1pbnV0ZXMpfWAgOiAnJ30gwrcgbm8gQnJvYWRjYXN0IHJlc3VsdCBpcyByZWNvcmRlZCBmb3IgdGhpcyBzY2hlZHVsZWQgcGxlZGdlIGFpcmluZ2AKICAgICAgICB9KTsKICAgICAgfSk7CiAgICB9KTsKICAgIGFkZCgndW5rbm93bi1yZXN1bHRzJywgJ1Vua25vd24gc2NoZWR1bGVkIHByb2dyYW0gcmVzdWx0cycsICdmYWlsJywgdW5rbm93blJlc3VsdHMubGVuZ3RoID8gJ1NjaGVkdWxlZCBwbGVkZ2UgYWlyaW5ncyBleGlzdCB3aXRob3V0IGEga25vd24gQnJvYWRjYXN0IHJlc3VsdC4gUmVzb2x2ZSB0aGVtIGJlZm9yZSB0cnVzdGluZyAkL2hvdXIgYW5hbHl0aWNzLicgOiAnRXZlcnkgc2NoZWR1bGVkIHBsZWRnZSBhaXJpbmcgaW4gY29tcGxldGVkIGZ1bmRyYWlzZXIgaGlzdG9yeSBoYXMgYSBrbm93biBCcm9hZGNhc3QgcmVzdWx0LCBpbmNsdWRpbmcgZXhwbGljaXQgJDAgcmVzdWx0cy4nLCB1bmtub3duUmVzdWx0cyk7CgogICAgY29uc3QgbWlzc2luZ0R1cmF0aW9ucyA9IFtdOwoiIiIKcmVwbGFjZV9vbmNlKGFuYWx5c2lzLCBoZWFsdGhfYW5jaG9yLCBoZWFsdGhfcmVwbGFjZW1lbnQpCgpyZXBvcnRzID0gImFzc2V0cy9qcy9vbmUtc2hlZXQtcmVwb3J0cy5qcyIKdGFibGVfYW5jaG9yID0gIiIiICBmdW5jdGlvbiBoaXN0b3JpY2FsUmFua2luZ1RhYmxlKGFuYWx5c2VzLCBkaW1lbnNpb24sIHRpdGxlLCBkZXNjcmlwdGlvbiwgb3B0aW9ucyA9IHt9KSB7CiAgICBjb25zdCByb3dzID0gQS5oaXN0b3JpY2FsUmFua2luZyhhbmFseXNlcywgZGltZW5zaW9uLCBvcHRpb25zKTsKICAgIGNvbnN0IGJvZHkgPSByb3dzLm1hcCgocm93KSA9PiBgPHRyPjx0aD4ke2VzY2FwZUh0bWwoaGlzdG9yaWNhbEtleUxhYmVsKGRpbWVuc2lvbiwgcm93LmtleSkpfTwvdGg+PHRkIGNsYXNzPSJtZXRyaWMtcHJpbWFyeSI+JHtlc2NhcGVIdG1sKG1vbmV5KHJvdy5tZWRpYW5Eb2xsYXJzUGVySG91cikpfS9ocjwvdGQ+PHRkPiR7ZXNjYXBlSHRtbChtb25leShyb3cuYXZlcmFnZURvbGxhcnNQZXJIb3VyKSl9L2hyPC90ZD48dGQ+JHtlc2NhcGVIdG1sKG1vbmV5KHJvdy5icm9hZGNhc3REb2xsYXJzKSl9PC90ZD48dGQ+JHtlc2NhcGVIdG1sKGNvdW50KHJvdy5yYXRlQWlyaW5ncykpfTwvdGQ+PHRkPiR7ZXNjYXBlSHRtbChjb3VudChyb3cuZnVuZHJhaXNlcnMpKX08L3RkPjx0ZD4ke2VzY2FwZUh0bWwoY291bnQocm93LnRpdGxlcykpfTwvdGQ+PC90cj5gKS5qb2luKCcnKTsKICAgIHJldHVybiBgPHNlY3Rpb24gY2xhc3M9InNoZWV0LXNlY3Rpb24gaGlzdG9yaWNhbC1yYW5raW5nIj48ZGl2IGNsYXNzPSJzZWN0aW9uLWhlYWRpbmciPjxkaXY+PGgyPiR7ZXNjYXBlSHRtbCh0aXRsZSl9PC9oMj48cD4ke2VzY2FwZUh0bWwoZGVzY3JpcHRpb24pfTwvcD48L2Rpdj48L2Rpdj48ZGl2IGNsYXNzPSJ0YWJsZS1zY3JvbGwiPjx0YWJsZT48dGhlYWQ+PHRyPjx0aD5Hcm91cDwvdGg+PHRoPk1lZGlhbiAkL2hyPC90aD48dGg+QXZnICQvaHI8L3RoPjx0aD5Ccm9hZGNhc3QgJDwvdGg+PHRoPlJhdGUgYWlyaW5nczwvdGg+PHRoPkZ1bmRyYWlzZXJzPC90aD48dGg+VGl0bGVzPC90aD48L3RyPjwvdGhlYWQ+PHRib2R5PiR7Ym9keSB8fCAnPHRyPjx0ZCBjb2xzcGFuPSI3Ij5ObyBjYXRlZ29yaWVzIG1lZXQgdGhlIGV2aWRlbmNlIHRocmVzaG9sZC48L3RkPjwvdHI+J308L3Rib2R5PjwvdGFibGU+PC9kaXY+PC9zZWN0aW9uPmA7CiAgfQoiIiIKdGFibGVfcmVwbGFjZW1lbnQgPSAiIiIgIGZ1bmN0aW9uIGhpc3RvcmljYWxSYW5raW5nVGFibGUoYW5hbHlzZXMsIGRpbWVuc2lvbiwgdGl0bGUsIGRlc2NyaXB0aW9uLCBvcHRpb25zID0ge30pIHsKICAgIGNvbnN0IHJvd3MgPSBBLmhpc3RvcmljYWxSYW5raW5nKGFuYWx5c2VzLCBkaW1lbnNpb24sIG9wdGlvbnMpOwogICAgY29uc3QgbWVkaWFuSGVhZGluZyA9IG9wdGlvbnMucmF0ZVVuaXQgPT09ICdmdW5kcmFpc2VyJyA/ICdNZWRpYW4gZnVuZHJhaXNlciAkL2hyJyA6ICdNZWRpYW4gJC9ocic7CiAgICBjb25zdCBhdmVyYWdlSGVhZGluZyA9IG9wdGlvbnMucmF0ZVVuaXQgPT09ICdmdW5kcmFpc2VyJyA/ICdBdmcgZnVuZHJhaXNlciAkL2hyJyA6ICdBdmcgJC9ocic7CiAgICBjb25zdCBib2R5ID0gcm93cy5tYXAoKHJvdykgPT4gYDx0cj48dGg+JHtlc2NhcGVIdG1sKGhpc3RvcmljYWxLZXlMYWJlbChkaW1lbnNpb24sIHJvdy5rZXkpKX08L3RoPjx0ZCBjbGFzcz0ibWV0cmljLXByaW1hcnkiPiR7ZXNjYXBlSHRtbChtb25leShyb3cubWVkaWFuRG9sbGFyc1BlckhvdXIpKX0vaHI8L3RkPjx0ZD4ke2VzY2FwZUh0bWwobW9uZXkocm93LmF2ZXJhZ2VEb2xsYXJzUGVySG91cikpfS9ocjwvdGQ+PHRkPiR7ZXNjYXBlSHRtbChtb25leShyb3cuYnJvYWRjYXN0RG9sbGFycykpfTwvdGQ+PHRkPiR7ZXNjYXBlSHRtbChjb3VudChyb3cu cmF0ZUFpcmluZ3MpKX08L3RkPjx0ZD4ke2VzY2FwZUh0bWwoY291bnQocm93LmZ1bmRyYWlzZXJzKSl9PC90ZD48dGQ+JHtlc2NhcGVIdG1sKGNvdW50KHJvdy50aXRsZXMpKX08L3RkPjwvdHI+YCkuam9pbignJyk7CiAgICByZXR1cm4gYDxzZWN0aW9uIGNsYXNzPSJzaGVldC1zZWN0aW9uIGhpc3RvcmljYWwtcmFua2luZyI+PGRpdiBjbGFzcz0ic2VjdGlvbi1oZWFkaW5nIj48ZGl2PjxoMj4ke2VzY2FwZUh0bWwodGl0bGUpfTwvaDI+PHA+JHtlc2NhcGVIdG1sKGRlc2NyaXB0aW9uKX08L3A+PC9kaXY+PC9kaXY+PGRpdiBjbGFzcz0idGFibGUtc2Nyb2xsIj48dGFibGU+PHRoZWFkPjx0cj48dGg+R3JvdXA8L3RoPjx0aD4ke2VzY2FwZUh0bWwobWVkaWFuSGVhZGluZyl9PC90aD48dGg+JHtlc2NhcGVIdG1sKGF2ZXJhZ2VIZWFkaW5nKX08L3RoPjx0aD5Ccm9hZGNhc3QgJDwvdGg+PHRoPlJhdGUgYWlyaW5nczwvdGg+PHRoPkZ1bmRyYWlzZXJzPC90aD48dGg+VGl0bGVzPC90aD48L3RyPjwvdGhlYWQ+PHRib2R5PiR7Ym9keSB8fCAnPHRyPjx0ZCBjb2xzcGFuPSI3Ij5ObyBjYXRlZ29yaWVzIG1lZXQgdGhlIGV2aWRlbmNlIHRocmVzaG9sZC48L3RkPjwvdHI+J308L3Rib2R5PjwvdGFibGU+PC9kaXY+PC9zZWN0aW9uPmA7CiAgfQoiIiIKcmVwbGFjZV9vbmNlKHJlcG9ydHMsIHRhYmxlX2FuY2hvciwgdGFibGVfcmVwbGFjZW1lbnQpCgpzZWFzb25fYW5jaG9yID0gIiIiICAgICAgJ1BlcmZvcm1hbmNlIGJ5IGZ1bmRyYWlzZXIgc2Vhc29uJywKICAgICAgJ1NlYXNvbi1sZXZlbCBwZXJmb3JtYW5jZSBhY3Jvc3MgdGhlIGZ1bGwgaGlzdG9yaWNhbCByZWNvcmQuJywKICAgICAgeyBtaW5BaXJpbmdzOiAxLCBtaW5GdW5kcmFpc2VyczogMSwgbWluVGl0bGVzOiAxIH0KIiIiCnNlYXNvbl9yZXBsYWNlbWVudCA9ICIiIiAgICAgICdQZXJmb3JtYW5jZSBieSBmdW5kcmFpc2VyIHNlYXNvbicsCiAgICAgICdFYWNoIGZ1bmRyYWlzZXIgY29udHJpYnV0ZXMgb25lICQvcGxlZGdlLWhvdXIgb2JzZXJ2YXRpb24uIE1lZGlhbiBhbmQgYXZlcmFnZSB0aGVyZWZvcmUgZGVzY3JpYmUgdGhlIHR5cGljYWwgZnVuZHJhaXNlciBpbiB0aGF0IHNlYXNvbiByYXRoZXIgdGhhbiB0aGUgdHlwaWNhbCBpbmRpdmlkdWFsIHByb2dyYW0gYWlyaW5nLicsCiAgICAgIHsgbWluQWlyaW5nczogMSwgbWluRnVuZHJhaXNlcnM6IDEsIG1pblRpdGxlczogMSwgcmF0ZVVuaXQ6ICdmdW5kcmFpc2VyJyB9CiIiIgpyZXBsYWNlX29uY2UocmVwb3J0cywgc2Vhc29uX2FuY2hvciwgc2Vhc29uX3JlcGxhY2VtZW50KQoKaGVhbHRoX3Rlc3QgPSAidGVzdHMvZGF0YS1oZWFsdGgtcHJlZmxpZ2h0LnRlc3QubWpzIgpoZWFsdGhfYW5jaG9yX3Rlc3QgPSAiIiJhc3NlcnQuZXF1YWwoY2xlYW5IZWFsdGguZmFpbHVyZXMsIDApOwphc3NlcnQuZXF1YWwoQS5jYW5vbmljYWxDYXRlZ29yeSgnTVVTSUMnKSwgJ011c2ljJyk7CiIiIgpoZWFsdGhfdGVzdF9yZXBsYWNlbWVudCA9ICIiImFzc2VydC5lcXVhbChjbGVhbkhlYWx0aC5mYWlsdXJlcywgMCk7Cgpjb25zdCB1bmtub3duU2NoZWR1bGUgPSB7IGlkOiAndW5rbm93bicsIHRpdGxlOiAnVW5rbm93biBSZXN1bHRzIERyaXZlJywgc3RhcnREYXRlOiAnMjAyNi0wOC0wMScsIGVuZERhdGU6ICcyMDI2LTA4LTAxJywgcGxhY2VtZW50czogW10sIG9ubGluZVRyYWNrZWRFeHBsaWNpdDogdHJ1ZSwgbWFpbFRyYWNrZWRFeHBsaWNpdDogdHJ1ZSB9Owpjb25zdCB1bmtub3duQW5hbHlzaXMgPSB7CiAgc2NoZWR1bGU6IHVua25vd25TY2hlZHVsZSwKICBpbXBvcnRlZFJvd3M6IFtdLAogIHBsYWNlbWVudFJvd3M6IFt7IGtub3duOiBmYWxzZSwgZG9sbGFyczogMCwgZHVyYXRpb25NaXNzaW5nOiBmYWxzZSwgdGl0bGU6ICdObyBSZXN1bHQgWWV0JywgcHJvZ3JhbUlkOiAncC11bmtub3duJywgZGF0ZUtleTogJzIwMjYtMDgtMDEnLCBzdGFydE1pbnV0ZXM6IDEyMDAsIG1pbnV0ZXM6IDYwLCBjb3VudHNUb3dhcmRTY2hlZHVsZU1pbnV0ZXM6IHRydWUgfV0sCiAgdW5tYXRjaGVkSW1wb3J0ZWRSb3dzOiBbXSwKICBtaXNzaW5nRHVyYXRpb25Sb3dzOiBbXSwKICBzY2hlZHVsZWQ6IDEKfTsKY29uc3QgdW5rbm93bkhlYWx0aCA9IEEuZGF0YUhlYWx0aFJlcG9ydChbdW5rbm93blNjaGVkdWxlXSwgW3Vua25vd25BbmFseXNpc10sIFtdLCBbeyBpZDogJ3AtdW5rbm93bicsIHRpdGxlOiAnTm8gUmVzdWx0IFlldCcsIGxlbmd0aF9idWNrZXRfbWludXRlczogNjAgfV0pOwpjb25zdCB1bmtub3duQ2hlY2sgPSB1bmtub3duSGVhbHRoLmNoZWNrcy5maW5kKChjaGVjaykgPT4gY2hlY2suaWQgPT09ICd1bmtub3duLXJlc3VsdHMnKTsKYXNzZXJ0LmVxdWFsKHVua25vd25DaGVjay5jb3VudCwgMSwgJ2Egc2NoZWR1bGVkIHBsZWRnZSBhaXJpbmcgd2l0aG91dCBhIHJlc3VsdCBtdXN0IGJlIGEgYmxvY2tpbmcgUHJlZmxpZ2h0IGRlZmVjdCcpOwphc3NlcnQuZXF1YWwodW5rbm93bkhlYWx0aC5zdGF0dXMsICdyZXZpZXcnKTsKYXNzZXJ0LmVxdWFsKGNsZWFuSGVhbHRoLmNoZWNrcy5maW5kKChjaGVjaykgPT4gY2hlY2suaWQgPT09ICd1bmtub3duLXJlc3VsdHMnKS5jb3VudCwgMCwgJ2V4cGxpY2l0bHkga25vd24gcmVzdWx0cywgaW5jbHVkaW5nICQwLCBtdXN0IHBhc3MgdGhlIHVua25vd24tcmVzdWx0IGNoZWNrJyk7Cgphc3NlcnQuZXF1YWwoQS5jYW5vbmljYWxDYXRlZ29yeSgnTVVTSUMnKSwgJ011c2ljJyk7CiIiIgpyZXBsYWNlX29uY2UoaGVhbHRoX3Rlc3QsIGhlYWx0aF9hbmNob3JfdGVzdCwgaGVhbHRoX3Rlc3RfcmVwbGFjZW1lbnQpCgpoYXJkZW5pbmcgPSAidGVzdHMvb25lLXNoZWV0LWFuYWx5c2lzLWhhcmRlbmluZy50ZXN0Lm1qcyIKaGFyZGVuaW5nX2FuY2hvciA9ICIiImNvbnN0IHJlcG9ydFNvdXJjZSA9IGZzLnJlYWRGaWxlU3luYyhuZXcgVVJMKCcuLi9hc3NldHMvanMvb25lLXNoZWV0LXJlcG9ydHMuanMnLCBpbXBvcnQubWV0YS51cmwpLCAndXRmOCcpOwoiIiIKaGFyZGVuaW5nX3JlcGxhY2VtZW50ID0gIiIiewogIGNvbnN0IHNlYXNvbkFuYWx5c2VzID0gWwogICAgewogICAgICBzY2hlZHVsZTogeyBpZDogJ2p1bmUtYScsIHRpdGxlOiAnSnVuZSBBJywgc2Vhc29uOiAnSnVuZScsIHN0YXJ0RGF0ZTogJzIwMjQtMDYtMDEnIH0sCiAgICAgIGJyb2FkY2FzdERvbGxhcnM6IDEwMDAsCiAgICAgIHBsYWNlbWVudFJvd3M6IFt7IGtub3duOiB0cnVlLCBkdXJhdGlvbk1pc3Npbmc6IGZhbHNlLCBjb3VudHNUb3dhcmRTY2hlZHVsZU1pbnV0ZXM6IHRydWUsIG1pbnV0ZXM6IDYwMCwgZG9sbGFyczogMTAwMCwgdGl0bGU6ICdBJyB9XQogICAgfSwKICAgIHsKICAgICAgc2NoZWR1bGU6IHsgaWQ6ICdqdW5lLWInLCB0aXRsZTogJ0p1bmUgQicsIHNlYXNvbjogJ0p1bmUnLCBzdGFydERhdGU6ICcyMDI1LTA2LTAxJyB9LAogICAgICBicm9hZGNhc3REb2xsYXJzOiAzMDAsCiAgICAgIHBsYWNlbWVudFJvd3M6IFt7IGtub3duOiB0cnVlLCBkdXJhdGlvbk1pc3Npbmc6IGZhbHNlLCBjb3VudHNUb3dhcmRTY2hlZHVsZU1pbnV0ZXM6IHRydWUsIG1pbnV0ZXM6IDYwLCBkb2xsYXJzOiAzMDAsIHRpdGxlOiAnQicgfV0KICAgIH0sCiAgICB7CiAgICAgIHNjaGVkdWxlOiB7IGlkOiAnanVuZS1jJywgdGl0bGU6ICdKdW5lIEMnLCBzZWFzb246ICdKdW5lJywgc3RhcnREYXRlOiAnMjAyNi0wNi0wMScgfSwKICAgICAgYnJvYWRjYXN0RG9sbGFyczogNTAwLAogICAgICBwbGFjZW1lbnRSb3dzOiBbeyBrbm93bjogdHJ1ZSwgZHVyYXRpb25NaXNzaW5nOiBmYWxzZSwgY291bnRzVG93YXJkU2NoZWR1bGVNaW51dGVzOiB0cnVlLCBtaW51dGVzOiA2MCwgZG9sbGFyczogNTAwLCB0aXRsZTogJ0MnIH1dCiAgICB9CiAgXTsKICBjb25zdCBzZWFzb24gPSBBLmhpc3RvcmljYWxSYW5raW5nKHNlYXNvbkFuYWx5c2VzLCAnc2Vhc29uJywgeyBtaW5GdW5kcmFpc2VyczogMSB9KTsKICBhc3NlcnQuZXF1YWwoc2Vhc29uLmxlbmd0aCwgMSk7CiAgYXNzZXJ0LmVxdWFsKHNlYXNvblswXS5tZWRpYW5Eb2xsYXJzUGVySG91ciwgMzAwLCAnc2Vhc29uIG1lZGlhbiBtdXN0IGJlIHRoZSBtZWRpYW4gb2YgZnVuZHJhaXNlci1sZXZlbCAkL2hyIHZhbHVlcycpOwogIGFzc2VydC5lcXVhbChzZWFzb25bMF0uYXZlcmFnZURvbGxhcnNQZXJIb3VyLCAzMDAsICdzZWFzb24gYXZlcmFnZSBtdXN0IGdpdmUgZWFjaCBmdW5kcmFpc2VyIGVxdWFsIHdlaWdodCByYXRoZXIgdGhhbiB3ZWlnaHRpbmcgYnkgcGxlZGdlIGhvdXJzJyk7CiAgYXNzZXJ0LmVxdWFsKHNlYXNvblswXS5mdW5kcmFpc2VycywgMyk7Cn0KCmNvbnN0IHJlcG9ydFNvdXJjZSA9IGZzLnJlYWRGaWxlU3luYyhuZXcgVVJMKCcuLi9hc3NldHMvanMvb25lLXNoZWV0LXJlcG9ydHMuanMnLCBpbXBvcnQubWV0YS51cmwpLCAndXRmOCcpOwoiIiIKcmVwbGFjZV9vbmNlKGhhcmRlbmluZywgaGFyZGVuaW5nX2FuY2hvciwgaGFyZGVuaW5nX3JlcGxhY2VtZW50KQoKcmVmaW5lbWVudCA9ICJ0ZXN0cy9vbmUtc2hlZXQtcmVwb3J0LXJlZmluZW1lbnRzLnRlc3QubWpzIgpyZWZpbmVtZW50X2FuY2hvciA9ICIiImFzc2VydC5tYXRjaChyZXBvcnRzLCAvY2hhcnQtd2VhdGhlci1sYWJlbC8pOwoiIiIKcmVmaW5lbWVudF9yZXBsYWNlbWVudCA9ICIiImFzc2VydC5tYXRjaChyZXBvcnRzLCAvY2hhcnQtd2VhdGhlci1sYWJlbC8pOwphc3NlcnQubWF0Y2gocmVwb3J0cywgL01lZGlhbiBmdW5kcmFpc2VyIFxcXFwkXFwvaHIvLCAnc2Vhc29uIHRhYmxlIHNob3VsZCBsYWJlbCBpdHMgc3RhdGlzdGljYWwgdW5pdCBleHBsaWNpdGx5Jyk7CmFzc2VydC5tYXRjaChyZXBvcnRzLCAvdHlwaWNhbCBmdW5kcmFpc2VyIGluIHRoYXQgc2Vhc29uLywgJ3NlYXNvbiB0YWJsZSBzaG91bGQgZXhwbGFpbiBmdW5kcmFpc2VyLWxldmVsIGFnZ3JlZ2F0aW9uJyk7CiIiIgpyZXBsYWNlX29uY2UocmVmaW5lbWVudCwgcmVmaW5lbWVudF9hbmNob3IsIHJlZmluZW1lbnRfcmVwbGFjZW1lbnQpCgpmb3IgcGF0aCBpbiBbCiAgICAidmVyc2lvbi5qc29uIiwKICAgICJyZXBvcnRzLmh0bWwiLAogICAgInRlc3RzL2xpYnJhcnktbG9hZC1wZXJmb3JtYW5jZS50ZXN0Lm1qcyIsCiAgICAidGVzdHMvb25lLXNoZWV0LXJlcG9ydC1yZWZpbmVtZW50cy50ZXN0Lm1qcyIsCiAgICAidGVzdHMvb25lLXNoZWV0LXJlcG9ydHMudGVzdC5tanMiLApdOgogICAgcmVwbGFjZV92ZXJzaW9uKHBhdGgpCg==' | base64 -d | python
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              data = p.read_text()
+              count = data.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old[:100]!r}")
+              p.write_text(data.replace(old, new, 1))
+
+          def replace_count(path, old, new, expected):
+              p = Path(path)
+              data = p.read_text()
+              count = data.count(old)
+              if count != expected:
+                  raise SystemExit(f"{path}: expected {expected} matches, found {count}: {old[:100]!r}")
+              p.write_text(data.replace(old, new))
+
+          analysis = 'assets/js/one-sheet-analysis.js'
+          ranking_anchor = """  function historicalRanking(analyses = [], dimension, options = {}) {
+            const rows = historicalRows(analyses);
+          """
+          ranking_replacement = """  function historicalSeasonRanking(analyses = [], options = {}) {
+            const groups = new Map();
+            (analyses || []).forEach((analysis) => {
+              const key = canonicalCategory(analysis?.schedule?.season || seasonForDate(analysis?.schedule?.startDate), 'Special events');
+              const normalized = lookupKey(key);
+              if (!groups.has(normalized)) {
+                groups.set(normalized, {
+                  key,
+                  rates: [],
+                  rateAirings: 0,
+                  broadcastDollars: 0,
+                  fundraisers: new Set(),
+                  titles: new Set()
+                });
+              }
+              const scheduledRows = (analysis?.placementRows || []).filter((row) => row?.countsTowardScheduleMinutes !== false);
+              const complete = scheduledRows.length > 0
+                && scheduledRows.every((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0);
+              if (!complete) return;
+              const rateMinutes = scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+              const rateDollars = scheduledRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+              if (!(rateMinutes > 0)) return;
+              const item = groups.get(normalized);
+              item.rates.push(dollarsPerHour(rateDollars, rateMinutes));
+              item.rateAirings += scheduledRows.length;
+              item.broadcastDollars += Number(analysis?.broadcastDollars || rateDollars || 0);
+              item.fundraisers.add(text(analysis?.schedule?.id || analysis?.schedule?.title));
+              scheduledRows.forEach((row) => {
+                const title = lookupKey(row?.title || row?.plannedTitle || '');
+                if (title) item.titles.add(title);
+              });
+            });
+
+            const minFundraisers = Number(options.minFundraisers ?? 1);
+            return [...groups.values()].map((item) => ({
+              key: item.key,
+              airings: item.rateAirings,
+              rateAirings: item.rateAirings,
+              fundraisers: item.fundraisers.size,
+              titles: item.titles.size,
+              broadcastDollars: item.broadcastDollars,
+              medianDollarsPerHour: median(item.rates),
+              averageDollarsPerHour: item.rates.length ? item.rates.reduce((sum, value) => sum + value, 0) / item.rates.length : 0,
+              minutes: 0,
+              sufficient: item.fundraisers.size >= minFundraisers
+            })).filter((item) => item.sufficient)
+              .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.fundraisers - a.fundraisers || String(a.key).localeCompare(String(b.key)));
+          }
+
+          function historicalRanking(analyses = [], dimension, options = {}) {
+            if (dimension === 'season') return historicalSeasonRanking(analyses, options);
+            const rows = historicalRows(analyses);
+          """
+          replace_once(analysis, ranking_anchor, ranking_replacement)
+
+          health_anchor = """    add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
+
+            const missingDurations = [];
+          """
+          health_replacement = """    add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
+
+            const unknownResults = [];
+            (analyses || []).forEach((analysis) => {
+              (analysis?.placementRows || []).forEach((row) => {
+                if (row?.countsTowardScheduleMinutes === false || row?.known) return;
+                unknownResults.push({
+                  title: text(row?.title || row?.plannedTitle || 'Untitled program'),
+                  programId: text(row?.programId || ''),
+                  mismatchTypes: ['Unknown result'],
+                  detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'}${Number.isFinite(Number(row?.startMinutes)) ? ` ${preflightClockLabel(row.startMinutes)}` : ''} · no Broadcast result is recorded for this scheduled pledge airing`
+                });
+              });
+            });
+            add('unknown-results', 'Unknown scheduled program results', 'fail', unknownResults.length ? 'Scheduled pledge airings exist without a known Broadcast result. Resolve them before trusting fundraiser $/hour analytics.' : 'Every scheduled pledge airing in completed fundraiser history has a known Broadcast result, including explicit $0 results.', unknownResults);
+
+            const missingDurations = [];
+          """
+          replace_once(analysis, health_anchor, health_replacement)
+
+          reports = 'assets/js/one-sheet-reports.js'
+          styles_old = """  const CHART_STYLES = [
+            { stroke: '#145f91', dash: '' },
+            { stroke: '#7a3e65', dash: '10 5' },
+            { stroke: '#2d6a4f', dash: '3 4' },
+            { stroke: '#9a5b13', dash: '12 4 3 4' },
+            { stroke: '#4f5d75', dash: '7 4' }
+          ];
+          """
+          styles_new = """  const CHART_STYLES = [
+            { stroke: '#145f91', dash: '', width: 4 },
+            { stroke: '#7a3e65', dash: '12 5', width: 3 },
+            { stroke: '#2d6a4f', dash: '2 5', width: 3.5 },
+            { stroke: '#9a5b13', dash: '12 4 2 4', width: 4 },
+            { stroke: '#4f5d75', dash: '6 3', width: 2.5 }
+          ];
+          """
+          replace_once(reports, styles_old, styles_new)
+          replace_count(reports, 'stroke-width="3"${style.dash ? ` stroke-dasharray="${style.dash}"` : \'\'}', 'stroke-width="${style.width}"${style.dash ? ` stroke-dasharray="${style.dash}"` : \'\'}', 2)
+
+          table_old = """  function historicalRankingTable(analyses, dimension, title, description, options = {}) {
+            const rows = A.historicalRanking(analyses, dimension, options);
+            const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class="metric-primary">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
+            return `<section class="sheet-section historical-ranking"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class="table-scroll"><table><thead><tr><th>Group</th><th>Median $/hr</th><th>Avg $/hr</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan="7">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
+          }
+          """
+          table_new = """  function historicalRankingTable(analyses, dimension, title, description, options = {}) {
+            const rows = A.historicalRanking(analyses, dimension, options);
+            const medianHeading = options.rateUnit === 'fundraiser' ? 'Median fundraiser $/hr' : 'Median $/hr';
+            const averageHeading = options.rateUnit === 'fundraiser' ? 'Avg fundraiser $/hr' : 'Avg $/hr';
+            const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class="metric-primary">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
+            return `<section class="sheet-section historical-ranking"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class="table-scroll"><table><thead><tr><th>Group</th><th>${escapeHtml(medianHeading)}</th><th>${escapeHtml(averageHeading)}</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan="7">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
+          }
+          """
+          replace_once(reports, table_old, table_new)
+
+          season_old = """      'Performance by fundraiser season',
+                'Season-level performance across the full historical record.',
+                { minAirings: 1, minFundraisers: 1, minTitles: 1 }
+          """
+          season_new = """      'Performance by fundraiser season',
+                'Each fundraiser contributes one $/pledge-hour observation. Median and average therefore describe the typical fundraiser in that season, not the typical individual program airing.',
+                { minAirings: 1, minFundraisers: 1, minTitles: 1, rateUnit: 'fundraiser' }
+          """
+          replace_once(reports, season_old, season_new)
+
+          health_test = 'tests/data-health-preflight.test.mjs'
+          health_test_anchor = """assert.equal(cleanHealth.failures, 0);
+          assert.equal(A.canonicalCategory('MUSIC'), 'Music');
+          """
+          health_test_new = """assert.equal(cleanHealth.failures, 0);
+
+          const unknownSchedule = { id: 'unknown', title: 'Unknown Results Drive', startDate: '2026-08-01', endDate: '2026-08-01', placements: [], onlineTrackedExplicit: true, mailTrackedExplicit: true };
+          const unknownAnalysis = {
+            schedule: unknownSchedule,
+            importedRows: [],
+            placementRows: [{ known: false, dollars: 0, durationMissing: false, title: 'No Result Yet', programId: 'p-unknown', dateKey: '2026-08-01', startMinutes: 1200, minutes: 60, countsTowardScheduleMinutes: true }],
+            unmatchedImportedRows: [],
+            missingDurationRows: [],
+            scheduled: 1
+          };
+          const unknownHealth = A.dataHealthReport([unknownSchedule], [unknownAnalysis], [], [{ id: 'p-unknown', title: 'No Result Yet', length_bucket_minutes: 60 }]);
+          const unknownCheck = unknownHealth.checks.find((check) => check.id === 'unknown-results');
+          assert.equal(unknownCheck.count, 1, 'a scheduled pledge airing without a result must be a blocking Preflight defect');
+          assert.equal(unknownHealth.status, 'review');
+          assert.equal(cleanHealth.checks.find((check) => check.id === 'unknown-results').count, 0, 'known results, including explicit $0 results, must pass the unknown-result check');
+
+          assert.equal(A.canonicalCategory('MUSIC'), 'Music');
+          """
+          replace_once(health_test, health_test_anchor, health_test_new)
+
+          hardening = 'tests/one-sheet-analysis-hardening.test.mjs'
+          hardening_anchor = """const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+          """
+          hardening_new = """{
+            const seasonAnalyses = [
+              {
+                schedule: { id: 'june-a', title: 'June A', season: 'June', startDate: '2024-06-01' },
+                broadcastDollars: 1000,
+                placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 600, dollars: 1000, title: 'A' }]
+              },
+              {
+                schedule: { id: 'june-b', title: 'June B', season: 'June', startDate: '2025-06-01' },
+                broadcastDollars: 300,
+                placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 300, title: 'B' }]
+              },
+              {
+                schedule: { id: 'june-c', title: 'June C', season: 'June', startDate: '2026-06-01' },
+                broadcastDollars: 500,
+                placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 500, title: 'C' }]
+              }
+            ];
+            const season = A.historicalRanking(seasonAnalyses, 'season', { minFundraisers: 1 });
+            assert.equal(season.length, 1);
+            assert.equal(season[0].medianDollarsPerHour, 300, 'season median must be the median of fundraiser-level $/hr values');
+            assert.equal(season[0].averageDollarsPerHour, 300, 'season average must give each fundraiser equal weight rather than weighting by pledge hours');
+            assert.equal(season[0].fundraisers, 3);
+          }
+
+          const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+          """
+          replace_once(hardening, hardening_anchor, hardening_new)
+          replace_once(hardening, "  globalThis.__reportHarness = { lineChartSvg };", "  globalThis.__reportHarness = { lineChartSvg, CHART_STYLES };")
+          style_test_anchor = """assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');
+          const overlapHtml = reportSandbox.__reportHarness.lineChartSvg({
+          """
+          style_test_new = """assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');
+          assert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 5, 'comparison charts must define five reusable series styles');
+          const monochromeStyles = reportSandbox.__reportHarness.CHART_STYLES.map((style) => `${style.dash}|${style.width}`);
+          assert.equal(new Set(monochromeStyles).size, 5, 'all five series must remain distinguishable when color is removed');
+          const overlapHtml = reportSandbox.__reportHarness.lineChartSvg({
+          """
+          replace_once(hardening, style_test_anchor, style_test_new)
+
+          refinement = 'tests/one-sheet-report-refinements.test.mjs'
+          refinement_anchor = """assert.match(reports, /chart-weather-label/);
+          """
+          refinement_new = """assert.match(reports, /chart-weather-label/);
+          assert.match(reports, /width: 4/);
+          assert.match(reports, /stroke-width=\\\"\\$\\{style\\.width\\}\\\"/, 'line charts and legends should render each series with its configured print-safe thickness');
+          """
+          replace_once(refinement, refinement_anchor, refinement_new)
+
+          for path in [
+              'version.json',
+              'reports.html',
+              'tests/library-load-performance.test.mjs',
+              'tests/one-sheet-report-refinements.test.mjs',
+              'tests/one-sheet-reports.test.mjs',
+          ]:
+              p = Path(path)
+              data = p.read_text()
+              changed = data.replace('0.22.122', '0.22.123').replace(r'0\.22\.122', r'0\.22\.123')
+              if changed == data:
+                  raise SystemExit(f'{path}: no v0.22.122 marker found')
+              p.write_text(changed)
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add assets/js/one-sheet-analysis.js assets/js/one-sheet-reports.js tests/data-health-preflight.test.mjs tests/one-sheet-analysis-hardening.test.mjs tests/one-sheet-report-refinements.test.mjs version.json reports.html tests/library-load-performance.test.mjs tests/one-sheet-reports.test.mjs
           if ! git diff --cached --quiet; then
-            git commit -m "Fix historical season rates and unknown-result Preflight (v0.22.123)"
+            git commit -m "Fix season-rate analytics, Preflight gaps, and print-safe line styles (v0.22.123)"
             git push origin HEAD:release/v0.22.123-season-rate-logic
           fi
       - name: Run regression tests
