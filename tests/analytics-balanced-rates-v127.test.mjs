@@ -7,7 +7,7 @@ const sourcePath = new URL('../assets/js/ui-analytics.js', import.meta.url);
 let source = fs.readFileSync(sourcePath, 'utf8');
 const marker = '  App.analyticsUi = { ensureReady, openCohort, reload };';
 assert.ok(source.includes(marker), 'analytics export marker must exist');
-source = source.replace(marker, `${marker}\n  globalThis.__balancedRateHooks = { fundraiserBalancedRateSummary, pairedStartTimeComparison };`);
+source = source.replace(marker, `${marker}\n  globalThis.__balancedRateHooks = { fundraiserBalancedRateSummary, pairedStartTimeComparison, sameTitleStartTimeComparison };`);
 
 const context = {
   window: {
@@ -96,7 +96,32 @@ test('rate-based Performance Analytics questions use saved schedule rows and lab
   assert.match(text, /rateBalanced: true/);
   assert.match(text, /source: 'schedule'/);
   assert.match(text, /Median \$ \/ pledge hr/);
-  assert.match(text, /pairedStartTimeComparison\(filteredRecordsFor\('startTimes'\), 1200, 1260\)/);
+  assert.match(text, /const comparisonRecords = filteredRecordsFor\('startTimes'\)/);
+  assert.match(text, /pairedStartTimeComparison\(comparisonRecords, 1200, 1260\)/);
+  assert.match(text, /sameTitleStartTimeComparison\(comparisonRecords, 1200, 1260\)/);
   assert.match(text, /Each fundraiser contributes one rate observation per topic/);
   assert.match(text, /median fundraiser \$ \/ pledge hour/);
+});
+
+
+test('same-title 8 PM vs 9 PM comparison controls for program identity', () => {
+  const rows = [
+    rec('drive-a', 'Shared', 100, 60, 1200),
+    rec('drive-b', 'Shared', 220, 60, 1260),
+    rec('drive-c', 'Only 8', 900, 60, 1200),
+    rec('drive-d', 'Only 9', 20, 60, 1260)
+  ];
+  const comparison = hooks.sameTitleStartTimeComparison(rows, 1200, 1260);
+  assert.equal(comparison.titlesCompared, 1);
+  assert.equal(comparison.secondWins, 1);
+  assert.equal(comparison.firstWins, 0);
+  assert.equal(comparison.medianDifference, 120);
+});
+
+test('seasonal topic table sorts season columns by median fundraiser rate', () => {
+  const text = fs.readFileSync(sourcePath, 'utf8');
+  for (const season of ['March', 'June', 'August', 'December']) {
+    assert.ok(text.includes(`seasonStat(row, '${season}').medianRate`));
+  }
+  assert.match(text, /Same-title 8:00 PM vs 9:00 PM check/);
 });

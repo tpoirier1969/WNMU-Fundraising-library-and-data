@@ -1356,6 +1356,43 @@ function outlierSummary(values = []) {
   }
 
 
+  function sameTitleStartTimeComparison(records = [], firstMinutes = 1200, secondMinutes = 1260) {
+    const bucket = (value) => Number.isFinite(Number(value)) ? Math.floor(Number(value) / 30) * 30 : null;
+    const relevant = records.filter((record) => {
+      const value = bucket(record.startMinutes);
+      return value === firstMinutes || value === secondMinutes;
+    });
+    const titlePairs = [];
+    groupBy(relevant, programIdentityKey).forEach((titleRecords, key) => {
+      const first = fundraiserRateObservations(titleRecords.filter((record) => bucket(record.startMinutes) === firstMinutes));
+      const second = fundraiserRateObservations(titleRecords.filter((record) => bucket(record.startMinutes) === secondMinutes));
+      if (!first.length || !second.length) return;
+      const firstMedianRate = medianValue(first.map((item) => item.rate));
+      const secondMedianRate = medianValue(second.map((item) => item.rate));
+      titlePairs.push({
+        key,
+        title: groupDisplayTitle(titleRecords, key),
+        firstMedianRate,
+        secondMedianRate,
+        difference: secondMedianRate - firstMedianRate,
+        firstFundraisers: first.length,
+        secondFundraisers: second.length
+      });
+    });
+    const differences = titlePairs.map((item) => item.difference);
+    return {
+      firstMinutes,
+      secondMinutes,
+      titlesCompared: titlePairs.length,
+      medianDifference: medianValue(differences),
+      firstWins: titlePairs.filter((item) => item.firstMedianRate > item.secondMedianRate).length,
+      secondWins: titlePairs.filter((item) => item.secondMedianRate > item.firstMedianRate).length,
+      ties: titlePairs.filter((item) => item.secondMedianRate === item.firstMedianRate).length,
+      titlePairs
+    };
+  }
+
+
   function formatTimeFromMinutes(value) {
     if (!Number.isFinite(Number(value))) return '—';
     const total = ((Number(value) % 1440) + 1440) % 1440;
@@ -1862,15 +1899,20 @@ function outlierSummary(values = []) {
   function startTimeRead(rows = []) {
     if (!rows.length) return 'No start-time records match the current filters.';
     const useful = rows.filter((row) => !row.weak);
-    const paired = pairedStartTimeComparison(filteredRecordsFor('startTimes'), 1200, 1260);
+    const comparisonRecords = filteredRecordsFor('startTimes');
+    const paired = pairedStartTimeComparison(comparisonRecords, 1200, 1260);
+    const sameTitle = sameTitleStartTimeComparison(comparisonRecords, 1200, 1260);
     const pairedRead = paired.pairedFundraisers
       ? `<br><br><b>8:00 PM vs 9:00 PM inside the same fundraisers:</b> ${formatNumber(paired.pairedFundraisers)} fundraiser(s) contain rate-valid evidence for both slots. 8:00 PM median: <b>${formatMoney(paired.firstMedianRate)} / pledge hr</b>; 9:00 PM median: <b>${formatMoney(paired.secondMedianRate)} / pledge hr</b>. Median within-fundraiser difference (9 PM minus 8 PM): <b>${formatMoney(paired.medianDifference)} / pledge hr</b>. 9 PM wins ${formatNumber(paired.secondWins)}, 8 PM wins ${formatNumber(paired.firstWins)}, ties ${formatNumber(paired.ties)}.`
-      : '<br><br><b>8:00 PM vs 9:00 PM:</b> No fundraiser currently has rate-valid evidence for both slots under these filters, so the app will not manufacture a paired conclusion.';
+      : '<br><br><b>8:00 PM vs 9:00 PM inside the same fundraisers:</b> No fundraiser currently has rate-valid evidence for both slots under these filters, so the app will not manufacture a paired conclusion.';
+    const sameTitleRead = sameTitle.titlesCompared
+      ? `<br><br><b>Same-title 8:00 PM vs 9:00 PM check:</b> ${formatNumber(sameTitle.titlesCompared)} title(s) have rate-valid history at both starts. Median title-level difference (9 PM minus 8 PM): <b>${formatMoney(sameTitle.medianDifference)} / pledge hr</b>. 9 PM wins ${formatNumber(sameTitle.secondWins)} title(s), 8 PM wins ${formatNumber(sameTitle.firstWins)}, ties ${formatNumber(sameTitle.ties)}. This controls for program identity even when the two airings occurred in different fundraisers.`
+      : '<br><br><b>Same-title 8:00 PM vs 9:00 PM check:</b> No title has rate-valid history at both starts under these filters.';
     if (!useful.length) {
-      return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Each fundraiser contributes at most one $/pledge-hour observation to a slot, so a long fundraiser cannot overpower shorter fundraisers by supplying more airings. No current bucket meets the Historical Analytics threshold of <b>${START_TIME_MIN_AIRINGS} rate-valid airings across ${START_TIME_MIN_FUNDRAISERS} fundraisers and ${START_TIME_MIN_TITLES} distinct titles</b>.${pairedRead}`;
+      return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Each fundraiser contributes at most one $/pledge-hour observation to a slot, so a long fundraiser cannot overpower shorter fundraisers by supplying more airings. No current bucket meets the Historical Analytics threshold of <b>${START_TIME_MIN_AIRINGS} rate-valid airings across ${START_TIME_MIN_FUNDRAISERS} fundraisers and ${START_TIME_MIN_TITLES} distinct titles</b>.${pairedRead}${sameTitleRead}`;
     }
     const bestUseful = useful[0];
-    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Imported fundraiser results supply completed dollars and actual times; saved Scheduling placements retain completed report-day $0s and internal program length. Ranking uses the <b>median fundraiser $ / pledge hour</b>, not the median dollars of individual airings. Each fundraiser contributes one observation per slot. A bucket is considered usable only with <b>${START_TIME_MIN_AIRINGS}+ rate-valid airings, ${START_TIME_MIN_FUNDRAISERS}+ fundraisers, and ${START_TIME_MIN_TITLES}+ distinct titles</b>.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best qualified bucket: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; fundraiser median <b>${formatMoney(bestUseful.medianRate || 0)}</b> / pledge hr, fundraiser average <b>${formatMoney(bestUseful.averageRate || 0)}</b> / pledge hr, pooled rate <b>${formatMoney(bestUseful.pooledRate || 0)}</b> / pledge hr, with <b>${formatNumber(bestUseful.rateAirings || 0)}</b> rate-valid airing(s) across <b>${formatNumber(bestUseful.fundraiserCount || 0)}</b> fundraiser(s) and <b>${formatNumber(bestUseful.titleCount || 0)}</b> title(s).${pairedRead}`;
+    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Imported fundraiser results supply completed dollars and actual times; saved Scheduling placements retain completed report-day $0s and internal program length. Ranking uses the <b>median fundraiser $ / pledge hour</b>, not the median dollars of individual airings. Each fundraiser contributes one observation per slot. A bucket is considered usable only with <b>${START_TIME_MIN_AIRINGS}+ rate-valid airings, ${START_TIME_MIN_FUNDRAISERS}+ fundraisers, and ${START_TIME_MIN_TITLES}+ distinct titles</b>.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best qualified bucket: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; fundraiser median <b>${formatMoney(bestUseful.medianRate || 0)}</b> / pledge hr, fundraiser average <b>${formatMoney(bestUseful.averageRate || 0)}</b> / pledge hr, pooled rate <b>${formatMoney(bestUseful.pooledRate || 0)}</b> / pledge hr, with <b>${formatNumber(bestUseful.rateAirings || 0)}</b> rate-valid airing(s) across <b>${formatNumber(bestUseful.fundraiserCount || 0)}</b> fundraiser(s) and <b>${formatNumber(bestUseful.titleCount || 0)}</b> title(s).${pairedRead}${sameTitleRead}`;
   }
 
   function rowsStartTimes() {
@@ -2285,7 +2327,7 @@ function outlierSummary(values = []) {
       rateBalanced: true,
       rows: rowsTopics,
       metricDriven: true,
-      metric: (rows) => rows[0] ? formatMoney(rows[0].median) : '—',
+      metric: (rows) => rows[0] ? formatMetricValue(rows[0]) : '—',
       tag: 'topic lens',
       read: topicRead,
       columns: [
@@ -2310,7 +2352,7 @@ function outlierSummary(values = []) {
       rateBalanced: true,
       rows: rowsSecondaryTopics,
       metricDriven: true,
-      metric: (rows) => rows[0] ? formatMoney(rows[0].median) : '—',
+      metric: (rows) => rows[0] ? formatMetricValue(rows[0]) : '—',
       tag: 'subtopic lens',
       read: secondaryTopicRead,
       columns: [
@@ -2343,10 +2385,10 @@ function outlierSummary(values = []) {
         ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
         ['Baseline median $ / pledge hr', (row) => `${formatMoney(row.baselineRate || 0)}<br><span class="mix">${escapeHtml(row.baselineSeason || '')} baseline</span>`, 'money emphasis', (row) => row.baselineRate || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
-        ['March', (row) => seasonPerformanceCell(row, 'March'), 'money emphasis', (row) => Number(seasonStat(row, 'March').avg || 0)],
-        ['June', (row) => seasonPerformanceCell(row, 'June'), 'money emphasis', (row) => Number(seasonStat(row, 'June').avg || 0)],
-        ['August', (row) => seasonPerformanceCell(row, 'August'), 'money emphasis', (row) => Number(seasonStat(row, 'August').avg || 0)],
-        ['December', (row) => seasonPerformanceCell(row, 'December'), 'money emphasis', (row) => Number(seasonStat(row, 'December').avg || 0)]
+        ['March', (row) => seasonPerformanceCell(row, 'March'), 'money emphasis', (row) => Number(seasonStat(row, 'March').medianRate || 0)],
+        ['June', (row) => seasonPerformanceCell(row, 'June'), 'money emphasis', (row) => Number(seasonStat(row, 'June').medianRate || 0)],
+        ['August', (row) => seasonPerformanceCell(row, 'August'), 'money emphasis', (row) => Number(seasonStat(row, 'August').medianRate || 0)],
+        ['December', (row) => seasonPerformanceCell(row, 'December'), 'money emphasis', (row) => Number(seasonStat(row, 'December').medianRate || 0)]
       ]
     },
     history: {
