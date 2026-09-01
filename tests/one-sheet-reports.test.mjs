@@ -149,8 +149,8 @@ const css = fs.readFileSync(new URL('../assets/one-sheet-reports.css', import.me
 const reportHtml = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 assert.match(reportSource, /Select 2–5 fundraisers/);
 assert.match(reportSource, /function fundraiserAirSchedule/);
-assert.match(reportSource, /Actual air schedule/);
-assert.match(css, /fundraiser-air-schedule-grid/);
+assert.match(reportSource, /Airing schedule & results/);
+assert.match(css, /fundraiser-air-schedule table/);
 assert.match(reportSource, /function programResultsTable/);
 assert.match(reportSource, /One entry per title, ranked by total Broadcast dollars/);
 assert.match(reportSource, /Program topics are ranked by Broadcast \$\/hour/);
@@ -171,7 +171,7 @@ assert.match(reportSource, /state\.schedules\.filter\(scheduleHasImportedResults
 assert.match(reportSource, /Preview schedule repair/);
 assert.match(reportSource, /repairedFromPreflight/);
 assert.match(reportSource, /The imported pledge report proves activity occurred/);
-assert.match(reportHtml, /0\.22\.124/);
+assert.match(reportHtml, /0\.22\.125/);
 assert.match(reportSource, /programResultsForFundraiserDay/);
 assert.match(reportSource, /Regional \${weatherLine\(day\)}/);
 assert.match(reportSource, /Affected title/);

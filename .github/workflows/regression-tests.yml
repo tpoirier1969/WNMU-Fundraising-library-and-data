@@ -1,12 +1,13 @@
 name: Regression tests
 
 on:
+  pull_request:
   push:
     branches:
-      - release/v0.22.125-fundraiser-airing-list
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   node-tests:
@@ -19,109 +20,5 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply fundraiser airing list and test v0.22.125
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          reports_path = Path('assets/js/one-sheet-reports.js')
-          reports = reports_path.read_text()
-          start_marker = '  function fundraiserAirSchedule(analysis) {'
-          end_marker = '\n\n  function fundraiserDailyTable(analysis) {'
-          start = reports.find(start_marker)
-          end = reports.find(end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit('fundraiserAirSchedule function markers not found')
-          replacement = r'''  function fundraiserAirSchedule(analysis) {
-            const rows = [...(analysis?.placementRows || [])]
-              .filter((row) => A.text(row?.dateKey) && !rowIsNonSpecific(row))
-              .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
-            const body = rows.map((row) => {
-              const title = A.text(row.title || row.plannedTitle || 'Untitled program');
-              const known = Boolean(row.known);
-              return `<tr><td>${escapeHtml(formatDate(row.dateKey))}</td><th class="program-result-title">${escapeHtml(title)}</th><td>${escapeHtml(formatTime(row.startMinutes))}</td><td>${known ? escapeHtml(count(row.pledges)) : '<span class="muted-cell">—</span>'}</td><td class="${known ? 'metric-primary' : 'muted-cell'}">${known ? escapeHtml(money(row.dollars)) : '—'}</td></tr>`;
-            }).join('');
-            return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Airing schedule & results</h2><p>Date, title, start time, pledges, and Broadcast income for each program airing.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Title</th><th>Start time</th><th>Pledges</th><th>Income</th></tr></thead><tbody>${body || '<tr><td colspan="5">No program airings are recorded for this fundraiser.</td></tr>'}</tbody></table></div></section>`;
-          }'''
-          reports = reports[:start] + replacement + reports[end:]
-          reports_path.write_text(reports)
-
-          css_path = Path('assets/one-sheet-reports.css')
-          css = css_path.read_text()
-          css_start = css.find('.fundraiser-air-schedule-grid{')
-          css_end_marker = '.program-results table{table-layout:fixed}'
-          css_end = css.find(css_end_marker, css_start)
-          if css_start < 0 or css_end < 0:
-              raise SystemExit('old fundraiser air schedule CSS block not found')
-          schedule_css = '.fundraiser-air-schedule table{table-layout:fixed}.fundraiser-air-schedule th:nth-child(1),.fundraiser-air-schedule td:nth-child(1){width:16%}.fundraiser-air-schedule th:nth-child(2),.fundraiser-air-schedule td:nth-child(2){width:42%}.fundraiser-air-schedule th:nth-child(3),.fundraiser-air-schedule td:nth-child(3){width:16%}.fundraiser-air-schedule th:nth-child(4),.fundraiser-air-schedule td:nth-child(4){width:12%}.fundraiser-air-schedule th:nth-child(5),.fundraiser-air-schedule td:nth-child(5){width:14%}\n'
-          css = css[:css_start] + schedule_css + css[css_end:]
-          css_path.write_text(css)
-
-          report_html = Path('reports.html')
-          html = report_html.read_text().replace('0.22.124', '0.22.125')
-          report_html.write_text(html)
-
-          version = Path('version.json')
-          version.write_text(version.read_text().replace('0.22.124', '0.22.125'))
-
-          test_paths = [
-              Path('tests/library-load-performance.test.mjs'),
-              Path('tests/one-sheet-report-refinements.test.mjs'),
-              Path('tests/one-sheet-reports.test.mjs'),
-          ]
-          for path in test_paths:
-              text = path.read_text()
-              text = text.replace('0.22.124', '0.22.125').replace(r'0\.22\.124', r'0\.22\.125')
-              path.write_text(text)
-
-          refinements_path = Path('tests/one-sheet-report-refinements.test.mjs')
-          refinements = refinements_path.read_text()
-          refinements = refinements.replace('assert.match(reports, /Actual air schedule/);', 'assert.match(reports, /Airing schedule & results/);')
-          refinements = refinements.replace('assert.match(reports, /Scheduled · result unresolved/);', 'assert.match(reports, /<th>Date<\\/th><th>Title<\\/th><th>Start time<\\/th><th>Pledges<\\/th><th>Income<\\/th>/);')
-          refinements = refinements.replace('assert.match(css, /fundraiser-air-schedule-grid/);', 'assert.match(css, /fundraiser-air-schedule table/);')
-          refinements_path.write_text(refinements)
-
-          reports_test_path = Path('tests/one-sheet-reports.test.mjs')
-          reports_test = reports_test_path.read_text()
-          reports_test = reports_test.replace('assert.match(reportSource, /Actual air schedule/);', 'assert.match(reportSource, /Airing schedule & results/);')
-          reports_test = reports_test.replace('assert.match(css, /fundraiser-air-schedule-grid/);', 'assert.match(css, /fundraiser-air-schedule table/);')
-          reports_test_path.write_text(reports_test)
-          PY
-
-          node --test tests/*.test.mjs
-
-          cat > .github/workflows/regression-tests.yml <<'YAML'
-          name: Regression tests
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            node-tests:
-              runs-on: ubuntu-latest
-              timeout-minutes: 10
-              steps:
-                - name: Check out repository
-                  uses: actions/checkout@v4
-                - name: Set up Node.js
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: '22'
-                - name: Run regression tests
-                  run: node --test tests/*.test.mjs
-          YAML
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/js/one-sheet-reports.js assets/one-sheet-reports.css reports.html version.json tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs .github/workflows/regression-tests.yml
-          git diff --cached --check
-          git diff --cached --stat
-          git commit -m "Show fundraiser airing schedule as results list (v0.22.125)"
-          git push
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
