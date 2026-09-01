@@ -203,6 +203,30 @@ assert.ok(A, 'analysis API should load');
   assert.equal(season[0].fundraisers, 3);
 }
 
+{
+  const zeroHeavyWeekday = [
+    {
+      schedule: { id: 'weekday-a', title: 'Weekday A' },
+      placementRows: [
+        ...Array.from({ length: 8 }, (_unused, index) => ({
+          dateKey: '2026-08-10', startMinutes: 600 + (index * 30), minutes: 60,
+          known: true, durationMissing: false, countsTowardScheduleMinutes: true,
+          title: `A Zero ${index}`, dollars: 0, pledges: 0
+        })),
+        { dateKey: '2026-08-10', startMinutes: 1200, minutes: 60, known: true, durationMissing: false, countsTowardScheduleMinutes: true, title: 'A Winner', dollars: 1000, pledges: 5 }
+      ]
+    },
+    { schedule: { id: 'weekday-b', title: 'Weekday B' }, placementRows: [{ dateKey: '2026-08-11', startMinutes: 1200, minutes: 60, known: true, durationMissing: false, countsTowardScheduleMinutes: true, title: 'B', dollars: 200, pledges: 2 }] },
+    { schedule: { id: 'weekday-c', title: 'Weekday C' }, placementRows: [{ dateKey: '2026-08-12', startMinutes: 1200, minutes: 60, known: true, durationMissing: false, countsTowardScheduleMinutes: true, title: 'C', dollars: 300, pledges: 3 }] }
+  ];
+  const weekday = A.historicalRanking(zeroHeavyWeekday, 'weekpart', { minAirings: 1, minFundraisers: 1, minTitles: 1 }).find((row) => row.key === 'Weekday');
+  assert.ok(weekday);
+  assert.equal(Math.round(weekday.medianDollarsPerHour), 200, 'weekday median must be based on one aggregated rate per fundraiser rather than individual zero-heavy airings');
+  assert.equal(weekday.rateObservations, 3, 'each fundraiser contributes one weekday rate observation');
+  assert.equal(weekday.fundraisers, 3);
+  assert.equal(weekday.rateAirings, 11, 'airing count remains visible even though statistical weighting is fundraiser-balanced');
+}
+
 const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
 const reportHarnessSource = reportSource.replace("  document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });", "  globalThis.__reportHarness = { lineChartSvg, CHART_STYLES };");
 const reportSandbox = { console, window: {}, document: { addEventListener() {} }, Date, Map, Set, Math, Number, String, Array, Object, RegExp };

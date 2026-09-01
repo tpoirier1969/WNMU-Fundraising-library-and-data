@@ -1009,7 +1009,7 @@
   }
 
   function historicalControls() {
-    $('#report-controls').innerHTML = `<div class="report-control-row"><div class="historical-control-copy"><strong>All saved fundraiser history</strong><span>Historical rankings use median Broadcast $/hour and minimum evidence rules.</span></div><button type="button" class="report-button" id="report-print">Print report</button></div>`;
+    $('#report-controls').innerHTML = `<div class="report-control-row"><div class="historical-control-copy"><strong>All saved fundraiser history</strong><span>Historical rankings use fundraiser-balanced median Broadcast $/hour and minimum evidence rules.</span></div><button type="button" class="report-button" id="report-print">Print report</button></div>`;
     $('#report-print')?.addEventListener('click', () => window.print());
   }
 
@@ -1032,8 +1032,8 @@
 
   function historicalRankingTable(analyses, dimension, title, description, options = {}) {
     const rows = A.historicalRanking(analyses, dimension, options);
-    const medianHeading = options.rateUnit === 'fundraiser' ? 'Median fundraiser $/hr' : 'Median $/hr';
-    const averageHeading = options.rateUnit === 'fundraiser' ? 'Avg fundraiser $/hr' : 'Avg $/hr';
+    const medianHeading = 'Median fundraiser $/hr';
+    const averageHeading = 'Avg fundraiser $/hr';
     const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class="metric-primary">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
     return `<section class="sheet-section historical-ranking"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class="table-scroll"><table><thead><tr><th>Group</th><th>${escapeHtml(medianHeading)}</th><th>${escapeHtml(averageHeading)}</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan="7">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
   }
@@ -1064,7 +1064,7 @@
   }
 
   function historicalStartTimeTables(analyses) {
-    const description = (weekpart) => `Only schedule-reconciled ${weekpart.toLowerCase()} 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Unmatched imported results remain in fundraiser totals but are excluded from start-time rankings. Sparse slots are excluded rather than displayed in the ranking.`;
+    const description = (weekpart) => `Only schedule-reconciled ${weekpart.toLowerCase()} 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Each fundraiser contributes one slot-specific $/hour observation regardless of how many times that start slot occurred. Unmatched imported results remain in fundraiser totals but are excluded from performance rankings. Sparse slots are excluded rather than displayed in the ranking.`;
     return [
       historicalRankingTable(analysesForWeekpart(analyses, 'Weekday'), 'startTime', 'Weekday start-time performance', description('Weekday')),
       historicalRankingTable(analysesForWeekpart(analyses, 'Saturday'), 'startTime', 'Saturday start-time performance', description('Saturday')),
@@ -1075,13 +1075,13 @@
   function historicalReportBody(analyses) {
     return [
       historicalSeasonTable(analyses),
-      historicalRankingTable(analyses, 'topic', 'Topic performance', 'Topics with at least 3 rate-valid airings across at least 2 fundraisers, ranked by median Broadcast $/hour.'),
-      historicalRankingTable(analyses, 'subtopic', 'Subtopic performance', 'Subtopics with at least 3 rate-valid airings across at least 2 fundraisers, ranked by median Broadcast $/hour.'),
+      historicalRankingTable(analyses, 'topic', 'Topic performance', 'Each fundraiser contributes one topic-specific $/pledge-hour observation; topics require at least 3 rate-valid airings across at least 2 fundraisers.'),
+      historicalRankingTable(analyses, 'subtopic', 'Subtopic performance', 'Each fundraiser contributes one subtopic-specific $/pledge-hour observation; subtopics require at least 3 rate-valid airings across at least 2 fundraisers.'),
       historicalStartTimeTables(analyses),
-      historicalRankingTable(analyses, 'weekpart', 'Weekday / Saturday / Sunday', 'Performance by calendar day type, ranked by median Broadcast $/hour.'),
-      historicalRankingTable(analyses, 'daypart', 'Daypart performance', 'Morning, afternoon, early evening, prime, and overnight performance.'),
-      historicalRankingTable(analyses, 'breakType', 'Live break vs pre-recorded break', 'Uses saved schedule live-break flags only. Imported rows without schedule flags are not used in this comparison.'),
-      historicalRankingTable(analyses, 'distributor', 'Distributor performance', 'Distributors with at least 3 rate-valid airings across at least 2 fundraisers.')
+      historicalRankingTable(analyses, 'weekpart', 'Weekday / Saturday / Sunday', 'Each fundraiser contributes one aggregated weekday, Saturday, or Sunday $/pledge-hour observation.'),
+      historicalRankingTable(analyses, 'daypart', 'Daypart performance', 'Each fundraiser contributes one $/pledge-hour observation for each daypart it used: morning, afternoon, early evening, prime, or overnight.'),
+      historicalRankingTable(analyses, 'breakType', 'Live break vs pre-recorded break', 'Each fundraiser contributes one rate per break type. Uses saved schedule live-break flags only; unmatched imported rows are excluded.'),
+      historicalRankingTable(analyses, 'distributor', 'Distributor performance', 'Each fundraiser contributes one distributor-specific $/pledge-hour observation; distributors require at least 3 rate-valid airings across at least 2 fundraisers.')
     ].join('');
   }
 
@@ -1092,7 +1092,7 @@
       return;
     }
     if (!(await ensureDurationDecision(analyses))) return;
-    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use median Broadcast $/hour. Rate calculations exclude unknown results and true program airings with missing duration from both numerator and denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 rate-valid fundraisers and 3 distinct rate-valid titles. Imported results that cannot be reconciled to a saved schedule placement remain in fundraiser totals but are excluded from start-time rankings.</footer></article>`;
+    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use fundraiser-balanced median Broadcast $/hour: each fundraiser contributes at most one rate observation to each category or start-time slot, regardless of how many individual programs it aired there. A category is omitted for a fundraiser if any of its scheduled rows in that category has an unknown result or missing duration. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 rate-valid fundraisers and 3 distinct rate-valid titles. Imported results that cannot be reconciled to a saved schedule placement remain in fundraiser totals but are excluded from historical performance rankings.</footer></article>`;
   }
 
   async function initHistorical() {

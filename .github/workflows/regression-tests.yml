@@ -5,10 +5,9 @@ on:
   push:
     branches:
       - main
-      - release/v0.22.126-unmatched-start-time-audit
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   node-tests:
@@ -17,35 +16,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply fundraiser-balanced historical median changes
-        run: python .github/tmp_v022126_grouped_medians.py
-      - name: Refresh broader unmatched-ranking assertions
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          for path in ['tests/one-sheet-report-refinements.test.mjs', 'tests/one-sheet-reports.test.mjs']:
-              p = Path(path)
-              s = p.read_text()
-              old = '/excluded from start-time rankings/'
-              new = '/excluded from (?:historical )?performance rankings/'
-              if old not in s:
-                  raise SystemExit(f'stale unmatched-ranking assertion missing in {path}')
-              p.write_text(s.replace(old, new))
-          PY
       - name: Run regression tests
         run: node --test tests/*.test.mjs
-      - name: Commit clean v0.22.126 release branch
-        run: |
-          git checkout origin/main -- .github/workflows/regression-tests.yml
-          rm -f .github/tmp_v022126_grouped_medians.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "Balance historical medians by fundraiser (v0.22.126)"
-          git push origin HEAD:release/v0.22.126-unmatched-start-time-audit
