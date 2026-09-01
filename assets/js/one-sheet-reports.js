@@ -18,6 +18,8 @@
     { stroke: '#4f5d75', dash: '7 4' }
   ];
 
+  const CHART_NODE_OVERLAP_DISTANCE = 10;
+
   const state = {
     client: null,
     schedules: [],
@@ -154,6 +156,18 @@
       const ypos = y(value);
       return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(compactMoney(value))}</text></g>`;
     }).join('');
+    const interactivePoints = series.flatMap((item, seriesIndex) => (item.values || []).map((value, index) => {
+      const tooltip = item.tooltips?.[index] || null;
+      if (!tooltip || value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+      return { seriesIndex, index, x: x(index), y: y(value), tooltip };
+    }).filter(Boolean));
+    const tooltipForPoint = (seriesIndex, index, tooltip) => {
+      if (!tooltip) return null;
+      const point = interactivePoints.find((candidate) => candidate.seriesIndex === seriesIndex && candidate.index === index);
+      if (!point) return tooltip;
+      const touching = interactivePoints.filter((candidate) => Math.hypot(candidate.x - point.x, candidate.y - point.y) <= CHART_NODE_OVERLAP_DISTANCE);
+      return touching.length > 1 ? { sections: touching.map((candidate) => candidate.tooltip) } : tooltip;
+    };
     const plotted = series.map((item, seriesIndex) => {
       const style = CHART_STYLES[seriesIndex % CHART_STYLES.length];
       const values = item.values || [];
@@ -171,11 +185,11 @@
       const paths = segments.map((points) => `<polyline points="${points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(' ')}" fill="none" stroke="${style.stroke}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/>`).join('');
       const points = values.map((value, index) => {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
-        const tooltip = item.tooltips?.[index] || null;
+        const tooltip = tooltipForPoint(seriesIndex, index, item.tooltips?.[index] || null);
         const title = `${item.label} · ${labels[index]}: ${money(value)}`;
         if (!tooltip) return `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(title)}</title></circle>`;
         const payload = encodeURIComponent(JSON.stringify(tooltip));
-        return `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(payload)}"><circle class="chart-node-hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="11"/><circle class="chart-node-marker" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(title)}</title></circle></g>`;
+        return `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(payload)}"><circle class="chart-node-hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="11"/><circle class="chart-node-marker" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"/></g>`;
       }).join('');
       return `${paths}${points}`;
     }).join('');
@@ -219,8 +233,12 @@
       return;
     }
     const tooltip = chartTooltipElement();
-    const lines = Array.isArray(payload.lines) ? payload.lines.filter(Boolean) : [];
-    tooltip.innerHTML = `<strong>${escapeHtml(payload.title || '')}</strong>${payload.detail ? `<span>${escapeHtml(payload.detail)}</span>` : ''}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : '<em>No program titles recorded for this day.</em>'}`;
+    const renderSection = (section = {}) => {
+      const lines = Array.isArray(section.lines) ? section.lines.filter(Boolean) : [];
+      return `<div class="chart-tooltip-section"><strong>${escapeHtml(section.title || '')}</strong>${section.detail ? `<span>${escapeHtml(section.detail)}</span>` : ''}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : '<em>No program titles recorded for this day.</em>'}</div>`;
+    };
+    const sections = Array.isArray(payload.sections) ? payload.sections.filter(Boolean) : [];
+    tooltip.innerHTML = (sections.length ? sections : [payload]).map(renderSection).join(sections.length > 1 ? '<hr aria-hidden="true">' : '');
     tooltip.classList.remove('hidden');
     positionChartTooltip(tooltip, clientX, clientY);
   }
@@ -247,8 +265,8 @@
   function incomeBarChartSvg(days = []) {
     if (!days.length) return '<div class="chart-empty">No daily results.</div>';
     const width = 760;
-    const height = 270;
-    const margin = { left: 70, right: 18, top: 26, bottom: 58 };
+    const height = 286;
+    const margin = { left: 70, right: 18, top: 26, bottom: 74 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
     const maxValue = Math.max(1, ...days.map((day) => Number(day.dollars || 0)));
@@ -269,7 +287,7 @@
       const ypos = y(dollars);
       const barHeight = Math.max(dollars > 0 ? 2 : 0, margin.top + plotHeight - ypos);
       const center = xpos + (barWidth / 2);
-      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text></g>`;
+      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label">${escapeHtml(weatherLine(day))}</text></g>`;
     }).join('');
     return `<div class="report-chart income-chart"><svg class="income-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily Broadcast income across the fundraiser"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${bars}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg></div>`;
   }
@@ -715,7 +733,7 @@
           if (!day) return null;
           return {
             title: `${formatDate(day.date)} · ${entry.label.title}`,
-            detail: `${analysis.schedule.title} · ${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,
+            detail: `${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,
             lines: programResultsForFundraiserDay(analysis, day).map((item) => item.known
               ? `${item.title} — ${money(item.dollars)}`
               : `${item.title} — result unavailable`)

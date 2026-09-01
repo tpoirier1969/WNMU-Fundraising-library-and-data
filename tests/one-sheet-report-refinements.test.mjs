@@ -39,7 +39,13 @@ assert.match(reports, /function bindChartTooltips/);
 assert.match(reports, /function programResultsForFundraiserDay/);
 assert.match(reports, /A\.text\(row\.dateKey\) === dateKey/, 'comparison tooltip program rows must be filtered to the exact plotted calendar day');
 assert.match(reports, /title: `\$\{formatDate\(day\.date\)\} · \$\{entry\.label\.title\}`/, 'comparison tooltip heading must identify the single plotted date and fundraiser-day position');
-assert.match(reports, /detail: `\$\{analysis\.schedule\.title\} · \$\{money\(day\.dollars\)\} Broadcast/, 'fundraiser range belongs in tooltip context, not the single-day heading');
+assert.match(reports, /detail: `\$\{money\(day\.dollars\)\} Broadcast · Regional \$\{weatherLine\(day\)\}`/, 'comparison tooltip should contain only day-specific result context');
+assert.doesNotMatch(reports, /detail: `\$\{analysis\.schedule\.title\} ·/, 'comparison tooltip must not repeat fundraiser context');
+assert.match(reports, /CHART_NODE_OVERLAP_DISTANCE = 10/);
+assert.match(reports, /Math\.hypot\(candidate\.x - point\.x, candidate\.y - point\.y\)/);
+assert.match(reports, /sections: touching\.map\(\(candidate\) => candidate\.tooltip\)/);
+assert.match(reports, /chart-weather-label/);
+assert.match(reports, /\$\{escapeHtml\(weatherLine\(day\)\)\}/);
 assert.match(reports, /Regional \${weatherLine\(day\)}/);
 assert.match(reports, /item\.title} — \${money\(item\.dollars\)}/);
 assert.match(reports, /data-chart-tooltip/);
@@ -65,9 +71,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.121/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.121/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.121/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.122/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.122/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.122/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -92,8 +98,8 @@ console.log('one-sheet report refinements tests passed');
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.121/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.121/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.122/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.122/);
 
 
 assert.match(reports, /data-preflight-program-id/);
