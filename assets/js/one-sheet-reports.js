@@ -714,8 +714,8 @@
           const day = entry.days?.[analysisIndex] || null;
           if (!day) return null;
           return {
-            title: analysis.schedule.title,
-            detail: `${formatDate(day.date)} · ${entry.label.title} · ${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,
+            title: `${formatDate(day.date)} · ${entry.label.title}`,
+            detail: `${analysis.schedule.title} · ${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,
             lines: programResultsForFundraiserDay(analysis, day).map((item) => item.known
               ? `${item.title} — ${money(item.dollars)}`
               : `${item.title} — result unavailable`)
