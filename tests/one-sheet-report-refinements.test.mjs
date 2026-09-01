@@ -43,6 +43,11 @@ assert.match(reports, /data-chart-tooltip/);
 assert.match(reports, /Return to Pledge Program Library/);
 assert.match(reports, /Data Health \/ Preflight/);
 assert.match(reports, /function renderPreflightReport/);
+assert.doesNotMatch(reports, /schedule\.season && schedule\.year/, 'off-season fundraiser schedules must not be discarded by the report loader');
+assert.match(reports, /schedule\.startDate && schedule\.endDate && schedule\.year/, 'report loader should retain every valid dated fundraiser, including special events');
+assert.match(reports, /Special events/, 'comparison controls should expose off-season fundraiser events');
+assert.match(reports, /Supabase did not confirm the newly created fundraiser schedule/, 'Preflight repair should verify the database write');
+assert.match(reports, /report loader did not retain it/, 'Preflight repair should verify the saved schedule remains visible after reload');
 assert.match(reports, /A\.dataHealthReport/);
 assert.match(reports, /<th>Day<\/th><th>Hours<\/th><th>Broadcast \$<\/th><th>\$\/hr<\/th><th>Pledges<\/th><th>Pledges\/hr<\/th><th>Regional weather<\/th>/);
 assert.doesNotMatch(reports, /pledgeHourChart/);
@@ -57,9 +62,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.115/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.115/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.115/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.116/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.116/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.116/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -84,8 +89,8 @@ console.log('one-sheet report refinements tests passed');
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.115/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.115/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.116/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.116/);
 
 
 assert.match(reports, /data-preflight-program-id/);
