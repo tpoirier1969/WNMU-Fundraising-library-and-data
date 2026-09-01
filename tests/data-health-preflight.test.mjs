@@ -36,7 +36,7 @@ const health = A.dataHealthReport([schedule], [analysis], [{ row_hash: 'live-has
 assert.equal(health.status, 'review');
 assert.ok(health.checks.find((check) => check.id === 'missing-duration').count > 0);
 assert.equal(health.checks.find((check) => check.id === 'unmatched-imported').count, 1, 'Non-Specific Pledges must not count as unmatched program results');
-assert.ok(health.checks.find((check) => check.id === 'topic-case').count >= 2);
+assert.equal(health.checks.some((check) => check.id === 'topic-case'), false, 'topic capitalization variants are one category and must not create a cleanup warning');
 assert.ok(health.checks.find((check) => check.id === 'duplicate-ranges').count > 0);
 assert.ok(health.checks.find((check) => check.id === 'stale-hashes').count > 0);
 assert.ok(health.checks.find((check) => check.id === 'channel-tracking').count > 0);
@@ -46,6 +46,20 @@ const cleanAnalysis = { schedule: cleanSchedule, importedRows: [{ row_hash: 'r1'
 const cleanHealth = A.dataHealthReport([cleanSchedule], [cleanAnalysis], [{ row_hash: 'r1', dollars: 25, program_id: 'p1' }], [{ id: 'p1', title: 'Clean Program', topic_primary: 'Music', topic_secondary: 'Concert' }]);
 assert.equal(cleanHealth.status, 'pass');
 assert.equal(cleanHealth.failures, 0);
+assert.equal(A.canonicalCategory('MUSIC'), 'Music');
+assert.equal(A.canonicalCategory('music'), 'Music');
+assert.equal(A.canonicalCategory('MuSiC'), 'Music');
+assert.equal(A.canonicalCategory('WNMU'), 'WNMU', 'short station abbreviations should retain their display casing');
+
+const coreSource = fs.readFileSync(new URL('../assets/js/core.js', import.meta.url), 'utf8');
+const coreWindow = { PledgeLib: {}, PLEDGE_MANAGER_CONFIG: {} };
+const coreSandbox = { window: coreWindow, console, Date, Map, Set, Math, Number, String, Array, Object, RegExp, Intl, URL, crypto: { randomUUID: () => 'test-id' } };
+coreSandbox.globalThis = coreSandbox;
+vm.createContext(coreSandbox);
+vm.runInContext(coreSource, coreSandbox);
+assert.equal(coreWindow.PledgeLib.derive.topicPrimary({ topic_primary: 'MUSIC' }), 'Music');
+assert.equal(coreWindow.PledgeLib.derive.topicSecondary({ topic_secondary: 'black history' }), 'Black History');
+assert.equal(coreWindow.PledgeLib.derive.topicPrimary({ topic_primary: 'WNMU' }), 'WNMU');
 
 const offSeasonSchedule = A.normalizeSchedule({
   id: 'jan-special', title: 'January Special Event', start_date: '2016-01-03', end_date: '2016-01-04',

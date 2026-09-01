@@ -166,7 +166,7 @@ assert.match(reportSource, /Data Health \/ Preflight/);
 assert.match(reportSource, /Preview schedule repair/);
 assert.match(reportSource, /repairedFromPreflight/);
 assert.match(reportSource, /The imported pledge report proves activity occurred/);
-assert.match(reportHtml, /0\.22\.116/);
+assert.match(reportHtml, /0\.22\.117/);
 assert.match(reportSource, /programResultsForFundraiserDay/);
 assert.match(reportSource, /Regional \${weatherLine\(day\)}/);
 assert.match(reportSource, /Affected title/);

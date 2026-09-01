@@ -1156,6 +1156,9 @@
 
   function formatMaybeSeconds(key, value) {
     if (value == null || value === '') return '—';
+    if (/^(?:__resolved_)?(?:topic_primary|topic_secondary|primary_topic|secondary_topic|topic|category|subcategory)$/i.test(key)) {
+      return utils.escapeHtml(utils.canonicalCategoryLabel(value, '—'));
+    }
     const numeric = Number(value);
     if (Number.isFinite(numeric) && isTimingSecondsKey(key)) {
       return utils.escapeHtml(formatTimingSecondsMmSs(numeric));
