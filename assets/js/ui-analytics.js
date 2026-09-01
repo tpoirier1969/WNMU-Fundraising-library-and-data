@@ -35,6 +35,9 @@
   const START_TIME_MIN_AIRINGS = 5;
   const START_TIME_MIN_FUNDRAISERS = 3;
   const START_TIME_MIN_TITLES = 3;
+  const RATE_MIN_AIRINGS = 3;
+  const RATE_MIN_FUNDRAISERS = 2;
+  const RATE_MIN_TITLES = 1;
   const DURATION_MISMATCH_TOLERANCE_MINUTES = 10;
   const LONG_PAUSE_YEARS = 2;
   const HOLIDAY_RE = /christmas|holiday|holidays|xmas|thanksgiving|new year|hanukkah|kwanzaa/i;
@@ -1204,13 +1207,14 @@ function outlierSummary(values = []) {
   }
 
   function closestMedianSeason(realSeasonStats = []) {
-    const median = medianValue(realSeasonStats.map((item) => item.avg));
+    const value = (item) => Number(firstNonEmpty(item?.medianRate, item?.avg, 0) || 0);
+    const median = medianValue(realSeasonStats.map(value));
     return realSeasonStats.reduce((winner, item) => {
       if (!winner) return item;
-      const winnerDistance = Math.abs(Number(winner.avg || 0) - median);
-      const itemDistance = Math.abs(Number(item.avg || 0) - median);
+      const winnerDistance = Math.abs(value(winner) - median);
+      const itemDistance = Math.abs(value(item) - median);
       if (itemDistance < winnerDistance) return item;
-      if (itemDistance === winnerDistance && Number(item.avg || 0) < Number(winner.avg || 0)) return item;
+      if (itemDistance === winnerDistance && value(item) < value(winner)) return item;
       return winner;
     }, null);
   }
@@ -1249,6 +1253,105 @@ function outlierSummary(values = []) {
       mix: mix.label,
       allFour: mix.allFour,
       records
+    };
+  }
+
+
+  function fundraiserRateKey(record = {}) {
+    const scheduleId = text(record.scheduleId || '');
+    if (scheduleId) return `schedule:${scheduleId}`;
+    const scheduleTitle = text(record.scheduleTitle || record.fundraiser || '');
+    if (scheduleTitle) return `title:${lookupKey(scheduleTitle)}`;
+    const start = text(record.row?.drive_start_date || '').slice(0, 10);
+    const end = text(record.row?.drive_end_date || '').slice(0, 10);
+    if (start || end) return `range:${start}|${end}`;
+    return `season:${text(record.seasonYear || '')}`;
+  }
+
+  function fundraiserRateObservations(records = []) {
+    const observations = [];
+    groupBy(records.filter((record) => !record?.isNonSpecific), fundraiserRateKey).forEach((fundraiserRecords, key) => {
+      if (!fundraiserRecords.length) return;
+      const durations = fundraiserRecords.map((record) => Number(durationFromRecord(record) || 0));
+      // Match Historical Analytics: if any airing in this fundraiser/group lacks a usable
+      // internal length, the fundraiser does not become a partial rate observation.
+      if (durations.some((minutes) => !(minutes > 0))) return;
+      const minutes = durations.reduce((sum, value) => sum + value, 0);
+      if (!(minutes > 0)) return;
+      const dollars = fundraiserRecords.reduce((sum, record) => sum + Number(record.dollars || 0), 0);
+      const pledges = fundraiserRecords.reduce((sum, record) => sum + Number(record.pledges || 0), 0);
+      const titles = new Set(fundraiserRecords.map((record) => programIdentityKey(record)).filter(Boolean));
+      observations.push({
+        key,
+        dollars,
+        pledges,
+        minutes,
+        rate: (dollars * 60) / minutes,
+        airings: fundraiserRecords.length,
+        titles,
+        records: fundraiserRecords
+      });
+    });
+    return observations;
+  }
+
+  function fundraiserBalancedRateSummary(title, records = [], options = {}) {
+    const base = summarizeGroup(title, records);
+    const observations = fundraiserRateObservations(records);
+    const rates = observations.map((item) => item.rate);
+    const rateAirings = observations.reduce((sum, item) => sum + item.airings, 0);
+    const rateMinutes = observations.reduce((sum, item) => sum + item.minutes, 0);
+    const rateDollars = observations.reduce((sum, item) => sum + item.dollars, 0);
+    const ratePledges = observations.reduce((sum, item) => sum + item.pledges, 0);
+    const titleKeys = new Set();
+    observations.forEach((item) => item.titles.forEach((key) => titleKeys.add(key)));
+    const minAirings = Number(options.minAirings ?? RATE_MIN_AIRINGS);
+    const minFundraisers = Number(options.minFundraisers ?? RATE_MIN_FUNDRAISERS);
+    const minTitles = Number(options.minTitles ?? RATE_MIN_TITLES);
+    const medianRate = medianValue(rates);
+    const averageRate = rates.length ? rates.reduce((sum, value) => sum + value, 0) / rates.length : 0;
+    const pooledRate = rateMinutes > 0 ? (rateDollars * 60) / rateMinutes : 0;
+    return {
+      ...base,
+      medianRate,
+      averageRate,
+      pooledRate,
+      median: medianRate,
+      avg: averageRate,
+      rateAirings,
+      rateMinutes,
+      rateDollars,
+      ratePledges,
+      fundraiserCount: observations.length,
+      titleCount: titleKeys.size,
+      rateObservations: observations,
+      weak: rateAirings < minAirings || observations.length < minFundraisers || titleKeys.size < minTitles
+    };
+  }
+
+  function pairedStartTimeComparison(records = [], firstMinutes = 1200, secondMinutes = 1260) {
+    const bucket = (value) => Number.isFinite(Number(value)) ? Math.floor(Number(value) / 30) * 30 : null;
+    const first = fundraiserRateObservations(records.filter((record) => bucket(record.startMinutes) === firstMinutes));
+    const second = fundraiserRateObservations(records.filter((record) => bucket(record.startMinutes) === secondMinutes));
+    const firstByFundraiser = new Map(first.map((item) => [item.key, item]));
+    const secondByFundraiser = new Map(second.map((item) => [item.key, item]));
+    const pairs = [...firstByFundraiser.keys()]
+      .filter((key) => secondByFundraiser.has(key))
+      .map((key) => ({ key, first: firstByFundraiser.get(key), second: secondByFundraiser.get(key) }));
+    const differences = pairs.map((pair) => pair.second.rate - pair.first.rate);
+    const firstRates = pairs.map((pair) => pair.first.rate);
+    const secondRates = pairs.map((pair) => pair.second.rate);
+    return {
+      firstMinutes,
+      secondMinutes,
+      pairedFundraisers: pairs.length,
+      firstMedianRate: medianValue(firstRates),
+      secondMedianRate: medianValue(secondRates),
+      medianDifference: medianValue(differences),
+      firstWins: pairs.filter((pair) => pair.first.rate > pair.second.rate).length,
+      secondWins: pairs.filter((pair) => pair.second.rate > pair.first.rate).length,
+      ties: pairs.filter((pair) => pair.second.rate === pair.first.rate).length,
+      pairs
     };
   }
 
@@ -1683,28 +1786,45 @@ function outlierSummary(values = []) {
     });
   }
 
+
+  function rateBalancedQuestion(questionId = state.question) {
+    return Boolean((QUESTIONS[questionId] || {}).rateBalanced);
+  }
+
+  function updateMetricLabels() {
+    if (!dom.advMetric) return;
+    const balanced = rateBalancedQuestion();
+    const medianOption = dom.advMetric.querySelector('option[value="median"]');
+    const averageOption = dom.advMetric.querySelector('option[value="avg"]');
+    if (medianOption) medianOption.textContent = balanced ? 'Median fundraiser $ / pledge hour' : 'Median $ / airing';
+    if (averageOption) averageOption.textContent = balanced ? 'Average fundraiser $ / pledge hour' : 'Average $ / airing';
+  }
+
   function metricValue(row) {
-    if (state.metric === 'median') return Number(row.median || 0);
+    const balanced = rateBalancedQuestion();
+    if (state.metric === 'median') return Number(balanced ? row.medianRate : row.median || 0);
     if (state.metric === 'total') return Number(row.dollars || 0);
     if (state.metric === 'pledges') return Number(row.pledges || 0);
     if (state.metric === 'broadcasts') return Number(row.broadcasts || 0);
-    return Number(row.avg || 0);
+    return Number(balanced ? row.averageRate : row.avg || 0);
   }
 
   function formatMetricValue(row) {
-    if (state.metric === 'median') return formatMoney(row.median || 0);
+    const balanced = rateBalancedQuestion();
+    if (state.metric === 'median') return balanced ? `${formatMoney(row.medianRate || 0)} / pledge hr` : formatMoney(row.median || 0);
     if (state.metric === 'total') return formatMoney(row.dollars || 0);
     if (state.metric === 'pledges') return formatNumber(row.pledges || 0);
     if (state.metric === 'broadcasts') return formatNumber(row.broadcasts || 0);
-    return formatMoney(row.avg || 0);
+    return balanced ? `${formatMoney(row.averageRate || 0)} / pledge hr` : formatMoney(row.avg || 0);
   }
 
   function metricLabel() {
-    if (state.metric === 'median') return 'Median / airing';
+    const balanced = rateBalancedQuestion();
+    if (state.metric === 'median') return balanced ? 'Median fundraiser $ / pledge hour' : 'Median / airing';
     if (state.metric === 'total') return 'Total dollars';
     if (state.metric === 'pledges') return 'Pledges';
     if (state.metric === 'broadcasts') return 'Broadcasts';
-    return 'Avg / airing';
+    return balanced ? 'Average fundraiser $ / pledge hour' : 'Avg / airing';
   }
 
   function programTitleCell(row) {
@@ -1726,39 +1846,42 @@ function outlierSummary(values = []) {
   }
 
   function startTimeEvidence(records = []) {
-    const rateValid = records.filter((record) => Number(durationFromRecord(record)) > 0);
-    const fundraisers = new Set(rateValid.map((record) => text(record.scheduleId || record.scheduleTitle || record.fundraiser || '')).filter(Boolean));
-    const titles = new Set(rateValid.map((record) => programIdentityKey(record)).filter(Boolean));
+    const summary = fundraiserBalancedRateSummary('Start time', records, {
+      minAirings: START_TIME_MIN_AIRINGS,
+      minFundraisers: START_TIME_MIN_FUNDRAISERS,
+      minTitles: START_TIME_MIN_TITLES
+    });
     return {
-      rateAirings: rateValid.length,
-      fundraiserCount: fundraisers.size,
-      titleCount: titles.size,
-      sufficient: rateValid.length >= START_TIME_MIN_AIRINGS
-        && fundraisers.size >= START_TIME_MIN_FUNDRAISERS
-        && titles.size >= START_TIME_MIN_TITLES
+      rateAirings: summary.rateAirings,
+      fundraiserCount: summary.fundraiserCount,
+      titleCount: summary.titleCount,
+      sufficient: !summary.weak
     };
   }
 
   function startTimeRead(rows = []) {
     if (!rows.length) return 'No start-time records match the current filters.';
     const useful = rows.filter((row) => !row.weak);
+    const paired = pairedStartTimeComparison(filteredRecordsFor('startTimes'), 1200, 1260);
+    const pairedRead = paired.pairedFundraisers
+      ? `<br><br><b>8:00 PM vs 9:00 PM inside the same fundraisers:</b> ${formatNumber(paired.pairedFundraisers)} fundraiser(s) contain rate-valid evidence for both slots. 8:00 PM median: <b>${formatMoney(paired.firstMedianRate)} / pledge hr</b>; 9:00 PM median: <b>${formatMoney(paired.secondMedianRate)} / pledge hr</b>. Median within-fundraiser difference (9 PM minus 8 PM): <b>${formatMoney(paired.medianDifference)} / pledge hr</b>. 9 PM wins ${formatNumber(paired.secondWins)}, 8 PM wins ${formatNumber(paired.firstWins)}, ties ${formatNumber(paired.ties)}.`
+      : '<br><br><b>8:00 PM vs 9:00 PM:</b> No fundraiser currently has rate-valid evidence for both slots under these filters, so the app will not manufacture a paired conclusion.';
     if (!useful.length) {
-      return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. No current bucket meets the historical evidence threshold of <b>${START_TIME_MIN_AIRINGS} rate-valid airings across ${START_TIME_MIN_FUNDRAISERS} fundraisers and ${START_TIME_MIN_TITLES} distinct titles</b>. Sparse buckets remain visible only when weak evidence is shown.`;
+      return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Each fundraiser contributes at most one $/pledge-hour observation to a slot, so a long fundraiser cannot overpower shorter fundraisers by supplying more airings. No current bucket meets the Historical Analytics threshold of <b>${START_TIME_MIN_AIRINGS} rate-valid airings across ${START_TIME_MIN_FUNDRAISERS} fundraisers and ${START_TIME_MIN_TITLES} distinct titles</b>.${pairedRead}`;
     }
     const bestUseful = useful[0];
-    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Imported fundraiser history supplies completed results; saved Scheduling placements preserve completed report-day $0s, and unreported days remain pending. A bucket is considered usable only with <b>${START_TIME_MIN_AIRINGS}+ rate-valid airings, ${START_TIME_MIN_FUNDRAISERS}+ fundraisers, and ${START_TIME_MIN_TITLES}+ distinct titles</b>. Missing-duration rows cannot make a bucket qualify.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best qualified bucket: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; median <b>${formatMoney(bestUseful.median || 0)}</b>, average <b>${formatMoney(bestUseful.avg || 0)}</b>, total <b>${formatMoney(bestUseful.dollars || 0)}</b>, with <b>${formatNumber(bestUseful.rateAirings || 0)}</b> rate-valid airing(s) across <b>${formatNumber(bestUseful.fundraiserCount || 0)}</b> fundraiser(s) and <b>${formatNumber(bestUseful.titleCount || 0)}</b> title(s).`;
+    return `Start-time performance is grouped in <b>30-minute actual program-start buckets</b>. Imported fundraiser results supply completed dollars and actual times; saved Scheduling placements retain completed report-day $0s and internal program length. Ranking uses the <b>median fundraiser $ / pledge hour</b>, not the median dollars of individual airings. Each fundraiser contributes one observation per slot. A bucket is considered usable only with <b>${START_TIME_MIN_AIRINGS}+ rate-valid airings, ${START_TIME_MIN_FUNDRAISERS}+ fundraisers, and ${START_TIME_MIN_TITLES}+ distinct titles</b>.<br><br>Current rank: <b>${escapeHtml(metricLabel())}</b>. Best qualified bucket: <b>${escapeHtml(bestUseful.title)}</b> at <b>${formatMetricValue(bestUseful)}</b>; fundraiser median <b>${formatMoney(bestUseful.medianRate || 0)}</b> / pledge hr, fundraiser average <b>${formatMoney(bestUseful.averageRate || 0)}</b> / pledge hr, pooled rate <b>${formatMoney(bestUseful.pooledRate || 0)}</b> / pledge hr, with <b>${formatNumber(bestUseful.rateAirings || 0)}</b> rate-valid airing(s) across <b>${formatNumber(bestUseful.fundraiserCount || 0)}</b> fundraiser(s) and <b>${formatNumber(bestUseful.titleCount || 0)}</b> title(s).${pairedRead}`;
   }
 
   function rowsStartTimes() {
     return applyEvidence([...groupBy(filteredRecordsFor('startTimes'), startTimeLabel)]
       .map(([title, records]) => {
-        const row = summarizeGroup(title, records);
-        const evidence = startTimeEvidence(records);
+        const row = fundraiserBalancedRateSummary(title, records, {
+          minAirings: START_TIME_MIN_AIRINGS,
+          minFundraisers: START_TIME_MIN_FUNDRAISERS,
+          minTitles: START_TIME_MIN_TITLES
+        });
         row.startMinutes = records.map((record) => Number(record.startMinutes)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b)[0];
-        row.rateAirings = evidence.rateAirings;
-        row.fundraiserCount = evidence.fundraiserCount;
-        row.titleCount = evidence.titleCount;
-        row.weak = !evidence.sufficient;
         return row;
       })
       .filter((row) => row.title !== 'Unknown start time')
@@ -1773,15 +1896,15 @@ function outlierSummary(values = []) {
 
   function rowsTopics() {
     return applyEvidence([...groupBy(filteredRecordsFor('topics'), (record) => record.topic)]
-      .map(([title, records]) => summarizeGroup(title, records))
-      .sort((a, b) => metricValue(b) - metricValue(a) || b.avg - a.avg));
+      .map(([title, records]) => fundraiserBalancedRateSummary(title, records))
+      .sort((a, b) => metricValue(b) - metricValue(a) || b.averageRate - a.averageRate));
   }
 
   function rowsSecondaryTopics() {
     return applyEvidence([...groupBy(filteredRecordsFor('secondaryTopics'), (record) => record.secondaryTopic || 'Unassigned secondary topic')]
-      .map(([title, records]) => summarizeGroup(title, records))
+      .map(([title, records]) => fundraiserBalancedRateSummary(title, records))
       .filter((row) => row.title && row.title !== 'Unassigned secondary topic')
-      .sort((a, b) => metricValue(b) - metricValue(a) || b.avg - a.avg || b.dollars - a.dollars));
+      .sort((a, b) => metricValue(b) - metricValue(a) || b.averageRate - a.averageRate || b.dollars - a.dollars));
   }
 
   function rowsTopicOverview() {
@@ -1899,39 +2022,52 @@ function outlierSummary(values = []) {
     groupBy(rows, (record) => record.topic).forEach((records, title) => {
       const bySeason = SEASONS.map((season) => {
         const matches = records.filter((record) => record.season === season);
-        const dollars = matches.reduce((sum, record) => sum + record.dollars, 0);
-        return { season, broadcasts: matches.length, dollars, avg: matches.length ? dollars / matches.length : null, lift: null, isBaseline: false };
+        const summary = fundraiserBalancedRateSummary(season, matches);
+        return {
+          season,
+          broadcasts: matches.length,
+          dollars: matches.reduce((sum, record) => sum + Number(record.dollars || 0), 0),
+          rateAirings: summary.rateAirings,
+          fundraiserCount: summary.fundraiserCount,
+          titleCount: summary.titleCount,
+          medianRate: summary.medianRate,
+          averageRate: summary.averageRate,
+          pooledRate: summary.pooledRate,
+          sufficient: !summary.weak && summary.fundraiserCount > 0,
+          lift: null,
+          isBaseline: false
+        };
       });
-      const real = bySeason.filter((item) => item.broadcasts > 0 && Number.isFinite(item.avg));
+      const real = bySeason.filter((item) => item.sufficient && Number.isFinite(item.medianRate));
       if (!real.length) return;
       const baseline = closestMedianSeason(real) || real[0];
-      const baselineAvg = Number(baseline?.avg || 0);
+      const baselineRate = Number(baseline?.medianRate || 0);
       bySeason.forEach((item) => {
-        if (!item.broadcasts || !Number.isFinite(item.avg) || !(baselineAvg > 0)) return;
-        item.lift = ((item.avg - baselineAvg) / baselineAvg) * 100;
+        if (!item.sufficient || !Number.isFinite(item.medianRate) || !(baselineRate > 0)) return;
+        item.lift = ((item.medianRate - baselineRate) / baselineRate) * 100;
         item.isBaseline = item.season === baseline.season;
       });
       const best = real.reduce((winner, item) => Number(item.lift || 0) > Number(winner.lift || 0) ? item : winner, real[0]);
       const worst = real.reduce((winner, item) => Number(item.lift || 0) < Number(winner.lift || 0) ? item : winner, real[0]);
       const positiveLift = Math.max(...real.map((item) => Number(item.lift || 0)), 0);
       const negativeLift = Math.min(...real.map((item) => Number(item.lift || 0)), 0);
-      const summary = summarizeGroup(title, records);
+      const summary = fundraiserBalancedRateSummary(title, records);
       out.push({
         ...summary,
         seasons: real.length,
-        avg: baselineAvg,
+        avg: baselineRate,
         baselineSeason: baseline.season,
-        baselineAvg,
+        baselineRate,
         seasonStats: bySeason,
         bestSeason: best.season,
         bestLift: Number(best.lift || 0),
         worstSeason: worst.season,
         worstLift: Number(worst.lift || 0),
         liftRangeLabel: `${formatPercent(positiveLift)} / ${formatPercent(negativeLift)}`,
-        weak: records.length < WEAK_BROADCASTS || real.length < WEAK_SEASONS
+        weak: summary.weak || real.length < 2
       });
     });
-    return applyEvidence(out.sort((a, b) => b.avg - a.avg || b.dollars - a.dollars));
+    return applyEvidence(out.sort((a, b) => b.baselineRate - a.baselineRate || b.dollars - a.dollars));
   }
 
   function evidenceLabel(row) {
@@ -1942,7 +2078,7 @@ function outlierSummary(values = []) {
 
 
   function seasonStat(row, season) {
-    return (row.seasonStats || []).find((item) => item.season === season) || { broadcasts: 0, dollars: 0, avg: null, lift: null, isBaseline: false };
+    return (row.seasonStats || []).find((item) => item.season === season) || { broadcasts: 0, dollars: 0, medianRate: null, averageRate: null, fundraiserCount: 0, rateAirings: 0, sufficient: false, lift: null, isBaseline: false };
   }
 
   function liftClass(value) {
@@ -1952,10 +2088,13 @@ function outlierSummary(values = []) {
 
   function seasonPerformanceCell(row, season) {
     const stat = seasonStat(row, season);
-    if (!stat.broadcasts) return '<span class="muted-cell">—</span>';
+    if (!stat.broadcasts || !stat.fundraiserCount) return '<span class="muted-cell">—</span>';
+    if (!stat.sufficient) {
+      return `<b>${formatMoney(stat.medianRate || 0)} / hr</b><br><span class="mix">${formatNumber(stat.fundraiserCount)} drive(s) · ${formatNumber(stat.rateAirings)} valid airing(s) · low sample</span>`;
+    }
     const lift = Number.isFinite(stat.lift) ? stat.lift : 0;
-    const liftText = stat.isBaseline ? '0% avg' : formatPercent(lift);
-    return `<b>${formatMoney(stat.avg || 0)}</b><br><span class="mix">${formatMoney(stat.dollars || 0)} · <span class="season-lift ${liftClass(lift)}">${escapeHtml(liftText)}</span></span>`;
+    const liftText = stat.isBaseline ? '0% baseline' : formatPercent(lift);
+    return `<b>${formatMoney(stat.medianRate || 0)} / hr</b><br><span class="mix">${formatNumber(stat.fundraiserCount)} drive(s) · <span class="season-lift ${liftClass(lift)}">${escapeHtml(liftText)}</span></span>`;
   }
 
   function labelWithMixCell(row, labelHtml = '') {
@@ -1978,7 +2117,7 @@ function outlierSummary(values = []) {
     const top = rows[0];
     const total = rows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
     const fourSeason = rows.filter((row) => row.allFour).length;
-    return `${formatNumber(rows.length)} primary topic(s) match the current filters. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>Combined dollars in these topic rows: <b>${formatMoney(total)}</b>. ${formatNumber(fourSeason)} topic(s) have airings in all four pledge seasons.`;
+    return `${formatNumber(rows.length)} primary topic(s) match the current filters. Rankings use one $/pledge-hour observation per fundraiser, so drives with more airings do not receive extra weight. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>For the leading row: fundraiser median <b>${formatMoney(top.medianRate || 0)}</b> / pledge hr, fundraiser average <b>${formatMoney(top.averageRate || 0)}</b> / pledge hr, pooled rate <b>${formatMoney(top.pooledRate || 0)}</b> / pledge hr across <b>${formatNumber(top.fundraiserCount || 0)}</b> fundraiser(s). Combined factual dollars in these topic rows: <b>${formatMoney(total)}</b>. ${formatNumber(fourSeason)} topic(s) have airings in all four pledge seasons.`;
   }
 
   function secondaryTopicRead(rows) {
@@ -1986,7 +2125,7 @@ function outlierSummary(values = []) {
     const top = rows[0];
     const total = rows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
     const topicText = Array.isArray(state.topicFilters) && state.topicFilters.length === 1 ? ` inside <b>${escapeHtml(state.topicFilters[0])}</b>` : '';
-    return `${formatNumber(rows.length)} secondary topic(s) match the current filters${topicText}. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>Combined dollars in these secondary-topic rows: <b>${formatMoney(total)}</b>. For Music, choose Primary topic = Music and leave Secondary topic on All to compare the subtopics against each other.`;
+    return `${formatNumber(rows.length)} secondary topic(s) match the current filters${topicText}. Each fundraiser contributes at most one $/pledge-hour observation to a subtopic. <b>${escapeHtml(top.title)}</b> leads by ${metricLabel().toLowerCase()} at <b>${formatMetricValue(top)}</b>.<br><br>${topRowsText(rows)}<br><br>For the leading row: fundraiser median <b>${formatMoney(top.medianRate || 0)}</b> / pledge hr, fundraiser average <b>${formatMoney(top.averageRate || 0)}</b> / pledge hr, pooled rate <b>${formatMoney(top.pooledRate || 0)}</b> / pledge hr across <b>${formatNumber(top.fundraiserCount || 0)}</b> fundraiser(s). Combined factual dollars in these secondary-topic rows: <b>${formatMoney(total)}</b>. For Music, choose Primary topic = Music and leave Secondary topic on All to compare the subtopics against each other.`;
   }
 
   function seasonalRead(rows) {
@@ -1994,13 +2133,14 @@ function outlierSummary(values = []) {
     const topLines = rows.slice(0, 3).map((row, index) => {
       const seasonBits = SEASONS.map((season) => {
         const stat = seasonStat(row, season);
-        if (!stat.broadcasts) return `${season}: no airings`;
-        const liftText = stat.isBaseline ? '0% avg' : formatPercent(Number(stat.lift || 0));
-        return `${season}: ${formatMoney(stat.avg || 0)} (${liftText})`;
+        if (!stat.broadcasts || !stat.fundraiserCount) return `${season}: no rate-valid fundraiser evidence`;
+        if (!stat.sufficient) return `${season}: ${formatMoney(stat.medianRate || 0)}/hr (low sample)`;
+        const liftText = stat.isBaseline ? '0% baseline' : formatPercent(Number(stat.lift || 0));
+        return `${season}: ${formatMoney(stat.medianRate || 0)}/hr (${liftText}; ${stat.fundraiserCount} drives)`;
       }).join(' · ');
-      return `${index + 1}. <b>${escapeHtml(row.title)}</b> — baseline <b>${escapeHtml(row.baselineSeason || '')}</b> at <b>${formatMoney(row.baselineAvg || row.avg || 0)}</b>; ${escapeHtml(seasonBits)}; total <b>${formatMoney(row.dollars || 0)}</b>.`;
+      return `${index + 1}. <b>${escapeHtml(row.title)}</b> — baseline <b>${escapeHtml(row.baselineSeason || '')}</b> at <b>${formatMoney(row.baselineRate || 0)} / pledge hr</b>; ${escapeHtml(seasonBits)}.`;
     }).join('<br>');
-    return `This view compares each primary topic to <b>itself</b>, not to the whole pledge drive. For each topic, the season closest to that topic’s median seasonal average is treated as the <b>0% average</b>. The other seasons show how far above or below that topic’s own baseline they landed.<br><br>${topLines}<br><br>Use the four season columns to spot useful patterns: a topic with December +80% and August -40% is probably a December tool, even if its all-year average looks merely okay.`;
+    return `This view compares each primary topic to <b>itself</b> using the same fundraiser-balanced rate logic as Historical Analytics. Each season value is the <b>median fundraiser $ / pledge hour</b> for that topic, not average dollars per airing. A season needs at least ${RATE_MIN_AIRINGS} rate-valid airings across ${RATE_MIN_FUNDRAISERS} fundraisers before it can establish the baseline or a lift. The qualifying season closest to that topic’s median seasonal rate becomes the <b>0% baseline</b>.<br><br>${topLines}`;
   }
 
   function liveRead(rows) {
@@ -2048,8 +2188,9 @@ function outlierSummary(values = []) {
     startTimes: {
       title: 'Start time performance',
       summary: 'Broadcast proceeds by the actual imported start time when report evidence exists, while saved Scheduling placements preserve report-day $0s.',
-      graphTitle: 'Start time buckets',
+      graphTitle: 'Start time by fundraiser-balanced $ / pledge hour',
       tableTitle: 'Start time performance',
+      rateBalanced: true,
       tableNote: 'Imported fundraiser history is the factual source for completed airing date, time, title, and dollars. Saved Scheduling placements retain completed report-day $0s; unreported days remain pending. Historical evidence rules match the printed Historical Analytics report: at least 5 rate-valid airings across 3 fundraisers and 3 distinct titles. Missing-duration rows cannot qualify a start slot. Use Pledge season plus Primary/Secondary topic to test scheduling arguments.',
       source: 'schedule',
       rows: rowsStartTimes,
@@ -2060,8 +2201,9 @@ function outlierSummary(values = []) {
       read: startTimeRead,
       columns: [
         ['Start time', (row) => labelWithMixCell(row), '', (row) => startTimeSortKey(row)],
-        ['Median / airing', (row) => formatMoney(row.median || 0), 'money emphasis', (row) => row.median || 0],
-        ['Avg / airing', (row) => formatMoney(row.avg || 0), 'money', (row) => row.avg || 0],
+        ['Median $ / pledge hr', (row) => formatMoney(row.medianRate || 0), 'money emphasis', (row) => row.medianRate || 0],
+        ['Avg $ / pledge hr', (row) => formatMoney(row.averageRate || 0), 'money', (row) => row.averageRate || 0],
+        ['Pooled $ / pledge hr', (row) => formatMoney(row.pooledRate || 0), 'money', (row) => row.pooledRate || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Pledges', (row) => formatNumber(row.pledges), 'num', (row) => row.pledges],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
@@ -2134,10 +2276,13 @@ function outlierSummary(values = []) {
     },
     topics: {
       title: 'What topics work best?',
-      summary: 'Topic strength by median dollars per airing, with average, outliers, and four-season coverage shown.',
-      graphTitle: 'Topics by typical dollars per airing',
+      summary: 'Topic strength by fundraiser-balanced Broadcast $ / pledge hour.',
+      graphTitle: 'Topics by median fundraiser $ / pledge hour',
       tableTitle: 'Topic ranking',
-      tableNote: 'Season mix uses M/J/A/D counts, for example [M-3, J-1, A-0, D-5].',
+      tableNote: 'Each fundraiser contributes one rate observation per topic. Historical evidence thresholds are 3 rate-valid airings across 2 fundraisers. Season mix uses M/J/A/D airing counts for context.',
+      source: 'schedule',
+      excludeNonSpecific: true,
+      rateBalanced: true,
       rows: rowsTopics,
       metricDriven: true,
       metric: (rows) => rows[0] ? formatMoney(rows[0].median) : '—',
@@ -2145,9 +2290,10 @@ function outlierSummary(values = []) {
       read: topicRead,
       columns: [
         ['Topic', (row) => groupTitleDetailCell(row), 'analytics-left', (row) => row.title],
-        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis analytics-left', (row) => row.median],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money analytics-left', (row) => row.avg],
-        ['Distribution / outliers', (row) => groupOutlierDetailCell(row), 'analytics-left', (row) => row.zeroDominated ? Number(row.zeroCount || 0) : (row.outlierCount || 0)],
+        ['Median $ / pledge hr', (row) => formatMoney(row.medianRate), 'money emphasis analytics-left', (row) => row.medianRate],
+        ['Avg $ / pledge hr', (row) => formatMoney(row.averageRate), 'money analytics-left', (row) => row.averageRate],
+        ['Pooled $ / pledge hr', (row) => formatMoney(row.pooledRate), 'money analytics-left', (row) => row.pooledRate],
+        ['Rate evidence', (row) => `${formatNumber(row.fundraiserCount || 0)} drives · ${formatNumber(row.rateAirings || 0)} valid · ${formatNumber(row.titleCount || 0)} titles`, 'analytics-left', (row) => row.rateAirings || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money analytics-left', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num analytics-left', (row) => row.broadcasts],
         ['Season mix', (row) => escapeHtml(row.mix), 'analytics-left', (row) => row.seasons || 0]
@@ -2155,10 +2301,13 @@ function outlierSummary(values = []) {
     },
     secondaryTopics: {
       title: 'What secondary topics work best?',
-      summary: 'Subtopic strength inside the selected filters. Use Primary topic = Music for Music styles.',
-      graphTitle: 'Secondary topics by typical dollars per airing',
+      summary: 'Subtopic strength by fundraiser-balanced Broadcast $ / pledge hour. Use Primary topic = Music for Music styles.',
+      graphTitle: 'Secondary topics by median fundraiser $ / pledge hour',
       tableTitle: 'Secondary topic ranking',
-      tableNote: 'Choose Primary topic = Music and leave Secondary topic = All to compare Music subtopics against each other.',
+      tableNote: 'Each fundraiser contributes one rate observation per subtopic. Choose Primary topic = Music and leave Secondary topic = All to compare Music subtopics against each other.',
+      source: 'schedule',
+      excludeNonSpecific: true,
+      rateBalanced: true,
       rows: rowsSecondaryTopics,
       metricDriven: true,
       metric: (rows) => rows[0] ? formatMoney(rows[0].median) : '—',
@@ -2166,9 +2315,10 @@ function outlierSummary(values = []) {
       read: secondaryTopicRead,
       columns: [
         ['Secondary topic', (row) => groupTitleDetailCell(row), 'analytics-left', (row) => row.title],
-        ['Median / airing', (row) => formatMoney(row.median), 'money emphasis analytics-left', (row) => row.median],
-        ['Avg / airing', (row) => formatMoney(row.avg), 'money analytics-left', (row) => row.avg],
-        ['Distribution / outliers', (row) => groupOutlierDetailCell(row), 'analytics-left', (row) => row.zeroDominated ? Number(row.zeroCount || 0) : (row.outlierCount || 0)],
+        ['Median $ / pledge hr', (row) => formatMoney(row.medianRate), 'money emphasis analytics-left', (row) => row.medianRate],
+        ['Avg $ / pledge hr', (row) => formatMoney(row.averageRate), 'money analytics-left', (row) => row.averageRate],
+        ['Pooled $ / pledge hr', (row) => formatMoney(row.pooledRate), 'money analytics-left', (row) => row.pooledRate],
+        ['Rate evidence', (row) => `${formatNumber(row.fundraiserCount || 0)} drives · ${formatNumber(row.rateAirings || 0)} valid · ${formatNumber(row.titleCount || 0)} titles`, 'analytics-left', (row) => row.rateAirings || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money analytics-left', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num analytics-left', (row) => row.broadcasts],
         ['Season mix', (row) => escapeHtml(row.mix), 'analytics-left', (row) => row.seasons || 0]
@@ -2176,20 +2326,22 @@ function outlierSummary(values = []) {
     },
     seasonal: {
       title: 'When do topics work best?',
-      summary: 'Compares each primary topic across March, June, August, and December using that topic’s own median-like season as the baseline.',
+      summary: 'Compares each primary topic across March, June, August, and December using fundraiser-balanced $ / pledge hour.',
       graphTitle: 'Season lift by topic',
       tableTitle: 'Topic seasonal lift',
-      tableNote: 'Holiday-related titles are excluded. Each topic uses its own closest-to-median season as the 0% average, then March, June, August, and December show avg/airing, total dollars, and percent above or below that topic baseline.',
+      tableNote: 'Holiday-related titles and Non-Specific Pledges are excluded. Each season uses the median fundraiser $/pledge-hour for that topic; low-sample seasons cannot establish the baseline or lift.',
       useSeason: false,
+      source: 'schedule',
+      excludeNonSpecific: true,
       rows: rowsSeasonal,
-      metric: (rows) => rows[0] ? formatMoney(rows[0].avg) : '—',
-      tag: 'four-season lift',
-      chartValue: (row) => row.avg || 0,
-      chartLabel: (row) => formatMoney(row.avg || 0),
+      metric: (rows) => rows[0] ? formatMoney(rows[0].baselineRate) : '—',
+      tag: 'four-season rate lift',
+      chartValue: (row) => row.baselineRate || 0,
+      chartLabel: (row) => `${formatMoney(row.baselineRate || 0)} / hr`,
       read: seasonalRead,
       columns: [
         ['Topic', (row) => labelWithMixCell(row), '', (row) => row.title],
-        ['Average', (row) => `${formatMoney(row.baselineAvg || row.avg || 0)}<br><span class="mix">${escapeHtml(row.baselineSeason || '')} baseline</span>`, 'money emphasis', (row) => row.baselineAvg || row.avg || 0],
+        ['Baseline median $ / pledge hr', (row) => `${formatMoney(row.baselineRate || 0)}<br><span class="mix">${escapeHtml(row.baselineSeason || '')} baseline</span>`, 'money emphasis', (row) => row.baselineRate || 0],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['March', (row) => seasonPerformanceCell(row, 'March'), 'money emphasis', (row) => Number(seasonStat(row, 'March').avg || 0)],
         ['June', (row) => seasonPerformanceCell(row, 'June'), 'money emphasis', (row) => Number(seasonStat(row, 'June').avg || 0)],
@@ -2540,6 +2692,7 @@ function outlierSummary(values = []) {
 
   function updateFilterState() {
     const question = QUESTIONS[state.question] || QUESTIONS.programs;
+    updateMetricLabels();
     const liveComparison = state.question === 'live';
     dom.season.disabled = question.useSeason === false;
     const yearDisabled = question.useYear === false;
