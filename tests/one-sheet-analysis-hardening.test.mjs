@@ -145,6 +145,22 @@ assert.ok(A, 'analysis API should load');
 }
 
 const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+const reportHarnessSource = reportSource.replace("  document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });", "  globalThis.__reportHarness = { lineChartSvg };");
+const reportSandbox = { console, window: {}, document: { addEventListener() {} }, Date, Map, Set, Math, Number, String, Array, Object, RegExp };
+vm.createContext(reportSandbox);
+vm.runInContext(reportHarnessSource, reportSandbox);
+assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');
+const overlapHtml = reportSandbox.__reportHarness.lineChartSvg({
+  labels: ['1st Saturday'],
+  series: [
+    { label: 'Fundraiser A', values: [1000], tooltips: [{ title: 'Aug 5, 2017 · 1st Saturday', detail: '$1,000 Broadcast', lines: ['Program A — $1,000'] }] },
+    { label: 'Fundraiser B', values: [1000], tooltips: [{ title: 'Aug 17, 2019 · 1st Saturday', detail: '$1,000 Broadcast', lines: ['Program B — $1,000'] }] }
+  ]
+});
+const overlapPayloads = [...overlapHtml.matchAll(/data-chart-tooltip="([^"]+)"/g)].map((match) => JSON.parse(decodeURIComponent(match[1])));
+assert.equal(overlapPayloads.length, 2, 'both touching markers should remain interactive');
+assert.equal(overlapPayloads[0].sections?.length, 2, 'hovering either touching marker should expose both point payloads');
+assert.deepEqual(Array.from(overlapPayloads[0].sections, (section) => section.title), ['Aug 5, 2017 · 1st Saturday', 'Aug 17, 2019 · 1st Saturday']);
 assert.match(reportSource, /Rate-eligible hours/);
 assert.match(reportSource, /rate base/);
 assert.match(reportSource, /Topic attribution:/);
