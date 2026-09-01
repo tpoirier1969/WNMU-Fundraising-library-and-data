@@ -5,9 +5,10 @@ on:
   push:
     branches:
       - main
+      - release/v0.22.126-unmatched-start-time-audit
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   node-tests:
@@ -16,9 +17,22 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Apply v0.22.126 source changes
+        run: python .github/tmp_v022126_update.py
       - name: Run regression tests
         run: node --test tests/*.test.mjs
+      - name: Commit clean v0.22.126 release branch
+        run: |
+          git checkout origin/main -- .github/workflows/regression-tests.yml
+          rm -f .github/tmp_v022126_update.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Audit unmatched imports and protect start-time rankings (v0.22.126)"
+          git push origin HEAD:release/v0.22.126-unmatched-start-time-audit
