@@ -19,7 +19,9 @@ jobs:
         with:
           node-version: '22'
       - name: Apply source changes
-        run: python3 .github/v127_stage1.py
+        run: |
+          python3 .github/v127_stage1.py
+          python3 .github/v127_stage1_fix.py
       - name: Run regression tests
         run: node --test tests/*.test.mjs
       - name: Commit generated source changes
