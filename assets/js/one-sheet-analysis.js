@@ -310,18 +310,24 @@
     const rows = Array.isArray(allRows) ? allRows : [];
     const start = text(schedule.startDate);
     const end = text(schedule.endDate);
-    if (start && end) {
-      const exact = rows.filter((row) =>
-        text(row.drive_start_date).slice(0, 10) === start
-        && text(row.drive_end_date).slice(0, 10) === end
-      );
-      if (exact.length) return exact;
-    }
-    const identity = scheduleSeasonYear(schedule);
-    if (!identity.season || !identity.year) return [];
+    if (!(start && end)) return [];
+
+    const exact = rows.filter((row) =>
+      text(row.drive_start_date).slice(0, 10) === start
+      && text(row.drive_end_date).slice(0, 10) === end
+    );
+    if (exact.length) return exact;
+
+    // Do not let a saved fundraiser absorb every imported airing in the same
+    // pledge season. Rows with no explicit drive identity may attach by actual
+    // air date, but rows explicitly assigned to another drive may not.
     return rows.filter((row) => {
-      const date = parseDate(importedDateKey(row));
-      return Boolean(date && seasonForDate(date) === identity.season && date.getFullYear() === identity.year);
+      const date = importedDateKey(row);
+      if (!date || date < start || date > end) return false;
+      const driveStart = text(row.drive_start_date).slice(0, 10);
+      const driveEnd = text(row.drive_end_date).slice(0, 10);
+      if (driveStart && driveEnd) return driveStart === start && driveEnd === end;
+      return true;
     });
   }
 
@@ -1226,12 +1232,83 @@
     };
   }
 
+  function preflightImportedCoverageFindings(schedules = [], airings = []) {
+    const scheduleWindows = (schedules || []).map((schedule) => ({
+      schedule,
+      startDate: text(schedule?.startDate || schedule?.start_date || ''),
+      endDate: text(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '')
+    })).filter((item) => item.startDate && item.endDate);
+
+    const uncovered = (airings || []).map((row) => ({ row, dateKey: importedDateKey(row) }))
+      .filter((entry) => entry.dateKey && !scheduleWindows.some((window) => entry.dateKey >= window.startDate && entry.dateKey <= window.endDate));
+    if (!uncovered.length) return [];
+
+    const explicitGroups = new Map();
+    const dateGroups = new Map();
+    uncovered.forEach((entry) => {
+      const driveStart = text(entry.row?.drive_start_date).slice(0, 10);
+      const driveEnd = text(entry.row?.drive_end_date).slice(0, 10);
+      const explicit = /^\d{4}-\d{2}-\d{2}$/.test(driveStart)
+        && /^\d{4}-\d{2}-\d{2}$/.test(driveEnd)
+        && driveStart <= driveEnd
+        && entry.dateKey >= driveStart
+        && entry.dateKey <= driveEnd;
+      if (explicit) {
+        const key = `${driveStart}|${driveEnd}`;
+        if (!explicitGroups.has(key)) explicitGroups.set(key, { startDate: driveStart, endDate: driveEnd, rows: [], source: 'imported drive dates' });
+        explicitGroups.get(key).rows.push(entry.row);
+        return;
+      }
+      if (!dateGroups.has(entry.dateKey)) dateGroups.set(entry.dateKey, { startDate: entry.dateKey, endDate: entry.dateKey, rows: [], source: 'uncovered air date' });
+      dateGroups.get(entry.dateKey).rows.push(entry.row);
+    });
+
+    const groups = [...explicitGroups.values(), ...dateGroups.values()]
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
+
+    return groups.map((group) => {
+      const rows = group.rows || [];
+      const dollars = rows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+      const pledges = rows.reduce((sum, row) => sum + (Number(row?.pledge_count || row?.pledges || 0) || 0), 0);
+      const distinctDates = [...new Set(rows.map(importedDateKey).filter(Boolean))].sort();
+      const start = parseDate(group.startDate);
+      const identity = { season: seasonForDate(start), year: start?.getFullYear() || 0 };
+      const sameSeason = scheduleWindows.filter((window) => {
+        const scheduleIdentity = scheduleSeasonYear(window.schedule || {});
+        return identity.season && identity.year
+          && scheduleIdentity.season === identity.season
+          && Number(scheduleIdentity.year) === Number(identity.year);
+      });
+      const nearby = sameSeason.length
+        ? ` · saved ${identity.season} ${identity.year} window${sameSeason.length === 1 ? '' : 's'}: ${sameSeason.map((window) => `${window.startDate}–${window.endDate}`).join(', ')}`
+        : '';
+      const rangeLabel = group.startDate === group.endDate ? group.startDate : `${group.startDate}–${group.endDate}`;
+      return {
+        title: group.startDate === group.endDate ? 'Uncovered pledge date' : 'Uncovered pledge period',
+        programId: '',
+        mismatchTypes: ['Missing fundraiser schedule'],
+        detail: `${rangeLabel} · ${rows.length} imported row${rows.length === 1 ? '' : 's'} on ${distinctDates.length} air date${distinctDates.length === 1 ? '' : 's'} · $${dollars.toFixed(2)} Broadcast · ${pledges} pledge${pledges === 1 ? '' : 's'} · no saved fundraiser schedule covers these imported air dates · range source: ${group.source}${nearby}`,
+        repair: {
+          type: 'create-missing-schedule',
+          startDate: group.startDate,
+          endDate: group.endDate,
+          rowCount: rows.length,
+          dollars,
+          pledges
+        }
+      };
+    });
+  }
+
   function dataHealthReport(schedules = [], analyses = [], airings = [], library = []) {
     const checks = [];
     const add = (id, label, severity, summary, details = [], countOverride = null) => {
       const count = countOverride === null ? details.length : Number(countOverride || 0);
       checks.push({ id, label, severity, summary, count, details });
     };
+
+    const scheduleCoverage = preflightImportedCoverageFindings(schedules, airings);
+    add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? 'Imported pledge activity exists on air dates that are not covered by any saved fundraiser schedule. Repair or classify the fundraiser calendar before treating downstream program mismatches as independent title/date problems.' : 'Every imported pledge air date falls inside a saved fundraiser schedule window.', scheduleCoverage);
 
     const reconciliation = [];
     (analyses || []).forEach((analysis) => {
@@ -1342,7 +1419,7 @@
       checks,
       metrics: {
         fundraisers: (analyses || []).length,
-        importedRows: (analyses || []).reduce((sum, analysis) => sum + Number(analysis?.importedRows?.length || 0), 0),
+        importedRows: (airings || []).length,
         libraryPrograms: (library || []).length,
         scheduledAirings: (analyses || []).reduce((sum, analysis) => sum + Number(analysis?.scheduled || 0), 0)
       }
@@ -1361,6 +1438,9 @@
     prepareSchedules,
     buildLibraryIndexes,
     canonicalizeImportedAirings,
+    importedDateKey,
+    importedStartMinutes,
+    importedTitle,
     libraryRuntimeMinutes,
     placementDuration,
     placementResult,

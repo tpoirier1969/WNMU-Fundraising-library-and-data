@@ -1047,6 +1047,227 @@
   }
 
 
+  function preflightResolveLibraryRow(row = {}) {
+    const id = A.text(row?.pledge_program_id || row?.manual_match_program_id || row?.program_id || '');
+    if (id && state.indexes?.byId?.has(id)) return state.indexes.byId.get(id);
+    const nola = A.text(row?.nola_code || row?.nola || row?.program_nola || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (nola) {
+      const candidates = state.indexes?.byNola?.get(nola) || [];
+      if (candidates.length === 1) return candidates[0];
+    }
+    const title = A.lookupKey(row?.matched_library_title || row?.program_title || row?.title || row?.imported_program_title || '');
+    return title ? state.indexes?.byTitle?.get(title) || null : null;
+  }
+
+  function preflightRepairRows(startDate = '', endDate = '') {
+    const start = A.text(startDate);
+    const end = A.text(endDate || startDate);
+    if (!(start && end)) return [];
+    return (state.airings || []).filter((row) => {
+      const date = A.importedDateKey?.(row) || A.text(row?.air_date || '').slice(0, 10);
+      return date && date >= start && date <= end;
+    });
+  }
+
+  function preflightRepairPlacementCandidate(row = {}, index = 0) {
+    const sourceTitle = A.text(row?.imported_program_title || row?.program_title || row?.title || '');
+    if (isNonSpecificLabel(sourceTitle) || isNonSpecificLabel(row?.matched_library_title || '')) return { row, skipReason: 'non-specific' };
+    const libraryRow = preflightResolveLibraryRow(row);
+    if (!libraryRow) return { row, skipReason: 'no-library-match' };
+    const programId = A.text(libraryRow?.id || row?.program_id || row?.pledge_program_id || '');
+    if (!programId) return { row, skipReason: 'no-library-match' };
+    const dateKey = A.importedDateKey?.(row) || A.text(row?.air_date || '').slice(0, 10);
+    const startMinutes = A.importedStartMinutes?.(row);
+    if (!dateKey || !Number.isFinite(Number(startMinutes))) return { row, skipReason: 'bad-date-time' };
+    const directRuntime = Number(row?.program_minutes ?? row?.runtime_minutes ?? row?.length_minutes ?? 0) || 0;
+    const lengthMinutes = Number(A.libraryRuntimeMinutes?.(libraryRow) || directRuntime || 0);
+    if (!(lengthMinutes > 0)) return { row, skipReason: 'missing-duration' };
+    const programTitle = A.text(libraryRow?.title || A.importedTitle?.(row) || sourceTitle || 'Untitled program');
+    const sourceHash = A.text(row?.row_hash || row?.id || '');
+    return {
+      row,
+      slotKey: `${dateKey}|${Number(startMinutes)}`,
+      placement: {
+        id: `preflight-${sourceHash || `${dateKey}-${startMinutes}-${programId}-${index}`}`,
+        programId,
+        programTitle,
+        dateKey,
+        startMinutes: Number(startMinutes),
+        endMinutes: Number(startMinutes) + lengthMinutes,
+        lengthMinutes,
+        importedFromReport: true,
+        sourceAiringHash: sourceHash,
+        sourceName: A.text(row?.source_file_name || ''),
+        importedBroadcastDollars: Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0,
+        importedPledges: Number(row?.pledge_count || row?.pledges || 0) || 0,
+        nolaCode: A.text(libraryRow?.nola_code || row?.nola_code || '')
+      }
+    };
+  }
+
+  function preflightRepairTitle(startDate = '', endDate = '') {
+    const parsed = A.parseDate(startDate);
+    const season = A.seasonForDate(parsed) || 'Fundraiser';
+    const year = parsed?.getFullYear() || '';
+    const base = `${season}${year ? ` ${year}` : ''}`.trim();
+    const duplicateTitle = state.schedules.some((schedule) => A.lookupKey(schedule?.title || '') === A.lookupKey(base));
+    return duplicateTitle ? `${base} Fundraiser · ${formatDate(startDate, false)}–${formatDate(endDate || startDate, false)}` : base;
+  }
+
+  function buildPreflightScheduleRepairPreview(startDate = '', endDate = '') {
+    const start = A.text(startDate);
+    const end = A.text(endDate || startDate);
+    const rows = preflightRepairRows(start, end);
+    const candidates = rows.map(preflightRepairPlacementCandidate);
+    const slotGroups = new Map();
+    candidates.filter((item) => item.placement).forEach((item) => {
+      if (!slotGroups.has(item.slotKey)) slotGroups.set(item.slotKey, []);
+      slotGroups.get(item.slotKey).push(item);
+    });
+    const collisionKeys = new Set([...slotGroups.entries()].filter(([_key, items]) => items.length > 1).map(([key]) => key));
+    const placements = candidates
+      .filter((item) => item.placement && !collisionKeys.has(item.slotKey))
+      .map((item) => item.placement)
+      .sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes || a.programTitle.localeCompare(b.programTitle));
+    const skipped = candidates.filter((item) => !item.placement).length;
+    const collisions = collisionKeys.size;
+    const dollars = rows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+    const pledges = rows.reduce((sum, row) => sum + (Number(row?.pledge_count || row?.pledges || 0) || 0), 0);
+    return { startDate: start, endDate: end, title: preflightRepairTitle(start, end), rows, placements, skipped, collisions, dollars, pledges };
+  }
+
+  function closePreflightScheduleRepair() {
+    document.getElementById('preflight-schedule-repair-modal')?.remove();
+  }
+
+  function preflightScheduleOverlap(startDate = '', endDate = '') {
+    return state.schedules.find((schedule) => {
+      const start = A.text(schedule?.startDate || '');
+      const end = A.text(schedule?.endDate || start || '');
+      return start && end && start <= endDate && end >= startDate;
+    }) || null;
+  }
+
+  async function executePreflightScheduleRepair(preview, title = '') {
+    if (!preview?.startDate || !preview?.endDate || !preview?.placements?.length) return;
+    const overlap = preflightScheduleOverlap(preview.startDate, preview.endDate);
+    if (overlap) {
+      setStatus(`Repair stopped: ${overlap.title || 'a saved fundraiser'} overlaps ${preview.startDate}–${preview.endDate}. Refresh Preflight or choose a non-overlapping range.`, 'warn');
+      return;
+    }
+    const resolvedTitle = A.text(title || preview.title || 'Recovered fundraiser');
+    const confirmed = window.confirm(`Create ${resolvedTitle} for ${preview.startDate}–${preview.endDate} with ${preview.placements.length} reconstructed program placement${preview.placements.length === 1 ? '' : 's'}?\n\nThis creates one new fundraiser schedule. It does not delete, merge, shorten, or overwrite any existing schedule.`);
+    if (!confirmed) return;
+    const now = new Date().toISOString();
+    const randomPart = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/[^a-z0-9-]/gi, '');
+    const id = `schedule-${randomPart}`;
+    const scheduleData = {
+      id,
+      title: resolvedTitle,
+      startDate: preview.startDate,
+      endDate: preview.endDate,
+      dayStartHour: 7,
+      dayEndHour: 25,
+      dayStartMinutes: 420,
+      dayEndMinutes: 1500,
+      placements: preview.placements,
+      onlineDollars: 0,
+      mailDollars: 0,
+      goalDollars: 0,
+      meta: {
+        autoCreatedFromReports: false,
+        importedFromReports: true,
+        repairedFromPreflight: true,
+        repairCreatedAt: now,
+        repairSourceRange: `${preview.startDate}|${preview.endDate}`,
+        repairImportedRowCount: preview.rows.length,
+        repairPlacementCount: preview.placements.length
+      }
+    };
+    setStatus(`Creating recovered fundraiser ${preview.startDate}–${preview.endDate}…`);
+    const { error } = await state.client.from('pledge_fundraiser_schedules').insert({
+      id,
+      title: resolvedTitle,
+      start_date: preview.startDate,
+      end_date: preview.endDate,
+      day_start_hour: 7,
+      day_end_hour: 25,
+      schedule_data: scheduleData,
+      updated_at: now
+    });
+    if (error) throw error;
+    closePreflightScheduleRepair();
+    await loadData();
+    renderPreflightReport();
+    setStatus(`Recovered ${resolvedTitle}: ${preview.placements.length} imported placement${preview.placements.length === 1 ? '' : 's'} across ${preview.startDate}–${preview.endDate}. Existing schedules were untouched.`);
+  }
+
+  function previewPreflightScheduleRepair(startDate = '', endDate = '') {
+    closePreflightScheduleRepair();
+    const modal = document.createElement('div');
+    modal.id = 'preflight-schedule-repair-modal';
+    modal.className = 'report-modal-backdrop';
+    modal.innerHTML = `<div class="report-modal" role="dialog" aria-modal="true" aria-labelledby="preflight-schedule-repair-title">
+      <div class="report-kicker">Non-destructive schedule repair preview</div>
+      <h2 id="preflight-schedule-repair-title">Recover a missing fundraiser calendar</h2>
+      <p>The imported pledge report proves activity occurred, but it does not get to invent the fundraiser boundaries. Confirm the authoritative dates before creating anything.</p>
+      <div class="report-control-row preflight-repair-range">
+        <label class="report-field"><span>Start date</span><input type="date" id="preflight-repair-start" value="${escapeHtml(startDate)}"></label>
+        <label class="report-field"><span>End date</span><input type="date" id="preflight-repair-end" value="${escapeHtml(endDate || startDate)}"></label>
+        <label class="report-field report-field-grow"><span>Schedule title</span><input type="text" id="preflight-repair-title-input"></label>
+      </div>
+      <div id="preflight-repair-preview"></div>
+      <div class="report-modal-actions">
+        <button type="button" class="report-button primary" data-action="create">Create missing schedule</button>
+        <button type="button" class="report-button" data-action="cancel">Cancel</button>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    const startInput = modal.querySelector('#preflight-repair-start');
+    const endInput = modal.querySelector('#preflight-repair-end');
+    const titleInput = modal.querySelector('#preflight-repair-title-input');
+    const previewBox = modal.querySelector('#preflight-repair-preview');
+    const createButton = modal.querySelector('[data-action="create"]');
+    let currentPreview = null;
+    let titleWasEdited = false;
+
+    const refresh = () => {
+      const start = A.text(startInput?.value || '');
+      const end = A.text(endInput?.value || start);
+      currentPreview = start && end && start <= end ? buildPreflightScheduleRepairPreview(start, end) : null;
+      if (titleInput && !titleWasEdited) titleInput.value = currentPreview?.title || '';
+      const overlap = currentPreview ? preflightScheduleOverlap(start, end) : null;
+      const canCreate = Boolean(currentPreview?.placements?.length) && !currentPreview?.collisions && !overlap;
+      if (createButton) createButton.disabled = !canCreate;
+      if (!previewBox) return;
+      if (!currentPreview) {
+        previewBox.innerHTML = '<p class="report-modal-note">Choose a valid start and end date.</p>';
+        return;
+      }
+      previewBox.innerHTML = `<div class="duration-warning-list">
+        <div><strong>${escapeHtml(count(currentPreview.rows.length))} imported rows</strong><span>${escapeHtml(money(currentPreview.dollars))} Broadcast · ${escapeHtml(count(currentPreview.pledges))} pledges</span></div>
+        <div><strong>${escapeHtml(count(currentPreview.placements.length))} reconstructable placements</strong><span>Program Library identity, air date/time, and usable duration are known.</span></div>
+        ${currentPreview.skipped ? `<div><strong>${escapeHtml(count(currentPreview.skipped))} rows not placed automatically</strong><span>Non-Specific, unmatched, invalid date/time, or missing-duration rows stay in imported history for manual review.</span></div>` : ''}
+        ${currentPreview.collisions ? `<div><strong>${escapeHtml(count(currentPreview.collisions))} ambiguous schedule slots</strong><span>More than one imported program occupies the same date/time. Automatic creation is blocked.</span></div>` : ''}
+        ${overlap ? `<div><strong>Overlaps ${escapeHtml(overlap.title || 'saved fundraiser')}</strong><span>${escapeHtml(overlap.startDate || '')}–${escapeHtml(overlap.endDate || '')}. Creation is blocked so no existing schedule is altered.</span></div>` : ''}
+      </div>
+      <p class="report-modal-note">This repair is additive only. It creates a new historical fundraiser from imported evidence and leaves every existing fundraiser untouched. Imported results may not reconstruct programs that were absent from the pledge report.</p>`;
+    };
+    startInput?.addEventListener('change', refresh);
+    endInput?.addEventListener('change', refresh);
+    titleInput?.addEventListener('input', () => { titleWasEdited = true; });
+    modal.querySelector('[data-action="cancel"]')?.addEventListener('click', closePreflightScheduleRepair);
+    modal.addEventListener('click', (event) => { if (event.target === modal) closePreflightScheduleRepair(); });
+    createButton?.addEventListener('click', () => {
+      if (!currentPreview) return;
+      void executePreflightScheduleRepair(currentPreview, titleInput?.value || '').catch((error) => {
+        console.error(error);
+        setStatus(`Schedule repair failed: ${error?.message || error}`, 'warn');
+      });
+    });
+    refresh();
+  }
+
   function ensurePreflightProgramEditor() {
     let backdrop = document.getElementById('preflight-program-editor-backdrop');
     if (backdrop) return backdrop;
@@ -1101,6 +1322,11 @@
     if (!output || output.dataset.preflightEditorBound === 'true') return;
     output.dataset.preflightEditorBound = 'true';
     output.addEventListener('click', (event) => {
+      const repairButton = event.target?.closest?.('[data-preflight-repair-start]');
+      if (repairButton) {
+        previewPreflightScheduleRepair(repairButton.getAttribute('data-preflight-repair-start') || '', repairButton.getAttribute('data-preflight-repair-end') || '');
+        return;
+      }
       const button = event.target?.closest?.('[data-preflight-program-id]');
       if (!button) return;
       openPreflightProgramEditor(button.getAttribute('data-preflight-program-id') || '', button.getAttribute('data-preflight-program-title') || button.textContent || '');
@@ -1131,11 +1357,15 @@
       const programId = A.text(item.programId || '');
       const detail = A.text(item.detail || item.text || '');
       const mismatchTypes = Array.isArray(item.mismatchTypes) ? item.mismatchTypes.filter(Boolean) : [];
+      const repair = item.repair && typeof item.repair === 'object' ? item.repair : null;
       const titleMarkup = programId && title
         ? `<button type="button" class="preflight-program-link" data-preflight-program-id="${escapeHtml(programId)}" data-preflight-program-title="${escapeHtml(title)}" title="Edit ${escapeHtml(title)}">${escapeHtml(title)}</button>`
         : escapeHtml(title);
       const tags = mismatchTypes.length ? `<span class="preflight-mismatch-tags">${mismatchTypes.map((type) => `<span class="preflight-mismatch-tag">${escapeHtml(type)}</span>`).join('')}</span>` : '';
-      return `<span class="preflight-detail-line">${titleMarkup}${tags}${detail ? `<span class="preflight-detail-copy">${escapeHtml(detail)}</span>` : ''}</span>` || '—';
+      const repairMarkup = repair?.type === 'create-missing-schedule' && repair.startDate
+        ? `<button type="button" class="report-button preflight-repair-button" data-preflight-repair-start="${escapeHtml(repair.startDate)}" data-preflight-repair-end="${escapeHtml(repair.endDate || repair.startDate)}">Preview schedule repair</button>`
+        : '';
+      return `<span class="preflight-detail-line">${titleMarkup}${tags}${detail ? `<span class="preflight-detail-copy">${escapeHtml(detail)}</span>` : ''}${repairMarkup}</span>` || '—';
     };
     const detailMarkup = details.length
       ? `<details ${check.severity !== 'info' && check.count ? 'open' : ''}><summary>${escapeHtml(count(details.length))} detail${details.length === 1 ? '' : 's'}</summary><ul>${details.map((item) => `<li>${detailItemMarkup(item)}</li>`).join('')}</ul></details>`
@@ -1172,7 +1402,7 @@
         <div><span>Library programs</span><strong>${escapeHtml(count(metrics.libraryPrograms))}</strong></div>
       </section>
       <div class="preflight-checks">${(health.checks || []).map(preflightCheckMarkup).join('')}</div>
-      <footer class="sheet-footer">PASS means no blocking defects were found in Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges. Warnings identify cleanup or verification work that does not currently invalidate the printed report math. Non-Specific Pledges are treated as a valid giving category, not an attribution error.</footer>
+      <footer class="sheet-footer">PASS means no blocking defects were found in fundraiser schedule coverage, Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges. Warnings identify cleanup or verification work that does not currently invalidate the printed report math. Non-Specific Pledges are treated as a valid giving category, not an attribution error.</footer>
     </article>`;
   }
 

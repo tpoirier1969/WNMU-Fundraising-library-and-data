@@ -112,3 +112,30 @@ assert.match(mismatchDetail.detail, /8:30 PM/);
 assert.match(mismatchDetail.detail, /8:00 PM/);
 assert.match(mismatchDetail.detail, /\$40\.00/);
 assert.match(mismatchDetail.detail, /\$35\.00/);
+
+
+const strayDecemberSchedule = A.normalizeSchedule({
+  id: 'dec-2019-stray', title: 'December 2019 standalone', start_date: '2019-12-26', end_date: '2019-12-27',
+  schedule_data: { placements: [] }
+});
+const historicalDecemberAirings = [
+  { id: 'nov14', row_hash: 'nov14', air_date: '2019-11-14', air_time: '21:00', imported_program_title: "Mister Rogers: It's You I Like", dollars: 564 },
+  { id: 'nov16', row_hash: 'nov16', air_date: '2019-11-16', air_time: '23:00', imported_program_title: 'A Classic Christmas', dollars: 0 },
+  { id: 'nov30', row_hash: 'nov30', air_date: '2019-11-30', air_time: '18:00', imported_program_title: 'Fundraiser Opening', drive_start_date: '2019-11-30', drive_end_date: '2019-12-11', dollars: 100 },
+  { id: 'dec03', row_hash: 'dec03', air_date: '2019-12-03', air_time: '20:00', imported_program_title: 'Fundraiser Middle', drive_start_date: '2019-11-30', drive_end_date: '2019-12-11', dollars: 200 },
+  { id: 'dec11', row_hash: 'dec11', air_date: '2019-12-11', air_time: '21:00', imported_program_title: 'Fundraiser Closing', drive_start_date: '2019-11-30', drive_end_date: '2019-12-11', dollars: 300 },
+  { id: 'dec26', row_hash: 'dec26', air_date: '2019-12-26', air_time: '20:00', imported_program_title: 'Standalone Holiday Pledge', dollars: 50 }
+];
+const strayAnalysis = A.analyzeSchedule(strayDecemberSchedule, historicalDecemberAirings, A.buildLibraryIndexes([]));
+assert.deepEqual(
+  Array.from(strayAnalysis.importedRows, (row) => row.air_date),
+  ['2019-12-26'],
+  'a saved Dec 26–27 schedule must not absorb every November/December airing merely because they share the December pledge season'
+);
+const historicalCoverageHealth = A.dataHealthReport([strayDecemberSchedule], [strayAnalysis], historicalDecemberAirings, []);
+const scheduleCoverageCheck = historicalCoverageHealth.checks.find((check) => check.id === 'schedule-coverage');
+assert.ok(scheduleCoverageCheck.count >= 3, 'standalone uncovered dates and the explicit missing fundraiser should be schedule-level findings');
+assert.ok(scheduleCoverageCheck.details.some((item) => /2019-11-30–2019-12-11/.test(item.detail)), 'explicit imported drive dates should expose the missing main December fundraiser window');
+assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-30' && item.repair?.endDate === '2019-12-11'), 'the missing fundraiser finding should carry its explicit source range into the repair preview');
+assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-14' && item.repair?.endDate === '2019-11-14'), 'uncovered standalone pledge activity must not be silently rolled into the later fundraiser');
+assert.equal(historicalCoverageHealth.metrics.importedRows, 6, 'Preflight imported-row metric must count the full canonical dataset, including rows outside saved schedules');
