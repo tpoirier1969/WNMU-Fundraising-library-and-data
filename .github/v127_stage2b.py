@@ -11,6 +11,14 @@ def replace_once(text, old, new, label):
     return text.replace(old, new, 1)
 
 
+def replace_exact_count(text, old, new, expected, label):
+    count = text.count(old)
+    if count != expected:
+        raise RuntimeError(f'{label}: expected {expected} occurrences, found {count}')
+    print(f'OK {label} ({count})')
+    return text.replace(old, new)
+
+
 p = root / 'assets/js/ui-analytics.js'
 s = p.read_text()
 
@@ -71,8 +79,7 @@ new = """    const comparisonRecords = filteredRecordsFor('startTimes');
       : '<br><br><b>Same-title 8:00 PM vs 9:00 PM check:</b> No title has rate-valid history at both starts under these filters.';
 """
 s = replace_once(s, old, new, 'same-title 8 PM vs 9 PM readout')
-s = replace_once(s, '${pairedRead}`;', '${pairedRead}${sameTitleRead}`;', 'append same-title readout to sparse branch')
-s = replace_once(s, '${pairedRead}`;\n  }\n\n  function rowsStartTimes', '${pairedRead}${sameTitleRead}`;\n  }\n\n  function rowsStartTimes', 'append same-title readout to qualified branch')
+s = replace_exact_count(s, '${pairedRead}`;', '${pairedRead}${sameTitleRead}`;', 2, 'append same-title readout to both start-time branches')
 
 s = replace_once(
     s,
