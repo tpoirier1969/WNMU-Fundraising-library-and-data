@@ -80,8 +80,11 @@ jobs:
               css = css.replace(css_marker, css_add + css_marker, 1)
           css_path.write_text(css)
 
+          def bump_versions(text):
+              return text.replace('0.22.123', '0.22.124').replace(r'0\.22\.123', r'0\.22\.124')
+
           refinements_path = Path('tests/one-sheet-report-refinements.test.mjs')
-          refinements = refinements_path.read_text().replace('0.22.123', '0.22.124')
+          refinements = bump_versions(refinements_path.read_text())
           test_marker = "assert.match(reports, /function programResultsTable/);"
           test_add = "assert.match(reports, /function fundraiserAirSchedule/);\nassert.match(reports, /Actual air schedule/);\nassert.match(reports, /Scheduled · result unresolved/);\nassert.match(reports, /fundraiserAirSchedule\\(analysis\\)/);\nassert.match(css, /fundraiser-air-schedule-grid/);\n"
           if 'function fundraiserAirSchedule' not in refinements:
@@ -91,7 +94,7 @@ jobs:
           refinements_path.write_text(refinements)
 
           report_test_path = Path('tests/one-sheet-reports.test.mjs')
-          report_test = report_test_path.read_text().replace('0.22.123', '0.22.124')
+          report_test = bump_versions(report_test_path.read_text())
           report_test_marker = "assert.match(reportSource, /function programResultsTable/);"
           report_test_add = "assert.match(reportSource, /function fundraiserAirSchedule/);\nassert.match(reportSource, /Actual air schedule/);\nassert.match(css, /fundraiser-air-schedule-grid/);\n"
           if 'function fundraiserAirSchedule' not in report_test:
