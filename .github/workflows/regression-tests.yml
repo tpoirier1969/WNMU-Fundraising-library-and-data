@@ -5,10 +5,9 @@ on:
   push:
     branches:
       - main
-      - release/v0.22.123-season-rate-logic
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   node-tests:
@@ -17,27 +16,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Apply v0.22.123 source updates
-        if: github.actor != 'github-actions[bot]' && github.ref == 'refs/heads/release/v0.22.123-season-rate-logic'
-        run: python .tmp-v0.22.123-update.py
-
       - name: Run regression tests
         run: node --test tests/*.test.mjs
-
-      - name: Commit v0.22.123 source updates
-        if: github.actor != 'github-actions[bot]' && github.ref == 'refs/heads/release/v0.22.123-season-rate-logic'
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/js/one-sheet-analysis.js assets/js/one-sheet-reports.js tests/data-health-preflight.test.mjs tests/one-sheet-analysis-hardening.test.mjs tests/one-sheet-report-refinements.test.mjs version.json reports.html tests/library-load-performance.test.mjs tests/one-sheet-reports.test.mjs
-          if ! git diff --cached --quiet; then
-            git commit -m "Fix season analytics, Preflight gaps, print-safe lines, and weather labels (v0.22.123)"
-            git push origin HEAD:release/v0.22.123-season-rate-logic
-          fi
