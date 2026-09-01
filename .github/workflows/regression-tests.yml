@@ -5,9 +5,10 @@ on:
   push:
     branches:
       - main
+      - release/v0.22.123-season-rate-logic
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   node-tests:
@@ -20,5 +21,229 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Apply v0.22.123 historical-rate correction
+        shell: bash
+        run: |
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              data = p.read_text()
+              count = data.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:120]!r}')
+              p.write_text(data.replace(old, new, 1))
+
+          def replace_version(path):
+              p = Path(path)
+              data = p.read_text()
+              changed = data.replace('0.22.122', '0.22.123').replace(r'0\.22\.122', r'0\.22\.123')
+              if changed == data:
+                  raise SystemExit(f'{path}: no v0.22.122 version marker found')
+              p.write_text(changed)
+
+          analysis = 'assets/js/one-sheet-analysis.js'
+          ranking_anchor = """  function historicalRanking(analyses = [], dimension, options = {}) {
+    const rows = historicalRows(analyses);
+"""
+          ranking_replacement = """  function historicalSeasonRanking(analyses = [], options = {}) {
+    const groups = new Map();
+    (analyses || []).forEach((analysis) => {
+      const key = canonicalCategory(analysis?.schedule?.season || seasonForDate(analysis?.schedule?.startDate), 'Special events');
+      const normalized = lookupKey(key);
+      if (!groups.has(normalized)) {
+        groups.set(normalized, {
+          key,
+          rates: [],
+          rateAirings: 0,
+          broadcastDollars: 0,
+          fundraisers: new Set(),
+          titles: new Set()
+        });
+      }
+      const item = groups.get(normalized);
+      item.broadcastDollars += Number(analysis?.broadcastDollars || 0);
+      const scheduledRows = (analysis?.placementRows || []).filter((row) => row?.countsTowardScheduleMinutes !== false);
+      const rateRows = scheduledRows.filter((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0);
+      item.rateAirings += rateRows.length;
+      rateRows.forEach((row) => {
+        const title = lookupKey(row?.title || row?.plannedTitle || '');
+        if (title) item.titles.add(title);
+      });
+      const complete = scheduledRows.length > 0
+        && scheduledRows.every((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0);
+      if (!complete) return;
+      const rateMinutes = rateRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const rateDollars = rateRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      if (!(rateMinutes > 0)) return;
+      item.rates.push(dollarsPerHour(rateDollars, rateMinutes));
+      item.fundraisers.add(text(analysis?.schedule?.id || analysis?.schedule?.title));
+    });
+
+    const minFundraisers = Number(options.minFundraisers ?? 1);
+    return [...groups.values()].map((item) => ({
+      key: item.key,
+      airings: item.rateAirings,
+      rateAirings: item.rateAirings,
+      fundraisers: item.fundraisers.size,
+      titles: item.titles.size,
+      broadcastDollars: item.broadcastDollars,
+      medianDollarsPerHour: median(item.rates),
+      averageDollarsPerHour: item.rates.length ? item.rates.reduce((sum, value) => sum + value, 0) / item.rates.length : 0,
+      minutes: 0,
+      sufficient: item.fundraisers.size >= minFundraisers
+    })).filter((item) => item.sufficient)
+      .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.fundraisers - a.fundraisers || String(a.key).localeCompare(String(b.key)));
+  }
+
+  function historicalRanking(analyses = [], dimension, options = {}) {
+    if (dimension === 'season') return historicalSeasonRanking(analyses, options);
+    const rows = historicalRows(analyses);
+"""
+          replace_once(analysis, ranking_anchor, ranking_replacement)
+
+          health_anchor = """    add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
+
+    const missingDurations = [];
+"""
+          health_replacement = """    add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);
+
+    const unknownResults = [];
+    (analyses || []).forEach((analysis) => {
+      (analysis?.placementRows || []).forEach((row) => {
+        if (row?.countsTowardScheduleMinutes === false || row?.known) return;
+        unknownResults.push({
+          title: text(row?.title || row?.plannedTitle || 'Untitled program'),
+          programId: text(row?.programId || ''),
+          mismatchTypes: ['Unknown result'],
+          detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'}${Number.isFinite(Number(row?.startMinutes)) ? ` ${preflightClockLabel(row.startMinutes)}` : ''} · no Broadcast result is recorded for this scheduled pledge airing`
+        });
+      });
+    });
+    add('unknown-results', 'Unknown scheduled program results', 'fail', unknownResults.length ? 'Scheduled pledge airings exist without a known Broadcast result. Resolve them before trusting $/hour analytics.' : 'Every scheduled pledge airing in completed fundraiser history has a known Broadcast result, including explicit $0 results.', unknownResults);
+
+    const missingDurations = [];
+"""
+          replace_once(analysis, health_anchor, health_replacement)
+
+          reports = 'assets/js/one-sheet-reports.js'
+          table_anchor = """  function historicalRankingTable(analyses, dimension, title, description, options = {}) {
+    const rows = A.historicalRanking(analyses, dimension, options);
+    const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class=\"metric-primary\">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
+    return `<section class=\"sheet-section historical-ranking\"><div class=\"section-heading\"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class=\"table-scroll\"><table><thead><tr><th>Group</th><th>Median $/hr</th><th>Avg $/hr</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan=\"7\">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
+  }
+"""
+          table_replacement = """  function historicalRankingTable(analyses, dimension, title, description, options = {}) {
+    const rows = A.historicalRanking(analyses, dimension, options);
+    const medianHeading = options.rateUnit === 'fundraiser' ? 'Median fundraiser $/hr' : 'Median $/hr';
+    const averageHeading = options.rateUnit === 'fundraiser' ? 'Avg fundraiser $/hr' : 'Avg $/hr';
+    const body = rows.map((row) => `<tr><th>${escapeHtml(historicalKeyLabel(dimension, row.key))}</th><td class=\"metric-primary\">${escapeHtml(money(row.medianDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.averageDollarsPerHour))}/hr</td><td>${escapeHtml(money(row.broadcastDollars))}</td><td>${escapeHtml(count(row.rateAirings))}</td><td>${escapeHtml(count(row.fundraisers))}</td><td>${escapeHtml(count(row.titles))}</td></tr>`).join('');
+    return `<section class=\"sheet-section historical-ranking\"><div class=\"section-heading\"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div></div><div class=\"table-scroll\"><table><thead><tr><th>Group</th><th>${escapeHtml(medianHeading)}</th><th>${escapeHtml(averageHeading)}</th><th>Broadcast $</th><th>Rate airings</th><th>Fundraisers</th><th>Titles</th></tr></thead><tbody>${body || '<tr><td colspan=\"7\">No categories meet the evidence threshold.</td></tr>'}</tbody></table></div></section>`;
+  }
+"""
+          replace_once(reports, table_anchor, table_replacement)
+
+          season_anchor = """      'Performance by fundraiser season',
+      'Season-level performance across the full historical record.',
+      { minAirings: 1, minFundraisers: 1, minTitles: 1 }
+"""
+          season_replacement = """      'Performance by fundraiser season',
+      'Each fundraiser contributes one $/pledge-hour observation. Median and average therefore describe the typical fundraiser in that season rather than the typical individual program airing.',
+      { minAirings: 1, minFundraisers: 1, minTitles: 1, rateUnit: 'fundraiser' }
+"""
+          replace_once(reports, season_anchor, season_replacement)
+
+          health_test = 'tests/data-health-preflight.test.mjs'
+          health_anchor_test = """assert.equal(cleanHealth.failures, 0);
+assert.equal(A.canonicalCategory('MUSIC'), 'Music');
+"""
+          health_test_replacement = """assert.equal(cleanHealth.failures, 0);
+
+const unknownSchedule = { id: 'unknown', title: 'Unknown Results Drive', startDate: '2026-08-01', endDate: '2026-08-01', placements: [], onlineTrackedExplicit: true, mailTrackedExplicit: true };
+const unknownAnalysis = {
+  schedule: unknownSchedule,
+  importedRows: [],
+  placementRows: [{ known: false, dollars: 0, durationMissing: false, title: 'No Result Yet', programId: 'p-unknown', dateKey: '2026-08-01', startMinutes: 1200, minutes: 60, countsTowardScheduleMinutes: true }],
+  unmatchedImportedRows: [],
+  missingDurationRows: [],
+  scheduled: 1
+};
+const unknownHealth = A.dataHealthReport([unknownSchedule], [unknownAnalysis], [], [{ id: 'p-unknown', title: 'No Result Yet', length_bucket_minutes: 60 }]);
+const unknownCheck = unknownHealth.checks.find((check) => check.id === 'unknown-results');
+assert.equal(unknownCheck.count, 1, 'a scheduled pledge airing without a result must be a blocking Preflight defect');
+assert.equal(unknownHealth.status, 'review');
+assert.equal(cleanHealth.checks.find((check) => check.id === 'unknown-results').count, 0, 'explicitly known results, including $0, must pass the unknown-result check');
+
+assert.equal(A.canonicalCategory('MUSIC'), 'Music');
+"""
+          replace_once(health_test, health_anchor_test, health_test_replacement)
+
+          hardening = 'tests/one-sheet-analysis-hardening.test.mjs'
+          hardening_anchor = """const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+"""
+          hardening_replacement = """{
+  const seasonAnalyses = [
+    {
+      schedule: { id: 'june-a', title: 'June A', season: 'June', startDate: '2024-06-01' },
+      broadcastDollars: 1000,
+      rateEligibleDollars: 1000,
+      rateEligibleMinutes: 600,
+      placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 600, dollars: 1000, title: 'A' }]
+    },
+    {
+      schedule: { id: 'june-b', title: 'June B', season: 'June', startDate: '2025-06-01' },
+      broadcastDollars: 300,
+      rateEligibleDollars: 300,
+      rateEligibleMinutes: 60,
+      placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 300, title: 'B' }]
+    },
+    {
+      schedule: { id: 'june-c', title: 'June C', season: 'June', startDate: '2026-06-01' },
+      broadcastDollars: 500,
+      rateEligibleDollars: 500,
+      rateEligibleMinutes: 60,
+      placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 500, title: 'C' }]
+    }
+  ];
+  const season = A.historicalRanking(seasonAnalyses, 'season', { minFundraisers: 1 });
+  assert.equal(season.length, 1);
+  assert.equal(season[0].medianDollarsPerHour, 300, 'season median must be the median of fundraiser-level $/hr values');
+  assert.equal(season[0].averageDollarsPerHour, 300, 'season average must give each fundraiser equal weight rather than weighting by pledge hours');
+  assert.equal(season[0].fundraisers, 3);
+}
+
+const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
+"""
+          replace_once(hardening, hardening_anchor, hardening_replacement)
+
+          refinement = 'tests/one-sheet-report-refinements.test.mjs'
+          refinement_anchor = """assert.match(reports, /Regional weather/);
+"""
+          refinement_replacement = """assert.match(reports, /Regional weather/);
+assert.match(reports, /Median fundraiser \\$\/hr/, 'season table should label its statistical unit explicitly');
+assert.match(reports, /typical fundraiser in that season/, 'season table should explain fundraiser-level aggregation');
+"""
+          replace_once(refinement, refinement_anchor, refinement_replacement)
+
+          for path in [
+              'version.json',
+              'reports.html',
+              'tests/library-load-performance.test.mjs',
+              'tests/one-sheet-report-refinements.test.mjs',
+              'tests/one-sheet-reports.test.mjs'
+          ]:
+              replace_version(path)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-analysis.js assets/js/one-sheet-reports.js tests/data-health-preflight.test.mjs tests/one-sheet-analysis-hardening.test.mjs tests/one-sheet-report-refinements.test.mjs version.json reports.html tests/library-load-performance.test.mjs tests/one-sheet-reports.test.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "Fix historical season rates and unknown-result Preflight (v0.22.123)"
+            git push origin HEAD:release/v0.22.123-season-rate-logic
+          fi
       - name: Run regression tests
         run: node --test tests/*.test.mjs
