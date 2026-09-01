@@ -122,6 +122,28 @@ assert.ok(A, 'analysis API should load');
   assert.equal(ranking.length, 0, 'missing-duration rows must not supply fundraiser/title diversity for start-time qualification');
 }
 
+{
+  const schedule = {
+    id: 'tooltip-day-scope', title: 'Aug 16, 2019–Aug 29, 2019', startDate: '2019-08-16', endDate: '2019-08-29',
+    placements: [
+      { dateKey: '2019-08-22', startMinutes: 1200, lengthMinutes: 60, programId: 'thu', programTitle: 'Planned Thursday Title' },
+      { dateKey: '2019-08-23', startMinutes: 1200, lengthMinutes: 60, programId: 'fri', programTitle: 'Planned Friday Title' }
+    ], onlineTracked: false, mailTracked: false
+  };
+  const airings = [
+    { row_hash: 'thu-row', air_date: '2019-08-22', air_time: '20:00', program_id: 'thu', imported_program_title: 'Actual Thursday Title', dollars: 2701, pledge_count: 10 },
+    { row_hash: 'fri-row', air_date: '2019-08-23', air_time: '20:00', program_id: 'fri', imported_program_title: 'Actual Friday Title', dollars: 999, pledge_count: 3 }
+  ];
+  const analysis = A.analyzeSchedule(schedule, airings, A.buildLibraryIndexes([
+    { id: 'thu', title: 'Thursday Library Title', length_bucket_minutes: 60 },
+    { id: 'fri', title: 'Friday Library Title', length_bucket_minutes: 60 }
+  ]));
+  const thursdayRows = analysis.placementRows.filter((row) => row.dateKey === '2019-08-22');
+  assert.deepEqual(Array.from(thursdayRows, (row) => row.title), ['Actual Thursday Title'], 'the plotted Thursday must use the actual imported Thursday title');
+  assert.equal(thursdayRows.some((row) => row.title === 'Actual Friday Title'), false, 'adjacent fundraiser-day titles must never leak into the Thursday popup');
+  assert.equal(thursdayRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0), 2701, 'the program lines for the plotted Thursday must reconcile to that day’s Broadcast point');
+}
+
 const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
 assert.match(reportSource, /Rate-eligible hours/);
 assert.match(reportSource, /rate base/);
