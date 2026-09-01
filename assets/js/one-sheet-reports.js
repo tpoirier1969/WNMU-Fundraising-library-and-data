@@ -646,11 +646,11 @@
   }
 
   function rateForAnalysis(analysis) {
-    return A.dollarsPerHour(analysis.rateEligibleDollars, analysis.rateEligibleMinutes);
+    return A.dollarsPerHour(analysis.broadcastDollars, analysis.scheduledMinutes);
   }
 
   function pledgeRateForAnalysis(analysis) {
-    return A.pledgesPerHour(analysis.rateEligiblePledges, analysis.rateEligibleMinutes);
+    return A.pledgesPerHour(analysis.pledges, analysis.scheduledMinutes);
   }
 
   function knownHoursLabel(analysis) {
@@ -876,7 +876,7 @@
       return;
     }
     if (!(await ensureDurationDecision(analyses))) return;
-    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${durationNoticeSection(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${comparisonTopicMatrix(analyses)}<footer class="sheet-footer">Broadcast $/hour excludes unknown results and airings with missing duration from both numerator and denominator; Rate-eligible hours show that exact denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
+    const render = () => `<article class="one-sheet comparison-sheet">${comparisonHeader(analyses)}${durationNoticeSection(analyses)}${metricMatrix(analyses)}${dailyMatrix(analyses)}${comparisonTopicMatrix(analyses)}<footer class="sheet-footer">Whole-fundraiser Broadcast $/pledge hour uses all Broadcast dollars over saved pledge hours. Program/topic $/hour excludes unknown results and airings with missing duration from both numerator and denominator; Non-Specific Pledges are also excluded from program/topic attribution but remain in factual Broadcast totals. Rate-eligible hours show the program-attributed denominator. Online and Mail are included only in the comparable-total row when tracked for every selected fundraiser. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
     $('#report-output').innerHTML = render();
     bindChartTooltips($('#report-output'));
     await ensureWeatherForAnalyses(analyses);
@@ -911,7 +911,7 @@
       <section class="fundraiser-kpis">
         <div><span>Broadcast $</span><strong>${escapeHtml(money(analysis.broadcastDollars))}</strong></div>
         <div><span>Pledge hours</span><strong>${escapeHtml(hours(analysis.scheduledMinutes))}</strong><small>${escapeHtml(hours(analysis.rateEligibleMinutes))} rate base</small></div>
-        <div><span>Broadcast $ / hour</span><strong>${escapeHtml(money(rateForAnalysis(analysis)))}</strong></div>
+        <div><span>Broadcast $ / pledge hour</span><strong>${escapeHtml(money(rateForAnalysis(analysis)))}</strong></div>
         <div><span>Pledges</span><strong>${escapeHtml(count(analysis.pledges))}</strong></div>
         <div><span>Pledges / hour</span><strong>${escapeHtml(count(pledgeRateForAnalysis(analysis), 2))}</strong></div>
         <div><span>$ / pledge</span><strong>${escapeHtml(money(A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges)))}</strong></div>

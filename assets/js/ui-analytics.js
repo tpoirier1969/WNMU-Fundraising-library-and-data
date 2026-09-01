@@ -35,6 +35,7 @@
   const START_TIME_MIN_AIRINGS = 5;
   const START_TIME_MIN_FUNDRAISERS = 3;
   const START_TIME_MIN_TITLES = 3;
+  const DURATION_MISMATCH_TOLERANCE_MINUTES = 10;
   const LONG_PAUSE_YEARS = 2;
   const HOLIDAY_RE = /christmas|holiday|holidays|xmas|thanksgiving|new year|hanukkah|kwanzaa/i;
   const ANALYTICS_COHORT_STORAGE_KEY = App.constants.ANALYTICS_COHORT_STORAGE_KEY || 'wnmuPledgeAnalyticsCohortV1';
@@ -543,18 +544,16 @@
   function airingRecordsForSchedule(schedule = {}, airingRecords = []) {
     const start = text(schedule.startDate || '');
     const end = text(schedule.endDate || '');
-    if (start && end) {
-      const exact = airingRecords.filter((record) =>
-        text(record.row?.drive_start_date || '').slice(0, 10) === start
-        && text(record.row?.drive_end_date || '').slice(0, 10) === end
-      );
-      if (exact.length) return exact;
-    }
-    const date = parseLocalDate(schedule.startDate || schedule.endDate || '');
-    const season = pledgeSeason(date);
-    const year = date ? date.getFullYear() : 0;
-    if (!season || !year) return [];
-    return airingRecords.filter((record) => record.season === season && Number(record.year) === Number(year));
+    if (!(start && end)) return [];
+    const exact = airingRecords.filter((record) =>
+      text(record.row?.drive_start_date || '').slice(0, 10) === start
+      && text(record.row?.drive_end_date || '').slice(0, 10) === end
+    );
+    if (exact.length) return exact;
+    return airingRecords.filter((record) => {
+      const key = text(record.dateKey || '');
+      return Boolean(key && key >= start && key <= end);
+    });
   }
 
   function buildDriveSeasonRecords(schedules = [], airingRecords = []) {
@@ -662,6 +661,23 @@
       if (lookupKey(row.title)) byTitle.set(lookupKey(row.title), row);
     });
     return { byId, byNola, byTitle };
+  }
+
+  function normalizeDistributor(value = '') {
+    const upper = text(value).toUpperCase();
+    if (!upper) return '';
+    return upper === 'EPS TV' ? 'EPS' : upper;
+  }
+
+  function libraryDurationMinutes(lib = {}) {
+    const seconds = Number(lib.actual_runtime_seconds || 0);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds / 60;
+    const actualMinutes = Number(lib.actual_runtime_minutes || 0);
+    if (Number.isFinite(actualMinutes) && actualMinutes > 0) return actualMinutes;
+    const runtimeMinutes = Number(lib.runtime_minutes || 0);
+    if (Number.isFinite(runtimeMinutes) && runtimeMinutes > 0) return runtimeMinutes;
+    const bucket = Number(lib.length_bucket_minutes || 0);
+    return Number.isFinite(bucket) && bucket > 0 ? bucket : null;
   }
 
   function resolveLibraryByNola(indexes, nola = '', title = '') {
@@ -795,6 +811,8 @@
       );
       const rawTopic = nonSpecific ? 'Non-Specific' : canonicalCategory(firstNonEmpty(lib.topic_primary, row.topic_primary, row.topic, ''), '');
       const topicMissing = !nonSpecific && isMissingTopic(rawTopic);
+      const libraryDuration = libraryDurationMinutes(lib);
+      const importedDuration = Number(row.program_minutes || 0) > 0 ? Number(row.program_minutes) : null;
       const record = {
         id: row.id || '',
         row,
@@ -808,7 +826,7 @@
         secondaryTopic: canonicalCategory(firstNonEmpty(lib.topic_secondary, row.topic_secondary, row.secondary_topic, ''), ''),
         topicMissing,
         isNonSpecific: nonSpecific,
-        distributor: text(lib.distributor || row.distributor || ''),
+        distributor: normalizeDistributor(lib.distributor || row.distributor || ''),
         libraryKnown: Boolean(lib && lib.id),
         rightsStart: text(lib.rights_start || ''),
         rightsEnd: text(lib.rights_end || ''),
@@ -822,7 +840,10 @@
         dateKey: temporal.dateKey,
         startMinutes: temporal.startMinutes,
         endMinutes: Number.isFinite(Number(row.end_minutes)) ? Number(row.end_minutes) : null,
-        durationMinutes: Number(row.program_minutes || 0) > 0 ? Number(row.program_minutes) : null,
+        durationMinutes: libraryDuration || importedDuration,
+        importedDurationMinutes: importedDuration,
+        durationSource: libraryDuration ? 'program-library' : (importedDuration ? 'imported-report-fallback' : 'unknown'),
+        durationMismatch: Boolean(libraryDuration && importedDuration && Math.abs(libraryDuration - importedDuration) > DURATION_MISMATCH_TOLERANCE_MINUTES),
         daypart: daypartFromMinutes(temporal.startMinutes ?? (date ? ((date.getHours() * 60) + date.getMinutes()) : null)),
         weekpart: weekpartFromDate(date),
         season,
@@ -839,7 +860,16 @@
       const scheduleMatch = findScheduleMatch(record, scheduleIndex);
       if (scheduleMatch) {
         record.scheduleMatched = true;
+        record.scheduleId = scheduleMatch.scheduleId || '';
         applyScheduleStartCorrection(record, scheduleMatch);
+        const scheduleDuration = durationFromTimes(scheduleMatch.start, scheduleMatch.end);
+        if (!libraryDuration && scheduleDuration) {
+          record.durationMinutes = scheduleDuration;
+          record.durationSource = 'saved-schedule';
+        }
+        const preferredInternalDuration = libraryDuration || scheduleDuration;
+        record.durationMismatch = Boolean(preferredInternalDuration && importedDuration
+          && Math.abs(preferredInternalDuration - importedDuration) > DURATION_MISMATCH_TOLERANCE_MINUTES);
         record.live = Boolean(scheduleMatch.live);
         record.liveState = scheduleMatch.live ? 'live' : 'nonlive';
         record.liveSource = 'schedule';
@@ -1014,7 +1044,14 @@
       const actualDate = matched?.date instanceof Date && !Number.isNaN(matched.date.getTime()) ? matched.date : (parseLocalDate(actualDateKey) || scheduledDate);
       const actualStartMinutes = Number.isFinite(Number(matched?.startMinutes)) ? Number(matched.startMinutes) : scheduledStartMinutes;
       const actualEndMinutes = Number.isFinite(Number(matched?.endMinutes)) ? Number(matched.endMinutes) : scheduledEndMinutes;
-      const actualDurationMinutes = Number(firstNonEmpty(matched?.durationMinutes, scheduledDurationMinutes, null)) || durationFromTimes(actualStartMinutes, actualEndMinutes);
+      const libraryDuration = libraryDurationMinutes(lib);
+      const importedDuration = Number(matched?.importedDurationMinutes || matched?.durationMinutes || 0) > 0
+        ? Number(matched?.importedDurationMinutes || matched?.durationMinutes)
+        : null;
+      const actualDurationMinutes = libraryDuration
+        || (Number(scheduledDurationMinutes) > 0 ? Number(scheduledDurationMinutes) : null)
+        || importedDuration
+        || durationFromTimes(actualStartMinutes, actualEndMinutes);
       const season = pledgeSeason(actualDate) || scheduledSeason;
       const year = actualDate ? actualDate.getFullYear() : scheduledDate.getFullYear();
       if (liveFlag) {
@@ -1036,7 +1073,7 @@
         secondaryTopic: canonicalCategory(firstNonEmpty(matched?.secondaryTopic, lib.topic_secondary, placement.topicSecondary, placement.topic_secondary, ''), ''),
         topicMissing,
         isNonSpecific: nonSpecific,
-        distributor: text(firstNonEmpty(matched?.distributor, lib.distributor, placement.distributor, '')),
+        distributor: normalizeDistributor(firstNonEmpty(lib.distributor, placement.distributor, matched?.distributor, '')),
         libraryKnown: Boolean(lib && lib.id),
         rightsStart: text(lib.rights_start || ''),
         rightsEnd: text(lib.rights_end || ''),
@@ -1051,6 +1088,10 @@
         startMinutes: actualStartMinutes,
         endMinutes: actualEndMinutes,
         durationMinutes: actualDurationMinutes,
+        importedDurationMinutes: importedDuration,
+        durationSource: libraryDuration ? 'program-library' : ((Number(scheduledDurationMinutes) > 0) ? 'saved-schedule' : (importedDuration ? 'imported-report-fallback' : 'unknown')),
+        durationMismatch: Boolean((libraryDuration || Number(scheduledDurationMinutes || 0)) && importedDuration
+          && Math.abs((libraryDuration || Number(scheduledDurationMinutes || 0)) - importedDuration) > DURATION_MISMATCH_TOLERANCE_MINUTES),
         daypart: daypartFromMinutes(Number.isFinite(actualStartMinutes) ? actualStartMinutes : null),
         weekpart: weekpartFromDate(actualDate),
         season,
@@ -2343,15 +2384,21 @@ function outlierSummary(values = []) {
 
 
   async function fetchLibraryRows() {
-    const baseColumns = 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end';
-    const stateColumns = `${baseColumns},library_state,is_archived,archived,inactive_flag`;
-    const fullColumns = `${baseColumns},status,library_state,is_archived,archived,inactive_flag`;
+    const coreColumns = 'id,title,nola_code,topic_primary,topic_secondary,distributor,rights_start,rights_end';
+    const durationColumns = `${coreColumns},length_bucket_minutes,actual_runtime_seconds,actual_runtime_minutes,runtime_minutes`;
+    const durationStateColumns = `${durationColumns},library_state,is_archived,archived,inactive_flag`;
+    const durationFullColumns = `${durationColumns},status,library_state,is_archived,archived,inactive_flag`;
+    const coreStateColumns = `${coreColumns},library_state,is_archived,archived,inactive_flag`;
     const attempts = [
-      { table: LIBRARY_VIEW, select: fullColumns, label: `${LIBRARY_VIEW} full library-state columns` },
-      { table: LIBRARY_VIEW, select: stateColumns, label: `${LIBRARY_VIEW} library-state columns` },
-      { table: LIBRARY_VIEW, select: baseColumns, label: `${LIBRARY_VIEW} base library columns` },
-      { table: BASE_TABLE, select: stateColumns, label: `${BASE_TABLE} library-state columns` },
-      { table: BASE_TABLE, select: baseColumns, label: `${BASE_TABLE} base library columns` }
+      { table: LIBRARY_VIEW, select: durationFullColumns, label: `${LIBRARY_VIEW} runtime + full library-state columns` },
+      { table: LIBRARY_VIEW, select: durationStateColumns, label: `${LIBRARY_VIEW} runtime + library-state columns` },
+      { table: LIBRARY_VIEW, select: durationColumns, label: `${LIBRARY_VIEW} runtime columns` },
+      { table: BASE_TABLE, select: durationStateColumns, label: `${BASE_TABLE} runtime + library-state columns` },
+      { table: BASE_TABLE, select: durationColumns, label: `${BASE_TABLE} runtime columns` },
+      { table: LIBRARY_VIEW, select: coreStateColumns, label: `${LIBRARY_VIEW} core library-state fallback` },
+      { table: LIBRARY_VIEW, select: coreColumns, label: `${LIBRARY_VIEW} core fallback` },
+      { table: BASE_TABLE, select: coreStateColumns, label: `${BASE_TABLE} core library-state fallback` },
+      { table: BASE_TABLE, select: coreColumns, label: `${BASE_TABLE} core fallback` }
     ];
     let lastError = null;
     for (const attempt of attempts) {
@@ -2417,6 +2464,7 @@ function outlierSummary(values = []) {
     const scheduleLiveCount = state.scheduleRecords.filter((record) => record.liveState === 'live').length;
     const schedulePlacementCount = state.scheduleRecords.length;
     const scheduleMatchedCount = state.records.filter((record) => record.scheduleMatched).length;
+    const durationMismatchCount = state.records.filter((record) => record.durationMismatch).length;
     const diag = state.liveBreakDiagnostics || {};
     if ((diag.livePlacements || 0) > 0 && (diag.liveDollars || 0) <= 0) {
       note(`Live-break guardrail: ${formatNumber(diag.livePlacements || 0)} saved live-break placement(s) exist, but none matched pledge dollars. Analytics did not fall back to imported live-break guesses. Check schedule placement hashes/titles/times.`, 'bad');
@@ -2424,7 +2472,10 @@ function outlierSummary(values = []) {
       const duplicateNote = Number(state.scheduleAudit.duplicateSchedulesSuppressed || 0)
         ? ` ${formatNumber(state.scheduleAudit.duplicateSchedulesSuppressed || 0)} saved schedule row(s) from ambiguous duplicate date ranges were excluded from schedule-derived analytics rather than blended.`
         : '';
-      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.`);
+      const durationNote = durationMismatchCount
+        ? ` ${formatNumber(durationMismatchCount)} imported Program_Minutes value(s) differ from internal Program Library/schedule length by more than ${DURATION_MISMATCH_TOLERANCE_MINUTES} minutes; analytics uses the internal length.`
+        : '';
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.${durationNote}`);
     }
   }
 

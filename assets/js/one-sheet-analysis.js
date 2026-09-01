@@ -1009,7 +1009,10 @@
       case 'weekpart': return row.weekpart || 'Unknown';
       case 'daypart': return row.daypart || 'Unknown';
       case 'breakType': return row.breakType || '';
-      case 'distributor': return text(row.distributor || 'Unknown') || 'Unknown';
+      case 'distributor': {
+        const distributor = text(row.distributor || 'Unknown').toUpperCase();
+        return distributor === 'EPS TV' ? 'EPS' : (distributor || 'UNKNOWN');
+      }
       default: return '';
     }
   }
@@ -1023,8 +1026,10 @@
       const scheduledRows = (analysis?.placementRows || []).filter((row) => row?.countsTowardScheduleMinutes !== false);
       const complete = scheduledRows.length > 0 && scheduledRows.every((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0);
       if (!complete) return;
-      const rateMinutes = scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
-      const rateDollars = scheduledRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      const rateMinutes = Number(analysis?.scheduledMinutes || 0)
+        || scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const attributableDollars = scheduledRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      const rateDollars = Number(analysis?.broadcastDollars || 0) || attributableDollars;
       if (!(rateMinutes > 0)) return;
       const item = groups.get(normalized);
       item.rates.push(dollarsPerHour(rateDollars, rateMinutes));
