@@ -1054,40 +1054,86 @@
 
   function historicalRanking(analyses = [], dimension, options = {}) {
     if (dimension === 'season') return historicalSeasonRanking(analyses, options);
-    const rows = historicalRows(analyses);
     const groups = new Map();
-    rows.forEach((row) => {
-      const key = historicalGroupValue(row, dimension);
-      if (!key) return;
-      const normalized = dimension === 'startTime' ? key : lookupKey(key);
-      if (!groups.has(normalized)) {
-        groups.set(normalized, {
-          key,
-          airings: 0,
-          rateAirings: 0,
-          totalDollars: 0,
-          rateDollars: 0,
-          rateMinutes: 0,
-          rates: [],
-          fundraisers: new Set(),
-          titles: new Set(),
-          rateFundraisers: new Set(),
-          rateTitles: new Set()
-        });
-      }
-      const item = groups.get(normalized);
-      item.airings += 1;
-      item.totalDollars += Number(row.dollars || 0);
-      item.fundraisers.add(row.fundraiserId);
-      item.titles.add(lookupKey(row.title));
-      if (!row.durationMissing && Number(row.minutes) > 0) {
-        item.rateAirings += 1;
-        item.rateDollars += Number(row.dollars || 0);
-        item.rateMinutes += Number(row.minutes || 0);
-        item.rates.push(dollarsPerHour(row.dollars, row.minutes));
-        item.rateFundraisers.add(row.fundraiserId);
-        item.rateTitles.add(lookupKey(row.title));
-      }
+
+    (analyses || []).forEach((analysis) => {
+      const fundraiserId = text(analysis?.schedule?.id || analysis?.schedule?.title);
+      const fundraiserTitle = text(analysis?.schedule?.title);
+      const localGroups = new Map();
+
+      (analysis?.placementRows || []).forEach((row) => {
+        if (row?.countsTowardScheduleMinutes === false || row?.unmatchedImported) return;
+        const enriched = {
+          ...row,
+          fundraiserId,
+          fundraiserTitle,
+          season: canonicalCategory(analysis?.schedule?.season || seasonForDate(row?.dateKey), 'Special events'),
+          weekpart: weekpartLabel(row?.dateKey),
+          startBucket: Number.isFinite(Number(row?.startMinutes))
+            ? Math.floor(((((Number(row.startMinutes) % 1440) + 1440) % 1440) / 30)) * 30
+            : null,
+          breakType: row?.liveBreak ? 'Live break' : 'Pre-recorded break'
+        };
+        const key = historicalGroupValue(enriched, dimension);
+        if (!key) return;
+        const normalized = dimension === 'startTime' ? key : lookupKey(key);
+        if (!localGroups.has(normalized)) {
+          localGroups.set(normalized, {
+            key,
+            airings: 0,
+            totalDollars: 0,
+            rateAirings: 0,
+            rateDollars: 0,
+            rateMinutes: 0,
+            titles: new Set(),
+            rateTitles: new Set(),
+            complete: true
+          });
+        }
+        const local = localGroups.get(normalized);
+        local.airings += 1;
+        if (row?.known) local.totalDollars += Number(row?.dollars || 0);
+        const title = lookupKey(row?.title || row?.plannedTitle || '');
+        if (title) local.titles.add(title);
+        if (!row?.known || row?.durationMissing || !(Number(row?.minutes) > 0)) {
+          local.complete = false;
+          return;
+        }
+        local.rateAirings += 1;
+        local.rateDollars += Number(row?.dollars || 0);
+        local.rateMinutes += Number(row?.minutes || 0);
+        if (title) local.rateTitles.add(title);
+      });
+
+      localGroups.forEach((local, normalized) => {
+        if (!groups.has(normalized)) {
+          groups.set(normalized, {
+            key: local.key,
+            airings: 0,
+            rateAirings: 0,
+            totalDollars: 0,
+            rateDollars: 0,
+            rateMinutes: 0,
+            rates: [],
+            fundraisers: new Set(),
+            titles: new Set(),
+            rateFundraisers: new Set(),
+            rateTitles: new Set()
+          });
+        }
+        const item = groups.get(normalized);
+        item.airings += local.airings;
+        item.totalDollars += local.totalDollars;
+        item.fundraisers.add(fundraiserId);
+        local.titles.forEach((title) => item.titles.add(title));
+        if (!local.complete || !(local.rateMinutes > 0) || !local.rateAirings) return;
+        item.rateAirings += local.rateAirings;
+        item.rateDollars += local.rateDollars;
+        item.rateMinutes += local.rateMinutes;
+        item.rates.push(dollarsPerHour(local.rateDollars, local.rateMinutes));
+        item.rateFundraisers.add(fundraiserId);
+        local.rateTitles.forEach((title) => item.rateTitles.add(title));
+      });
     });
 
     const defaultMinimums = dimension === 'startTime'
@@ -1105,11 +1151,12 @@
       titles: item.rateTitles.size,
       broadcastDollars: item.totalDollars,
       medianDollarsPerHour: median(item.rates),
-      averageDollarsPerHour: dollarsPerHour(item.rateDollars, item.rateMinutes),
+      averageDollarsPerHour: item.rates.length ? item.rates.reduce((sum, value) => sum + value, 0) / item.rates.length : 0,
       minutes: item.rateMinutes,
+      rateObservations: item.rates.length,
       sufficient: item.rateAirings >= minAirings && item.rateFundraisers.size >= minFundraisers && item.rateTitles.size >= minTitles
     })).filter((item) => item.sufficient)
-      .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.rateAirings - a.rateAirings || String(a.key).localeCompare(String(b.key)));
+      .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.fundraisers - a.fundraisers || b.rateAirings - a.rateAirings || String(a.key).localeCompare(String(b.key)));
   }
 
   function missingDurationPrograms(analyses = []) {
@@ -1215,6 +1262,7 @@
     const importedDate = text(row?.dateKey || '');
     const importedStart = Number(row?.startMinutes);
     const importedDollars = Number(row?.dollars || 0) || 0;
+    const importedPledges = Number(row?.pledges || 0) || 0;
     const importedProgramId = text(row?.programId || '');
     const placements = (analysis?.schedule?.placements || [])
       .filter((placement) => !placement?.isNonPledge)
@@ -1295,12 +1343,13 @@
       title: resolvedTitle || importedTitle,
       programId: importedProgramId,
       mismatchTypes,
-      detail: `${analysis?.schedule?.title || 'Fundraiser'} · imported ${importedDate || 'unknown date'}${Number.isFinite(importedStart) ? ` ${preflightClockLabel(importedStart)}` : ''} · $${importedDollars.toFixed(2)} · ${parts.join(' · ')}`,
+      detail: `${analysis?.schedule?.title || 'Fundraiser'} · imported ${importedDate || 'unknown date'}${Number.isFinite(importedStart) ? ` ${preflightClockLabel(importedStart)}` : ''} · $${importedDollars.toFixed(2)} · ${importedPledges} pledge${importedPledges === 1 ? '' : 's'} · ${parts.join(' · ')}`,
       imported: {
         title: importedTitle,
         dateKey: importedDate,
         startMinutes: Number.isFinite(importedStart) ? importedStart : null,
-        dollars: importedDollars
+        dollars: importedDollars,
+        pledges: importedPledges
       },
       scheduled: candidate ? {
         title: candidate.title,
@@ -1572,6 +1621,7 @@
     add('missing-duration', 'Missing program durations', 'fail', missingDurations.length ? 'Programs without a saved schedule length or reliable Program Library runtime are excluded from $/hour analytics.' : 'Every scheduled program used by the reports has a usable duration.', missingDurations);
 
     const unmatchedPrograms = [];
+    const unmatchedStartTimes = new Map();
     const healthIndexes = buildLibraryIndexes(library);
     let nonSpecificRows = 0;
     let nonSpecificDollars = 0;
@@ -1582,10 +1632,28 @@
           nonSpecificDollars += Number(row?.dollars || 0);
           return;
         }
-        unmatchedPrograms.push(preflightUnmatchedDiagnostic(row, analysis, healthIndexes));
+        const diagnostic = preflightUnmatchedDiagnostic(row, analysis, healthIndexes);
+        unmatchedPrograms.push(diagnostic);
+        const start = Number(diagnostic?.imported?.startMinutes);
+        const bucket = Number.isFinite(start)
+          ? Math.floor(((((start % 1440) + 1440) % 1440) / 30)) * 30
+          : null;
+        const key = Number.isFinite(bucket) ? String(bucket) : 'unknown';
+        if (!unmatchedStartTimes.has(key)) {
+          unmatchedStartTimes.set(key, {
+            startMinutes: Number.isFinite(bucket) ? bucket : null,
+            label: Number.isFinite(bucket) ? preflightClockLabel(bucket) : 'Unknown time',
+            count: 0
+          });
+        }
+        unmatchedStartTimes.get(key).count += 1;
       });
     });
-    add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length ? 'Imported program results remain that cannot be assigned confidently to a scheduled program/topic.' : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
+    add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length
+      ? 'Imported program results remain that cannot be assigned confidently to a saved schedule placement. Their dollars remain in fundraiser totals, but these rows are excluded from historical start-time performance.'
+      : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
+    checks[checks.length - 1].startTimeBreakdown = [...unmatchedStartTimes.values()]
+      .sort((a, b) => (Number.isFinite(a.startMinutes) ? a.startMinutes : 99999) - (Number.isFinite(b.startMinutes) ? b.startMinutes : 99999));
 
     const duplicateRanges = (schedules || [])
       .filter((schedule) => !schedule?.reportOnly && Number(schedule?.duplicateRangeCount || 1) > 1)
