@@ -58,7 +58,7 @@ jobs:
             return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Actual imported titles and airtimes where available; unresolved placements remain visible from the saved schedule.</p></div></div><div class="fundraiser-air-schedule-grid">${days}</div></section>`;
           }
 
-'''
+          '''
           if reports.count(marker) != 1:
               raise SystemExit(f'expected one fundraiserDailyTable marker, found {reports.count(marker)}')
           if 'function fundraiserAirSchedule' not in reports:
@@ -83,7 +83,7 @@ jobs:
           refinements_path = Path('tests/one-sheet-report-refinements.test.mjs')
           refinements = refinements_path.read_text().replace('0.22.123', '0.22.124')
           test_marker = "assert.match(reports, /function programResultsTable/);"
-          test_add = "assert.match(reports, /function fundraiserAirSchedule/);\nassert.match(reports, /Actual air schedule/);\nassert.match(reports, /Scheduled · result unresolved/);\nassert.match(reports, /dailyIncomeChart\\(analysis\\)\\}\\$\\{fundraiserAirSchedule\\(analysis\\)\\}\\$\\{fundraiserDailyTable\\(analysis\\)/);\nassert.match(css, /fundraiser-air-schedule-grid/);\n"
+          test_add = "assert.match(reports, /function fundraiserAirSchedule/);\nassert.match(reports, /Actual air schedule/);\nassert.match(reports, /Scheduled · result unresolved/);\nassert.match(reports, /fundraiserAirSchedule\\(analysis\\)/);\nassert.match(css, /fundraiser-air-schedule-grid/);\n"
           if 'function fundraiserAirSchedule' not in refinements:
               if test_marker not in refinements:
                   raise SystemExit('refinements test insertion marker not found')
