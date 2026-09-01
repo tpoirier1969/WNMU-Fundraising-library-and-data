@@ -27,70 +27,56 @@ jobs:
 
           analysis_path = Path('assets/js/one-sheet-analysis.js')
           source = analysis_path.read_text()
-          old = """  function firstSaturdayAnchor(analysis = {}) {
-            const importedDates = (analysis.importedRows || []).map(importedDateKey).filter(Boolean);
-            const placementDates = (analysis.placementRows || []).map((row) => row.dateKey).filter(Boolean);
-            const candidates = [...new Set(importedDates.length ? importedDates : placementDates)].sort();
-            const saturday = candidates.map(parseDate).find((date) => date && date.getDay() === 6);
-            if (saturday) return saturday;
-            const start = parseDate(analysis.schedule?.startDate);
-            if (!start) return null;
-            const next = new Date(start);
-            while (next.getDay() !== 6) next.setDate(next.getDate() + 1);
-            return next;
-          }
-          """
-          new = """  function firstSaturdayAnchor(analysis = {}) {
-            const importedDates = (analysis.importedRows || []).map(importedDateKey).filter(Boolean);
-            const placementDates = (analysis.placementRows || []).map((row) => row.dateKey).filter(Boolean);
-            const candidates = [...new Set(importedDates.length ? importedDates : placementDates)].sort();
-            const saturday = candidates.map(parseDate).find((date) => date && date.getDay() === 6);
-            if (saturday) return saturday;
-            const start = parseDate(analysis.schedule?.startDate);
-            if (!start) return null;
-            const end = parseDate(analysis.schedule?.endDate || analysis.schedule?.startDate);
-            const next = new Date(start);
-            while (next.getDay() !== 6) next.setDate(next.getDate() + 1);
-            if (!end || next <= end) return next;
-            const previous = new Date(start);
-            while (previous.getDay() !== 6) previous.setDate(previous.getDate() - 1);
-            return previous;
-          }
-          """
-          if old not in source:
-              raise SystemExit('firstSaturdayAnchor source block did not match expected v0.22.123 code')
+          old = (
+              "    const start = parseDate(analysis.schedule?.startDate);\n"
+              "    if (!start) return null;\n"
+              "    const next = new Date(start);\n"
+              "    while (next.getDay() !== 6) next.setDate(next.getDate() + 1);\n"
+              "    return next;"
+          )
+          new = (
+              "    const start = parseDate(analysis.schedule?.startDate);\n"
+              "    if (!start) return null;\n"
+              "    const end = parseDate(analysis.schedule?.endDate || analysis.schedule?.startDate);\n"
+              "    const next = new Date(start);\n"
+              "    while (next.getDay() !== 6) next.setDate(next.getDate() + 1);\n"
+              "    if (!end || next <= end) return next;\n"
+              "    const previous = new Date(start);\n"
+              "    while (previous.getDay() !== 6) previous.setDate(previous.getDate() - 1);\n"
+              "    return previous;"
+          )
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one firstSaturdayAnchor fallback block, found {source.count(old)}')
           analysis_path.write_text(source.replace(old, new, 1))
 
           test_path = Path('tests/one-sheet-analysis-hardening.test.mjs')
           tests = test_path.read_text()
-          marker = """{
-            const april = {
-          """
-          regression = """{
-            const sundayOnly = {
-              schedule: { id: 'aug-2021', title: 'Aug 15, 2021 - Aug 15, 2021', startDate: '2021-08-15', endDate: '2021-08-15' },
-              importedRows: [{ air_date: '2021-08-15' }],
-              placementRows: [{
-                dateKey: '2021-08-15', countsTowardScheduleMinutes: false, minutes: 60,
-                known: true, durationMissing: false, dollars: 4321, pledges: 12,
-                startMinutes: 1080, endMinutes: 1140
-              }]
-            };
-            const anchor = A.firstSaturdayAnchor(sundayOnly);
-            assert.equal(anchor?.getFullYear(), 2021);
-            assert.equal(anchor?.getMonth(), 7);
-            assert.equal(anchor?.getDate(), 14, 'a fundraiser with no Saturday in its saved range anchors to the preceding Saturday');
-            assert.equal(A.fundraiserDayOffset(sundayOnly, { dateKey: '2021-08-15' }), 1, 'Sunday-only fundraiser must align as 1st Sunday, not be discarded as Day -6');
-            const aligned = A.alignedDailyRows([sundayOnly]);
-            assert.equal(aligned.length, 1);
-            assert.equal(aligned[0].offset, 1);
-            assert.equal(aligned[0].label.title, '1st Sunday');
-            assert.equal(aligned[0].days[0].dollars, 4321, 'Sunday-only fundraiser daily dollars must survive alignment');
-          }
-
-          """
-          if marker not in tests:
-              raise SystemExit('hardening test insertion marker not found')
+          marker = "{\n  const april = {"
+          regression = (
+              "{\n"
+              "  const sundayOnly = {\n"
+              "    schedule: { id: 'aug-2021', title: 'Aug 15, 2021 - Aug 15, 2021', startDate: '2021-08-15', endDate: '2021-08-15' },\n"
+              "    importedRows: [{ air_date: '2021-08-15' }],\n"
+              "    placementRows: [{\n"
+              "      dateKey: '2021-08-15', countsTowardScheduleMinutes: false, minutes: 60,\n"
+              "      known: true, durationMissing: false, dollars: 4321, pledges: 12,\n"
+              "      startMinutes: 1080, endMinutes: 1140\n"
+              "    }]\n"
+              "  };\n"
+              "  const anchor = A.firstSaturdayAnchor(sundayOnly);\n"
+              "  assert.equal(anchor?.getFullYear(), 2021);\n"
+              "  assert.equal(anchor?.getMonth(), 7);\n"
+              "  assert.equal(anchor?.getDate(), 14, 'a fundraiser with no Saturday in its saved range anchors to the preceding Saturday');\n"
+              "  assert.equal(A.fundraiserDayOffset(sundayOnly, { dateKey: '2021-08-15' }), 1, 'Sunday-only fundraiser must align as 1st Sunday, not be discarded as Day -6');\n"
+              "  const aligned = A.alignedDailyRows([sundayOnly]);\n"
+              "  assert.equal(aligned.length, 1);\n"
+              "  assert.equal(aligned[0].offset, 1);\n"
+              "  assert.equal(aligned[0].label.title, '1st Sunday');\n"
+              "  assert.equal(aligned[0].days[0].dollars, 4321, 'Sunday-only fundraiser daily dollars must survive alignment');\n"
+              "}\n\n"
+          )
+          if tests.count(marker) != 1:
+              raise SystemExit(f'expected one hardening-test insertion marker, found {tests.count(marker)}')
           test_path.write_text(tests.replace(marker, regression + marker, 1))
 
           version_targets = [Path('version.json'), Path('reports.html'), *Path('tests').glob('*.mjs')]
@@ -104,31 +90,29 @@ jobs:
               raise SystemExit('version.json did not contain expected 0.22.123 version')
 
           workflow_path = Path('.github/workflows/regression-tests.yml')
-          workflow_path.write_text("""name: Regression tests
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            node-tests:
-              runs-on: ubuntu-latest
-              timeout-minutes: 10
-              steps:
-                - name: Check out repository
-                  uses: actions/checkout@v4
-                - name: Set up Node.js
-                  uses: actions/setup-node@v4
-                  with:
-                    node-version: '22'
-                - name: Run regression tests
-                  run: node --test tests/*.test.mjs
-          """)
+          workflow_path.write_text(
+              "name: Regression tests\n\n"
+              "on:\n"
+              "  pull_request:\n"
+              "  push:\n"
+              "    branches:\n"
+              "      - main\n\n"
+              "permissions:\n"
+              "  contents: read\n\n"
+              "jobs:\n"
+              "  node-tests:\n"
+              "    runs-on: ubuntu-latest\n"
+              "    timeout-minutes: 10\n"
+              "    steps:\n"
+              "      - name: Check out repository\n"
+              "        uses: actions/checkout@v4\n"
+              "      - name: Set up Node.js\n"
+              "        uses: actions/setup-node@v4\n"
+              "        with:\n"
+              "          node-version: '22'\n"
+              "      - name: Run regression tests\n"
+              "        run: node --test tests/*.test.mjs\n"
+          )
           print('Version-updated files:', ', '.join(changed_version_files))
           PY
           git config user.name "github-actions[bot]"
