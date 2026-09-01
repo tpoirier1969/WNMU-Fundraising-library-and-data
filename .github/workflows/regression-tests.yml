@@ -46,12 +46,13 @@ jobs:
                   raise SystemExit(f'{path}: regex match count {count} for {pattern[:80]!r}')
               p.write_text(changed)
 
-          def replace_all(path, old, new):
+          def replace_version(path):
               p = Path(path)
               data = p.read_text()
-              if old not in data:
-                  raise SystemExit(f'{path}: missing {old!r}')
-              p.write_text(data.replace(old, new))
+              changed = data.replace('0.22.119', '0.22.120').replace(r'0\.22\.119', r'0\.22\.120')
+              if changed == data:
+                  raise SystemExit(f'{path}: no v0.22.119 version marker found')
+              p.write_text(changed)
 
           analysis = 'assets/js/one-sheet-analysis.js'
           replace_once(analysis, 'const REPORT_ONLY_EVENT_MAX_DAYS = 2;', 'const REPORT_ONLY_EVENT_MAX_DAYS = 1;')
@@ -100,7 +101,7 @@ jobs:
           regex_once(test, r"assert\.equal\(importedOnlyHealth\.checks\.find\(\(check\) => check\.id === 'schedule-coverage'\).*?assert\.equal\(importedOnlyHealth\.status, 'pass'.*?;", '\n'.join(jan_lines))
 
           for path in ['version.json', 'reports.html', 'tests/library-load-performance.test.mjs', 'tests/one-sheet-report-refinements.test.mjs', 'tests/one-sheet-reports.test.mjs']:
-              replace_all(path, '0.22.119', '0.22.120')
+              replace_version(path)
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
