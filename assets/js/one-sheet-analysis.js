@@ -312,23 +312,14 @@
     const start = text(schedule.startDate);
     const end = text(schedule.endDate);
     if (!(start && end)) return [];
-
-    const exact = rows.filter((row) =>
-      text(row.drive_start_date).slice(0, 10) === start
-      && text(row.drive_end_date).slice(0, 10) === end
-    );
-    if (exact.length) return exact;
-
-    // Do not let a saved fundraiser absorb every imported airing in the same
-    // pledge season. Rows with no explicit drive identity may attach by actual
-    // air date, but rows explicitly assigned to another drive may not.
+    // The saved Scheduler window owns results by actual air date. Imported
+    // drive boundaries are useful evidence, but historical reports frequently
+    // omit an opener or closer and cannot safely veto an otherwise covered row.
+    // This remains date-bounded, so a standalone event elsewhere in the same
+    // pledge season cannot absorb unrelated airings.
     return rows.filter((row) => {
       const date = importedDateKey(row);
-      if (!date || date < start || date > end) return false;
-      const driveStart = text(row.drive_start_date).slice(0, 10);
-      const driveEnd = text(row.drive_end_date).slice(0, 10);
-      if (driveStart && driveEnd) return driveStart === start && driveEnd === end;
-      return true;
+      return Boolean(date && date >= start && date <= end);
     });
   }
 
@@ -1296,6 +1287,33 @@
 
     const scheduleCoverage = preflightImportedCoverageFindings(schedules, airings);
     add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? 'Imported pledge activity exists on air dates that are not covered by any saved fundraiser schedule. Repair or classify the fundraiser calendar before treating downstream program mismatches as independent title/date problems.' : 'Every imported pledge air date falls inside a saved fundraiser schedule window.', scheduleCoverage);
+
+    const resultOwnership = [];
+    (analyses || []).forEach((analysis) => {
+      const schedule = analysis?.schedule || {};
+      const start = text(schedule.startDate || schedule.start_date || '');
+      const end = text(schedule.endDate || schedule.end_date || '');
+      if (!(start && end)) return;
+      const expectedRows = (airings || []).filter((row) => {
+        const date = importedDateKey(row);
+        return Boolean(date && date >= start && date <= end);
+      });
+      const expectedKeys = new Set(expectedRows.map(importedUseKey).filter(Boolean));
+      const attachedRows = analysis?.importedRows || [];
+      const attachedKeys = new Set(attachedRows.map(importedUseKey).filter(Boolean));
+      const missingRows = expectedRows.filter((row) => !attachedKeys.has(importedUseKey(row)));
+      const extraRows = attachedRows.filter((row) => !expectedKeys.has(importedUseKey(row)));
+      const expectedDollars = expectedRows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+      const attachedDollars = attachedRows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+      if (!missingRows.length && !extraRows.length && Math.abs(attachedDollars - expectedDollars) <= 0.01) return;
+      resultOwnership.push({
+        title: text(schedule.title || 'Fundraiser'),
+        programId: '',
+        mismatchTypes: ['Fundraiser result attachment problem'],
+        detail: `${start}–${end} · ${expectedRows.length} covered imported rows / $${expectedDollars.toFixed(2)} Broadcast vs ${attachedRows.length} attached rows / $${attachedDollars.toFixed(2)} · ${missingRows.length} omitted · ${extraRows.length} outside the saved window`
+      });
+    });
+    add('result-ownership', 'Fundraiser result attachment', 'fail', resultOwnership.length ? 'Covered imported pledge results are missing from, or incorrectly attached to, fundraiser analysis.' : 'Every imported result covered by a saved fundraiser window is attached to that fundraiser analysis.', resultOwnership);
 
     const reconciliation = [];
     (analyses || []).forEach((analysis) => {
