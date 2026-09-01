@@ -42,8 +42,8 @@ assert.ok(health.checks.find((check) => check.id === 'stale-hashes').count > 0);
 assert.ok(health.checks.find((check) => check.id === 'channel-tracking').count > 0);
 
 const cleanSchedule = { id: 'clean', title: 'Clean', startDate: '2026-08-01', endDate: '2026-08-02', placements: [], onlineDollars: 0, mailDollars: 0, onlineTrackedExplicit: true, mailTrackedExplicit: true };
-const cleanAnalysis = { schedule: cleanSchedule, importedRows: [{ row_hash: 'r1', dollars: 25 }], placementRows: [{ known: true, dollars: 25, durationMissing: false, title: 'Clean Program', dateKey: '2026-08-01', startMinutes: 1200, minutes: 60 }], unmatchedImportedRows: [], missingDurationRows: [], scheduled: 1 };
-const cleanHealth = A.dataHealthReport([cleanSchedule], [cleanAnalysis], [{ row_hash: 'r1', dollars: 25, program_id: 'p1' }], [{ id: 'p1', title: 'Clean Program', topic_primary: 'Music', topic_secondary: 'Concert' }]);
+const cleanAnalysis = { schedule: cleanSchedule, importedRows: [{ row_hash: 'r1', air_date: '2026-08-01', dollars: 25 }], placementRows: [{ known: true, dollars: 25, durationMissing: false, title: 'Clean Program', dateKey: '2026-08-01', startMinutes: 1200, minutes: 60 }], unmatchedImportedRows: [], missingDurationRows: [], scheduled: 1 };
+const cleanHealth = A.dataHealthReport([cleanSchedule], [cleanAnalysis], [{ row_hash: 'r1', air_date: '2026-08-01', dollars: 25, program_id: 'p1' }], [{ id: 'p1', title: 'Clean Program', topic_primary: 'Music', topic_secondary: 'Concert' }]);
 assert.equal(cleanHealth.status, 'pass');
 assert.equal(cleanHealth.failures, 0);
 assert.equal(A.canonicalCategory('MUSIC'), 'Music');
@@ -150,7 +150,7 @@ const historicalDecemberAirings = [
   { id: 'nov30', row_hash: 'nov30', air_date: '2019-11-30', air_time: '18:00', imported_program_title: 'Fundraiser Opening', drive_start_date: '2019-11-30', drive_end_date: '2019-12-11', dollars: 100 },
   { id: 'dec03', row_hash: 'dec03', air_date: '2019-12-03', air_time: '20:00', imported_program_title: 'Fundraiser Middle', drive_start_date: '2019-11-30', drive_end_date: '2019-12-11', dollars: 200 },
   { id: 'dec11', row_hash: 'dec11', air_date: '2019-12-11', air_time: '21:00', imported_program_title: 'Fundraiser Closing', drive_start_date: '2019-11-30', drive_end_date: '2019-12-11', dollars: 300 },
-  { id: 'dec26', row_hash: 'dec26', air_date: '2019-12-26', air_time: '20:00', imported_program_title: 'Standalone Holiday Pledge', dollars: 50 }
+  { id: 'dec26', row_hash: 'dec26', air_date: '2019-12-26', air_time: '20:00', imported_program_title: 'Standalone Holiday Pledge', drive_start_date: '2019-12-01', drive_end_date: '2019-12-10', dollars: 50 }
 ];
 const strayAnalysis = A.analyzeSchedule(strayDecemberSchedule, historicalDecemberAirings, A.buildLibraryIndexes([]));
 assert.deepEqual(
@@ -158,6 +158,7 @@ assert.deepEqual(
   ['2019-12-26'],
   'a saved Dec 26–27 schedule must not absorb every November/December airing merely because they share the December pledge season'
 );
+assert.equal(strayAnalysis.broadcastDollars, 50, 'actual air date inside a saved standalone event must win over stale imported drive-boundary metadata');
 const historicalCoverageHealth = A.dataHealthReport([strayDecemberSchedule], [strayAnalysis], historicalDecemberAirings, []);
 const scheduleCoverageCheck = historicalCoverageHealth.checks.find((check) => check.id === 'schedule-coverage');
 assert.ok(scheduleCoverageCheck.count >= 3, 'standalone uncovered dates and the explicit missing fundraiser should be schedule-level findings');
@@ -165,3 +166,15 @@ assert.ok(scheduleCoverageCheck.details.some((item) => /2019-11-30–2019-12-11/
 assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-30' && item.repair?.endDate === '2019-12-11'), 'the missing fundraiser finding should carry its explicit source range into the repair preview');
 assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-14' && item.repair?.endDate === '2019-11-14'), 'uncovered standalone pledge activity must not be silently rolled into the later fundraiser');
 assert.equal(historicalCoverageHealth.metrics.importedRows, 6, 'Preflight imported-row metric must count the full canonical dataset, including rows outside saved schedules');
+
+const missingOwnershipHealth = A.dataHealthReport([matchedSchedule], [{
+  schedule: matchedSchedule,
+  importedRows: [],
+  placementRows: [],
+  unmatchedImportedRows: [],
+  missingDurationRows: [],
+  scheduled: 1
+}], canonical, matchedLibrary);
+const ownershipCheck = missingOwnershipHealth.checks.find((check) => check.id === 'result-ownership');
+assert.equal(ownershipCheck.count, 1, 'Preflight must fail when covered imported rows disappear from fundraiser analysis');
+assert.match(ownershipCheck.details[0].detail, /1 covered imported rows \/ \$80\.00 Broadcast vs 0 attached rows \/ \$0\.00/);

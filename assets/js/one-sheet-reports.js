@@ -521,8 +521,17 @@
     return seasons;
   }
 
+  function scheduleHasImportedResults(schedule) {
+    const analysis = analysisFor(schedule);
+    return Boolean((analysis?.importedRows || []).length || Number(analysis?.broadcastDollars || 0) > 0);
+  }
+
+  function defaultReportSchedule() {
+    return state.schedules.find(scheduleHasImportedResults) || state.schedules[0] || null;
+  }
+
   function defaultSeason() {
-    const latest = state.schedules[0];
+    const latest = defaultReportSchedule();
     return latest ? (latest.season || 'Special events') : (seasonsAvailable()[0] || 'all');
   }
 
@@ -552,7 +561,9 @@
     });
     if (state.selectedIds.size >= 2) return;
     state.selectedIds.clear();
-    allowed.slice(0, Math.min(3, allowed.length)).forEach((schedule) => state.selectedIds.add(schedule.id));
+    const completed = allowed.filter(scheduleHasImportedResults);
+    const defaults = completed.length >= 2 ? completed : allowed;
+    defaults.slice(0, Math.min(3, defaults.length)).forEach((schedule) => state.selectedIds.add(schedule.id));
   }
 
   function selectedComparisonAnalyses() {
@@ -936,7 +947,7 @@
   }
 
   async function renderFundraiserReport() {
-    const schedule = state.schedules.find((item) => item.id === state.activeFundraiserId) || state.schedules[0];
+    const schedule = state.schedules.find((item) => item.id === state.activeFundraiserId) || defaultReportSchedule();
     if (!schedule) {
       $('#report-output').innerHTML = '<div class="report-empty">No saved fundraisers are available.</div>';
       return;
@@ -954,7 +965,7 @@
     document.title = 'WNMU Fundraiser Performance Summary';
     $('#report-page-title').textContent = 'Fundraiser Performance Summary';
     $('#report-page-subtitle').textContent = 'One fundraiser, from first pledge hour to last';
-    state.activeFundraiserId = state.schedules[0]?.id || '';
+    state.activeFundraiserId = defaultReportSchedule()?.id || '';
     renderFundraiserControls();
     await renderFundraiserReport();
   }
@@ -965,7 +976,7 @@
   }
 
   function historicalAnalyses() {
-    return state.schedules.map(analysisFor).filter(Boolean);
+    return state.schedules.filter(scheduleHasImportedResults).map(analysisFor).filter(Boolean);
   }
 
   function historicalHeader(analyses) {
