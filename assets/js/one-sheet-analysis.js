@@ -6,6 +6,8 @@
   'use strict';
 
   const SEASONS = ['March', 'June', 'August', 'December'];
+  const MAIN_SCHEDULE_TOLERANCE_DAYS = 3;
+  const REPORT_ONLY_EVENT_MAX_DAYS = 2;
 
   function text(value) {
     return String(value ?? '').trim();
@@ -49,6 +51,42 @@
   function dateKey(date) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function dateOrdinal(value) {
+    const raw = text(value).slice(0, 10);
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const ordinal = Date.UTC(year, month - 1, day) / 86400000;
+    const probe = new Date(ordinal * 86400000);
+    if (probe.getUTCFullYear() !== year || probe.getUTCMonth() + 1 !== month || probe.getUTCDate() !== day) return null;
+    return ordinal;
+  }
+
+  function dateDistanceDays(a, b) {
+    const first = dateOrdinal(a);
+    const second = dateOrdinal(b);
+    return Number.isFinite(first) && Number.isFinite(second) ? Math.abs(first - second) : null;
+  }
+
+  function dateRangeDays(startDate, endDate) {
+    const start = dateOrdinal(startDate);
+    const end = dateOrdinal(endDate);
+    return Number.isFinite(start) && Number.isFinite(end) && end >= start ? (end - start) + 1 : 0;
+  }
+
+  function shiftDateKey(value, days) {
+    const ordinal = dateOrdinal(value);
+    if (!Number.isFinite(ordinal)) return '';
+    const probe = new Date((ordinal + Number(days || 0)) * 86400000);
+    return `${probe.getUTCFullYear()}-${String(probe.getUTCMonth() + 1).padStart(2, '0')}-${String(probe.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  function rangesOverlap(aStart, aEnd, bStart, bEnd) {
+    return Boolean(aStart && aEnd && bStart && bEnd && aStart <= bEnd && aEnd >= bStart);
   }
 
   function seasonForDate(value) {
@@ -307,20 +345,41 @@
     return { season: text(schedule.season || seasonForDate(start)), year: Number(schedule.year || start?.getFullYear() || 0) };
   }
 
+  function importedDriveRange(row = {}) {
+    const startDate = text(row?.drive_start_date || '').slice(0, 10);
+    const endDate = text(row?.drive_end_date || '').slice(0, 10);
+    const days = dateRangeDays(startDate, endDate);
+    if (!days) return null;
+    const airingDate = importedDateKey(row);
+    if (airingDate && (airingDate < startDate || airingDate > endDate)) return null;
+    return { startDate, endDate, days };
+  }
+
+  function scheduleOwnsImportedRow(schedule = {}, row = {}, toleranceDays = MAIN_SCHEDULE_TOLERANCE_DAYS) {
+    const start = text(schedule.startDate || schedule.start_date || '');
+    const end = text(schedule.endDate || schedule.end_date || start);
+    const date = importedDateKey(row);
+    if (!(start && end && date)) return false;
+    if (date >= start && date <= end) return true;
+    if (schedule?.reportOnly) return false;
+    const expandedStart = shiftDateKey(start, -Math.abs(Number(toleranceDays || 0)));
+    const expandedEnd = shiftDateKey(end, Math.abs(Number(toleranceDays || 0)));
+    if (!(expandedStart && expandedEnd) || date < expandedStart || date > expandedEnd) return false;
+
+    const drive = importedDriveRange(row);
+    if (!drive) return true;
+    if (rangesOverlap(drive.startDate, drive.endDate, start, end)) return true;
+    if (drive.days <= REPORT_ONLY_EVENT_MAX_DAYS) return false;
+    const startDifference = dateDistanceDays(drive.startDate, start);
+    const endDifference = dateDistanceDays(drive.endDate, end);
+    return Number.isFinite(startDifference) && Number.isFinite(endDifference)
+      && startDifference <= Math.abs(Number(toleranceDays || 0))
+      && endDifference <= Math.abs(Number(toleranceDays || 0));
+  }
+
   function importedRowsForSchedule(schedule = {}, allRows = []) {
     const rows = Array.isArray(allRows) ? allRows : [];
-    const start = text(schedule.startDate);
-    const end = text(schedule.endDate);
-    if (!(start && end)) return [];
-    // The saved Scheduler window owns results by actual air date. Imported
-    // drive boundaries are useful evidence, but historical reports frequently
-    // omit an opener or closer and cannot safely veto an otherwise covered row.
-    // This remains date-bounded, so a standalone event elsewhere in the same
-    // pledge season cannot absorb unrelated airings.
-    return rows.filter((row) => {
-      const date = importedDateKey(row);
-      return Boolean(date && date >= start && date <= end);
-    });
+    return rows.filter((row) => scheduleOwnsImportedRow(schedule, row));
   }
 
   function importedUseKey(row = {}) {
@@ -925,7 +984,7 @@
           ...row,
           fundraiserId: text(analysis.schedule?.id || analysis.schedule?.title),
           fundraiserTitle: text(analysis.schedule?.title),
-          season: canonicalCategory(analysis.schedule?.season || seasonForDate(row.dateKey), 'Unknown'),
+          season: canonicalCategory(analysis.schedule?.season || seasonForDate(row.dateKey), 'Special events'),
           weekpart: weekpartLabel(row.dateKey),
           startBucket: Number.isFinite(Number(row.startMinutes))
             ? Math.floor(((((Number(row.startMinutes) % 1440) + 1440) % 1440) / 30)) * 30
@@ -941,7 +1000,7 @@
     switch (dimension) {
       case 'topic': return canonicalCategory(row.topic);
       case 'subtopic': return canonicalCategory(row.secondary, 'Unspecified');
-      case 'season': return canonicalCategory(row.season, 'Unknown');
+      case 'season': return canonicalCategory(row.season, 'Special events');
       case 'startTime': return Number.isFinite(row.startBucket) ? String(row.startBucket) : '';
       case 'weekpart': return row.weekpart || 'Unknown';
       case 'daypart': return row.daypart || 'Unknown';
@@ -1210,72 +1269,168 @@
     };
   }
 
+  function uncoveredImportedGroups(schedules = [], airings = []) {
+    const authoritativeSchedules = (schedules || []).filter((schedule) => !schedule?.reportOnly && text(schedule?.startDate || schedule?.start_date || '') && text(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || ''));
+    const uncovered = (airings || []).map((row) => ({ row, dateKey: importedDateKey(row) }))
+      .filter((entry) => entry.dateKey && !authoritativeSchedules.some((schedule) => scheduleOwnsImportedRow(schedule, entry.row)));
+    if (!uncovered.length) return [];
+
+    const explicitGroups = new Map();
+    const loose = [];
+    uncovered.forEach((entry) => {
+      const drive = importedDriveRange(entry.row);
+      if (drive) {
+        const key = `${drive.startDate}|${drive.endDate}`;
+        if (!explicitGroups.has(key)) explicitGroups.set(key, { startDate: drive.startDate, endDate: drive.endDate, rows: [], source: 'imported drive dates' });
+        explicitGroups.get(key).rows.push(entry.row);
+        return;
+      }
+      loose.push(entry);
+    });
+
+    loose.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const looseGroups = [];
+    loose.forEach((entry) => {
+      const previous = looseGroups[looseGroups.length - 1];
+      const gap = previous ? dateDistanceDays(previous.endDate, entry.dateKey) : null;
+      if (!previous || !Number.isFinite(gap) || gap > 1) {
+        looseGroups.push({ startDate: entry.dateKey, endDate: entry.dateKey, rows: [entry.row], source: 'uncovered air dates' });
+      } else {
+        previous.endDate = entry.dateKey;
+        previous.rows.push(entry.row);
+      }
+    });
+
+    return [...explicitGroups.values(), ...looseGroups]
+      .map((group) => ({ ...group, spanDays: dateRangeDays(group.startDate, group.endDate) }))
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
+  }
+
+  function importedGroupStats(group = {}) {
+    const rows = group.rows || [];
+    return {
+      rows,
+      dollars: rows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0),
+      pledges: rows.reduce((sum, row) => sum + (Number(row?.pledge_count || row?.pledges || 0) || 0), 0),
+      distinctDates: [...new Set(rows.map(importedDateKey).filter(Boolean))].sort()
+    };
+  }
+
+  function reportOnlySchedulesFromAirings(schedules = [], airings = [], indexes = {}) {
+    return uncoveredImportedGroups(schedules, airings)
+      .filter((group) => group.spanDays > 0 && group.spanDays <= REPORT_ONLY_EVENT_MAX_DAYS)
+      .map((group) => {
+        const stats = importedGroupStats(group);
+        const placements = stats.rows.map((row, index) => {
+          const sourceTitle = importedTitle(row);
+          if (isNonSpecificDataLabel(sourceTitle)) return null;
+          const lib = libraryForImportedRow(row, indexes);
+          if (!lib) return null;
+          const date = importedDateKey(row);
+          const startMinutes = importedStartMinutes(row);
+          if (!date || !Number.isFinite(startMinutes)) return null;
+          const minutes = libraryRuntimeMinutes(lib);
+          const sourceHash = text(row?.row_hash || row?.id || '');
+          return {
+            id: `report-only-${sourceHash || `${date}-${startMinutes}-${text(lib.id || index)}`}`,
+            programId: text(lib.id || row?.program_id || row?.pledge_program_id || ''),
+            programTitle: text(lib.title || sourceTitle || 'Untitled program'),
+            dateKey: date,
+            startMinutes,
+            ...(Number.isFinite(minutes) && minutes > 0 ? { endMinutes: startMinutes + minutes, lengthMinutes: minutes } : {}),
+            importedFromReport: true,
+            reportOnlySynthetic: true,
+            sourceAiringHash: text(row?.row_hash || ''),
+            sourceName: text(row?.source_file_name || ''),
+            nolaCode: text(lib.nola_code || row?.nola_code || '')
+          };
+        }).filter(Boolean).sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes || a.programTitle.localeCompare(b.programTitle));
+        const start = parseDate(group.startDate);
+        const rangeLabel = group.startDate === group.endDate ? group.startDate : `${group.startDate}–${group.endDate}`;
+        return {
+          id: `report-only:${group.startDate}:${group.endDate}`,
+          title: `Imported-only special event · ${rangeLabel}`,
+          startDate: group.startDate,
+          endDate: group.endDate,
+          createdAt: '',
+          updatedAt: '',
+          placements,
+          onlineDollars: 0,
+          mailDollars: 0,
+          goalDollars: 0,
+          onlineTracked: false,
+          mailTracked: false,
+          onlineTrackedExplicit: true,
+          mailTrackedExplicit: true,
+          reportOnly: true,
+          duplicateRangeCount: 1,
+          meta: {
+            reportOnly: true,
+            importedOnly: true,
+            sourceRange: `${group.startDate}|${group.endDate}`,
+            source: group.source,
+            importedRowCount: stats.rows.length,
+            reportedBroadcastTotalDollars: stats.dollars
+          },
+          season: seasonForDate(group.startDate),
+          year: start?.getFullYear() || 0
+        };
+      });
+  }
+
   function preflightImportedCoverageFindings(schedules = [], airings = []) {
-    const scheduleWindows = (schedules || []).map((schedule) => ({
+    const scheduleWindows = (schedules || []).filter((schedule) => !schedule?.reportOnly).map((schedule) => ({
       schedule,
       startDate: text(schedule?.startDate || schedule?.start_date || ''),
       endDate: text(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '')
     })).filter((item) => item.startDate && item.endDate);
 
-    const uncovered = (airings || []).map((row) => ({ row, dateKey: importedDateKey(row) }))
-      .filter((entry) => entry.dateKey && !scheduleWindows.some((window) => entry.dateKey >= window.startDate && entry.dateKey <= window.endDate));
-    if (!uncovered.length) return [];
-
-    const explicitGroups = new Map();
-    const dateGroups = new Map();
-    uncovered.forEach((entry) => {
-      const driveStart = text(entry.row?.drive_start_date).slice(0, 10);
-      const driveEnd = text(entry.row?.drive_end_date).slice(0, 10);
-      const explicit = /^\d{4}-\d{2}-\d{2}$/.test(driveStart)
-        && /^\d{4}-\d{2}-\d{2}$/.test(driveEnd)
-        && driveStart <= driveEnd
-        && entry.dateKey >= driveStart
-        && entry.dateKey <= driveEnd;
-      if (explicit) {
-        const key = `${driveStart}|${driveEnd}`;
-        if (!explicitGroups.has(key)) explicitGroups.set(key, { startDate: driveStart, endDate: driveEnd, rows: [], source: 'imported drive dates' });
-        explicitGroups.get(key).rows.push(entry.row);
-        return;
-      }
-      if (!dateGroups.has(entry.dateKey)) dateGroups.set(entry.dateKey, { startDate: entry.dateKey, endDate: entry.dateKey, rows: [], source: 'uncovered air date' });
-      dateGroups.get(entry.dateKey).rows.push(entry.row);
-    });
-
-    const groups = [...explicitGroups.values(), ...dateGroups.values()]
-      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate));
-
-    return groups.map((group) => {
-      const rows = group.rows || [];
-      const dollars = rows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
-      const pledges = rows.reduce((sum, row) => sum + (Number(row?.pledge_count || row?.pledges || 0) || 0), 0);
-      const distinctDates = [...new Set(rows.map(importedDateKey).filter(Boolean))].sort();
-      const start = parseDate(group.startDate);
-      const identity = { season: seasonForDate(start), year: start?.getFullYear() || 0 };
-      const sameSeason = scheduleWindows.filter((window) => {
-        const scheduleIdentity = scheduleSeasonYear(window.schedule || {});
-        return identity.season && identity.year
-          && scheduleIdentity.season === identity.season
-          && Number(scheduleIdentity.year) === Number(identity.year);
+    return uncoveredImportedGroups(schedules, airings)
+      .filter((group) => group.spanDays > REPORT_ONLY_EVENT_MAX_DAYS)
+      .map((group) => {
+        const stats = importedGroupStats(group);
+        const start = parseDate(group.startDate);
+        const identity = { season: seasonForDate(start), year: start?.getFullYear() || 0 };
+        const sameSeason = scheduleWindows.filter((window) => {
+          const scheduleIdentity = scheduleSeasonYear(window.schedule || {});
+          return identity.season && identity.year
+            && scheduleIdentity.season === identity.season
+            && Number(scheduleIdentity.year) === Number(identity.year);
+        });
+        const nearby = sameSeason.length
+          ? ` · saved ${identity.season} ${identity.year} window${sameSeason.length === 1 ? '' : 's'}: ${sameSeason.map((window) => `${window.startDate}–${window.endDate}`).join(', ')}`
+          : '';
+        const rangeLabel = group.startDate === group.endDate ? group.startDate : `${group.startDate}–${group.endDate}`;
+        return {
+          title: group.startDate === group.endDate ? 'Uncovered pledge date' : 'Uncovered pledge period',
+          programId: '',
+          mismatchTypes: ['Missing main fundraiser schedule'],
+          detail: `${rangeLabel} · ${stats.rows.length} imported row${stats.rows.length === 1 ? '' : 's'} on ${stats.distinctDates.length} air date${stats.distinctDates.length === 1 ? '' : 's'} · $${stats.dollars.toFixed(2)} Broadcast · ${stats.pledges} pledge${stats.pledges === 1 ? '' : 's'} · no manual Scheduler fundraiser owns this multi-day imported period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance · range source: ${group.source}${nearby}`,
+          repair: {
+            type: 'create-missing-schedule',
+            startDate: group.startDate,
+            endDate: group.endDate,
+            rowCount: stats.rows.length,
+            dollars: stats.dollars,
+            pledges: stats.pledges
+          }
+        };
       });
-      const nearby = sameSeason.length
-        ? ` · saved ${identity.season} ${identity.year} window${sameSeason.length === 1 ? '' : 's'}: ${sameSeason.map((window) => `${window.startDate}–${window.endDate}`).join(', ')}`
-        : '';
-      const rangeLabel = group.startDate === group.endDate ? group.startDate : `${group.startDate}–${group.endDate}`;
-      return {
-        title: group.startDate === group.endDate ? 'Uncovered pledge date' : 'Uncovered pledge period',
-        programId: '',
-        mismatchTypes: ['Missing fundraiser schedule'],
-        detail: `${rangeLabel} · ${rows.length} imported row${rows.length === 1 ? '' : 's'} on ${distinctDates.length} air date${distinctDates.length === 1 ? '' : 's'} · $${dollars.toFixed(2)} Broadcast · ${pledges} pledge${pledges === 1 ? '' : 's'} · no saved fundraiser schedule covers these imported air dates · range source: ${group.source}${nearby}`,
-        repair: {
-          type: 'create-missing-schedule',
-          startDate: group.startDate,
-          endDate: group.endDate,
-          rowCount: rows.length,
-          dollars,
-          pledges
-        }
-      };
-    });
+  }
+
+  function preflightReportOnlyEventFindings(schedules = [], airings = []) {
+    return uncoveredImportedGroups(schedules, airings)
+      .filter((group) => group.spanDays > 0 && group.spanDays <= REPORT_ONLY_EVENT_MAX_DAYS)
+      .map((group) => {
+        const stats = importedGroupStats(group);
+        const rangeLabel = group.startDate === group.endDate ? group.startDate : `${group.startDate}–${group.endDate}`;
+        return {
+          title: 'Imported-only special pledge event',
+          programId: '',
+          mismatchTypes: ['Report-only special event'],
+          detail: `${rangeLabel} · ${stats.rows.length} imported row${stats.rows.length === 1 ? '' : 's'} on ${stats.distinctDates.length} air date${stats.distinctDates.length === 1 ? '' : 's'} · $${stats.dollars.toFixed(2)} Broadcast · ${stats.pledges} pledge${stats.pledges === 1 ? '' : 's'} · treated as a standalone imported-only special event; no manual Scheduler fundraiser is required · range source: ${group.source}`
+        };
+      });
   }
 
   function dataHealthReport(schedules = [], analyses = [], airings = [], library = []) {
@@ -1285,8 +1440,11 @@
       checks.push({ id, label, severity, summary, count, details });
     };
 
+    const reportOnlyEvents = preflightReportOnlyEventFindings(schedules, airings);
+    add('report-only-events', 'Imported-only special pledge events', 'info', reportOnlyEvents.length ? 'One- and two-day pledge events without a manual Scheduler fundraiser are valid report-only special events. They are kept separate from normal fundraiser drives and included in report analysis.' : 'No imported-only one- or two-day special pledge events were detected.', reportOnlyEvents);
+
     const scheduleCoverage = preflightImportedCoverageFindings(schedules, airings);
-    add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? 'Imported pledge activity exists on air dates that are not covered by any saved fundraiser schedule. Repair or classify the fundraiser calendar before treating downstream program mismatches as independent title/date problems.' : 'Every imported pledge air date falls inside a saved fundraiser schedule window.', scheduleCoverage);
+    add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Repair the main fundraiser calendar before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a manual Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; one- and two-day imported-only special events are handled separately.`, scheduleCoverage);
 
     const resultOwnership = [];
     (analyses || []).forEach((analysis) => {
@@ -1294,10 +1452,7 @@
       const start = text(schedule.startDate || schedule.start_date || '');
       const end = text(schedule.endDate || schedule.end_date || '');
       if (!(start && end)) return;
-      const expectedRows = (airings || []).filter((row) => {
-        const date = importedDateKey(row);
-        return Boolean(date && date >= start && date <= end);
-      });
+      const expectedRows = importedRowsForSchedule(schedule, airings);
       const expectedKeys = new Set(expectedRows.map(importedUseKey).filter(Boolean));
       const attachedRows = analysis?.importedRows || [];
       const attachedKeys = new Set(attachedRows.map(importedUseKey).filter(Boolean));
@@ -1310,10 +1465,24 @@
         title: text(schedule.title || 'Fundraiser'),
         programId: '',
         mismatchTypes: ['Fundraiser result attachment problem'],
-        detail: `${start}–${end} · ${expectedRows.length} covered imported rows / $${expectedDollars.toFixed(2)} Broadcast vs ${attachedRows.length} attached rows / $${attachedDollars.toFixed(2)} · ${missingRows.length} omitted · ${extraRows.length} outside the saved window`
+        detail: `${start}–${end} · ${expectedRows.length} owned imported rows / $${expectedDollars.toFixed(2)} Broadcast vs ${attachedRows.length} attached rows / $${attachedDollars.toFixed(2)} · ${missingRows.length} omitted · ${extraRows.length} not owned by this fundraiser`
       });
     });
-    add('result-ownership', 'Fundraiser result attachment', 'fail', resultOwnership.length ? 'Covered imported pledge results are missing from, or incorrectly attached to, fundraiser analysis.' : 'Every imported result covered by a saved fundraiser window is attached to that fundraiser analysis.', resultOwnership);
+    add('result-ownership', 'Fundraiser result attachment', 'fail', resultOwnership.length ? 'Imported pledge results owned by a fundraiser are missing from, or incorrectly attached to, that fundraiser analysis.' : 'Every imported result owned by a fundraiser is attached to that fundraiser analysis.', resultOwnership);
+
+    const multipleOwnership = [];
+    (airings || []).forEach((row) => {
+      const owners = (schedules || []).filter((schedule) => scheduleOwnsImportedRow(schedule, row));
+      if (owners.length <= 1) return;
+      const dollars = Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0;
+      multipleOwnership.push({
+        title: importedTitle(row) || 'Imported result',
+        programId: text(row?.pledge_program_id || row?.manual_match_program_id || row?.program_id || ''),
+        mismatchTypes: ['Multiple fundraiser ownership'],
+        detail: `${importedDateKey(row) || 'unknown date'}${Number.isFinite(importedStartMinutes(row)) ? ` ${preflightClockLabel(importedStartMinutes(row))}` : ''} · $${dollars.toFixed(2)} · claimed by ${owners.map((schedule) => `${schedule.title || 'Fundraiser'} (${text(schedule.startDate || schedule.start_date || '?')}–${text(schedule.endDate || schedule.end_date || '?')})`).join('; ')}`
+      });
+    });
+    add('multiple-fundraiser-ownership', 'Cross-fundraiser result ownership', 'fail', multipleOwnership.length ? 'At least one imported result is being claimed by more than one fundraiser period. Resolve the overlapping/tolerance ambiguity before trusting aggregate fundraiser comparisons.' : 'No imported result is claimed by more than one fundraiser period.', multipleOwnership);
 
     const reconciliation = [];
     (analyses || []).forEach((analysis) => {
@@ -1362,7 +1531,7 @@
     add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length ? 'Imported program results remain that cannot be assigned confidently to a scheduled program/topic.' : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
 
     const duplicateRanges = (schedules || [])
-      .filter((schedule) => Number(schedule?.duplicateRangeCount || 1) > 1)
+      .filter((schedule) => !schedule?.reportOnly && Number(schedule?.duplicateRangeCount || 1) > 1)
       .map((schedule) => `${schedule.title || 'Fundraiser'} · ${schedule.startDate || '?'}–${schedule.endDate || '?'} · ${schedule.duplicateRangeCount} records share this date range`);
     add('duplicate-ranges', 'Duplicate fundraiser date ranges', 'fail', duplicateRanges.length ? 'Multiple saved fundraiser records share an identical date range; analytics keeps the preferred record and suppresses the others.' : 'No duplicate fundraiser date ranges were detected.', duplicateRanges);
 
@@ -1411,22 +1580,26 @@
 
     const failures = checks.filter((check) => check.severity === 'fail' && check.count > 0).length;
     const warnings = checks.filter((check) => check.severity === 'warn' && check.count > 0).length;
+    const savedAnalyses = (analyses || []).filter((analysis) => !analysis?.schedule?.reportOnly);
     return {
       status: failures ? 'review' : 'pass',
       failures,
       warnings,
       checks,
       metrics: {
-        fundraisers: (analyses || []).length,
+        fundraisers: (schedules || []).filter((schedule) => !schedule?.reportOnly).length,
+        reportOnlyEvents: reportOnlyEvents.length,
         importedRows: (airings || []).length,
         libraryPrograms: (library || []).length,
-        scheduledAirings: (analyses || []).reduce((sum, analysis) => sum + Number(analysis?.scheduled || 0), 0)
+        scheduledAirings: savedAnalyses.reduce((sum, analysis) => sum + Number(analysis?.scheduled || 0), 0)
       }
     };
   }
 
   return {
     SEASONS,
+    MAIN_SCHEDULE_TOLERANCE_DAYS,
+    REPORT_ONLY_EVENT_MAX_DAYS,
     text,
     lookupKey,
     canonicalCategory,
@@ -1440,6 +1613,8 @@
     importedDateKey,
     importedStartMinutes,
     importedTitle,
+    scheduleOwnsImportedRow,
+    reportOnlySchedulesFromAirings,
     libraryRuntimeMinutes,
     placementDuration,
     placementResult,
