@@ -25,6 +25,19 @@ jobs:
           node-version: '22'
       - name: Apply fundraiser-balanced historical median changes
         run: python .github/tmp_v022126_grouped_medians.py
+      - name: Refresh broader unmatched-ranking assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for path in ['tests/one-sheet-report-refinements.test.mjs', 'tests/one-sheet-reports.test.mjs']:
+              p = Path(path)
+              s = p.read_text()
+              old = '/excluded from start-time rankings/'
+              new = '/excluded from (?:historical )?performance rankings/'
+              if old not in s:
+                  raise SystemExit(f'stale unmatched-ranking assertion missing in {path}')
+              p.write_text(s.replace(old, new))
+          PY
       - name: Run regression tests
         run: node --test tests/*.test.mjs
       - name: Commit clean v0.22.126 release branch
