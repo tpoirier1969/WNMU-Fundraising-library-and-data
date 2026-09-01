@@ -18,10 +18,11 @@
   function titleCaseLabel(value) {
     const raw = text(value);
     if (!raw) return '';
-    if (raw === raw.toUpperCase() || raw === raw.toLowerCase()) {
-      return raw.toLowerCase().replace(/\b[a-z]/g, (char) => char.toUpperCase());
-    }
-    return raw;
+    return raw.split(/([\s\-/&]+)/).map((part) => {
+      if (!/^[A-Za-z]+$/.test(part)) return part;
+      if (/^[A-Z]{2,4}$/.test(part)) return part;
+      return `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`;
+    }).join('');
   }
 
   function canonicalCategory(value, fallback = 'Uncategorized') {
@@ -1056,20 +1057,6 @@
     return text(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
 
-  function preflightCaseCollisions(rows = [], field = '', label = '') {
-    const groups = new Map();
-    (rows || []).forEach((row) => {
-      const raw = text(row?.[field]);
-      const key = lookupKey(raw);
-      if (!raw || !key) return;
-      if (!groups.has(key)) groups.set(key, new Set());
-      groups.get(key).add(raw);
-    });
-    return [...groups.entries()]
-      .filter(([_key, values]) => values.size > 1)
-      .map(([_key, values]) => `${label}: ${[...values].sort().join(' / ')}`);
-  }
-
   function preflightAmbiguousIdentities(airings = [], library = []) {
     const byTitle = new Map();
     const byNola = new Map();
@@ -1378,12 +1365,6 @@
 
     const ambiguousIdentities = preflightAmbiguousIdentities(airings, library);
     add('ambiguous-identities', 'Potential ambiguous imported identities', 'warn', ambiguousIdentities.length ? 'Some imported rows without an explicit Program Library ID have more than one plausible Library record.' : 'No multi-candidate imported identities were detected among rows lacking an explicit Library ID.', ambiguousIdentities);
-
-    const topicCollisions = [
-      ...preflightCaseCollisions(library, 'topic_primary', 'Primary topic'),
-      ...preflightCaseCollisions(library, 'topic_secondary', 'Secondary topic')
-    ];
-    add('topic-case', 'Topic/subtopic case collisions', 'warn', topicCollisions.length ? 'Stored topic labels differ only by capitalization. Analytics combines them case-insensitively, but the source taxonomy should be cleaned.' : 'No topic or subtopic capitalization collisions were detected.', topicCollisions);
 
     const channelTracking = [];
     (schedules || []).forEach((schedule) => {

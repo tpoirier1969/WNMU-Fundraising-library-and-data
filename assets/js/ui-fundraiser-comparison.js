@@ -38,9 +38,11 @@
   const canonicalCategory = (value, fallback = '') => {
     const raw = text(value);
     if (!raw) return fallback;
-    return raw.split(/([\s\-/&]+)/).map((part) => /^[A-Za-z]+$/.test(part)
-      ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`
-      : part).join('');
+    return raw.split(/([\s\-/&]+)/).map((part) => {
+      if (!/^[A-Za-z]+$/.test(part)) return part;
+      if (/^[A-Z]{2,4}$/.test(part)) return part;
+      return `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`;
+    }).join('');
   };
   const money = (value) => Number(value || 0).toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   const number = (value) => Number(value || 0).toLocaleString();

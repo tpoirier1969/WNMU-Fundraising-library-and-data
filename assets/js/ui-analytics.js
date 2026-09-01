@@ -106,9 +106,11 @@
   function canonicalCategory(value, fallback = '') {
     const raw = text(value);
     if (!raw) return fallback;
-    return raw.split(/([\s\-/&]+)/).map((part) => /^[A-Za-z]+$/.test(part)
-      ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`
-      : part).join('');
+    return raw.split(/([\s\-/&]+)/).map((part) => {
+      if (!/^[A-Za-z]+$/.test(part)) return part;
+      if (/^[A-Z]{2,4}$/.test(part)) return part;
+      return `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`;
+    }).join('');
   }
   function firstNonEmpty(...values) {
     for (const value of values) {
@@ -2827,8 +2829,8 @@ function outlierSummary(values = []) {
       <div class="program-detail-grid">
         <div class="program-detail-item"><span class="program-detail-label">Title</span><div class="program-detail-value">${escapeHtml(displayTitle)}</div></div>
         <div class="program-detail-item"><span class="program-detail-label">NOLA</span><div class="program-detail-value">${escapeHtml(text(program.nola_code) || rows.map((record) => record.nola).find(Boolean) || '—')}</div></div>
-        <div class="program-detail-item"><span class="program-detail-label">Primary topic</span><div class="program-detail-value">${escapeHtml(text(program.topic_primary) || rows.map((record) => record.topic).find(Boolean) || '—')}</div></div>
-        <div class="program-detail-item"><span class="program-detail-label">Secondary topic</span><div class="program-detail-value">${escapeHtml(text(program.topic_secondary) || '—')}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">Primary topic</span><div class="program-detail-value">${escapeHtml(canonicalCategory(program.topic_primary, '') || rows.map((record) => record.topic).find(Boolean) || '—')}</div></div>
+        <div class="program-detail-item"><span class="program-detail-label">Secondary topic</span><div class="program-detail-value">${escapeHtml(canonicalCategory(program.topic_secondary, '') || '—')}</div></div>
         <div class="program-detail-item"><span class="program-detail-label">Distributor</span><div class="program-detail-value">${escapeHtml(text(program.distributor) || rows.map((record) => record.distributor).find(Boolean) || '—')}</div></div>
         <div class="program-detail-item"><span class="program-detail-label">Rights</span><div class="program-detail-value">${escapeHtml([program.rights_start, program.rights_end].map(text).filter(Boolean).join(' → ') || '—')}</div></div>
       </div>

@@ -200,6 +200,7 @@ test('topic category normalization collapses inconsistent casing', () => {
   assert.equal(hooks.canonicalCategory('Music'), 'Music');
   assert.equal(hooks.canonicalCategory('MuSiC'), 'Music');
   assert.equal(hooks.canonicalCategory('HISTORY'), 'History');
+  assert.equal(hooks.canonicalCategory('WNMU'), 'WNMU');
 });
 
 test('start-time evidence requires rate-valid airings, three fundraisers, and three titles', () => {

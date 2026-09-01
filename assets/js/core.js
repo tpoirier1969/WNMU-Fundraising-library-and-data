@@ -338,6 +338,17 @@ window.PledgeLib = window.PledgeLib || {};
         .trim();
     },
 
+    canonicalCategoryLabel(value, fallback = '') {
+      const raw = utils.normalizeText(value);
+      if (!raw) return fallback;
+      return raw.split(/([\s\-/&]+)/).map((part) => {
+        if (!/^[A-Za-z]+$/.test(part)) return part;
+        // Preserve short station/industry abbreviations such as WNMU, PBS, and WWII.
+        if (/^[A-Z]{2,4}$/.test(part)) return part;
+        return `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`;
+      }).join('');
+    },
+
     canonicalNonSpecificTitle() {
       return 'Non-Specific Pledges';
     },
@@ -771,11 +782,11 @@ window.PledgeLib = window.PledgeLib || {};
     },
 
     topicPrimary(row) {
-      return utils.firstNonEmpty(row?.__resolved_topic_primary, row?.topic_primary, row?.primary_topic, row?.topic, row?.category) || '';
+      return utils.canonicalCategoryLabel(utils.firstNonEmpty(row?.__resolved_topic_primary, row?.topic_primary, row?.primary_topic, row?.topic, row?.category), '');
     },
 
     topicSecondary(row) {
-      return utils.firstNonEmpty(row?.__resolved_topic_secondary, row?.topic_secondary, row?.secondary_topic, row?.subcategory) || '';
+      return utils.canonicalCategoryLabel(utils.firstNonEmpty(row?.__resolved_topic_secondary, row?.topic_secondary, row?.secondary_topic, row?.subcategory), '');
     },
 
     distributor(row) {
