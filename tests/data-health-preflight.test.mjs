@@ -9,7 +9,7 @@ vm.runInContext(source, sandbox);
 const A = sandbox.WNMUOneSheetAnalysis;
 assert.ok(A?.dataHealthReport, 'dataHealthReport should be exported');
 assert.equal(A.MAIN_SCHEDULE_TOLERANCE_DAYS, 3, 'normal fundraiser ownership should allow a three-day boundary tolerance');
-assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 2, 'one- and two-day imported-only events should remain valid special events');
+assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 1, 'only isolated single-day imported events remain report-only; two-day and longer periods require schedule recovery');
 
 const schedule = A.normalizeSchedule({
   id: 's1', title: 'August 2026', start_date: '2026-08-08', end_date: '2026-08-18',
@@ -89,21 +89,41 @@ const shortDistinctRows = [
   { row_hash: 'short-1', air_date: '2026-08-20', air_time: '20:00', drive_start_date: '2026-08-20', drive_end_date: '2026-08-21', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 75, pledge_count: 1 },
   { row_hash: 'short-2', air_date: '2026-08-21', air_time: '20:00', drive_start_date: '2026-08-20', drive_end_date: '2026-08-21', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 80, pledge_count: 1 }
 ];
-assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, shortDistinctRows[0]), false, 'an explicit standalone one- or two-day event must not be swallowed by a nearby main drive merely because it is within three days');
-const shortSpecials = A.reportOnlySchedulesFromAirings([boundarySchedule], shortDistinctRows, A.buildLibraryIndexes(offSeasonLibrary));
-assert.equal(shortSpecials.length, 1, 'a distinct two-day imported event should become one report-only special event');
-assert.equal(shortSpecials[0].reportOnly, true);
-assert.equal(shortSpecials[0].startDate, '2026-08-20');
-assert.equal(shortSpecials[0].endDate, '2026-08-21');
+assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, shortDistinctRows[0]), false, 'an explicit standalone two-day event must not be swallowed by a nearby main drive merely because it is within three days');
+const shortHealth = A.dataHealthReport(
+  [boundarySchedule],
+  [A.analyzeSchedule(boundarySchedule, shortDistinctRows, A.buildLibraryIndexes(offSeasonLibrary))],
+  shortDistinctRows,
+  offSeasonLibrary
+);
+const shortCoverage = shortHealth.checks.find((check) => check.id === 'schedule-coverage');
+assert.equal(shortCoverage.count, 1, 'a distinct two-day imported event should require a recovered Scheduler record');
+assert.equal(shortCoverage.details[0].repair?.startDate, '2026-08-20');
+assert.equal(shortCoverage.details[0].repair?.endDate, '2026-08-21');
+assert.equal(shortHealth.checks.find((check) => check.id === 'report-only-events').count, 0, 'two-day events must not remain report-only');
+
+const threeDayRows = [
+  { row_hash: 'three-1', air_date: '2026-09-10', air_time: '20:00', drive_start_date: '2026-09-10', drive_end_date: '2026-09-12', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 40, pledge_count: 1 },
+  { row_hash: 'three-2', air_date: '2026-09-11', air_time: '20:00', drive_start_date: '2026-09-10', drive_end_date: '2026-09-12', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 50, pledge_count: 1 },
+  { row_hash: 'three-3', air_date: '2026-09-12', air_time: '20:00', drive_start_date: '2026-09-10', drive_end_date: '2026-09-12', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 60, pledge_count: 1 }
+];
+const threeDayHealth = A.dataHealthReport([], [], threeDayRows, offSeasonLibrary);
+const threeDayCoverage = threeDayHealth.checks.find((check) => check.id === 'schedule-coverage');
+assert.equal(threeDayCoverage.count, 1, 'a distinct three-day imported event should require a recovered Scheduler record');
+assert.equal(threeDayCoverage.details[0].repair?.startDate, '2026-09-10');
+assert.equal(threeDayCoverage.details[0].repair?.endDate, '2026-09-12');
 
 const importedOnlyJanAirings = [
   { row_hash: 'jan-import-1', air_date: '2016-01-03', air_time: '20:00', drive_start_date: '2016-01-03', drive_end_date: '2016-01-04', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 700, pledge_count: 4 },
   { row_hash: 'jan-import-2', air_date: '2016-01-04', air_time: '20:00', drive_start_date: '2016-01-03', drive_end_date: '2016-01-04', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 760, pledge_count: 5 }
 ];
 const importedOnlyHealth = A.dataHealthReport([], [], importedOnlyJanAirings, offSeasonLibrary);
-assert.equal(importedOnlyHealth.checks.find((check) => check.id === 'schedule-coverage').count, 0, 'a genuine one- or two-day imported-only pledge event must not be a missing-main-schedule blocker');
-assert.equal(importedOnlyHealth.checks.find((check) => check.id === 'report-only-events').count, 1, 'Preflight should identify the imported-only special event explicitly');
-assert.equal(importedOnlyHealth.status, 'pass', 'a valid report-only special event should not by itself fail Preflight');
+const importedOnlyCoverage = importedOnlyHealth.checks.find((check) => check.id === 'schedule-coverage');
+assert.equal(importedOnlyCoverage.count, 1, 'a genuine two-day imported-only pledge event should be recovered as a Scheduler record');
+assert.equal(importedOnlyCoverage.details[0].repair?.startDate, '2016-01-03');
+assert.equal(importedOnlyCoverage.details[0].repair?.endDate, '2016-01-04');
+assert.equal(importedOnlyHealth.checks.find((check) => check.id === 'report-only-events').count, 0, 'a two-day event must not remain report-only');
+assert.equal(importedOnlyHealth.status, 'review', 'an uncovered two-day event should remain blocking until its missing schedule is created');
 
 assert.ok(A.canonicalizeImportedAirings, 'canonicalizeImportedAirings should be exported');
 const rawDuplicateAirings = [

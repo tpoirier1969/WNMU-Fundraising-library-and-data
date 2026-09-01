@@ -7,7 +7,7 @@
 
   const SEASONS = ['March', 'June', 'August', 'December'];
   const MAIN_SCHEDULE_TOLERANCE_DAYS = 3;
-  const REPORT_ONLY_EVENT_MAX_DAYS = 2;
+  const REPORT_ONLY_EVENT_MAX_DAYS = 1;
 
   function text(value) {
     return String(value ?? '').trim();
@@ -1404,7 +1404,7 @@
         return {
           title: group.startDate === group.endDate ? 'Uncovered pledge date' : 'Uncovered pledge period',
           programId: '',
-          mismatchTypes: ['Missing main fundraiser schedule'],
+          mismatchTypes: ['Missing fundraiser schedule'],
           detail: `${rangeLabel} · ${stats.rows.length} imported row${stats.rows.length === 1 ? '' : 's'} on ${stats.distinctDates.length} air date${stats.distinctDates.length === 1 ? '' : 's'} · $${stats.dollars.toFixed(2)} Broadcast · ${stats.pledges} pledge${stats.pledges === 1 ? '' : 's'} · no manual Scheduler fundraiser owns this multi-day imported period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance · range source: ${group.source}${nearby}`,
           repair: {
             type: 'create-missing-schedule',
@@ -1441,10 +1441,10 @@
     };
 
     const reportOnlyEvents = preflightReportOnlyEventFindings(schedules, airings);
-    add('report-only-events', 'Imported-only special pledge events', 'info', reportOnlyEvents.length ? 'One- and two-day pledge events without a manual Scheduler fundraiser are valid report-only special events. They are kept separate from normal fundraiser drives and included in report analysis.' : 'No imported-only one- or two-day special pledge events were detected.', reportOnlyEvents);
+    add('report-only-events', 'Single-day imported-only pledge events', 'info', reportOnlyEvents.length ? 'An isolated single-day pledge event without a manual Scheduler fundraiser remains informational. Two-day and longer uncovered pledge periods use the missing-schedule repair flow so they can become real Scheduler records.' : 'No imported-only single-day pledge events were detected.', reportOnlyEvents);
 
     const scheduleCoverage = preflightImportedCoverageFindings(schedules, airings);
-    add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Repair the main fundraiser calendar before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a manual Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; one- and two-day imported-only special events are handled separately.`, scheduleCoverage);
+    add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? `Multi-day imported pledge activity exists that is not owned by a manual fundraiser schedule within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance. Use schedule repair to create the missing fundraiser record before treating downstream program mismatches as independent title/date problems.` : `Every multi-day imported fundraiser is owned by a Scheduler period within the ±${MAIN_SCHEDULE_TOLERANCE_DAYS}-day boundary tolerance; isolated single-day imported events remain informational.`, scheduleCoverage);
 
     const resultOwnership = [];
     (analyses || []).forEach((analysis) => {
