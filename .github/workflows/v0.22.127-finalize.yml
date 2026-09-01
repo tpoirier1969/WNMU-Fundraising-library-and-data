@@ -37,25 +37,25 @@ jobs:
 
           replacements = {
               'tests/library-load-performance.test.mjs': [
-                  ("assert.equal(version.appVersion, '0.22.126');", "assert.equal(version.appVersion, '0.22.127');")
+                  ("assert.equal(version.appVersion, '0.22.126');", "assert.equal(version.appVersion, '0.22.127');", 1)
               ],
               'tests/one-sheet-report-refinements.test.mjs': [
-                  ('one-sheet-reports\\.js\\?v=0\\.22\\.126', 'one-sheet-reports\\.js\\?v=0\\.22\\.127'),
-                  ('one-sheet-analysis\\.js\\?v=0\\.22\\.126', 'one-sheet-analysis\\.js\\?v=0\\.22\\.127'),
-                  ('one-sheet-reports\\.css\\?v=0\\.22\\.126', 'one-sheet-reports\\.css\\?v=0\\.22\\.127')
+                  ('one-sheet-reports\\.js\\?v=0\\.22\\.126', 'one-sheet-reports\\.js\\?v=0\\.22\\.127', 2),
+                  ('one-sheet-analysis\\.js\\?v=0\\.22\\.126', 'one-sheet-analysis\\.js\\?v=0\\.22\\.127', 2),
+                  ('one-sheet-reports\\.css\\?v=0\\.22\\.126', 'one-sheet-reports\\.css\\?v=0\\.22\\.127', 1)
               ],
               'tests/one-sheet-reports.test.mjs': [
-                  ('assert.match(reportHtml, /0\\.22\\.126/);', 'assert.match(reportHtml, /0\\.22\\.127/);')
+                  ('assert.match(reportHtml, /0\\.22\\.126/);', 'assert.match(reportHtml, /0\\.22\\.127/);', 1)
               ]
           }
           for filename, pairs in replacements.items():
               path = Path(filename)
               text = path.read_text()
-              for old_text, new_text in pairs:
+              for old_text, new_text, expected in pairs:
                   count = text.count(old_text)
-                  if count != 1:
-                      raise RuntimeError(f'{filename}: expected one {old_text!r}, found {count}')
-                  text = text.replace(old_text, new_text, 1)
+                  if count != expected:
+                      raise RuntimeError(f'{filename}: expected {expected} occurrence(s) of {old_text!r}, found {count}')
+                  text = text.replace(old_text, new_text)
               path.write_text(text)
 
           version = json.loads(Path('version.json').read_text())
