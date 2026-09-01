@@ -1064,7 +1064,7 @@
   }
 
   function historicalStartTimeTables(analyses) {
-    const description = (weekpart) => `Only ${weekpart.toLowerCase()} 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Sparse slots are excluded rather than displayed in the ranking.`;
+    const description = (weekpart) => `Only schedule-reconciled ${weekpart.toLowerCase()} 30-minute start slots with at least 5 rate-valid airings, 3 fundraisers, and 3 distinct titles are shown. Unmatched imported results remain in fundraiser totals but are excluded from start-time rankings. Sparse slots are excluded rather than displayed in the ranking.`;
     return [
       historicalRankingTable(analysesForWeekpart(analyses, 'Weekday'), 'startTime', 'Weekday start-time performance', description('Weekday')),
       historicalRankingTable(analysesForWeekpart(analyses, 'Saturday'), 'startTime', 'Saturday start-time performance', description('Saturday')),
@@ -1092,7 +1092,7 @@
       return;
     }
     if (!(await ensureDurationDecision(analyses))) return;
-    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use median Broadcast $/hour. Rate calculations exclude unknown results and true program airings with missing duration from both numerator and denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 rate-valid fundraisers and 3 distinct rate-valid titles.</footer></article>`;
+    $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use median Broadcast $/hour. Rate calculations exclude unknown results and true program airings with missing duration from both numerator and denominator. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 rate-valid fundraisers and 3 distinct rate-valid titles. Imported results that cannot be reconciled to a saved schedule placement remain in fundraiser totals but are excluded from start-time rankings.</footer></article>`;
   }
 
   async function initHistorical() {
@@ -1434,7 +1434,11 @@
     const detailMarkup = details.length
       ? `<details ${check.severity !== 'info' && check.count ? 'open' : ''}><summary>${escapeHtml(count(details.length))} detail${details.length === 1 ? '' : 's'}</summary><ul>${details.map((item) => `<li>${detailItemMarkup(item)}</li>`).join('')}</ul></details>`
       : '';
-    return `<section class="preflight-check severity-${escapeHtml(check.severity)} ${check.count ? 'has-findings' : 'clear'}"><div class="preflight-check-head"><div><h2>${escapeHtml(check.label)}</h2><p>${escapeHtml(check.summary)}</p></div><span class="preflight-status">${escapeHtml(statusLabel)}${check.count ? ` · ${escapeHtml(count(check.count))}` : ''}</span></div>${detailMarkup}</section>`;
+    const startTimeBreakdown = Array.isArray(check.startTimeBreakdown) ? check.startTimeBreakdown : [];
+    const startTimeMarkup = startTimeBreakdown.length
+      ? `<div class="preflight-detail-line"><strong>Unmatched rows by reported start time</strong><span class="preflight-mismatch-tags">${startTimeBreakdown.map((item) => `<span class="preflight-mismatch-tag">${escapeHtml(item.label)} · ${escapeHtml(count(item.count))}</span>`).join('')}</span></div>`
+      : '';
+    return `<section class="preflight-check severity-${escapeHtml(check.severity)} ${check.count ? 'has-findings' : 'clear'}"><div class="preflight-check-head"><div><h2>${escapeHtml(check.label)}</h2><p>${escapeHtml(check.summary)}</p></div><span class="preflight-status">${escapeHtml(statusLabel)}${check.count ? ` · ${escapeHtml(count(check.count))}` : ''}</span></div>${startTimeMarkup}${detailMarkup}</section>`;
   }
 
   function renderPreflightReport() {
@@ -1466,7 +1470,7 @@
         <div><span>Library programs</span><strong>${escapeHtml(count(metrics.libraryPrograms))}</strong></div>
       </section>
       <div class="preflight-checks">${(health.checks || []).map(preflightCheckMarkup).join('')}</div>
-      <footer class="sheet-footer">PASS means no blocking defects were found in fundraiser schedule coverage, Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges. Warnings identify cleanup or verification work that does not currently invalidate the printed report math. Non-Specific Pledges are treated as a valid giving category, not an attribution error.</footer>
+      <footer class="sheet-footer">PASS means no blocking defects were found in fundraiser schedule coverage, Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges. Warnings identify cleanup or verification work that does not currently invalidate the printed report math. Non-Specific Pledges are treated as a valid giving category, not an attribution error. Unmatched imported program rows remain in factual fundraiser totals but are excluded from historical start-time rankings.</footer>
     </article>`;
   }
 

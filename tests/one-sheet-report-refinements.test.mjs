@@ -37,6 +37,9 @@ assert.match(reports, /function analysesForWeekpart/);
 assert.match(reports, /Weekday start-time performance/);
 assert.match(reports, /Saturday start-time performance/);
 assert.match(reports, /Sunday start-time performance/);
+assert.match(reports, /Only schedule-reconciled/);
+assert.match(reports, /excluded from start-time rankings/);
+assert.match(reports, /Unmatched rows by reported start time/);
 assert.doesNotMatch(reports, /Start-time performance: slots with sufficient historical evidence/);
 assert.match(reports, /Continue with incomplete data/);
 assert.match(reports, /Affected title/);
@@ -81,9 +84,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.125/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.125/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.125/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.126/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.126/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.126/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -108,8 +111,8 @@ console.log('one-sheet report refinements tests passed');
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.125/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.125/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.126/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.126/);
 
 
 assert.match(reports, /data-preflight-program-id/);

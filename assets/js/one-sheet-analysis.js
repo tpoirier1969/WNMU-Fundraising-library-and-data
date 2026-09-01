@@ -1054,7 +1054,7 @@
 
   function historicalRanking(analyses = [], dimension, options = {}) {
     if (dimension === 'season') return historicalSeasonRanking(analyses, options);
-    const rows = historicalRows(analyses);
+    const rows = historicalRows(analyses).filter((row) => dimension !== 'startTime' || !row.unmatchedImported);
     const groups = new Map();
     rows.forEach((row) => {
       const key = historicalGroupValue(row, dimension);
@@ -1215,6 +1215,7 @@
     const importedDate = text(row?.dateKey || '');
     const importedStart = Number(row?.startMinutes);
     const importedDollars = Number(row?.dollars || 0) || 0;
+    const importedPledges = Number(row?.pledges || 0) || 0;
     const importedProgramId = text(row?.programId || '');
     const placements = (analysis?.schedule?.placements || [])
       .filter((placement) => !placement?.isNonPledge)
@@ -1295,12 +1296,13 @@
       title: resolvedTitle || importedTitle,
       programId: importedProgramId,
       mismatchTypes,
-      detail: `${analysis?.schedule?.title || 'Fundraiser'} · imported ${importedDate || 'unknown date'}${Number.isFinite(importedStart) ? ` ${preflightClockLabel(importedStart)}` : ''} · $${importedDollars.toFixed(2)} · ${parts.join(' · ')}`,
+      detail: `${analysis?.schedule?.title || 'Fundraiser'} · imported ${importedDate || 'unknown date'}${Number.isFinite(importedStart) ? ` ${preflightClockLabel(importedStart)}` : ''} · $${importedDollars.toFixed(2)} · ${importedPledges} pledge${importedPledges === 1 ? '' : 's'} · ${parts.join(' · ')}`,
       imported: {
         title: importedTitle,
         dateKey: importedDate,
         startMinutes: Number.isFinite(importedStart) ? importedStart : null,
-        dollars: importedDollars
+        dollars: importedDollars,
+        pledges: importedPledges
       },
       scheduled: candidate ? {
         title: candidate.title,
@@ -1572,6 +1574,7 @@
     add('missing-duration', 'Missing program durations', 'fail', missingDurations.length ? 'Programs without a saved schedule length or reliable Program Library runtime are excluded from $/hour analytics.' : 'Every scheduled program used by the reports has a usable duration.', missingDurations);
 
     const unmatchedPrograms = [];
+    const unmatchedStartTimes = new Map();
     const healthIndexes = buildLibraryIndexes(library);
     let nonSpecificRows = 0;
     let nonSpecificDollars = 0;
@@ -1582,10 +1585,28 @@
           nonSpecificDollars += Number(row?.dollars || 0);
           return;
         }
-        unmatchedPrograms.push(preflightUnmatchedDiagnostic(row, analysis, healthIndexes));
+        const diagnostic = preflightUnmatchedDiagnostic(row, analysis, healthIndexes);
+        unmatchedPrograms.push(diagnostic);
+        const start = Number(diagnostic?.imported?.startMinutes);
+        const bucket = Number.isFinite(start)
+          ? Math.floor(((((start % 1440) + 1440) % 1440) / 30)) * 30
+          : null;
+        const key = Number.isFinite(bucket) ? String(bucket) : 'unknown';
+        if (!unmatchedStartTimes.has(key)) {
+          unmatchedStartTimes.set(key, {
+            startMinutes: Number.isFinite(bucket) ? bucket : null,
+            label: Number.isFinite(bucket) ? preflightClockLabel(bucket) : 'Unknown time',
+            count: 0
+          });
+        }
+        unmatchedStartTimes.get(key).count += 1;
       });
     });
-    add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length ? 'Imported program results remain that cannot be assigned confidently to a scheduled program/topic.' : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
+    add('unmatched-imported', 'Unmatched imported program results', 'fail', unmatchedPrograms.length
+      ? 'Imported program results remain that cannot be assigned confidently to a saved schedule placement. Their dollars remain in fundraiser totals, but these rows are excluded from historical start-time performance.'
+      : 'All imported program-specific results are attributable; Non-Specific Pledges are intentionally excluded from this check.', unmatchedPrograms);
+    checks[checks.length - 1].startTimeBreakdown = [...unmatchedStartTimes.values()]
+      .sort((a, b) => (Number.isFinite(a.startMinutes) ? a.startMinutes : 99999) - (Number.isFinite(b.startMinutes) ? b.startMinutes : 99999));
 
     const duplicateRanges = (schedules || [])
       .filter((schedule) => !schedule?.reportOnly && Number(schedule?.duplicateRangeCount || 1) > 1)

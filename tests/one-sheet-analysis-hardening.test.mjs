@@ -145,6 +145,30 @@ assert.ok(A, 'analysis API should load');
 }
 
 {
+  const analyses = Array.from({ length: 5 }, (_unused, index) => ({
+    schedule: { id: `start-audit-${index}`, title: `Start Audit ${index}` },
+    placementRows: [
+      {
+        dateKey: `2026-08-${String(10 + index).padStart(2, '0')}`,
+        startMinutes: 1200, minutes: 60, durationMissing: false, known: true,
+        title: `Scheduled 8 PM ${index}`, dollars: 100 + index, pledges: 1,
+        unmatchedImported: false
+      },
+      {
+        dateKey: `2026-08-${String(10 + index).padStart(2, '0')}`,
+        startMinutes: 1260, minutes: 60, durationMissing: false, known: true,
+        title: `Unmatched 9 PM ${index}`, dollars: 1000 + index, pledges: 5,
+        unmatchedImported: true, source: 'report-unmatched'
+      }
+    ]
+  }));
+  const ranking = A.historicalRanking(analyses, 'startTime');
+  const eightPm = ranking.find((row) => row.key === '1200');
+  assert.equal(eightPm?.rateAirings, 5, 'schedule-reconciled start-time rows remain eligible');
+  assert.equal(ranking.some((row) => row.key === '1260'), false, 'unmatched imported rows must not qualify or influence historical start-time rankings');
+}
+
+{
   const schedule = {
     id: 'tooltip-day-scope', title: 'Aug 16, 2019–Aug 29, 2019', startDate: '2019-08-16', endDate: '2019-08-29',
     placements: [

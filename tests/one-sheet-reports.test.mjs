@@ -164,6 +164,8 @@ assert.match(reportSource, /Weekday start-time performance/);
 assert.match(reportSource, /Saturday start-time performance/);
 assert.match(reportSource, /Sunday start-time performance/);
 assert.match(reportSource, /5 rate-valid airings, 3 fundraisers, and 3 distinct titles/);
+assert.match(reportSource, /Only schedule-reconciled/);
+assert.match(reportSource, /excluded from start-time rankings/);
 assert.match(reportSource, /Continue with incomplete data/);
 assert.match(reportSource, /Data Health \/ Preflight/);
 assert.match(reportSource, /function defaultReportSchedule/);
@@ -171,7 +173,7 @@ assert.match(reportSource, /state\.schedules\.filter\(scheduleHasImportedResults
 assert.match(reportSource, /Preview schedule repair/);
 assert.match(reportSource, /repairedFromPreflight/);
 assert.match(reportSource, /The imported pledge report proves activity occurred/);
-assert.match(reportHtml, /0\.22\.125/);
+assert.match(reportHtml, /0\.22\.126/);
 assert.match(reportSource, /programResultsForFundraiserDay/);
 assert.match(reportSource, /Regional \${weatherLine\(day\)}/);
 assert.match(reportSource, /Affected title/);

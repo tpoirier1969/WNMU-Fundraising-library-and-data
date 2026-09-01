@@ -20,7 +20,7 @@ assert.equal(schedule.mailTrackedExplicit, false);
 schedule.duplicateRangeCount = 2;
 
 const nspl = { title: 'Non-Specific Pledges', topic: 'Non-Specific Pledges', unmatchedImported: true, known: true, dollars: 50, dateKey: '2026-08-08' };
-const unmatched = { title: 'Mystery Program', topic: 'Unattributed', unmatchedImported: true, known: true, dollars: 20, dateKey: '2026-08-08' };
+const unmatched = { title: 'Mystery Program', topic: 'Unattributed', unmatchedImported: true, known: true, dollars: 20, pledges: 2, dateKey: '2026-08-08', startMinutes: 1260 };
 const missing = { title: 'Missing Length', topic: 'Music', known: true, dollars: 90, durationMissing: true, minutes: 0, dateKey: '2026-08-08', startMinutes: 1200 };
 const analysis = {
   schedule,
@@ -37,7 +37,10 @@ const library = [
 const health = A.dataHealthReport([schedule], [analysis], [{ row_hash: 'live-hash', air_date: '2026-08-08', dollars: 100, program_id: 'a' }], library);
 assert.equal(health.status, 'review');
 assert.ok(health.checks.find((check) => check.id === 'missing-duration').count > 0);
-assert.equal(health.checks.find((check) => check.id === 'unmatched-imported').count, 1, 'Non-Specific Pledges must not count as unmatched program results');
+const unmatchedHealthCheck = health.checks.find((check) => check.id === 'unmatched-imported');
+assert.equal(unmatchedHealthCheck.count, 1, 'Non-Specific Pledges must not count as unmatched program results');
+assert.equal(unmatchedHealthCheck.startTimeBreakdown.find((item) => item.label === '9:00 PM')?.count, 1, 'Preflight must expose unmatched imported rows by reported start time');
+assert.match(unmatchedHealthCheck.details[0].detail, /2 pledges/, 'unmatched detail should include pledge count');
 assert.equal(health.checks.some((check) => check.id === 'topic-case'), false, 'topic capitalization variants are one category and must not create a cleanup warning');
 assert.ok(health.checks.find((check) => check.id === 'duplicate-ranges').count > 0);
 assert.ok(health.checks.find((check) => check.id === 'stale-hashes').count > 0);
