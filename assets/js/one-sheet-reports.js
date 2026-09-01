@@ -925,6 +925,36 @@
     return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars across the fundraiser.</p></div></div>${incomeBarChartSvg(days)}</section>`;
   }
 
+  function fundraiserAirSchedule(analysis) {
+  const rows = [...(analysis?.placementRows || [])]
+    .filter((row) => A.text(row?.dateKey) && !rowIsNonSpecific(row))
+    .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+  if (!rows.length) {
+    return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Programs and airtimes for this fundraiser.</p></div></div><div class="chart-empty">No program schedule is recorded for this fundraiser.</div></section>`;
+  }
+  const byDate = new Map();
+  rows.forEach((row) => {
+    const key = A.text(row.dateKey);
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key).push(row);
+  });
+  const days = [...byDate.entries()].map(([dateKey, dayRows]) => {
+    const date = A.parseDate(dateKey);
+    const dayLabel = date
+      ? date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+      : dateKey;
+    const programs = dayRows.map((row) => {
+      const title = A.text(row.title || row.plannedTitle || 'Untitled program');
+      const duration = Number(row.minutes || 0);
+      const durationLabel = duration > 0 ? `${count(duration)} min` : 'Duration missing';
+      const unresolved = !row.known;
+      return `<li><time class="air-schedule-time">${escapeHtml(formatTime(row.startMinutes))}</time><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(durationLabel)}</small>${unresolved ? '<em>Scheduled · result unresolved</em>' : ''}</div></li>`;
+    }).join('');
+    return `<section class="air-schedule-day"><h3>${escapeHtml(dayLabel)}</h3><ol>${programs}</ol></section>`;
+  }).join('');
+  return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Actual imported titles and airtimes where available; unresolved placements remain visible from the saved schedule.</p></div></div><div class="fundraiser-air-schedule-grid">${days}</div></section>`;
+}
+
   function fundraiserDailyTable(analysis) {
     const days = A.calendarDays(analysis);
     const rows = days.map((day) => {
@@ -981,7 +1011,7 @@
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
     if (!(await ensureDurationDecision([analysis]))) return;
-    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program, daily, and topic $/hour use only observations with known results and valid duration; the displayed rate base identifies the denominator when it differs from scheduled pledge hours. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time performance is reserved for historical analytics where sufficient sample size can be required. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${dailyIncomeChart(analysis)}${fundraiserAirSchedule(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program, daily, and topic $/hour use only observations with known results and valid duration; the displayed rate base identifies the denominator when it differs from scheduled pledge hours. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time performance is reserved for historical analytics where sufficient sample size can be required. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
     $('#report-output').innerHTML = render();
     await ensureWeatherForAnalyses([analysis]);
     $('#report-output').innerHTML = render();

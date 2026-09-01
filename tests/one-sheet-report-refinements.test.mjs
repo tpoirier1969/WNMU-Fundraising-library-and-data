@@ -20,6 +20,11 @@ assert.match(reports, /function recurringProgramKeys/);
 assert.match(reports, /Programs shown in bold aired in two or more selected fundraisers/);
 assert.match(reports, /legendTop: true/);
 assert.match(reports, /Select 2–5 fundraisers/);
+assert.match(reports, /function fundraiserAirSchedule/);
+assert.match(reports, /Actual air schedule/);
+assert.match(reports, /Scheduled · result unresolved/);
+assert.match(reports, /fundraiserAirSchedule\(analysis\)/);
+assert.match(css, /fundraiser-air-schedule-grid/);
 assert.match(reports, /function programResultsTable/);
 assert.match(reports, /One entry per title/);
 assert.match(reports, /Program topics are ranked by Broadcast \$\/hour/);
@@ -76,9 +81,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.123/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.123/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.123/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.124/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.124/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.124/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -103,8 +108,8 @@ console.log('one-sheet report refinements tests passed');
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.123/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.123/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.124/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.124/);
 
 
 assert.match(reports, /data-preflight-program-id/);

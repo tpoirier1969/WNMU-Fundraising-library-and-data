@@ -16,6 +16,6 @@ assert.match(data, /Array\.isArray\(state\.scheduleImportedAiringsCache\)/);
 assert.match(loader, /const historyRefresh = App\.data\.refreshAiringHistory\?\.\(\);/);
 assert.doesNotMatch(loader, /await App\.data\.refreshAiringHistory/);
 assert.match(loader, /Air-date history is updating in the background/);
-assert.equal(version.appVersion, '0.22.123');
+assert.equal(version.appVersion, '0.22.124');
 
 console.log('library fast-load tests passed');
