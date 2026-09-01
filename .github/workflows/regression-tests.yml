@@ -5,9 +5,10 @@ on:
   push:
     branches:
       - main
+      - release/v0.22.122-overlap-weather-tooltips
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   node-tests:
@@ -20,5 +21,127 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Apply v0.22.122 report chart correction
+        shell: bash
+        run: |
+          if [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              data = p.read_text()
+              count = data.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one match, found {count}: {old[:100]!r}')
+              p.write_text(data.replace(old, new, 1))
+
+          def replace_version(path):
+              p = Path(path)
+              data = p.read_text()
+              changed = data.replace('0.22.121', '0.22.122').replace(r'0\.22\.121', r'0\.22\.122')
+              if changed == data:
+                  raise SystemExit(f'{path}: no v0.22.121 version marker found')
+              p.write_text(changed)
+
+          reports = 'assets/js/one-sheet-reports.js'
+          replace_once(reports, '  const state = {', '  const CHART_NODE_OVERLAP_DISTANCE = 10;\n\n  const state = {')
+
+          plotted_anchor = '    const plotted = series.map((item, seriesIndex) => {'
+          plotted_insert = '\n'.join([
+              '    const interactivePoints = series.flatMap((item, seriesIndex) => (item.values || []).map((value, index) => {',
+              '      const tooltip = item.tooltips?.[index] || null;',
+              '      if (!tooltip || value === null || value === undefined || !Number.isFinite(Number(value))) return null;',
+              '      return { seriesIndex, index, x: x(index), y: y(value), tooltip };',
+              '    }).filter(Boolean));',
+              '    const tooltipForPoint = (seriesIndex, index, tooltip) => {',
+              '      if (!tooltip) return null;',
+              '      const point = interactivePoints.find((candidate) => candidate.seriesIndex === seriesIndex && candidate.index === index);',
+              '      if (!point) return tooltip;',
+              '      const touching = interactivePoints.filter((candidate) => Math.hypot(candidate.x - point.x, candidate.y - point.y) <= CHART_NODE_OVERLAP_DISTANCE);',
+              '      return touching.length > 1 ? { sections: touching.map((candidate) => candidate.tooltip) } : tooltip;',
+              '    };',
+              '    const plotted = series.map((item, seriesIndex) => {'
+          ])
+          replace_once(reports, plotted_anchor, plotted_insert)
+          replace_once(reports, '        const tooltip = item.tooltips?.[index] || null;', '        const tooltip = tooltipForPoint(seriesIndex, index, item.tooltips?.[index] || null);')
+          replace_once(reports,
+              '        return `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(payload)}"><circle class="chart-node-hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="11"/><circle class="chart-node-marker" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"><title>${escapeHtml(title)}</title></circle></g>`;',
+              '        return `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(payload)}"><circle class="chart-node-hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="11"/><circle class="chart-node-marker" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="#fff" stroke="${style.stroke}" stroke-width="2"/></g>`;')
+
+          old_show = '\n'.join([
+              '    const tooltip = chartTooltipElement();',
+              '    const lines = Array.isArray(payload.lines) ? payload.lines.filter(Boolean) : [];',
+              '    tooltip.innerHTML = `<strong>${escapeHtml(payload.title || \'\')}</strong>${payload.detail ? `<span>${escapeHtml(payload.detail)}</span>` : \'\'}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join(\'\')}</ul>` : \'<em>No program titles recorded for this day.</em>\'}`;',
+              '    tooltip.classList.remove(\'hidden\');'
+          ])
+          new_show = '\n'.join([
+              '    const tooltip = chartTooltipElement();',
+              '    const renderSection = (section = {}) => {',
+              '      const lines = Array.isArray(section.lines) ? section.lines.filter(Boolean) : [];',
+              '      return `<div class="chart-tooltip-section"><strong>${escapeHtml(section.title || \'\')}</strong>${section.detail ? `<span>${escapeHtml(section.detail)}</span>` : \'\'}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join(\'\')}</ul>` : \'<em>No program titles recorded for this day.</em>\'}</div>`;',
+              '    };',
+              '    const sections = Array.isArray(payload.sections) ? payload.sections.filter(Boolean) : [];',
+              '    tooltip.innerHTML = (sections.length ? sections : [payload]).map(renderSection).join(sections.length > 1 ? \'<hr aria-hidden="true">\' : \'\');',
+              '    tooltip.classList.remove(\'hidden\');'
+          ])
+          replace_once(reports, old_show, new_show)
+
+          replace_once(reports, '    const height = 270;', '    const height = 286;')
+          replace_once(reports, '    const margin = { left: 70, right: 18, top: 26, bottom: 58 };', '    const margin = { left: 70, right: 18, top: 26, bottom: 74 };')
+          old_bar = '      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || \'\').slice(0, 3))}</text></g>`;'
+          new_bar = '      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || \'\').slice(0, 3))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label">${escapeHtml(weatherLine(day))}</text></g>`;'
+          replace_once(reports, old_bar, new_bar)
+          replace_once(reports,
+              '            detail: `${analysis.schedule.title} · ${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,',
+              '            detail: `${money(day.dollars)} Broadcast · Regional ${weatherLine(day)}`,')
+
+          refinements = 'tests/one-sheet-report-refinements.test.mjs'
+          replace_once(refinements,
+              "assert.match(reports, /detail: `\\$\\{analysis\\.schedule\\.title\\} · \\$\\{money\\(day\\.dollars\\)\\} Broadcast/, 'fundraiser range belongs in tooltip context, not the single-day heading');",
+              "assert.match(reports, /detail: `\\$\\{money\\(day\\.dollars\\)\\} Broadcast · Regional \\$\\{weatherLine\\(day\\)\\}`/, 'comparison tooltip should contain only day-specific result context');\nassert.doesNotMatch(reports, /detail: `\\$\\{analysis\\.schedule\\.title\\} ·/, 'comparison tooltip must not repeat fundraiser context');\nassert.match(reports, /CHART_NODE_OVERLAP_DISTANCE = 10/);\nassert.match(reports, /Math\\.hypot\\(candidate\\.x - point\\.x, candidate\\.y - point\\.y\\)/);\nassert.match(reports, /sections: touching\\.map\\(\\(candidate\\) => candidate\\.tooltip\\)/);\nassert.match(reports, /chart-weather-label/);\nassert.match(reports, /\\$\\{escapeHtml\\(weatherLine\\(day\\)\\)\\}/);")
+
+          hardening = 'tests/one-sheet-analysis-hardening.test.mjs'
+          anchor = "const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');\n"
+          addition = '\n'.join([
+              "const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');",
+              "const reportHarnessSource = reportSource.replace(\"  document.addEventListener('DOMContentLoaded', () => { void init(); }, { once: true });\", \"  globalThis.__reportHarness = { lineChartSvg };\");",
+              "const reportSandbox = { console, window: {}, document: { addEventListener() {} }, Date, Map, Set, Math, Number, String, Array, Object, RegExp };",
+              'vm.createContext(reportSandbox);',
+              'vm.runInContext(reportHarnessSource, reportSandbox);',
+              "assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');",
+              'const overlapHtml = reportSandbox.__reportHarness.lineChartSvg({',
+              "  labels: ['1st Saturday'],",
+              '  series: [',
+              "    { label: 'Fundraiser A', values: [1000], tooltips: [{ title: 'Aug 5, 2017 · 1st Saturday', detail: '$1,000 Broadcast', lines: ['Program A — $1,000'] }] },",
+              "    { label: 'Fundraiser B', values: [1000], tooltips: [{ title: 'Aug 17, 2019 · 1st Saturday', detail: '$1,000 Broadcast', lines: ['Program B — $1,000'] }] }",
+              '  ]',
+              '});',
+              'const overlapPayloads = [...overlapHtml.matchAll(/data-chart-tooltip="([^"]+)"/g)].map((match) => JSON.parse(decodeURIComponent(match[1])));',
+              "assert.equal(overlapPayloads.length, 2, 'both touching markers should remain interactive');",
+              "assert.equal(overlapPayloads[0].sections?.length, 2, 'hovering either touching marker should expose both point payloads');",
+              "assert.deepEqual(Array.from(overlapPayloads[0].sections, (section) => section.title), ['Aug 5, 2017 · 1st Saturday', 'Aug 17, 2019 · 1st Saturday']);",
+              ''
+          ])
+          replace_once(hardening, anchor, addition)
+
+          for path in [
+              'version.json',
+              'reports.html',
+              'tests/library-load-performance.test.mjs',
+              'tests/one-sheet-report-refinements.test.mjs',
+              'tests/one-sheet-reports.test.mjs'
+          ]:
+              replace_version(path)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js tests/one-sheet-analysis-hardening.test.mjs tests/one-sheet-report-refinements.test.mjs version.json reports.html tests/library-load-performance.test.mjs tests/one-sheet-reports.test.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "Improve comparison overlap tooltips and add daily weather labels (v0.22.122)"
+            git push origin HEAD:release/v0.22.122-overlap-weather-tooltips
+          fi
       - name: Run regression tests
         run: node --test tests/*.test.mjs
