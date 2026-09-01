@@ -1,0 +1,496 @@
+name: Apply v0.22.115 schedule integrity repair
+
+on:
+  push:
+    branches:
+      - fix/preflight-schedule-integrity-v0.22.115
+    paths:
+      - '.github/workflows/apply-preflight-schedule-integrity-v0.22.115.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/preflight-schedule-integrity-v0.22.115
+          fetch-depth: 0
+
+      - name: Apply schedule integrity changes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          analysis_path = Path('assets/js/one-sheet-analysis.js')
+          analysis = analysis_path.read_text(encoding='utf-8')
+
+          old_imported_rows = '''  function importedRowsForSchedule(schedule = {}, allRows = []) {
+            const rows = Array.isArray(allRows) ? allRows : [];
+            const start = text(schedule.startDate);
+            const end = text(schedule.endDate);
+            if (start && end) {
+              const exact = rows.filter((row) =>
+                text(row.drive_start_date).slice(0, 10) === start
+                && text(row.drive_end_date).slice(0, 10) === end
+              );
+              if (exact.length) return exact;
+            }
+            const identity = scheduleSeasonYear(schedule);
+            if (!identity.season || !identity.year) return [];
+            return rows.filter((row) => {
+              const date = parseDate(importedDateKey(row));
+              return Boolean(date && seasonForDate(date) === identity.season && date.getFullYear() === identity.year);
+            });
+          }
+          '''
+          new_imported_rows = '''  function importedRowsForSchedule(schedule = {}, allRows = []) {
+            const rows = Array.isArray(allRows) ? allRows : [];
+            const start = text(schedule.startDate);
+            const end = text(schedule.endDate);
+            if (!(start && end)) return [];
+
+            const exact = rows.filter((row) =>
+              text(row.drive_start_date).slice(0, 10) === start
+              && text(row.drive_end_date).slice(0, 10) === end
+            );
+            if (exact.length) return exact;
+
+            // Never fall back to an entire pledge season. A standalone November or
+            // December special is not automatically part of whichever December
+            // fundraiser happens to exist in the Scheduler. Rows without an explicit
+            // drive identity may still attach when their actual air date falls inside
+            // the saved fundraiser window.
+            return rows.filter((row) => {
+              const date = importedDateKey(row);
+              if (!date || date < start || date > end) return false;
+              const driveStart = text(row.drive_start_date).slice(0, 10);
+              const driveEnd = text(row.drive_end_date).slice(0, 10);
+              if (driveStart && driveEnd) return driveStart === start && driveEnd === end;
+              return true;
+            });
+          }
+          '''
+          analysis = replace_once(analysis, old_imported_rows, new_imported_rows, 'replace season-wide imported-row fallback')
+
+          integrity_helpers = '''
+          function preflightImportedCoverageClusters(schedules = [], airings = [], gapDays = 14) {
+            const scheduleWindows = (schedules || []).map((schedule) => ({
+              schedule,
+              startDate: text(schedule?.startDate || schedule?.start_date || ''),
+              endDate: text(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '')
+            })).filter((item) => item.startDate && item.endDate);
+
+            const uncovered = (airings || []).map((row) => ({ row, dateKey: importedDateKey(row) }))
+              .filter((entry) => entry.dateKey && !scheduleWindows.some((window) => entry.dateKey >= window.startDate && entry.dateKey <= window.endDate))
+              .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+            if (!uncovered.length) return [];
+
+            const ordinal = (key) => {
+              const stamp = Date.parse(`${key}T12:00:00Z`);
+              return Number.isFinite(stamp) ? Math.round(stamp / 86400000) : null;
+            };
+            const clusters = [];
+            uncovered.forEach((entry) => {
+              const previous = clusters[clusters.length - 1];
+              const previousOrdinal = previous ? ordinal(previous.endDate) : null;
+              const currentOrdinal = ordinal(entry.dateKey);
+              const shouldJoin = previous
+                && Number.isFinite(previousOrdinal)
+                && Number.isFinite(currentOrdinal)
+                && (currentOrdinal - previousOrdinal) <= Number(gapDays || 14);
+              if (!shouldJoin) {
+                clusters.push({ startDate: entry.dateKey, endDate: entry.dateKey, rows: [entry.row] });
+                return;
+              }
+              previous.endDate = entry.dateKey;
+              previous.rows.push(entry.row);
+            });
+
+            return clusters.map((cluster) => {
+              const rows = cluster.rows || [];
+              const dollars = rows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+              const pledges = rows.reduce((sum, row) => sum + (Number(row?.pledge_count || row?.pledges || 0) || 0), 0);
+              const distinctDates = [...new Set(rows.map(importedDateKey).filter(Boolean))];
+              const start = parseDate(cluster.startDate);
+              const identity = { season: seasonForDate(start), year: start?.getFullYear() || 0 };
+              const sameSeason = scheduleWindows.filter((window) => {
+                const scheduleIdentity = scheduleSeasonYear(window.schedule || {});
+                return identity.season && identity.year
+                  && scheduleIdentity.season === identity.season
+                  && Number(scheduleIdentity.year) === Number(identity.year);
+              });
+              const nearby = sameSeason.length
+                ? ` · saved ${identity.season} ${identity.year} window${sameSeason.length === 1 ? '' : 's'}: ${sameSeason.map((window) => `${window.startDate}–${window.endDate}`).join(', ')}`
+                : '';
+              const rangeLabel = cluster.startDate === cluster.endDate ? cluster.startDate : `${cluster.startDate}–${cluster.endDate}`;
+              return {
+                title: cluster.startDate === cluster.endDate ? 'Standalone pledge activity' : 'Uncovered pledge activity',
+                programId: '',
+                mismatchTypes: ['Missing fundraiser schedule'],
+                detail: `${rangeLabel} · ${rows.length} imported row${rows.length === 1 ? '' : 's'} on ${distinctDates.length} air date${distinctDates.length === 1 ? '' : 's'} · $${dollars.toFixed(2)} Broadcast · ${pledges} pledge${pledges === 1 ? '' : 's'} · no saved fundraiser schedule covers these imported air dates${nearby}`,
+                repair: {
+                  type: 'create-missing-schedule',
+                  startDate: cluster.startDate,
+                  endDate: cluster.endDate,
+                  rowCount: rows.length,
+                  dollars,
+                  pledges
+                }
+              };
+            });
+          }
+
+          '''
+          marker = '  function dataHealthReport(schedules = [], analyses = [], airings = [], library = []) {'
+          if analysis.count(marker) != 1:
+              raise SystemExit('dataHealthReport insertion marker not unique')
+          analysis = analysis.replace(marker, integrity_helpers + marker, 1)
+
+          reconciliation_anchor = '''    const reconciliation = [];
+          '''
+          coverage_block = '''    const scheduleCoverage = preflightImportedCoverageClusters(schedules, airings);
+            add('schedule-coverage', 'Fundraiser schedule coverage', 'fail', scheduleCoverage.length ? 'Imported pledge activity exists on air dates that are not covered by any saved fundraiser schedule. Repair the fundraiser calendar before treating downstream program mismatches as independent title/date problems.' : 'Every imported pledge air date falls inside a saved fundraiser schedule window.', scheduleCoverage);
+
+            const reconciliation = [];
+          '''
+          analysis = replace_once(analysis, reconciliation_anchor, coverage_block, 'insert schedule coverage preflight check')
+
+          analysis = replace_once(
+              analysis,
+              "        importedRows: (analyses || []).reduce((sum, analysis) => sum + Number(analysis?.importedRows?.length || 0), 0),",
+              "        importedRows: (airings || []).length,",
+              'make preflight imported-row metric dataset-wide'
+          )
+
+          analysis = replace_once(
+              analysis,
+              "    canonicalizeImportedAirings,\n    libraryRuntimeMinutes,",
+              "    canonicalizeImportedAirings,\n    importedDateKey,\n    importedStartMinutes,\n    importedTitle,\n    libraryRuntimeMinutes,",
+              'export imported airing helpers for safe repair preview'
+          )
+          analysis_path.write_text(analysis, encoding='utf-8')
+
+          reports_path = Path('assets/js/one-sheet-reports.js')
+          reports = reports_path.read_text(encoding='utf-8')
+
+          preflight_helpers = r'''
+          function preflightResolveLibraryRow(row = {}) {
+            const id = A.text(row?.pledge_program_id || row?.manual_match_program_id || row?.program_id || '');
+            if (id && state.indexes?.byId?.has(id)) return state.indexes.byId.get(id);
+            const nola = A.text(row?.nola_code || row?.nola || row?.program_nola || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+            if (nola) {
+              const candidates = state.indexes?.byNola?.get(nola) || [];
+              if (candidates.length === 1) return candidates[0];
+            }
+            const title = A.lookupKey(row?.matched_library_title || row?.program_title || row?.title || row?.imported_program_title || '');
+            return title ? state.indexes?.byTitle?.get(title) || null : null;
+          }
+
+          function preflightRepairRows(startDate = '', endDate = '') {
+            const start = A.text(startDate);
+            const end = A.text(endDate || startDate);
+            if (!(start && end)) return [];
+            return (state.airings || []).filter((row) => {
+              const date = A.importedDateKey?.(row) || A.text(row?.air_date || '').slice(0, 10);
+              return date && date >= start && date <= end;
+            });
+          }
+
+          function preflightRepairPlacementCandidate(row = {}, index = 0) {
+            const sourceTitle = A.text(row?.imported_program_title || row?.program_title || row?.title || '');
+            if (isNonSpecificLabel(sourceTitle) || isNonSpecificLabel(row?.matched_library_title || '')) {
+              return { row, skipReason: 'non-specific' };
+            }
+            const libraryRow = preflightResolveLibraryRow(row);
+            if (!libraryRow) return { row, skipReason: 'no-library-match' };
+            const programId = A.text(libraryRow?.id || row?.program_id || row?.pledge_program_id || '');
+            if (!programId) return { row, skipReason: 'no-library-match' };
+            const dateKey = A.importedDateKey?.(row) || A.text(row?.air_date || '').slice(0, 10);
+            const startMinutes = A.importedStartMinutes?.(row);
+            if (!dateKey || !Number.isFinite(Number(startMinutes))) return { row, skipReason: 'bad-date-time' };
+            const directRuntime = Number(row?.program_minutes ?? row?.runtime_minutes ?? row?.length_minutes ?? 0) || 0;
+            const lengthMinutes = Number(A.libraryRuntimeMinutes?.(libraryRow) || directRuntime || 0);
+            if (!(lengthMinutes > 0)) return { row, skipReason: 'missing-duration' };
+            const programTitle = A.text(libraryRow?.title || A.importedTitle?.(row) || sourceTitle || 'Untitled program');
+            const sourceHash = A.text(row?.row_hash || row?.id || '');
+            const placement = {
+              id: `preflight-${sourceHash || `${dateKey}-${startMinutes}-${programId}-${index}`}`,
+              programId,
+              programTitle,
+              dateKey,
+              startMinutes: Number(startMinutes),
+              endMinutes: Number(startMinutes) + lengthMinutes,
+              lengthMinutes,
+              importedFromReport: true,
+              sourceAiringHash: sourceHash,
+              sourceName: A.text(row?.source_file_name || ''),
+              importedBroadcastDollars: Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0,
+              importedPledges: Number(row?.pledge_count || row?.pledges || 0) || 0,
+              nolaCode: A.text(libraryRow?.nola_code || row?.nola_code || '')
+            };
+            return { row, placement, slotKey: `${dateKey}|${Number(startMinutes)}` };
+          }
+
+          function preflightRepairTitle(startDate = '', endDate = '') {
+            const parsed = A.parseDate(startDate);
+            const season = A.seasonForDate(parsed) || 'Fundraiser';
+            const year = parsed?.getFullYear() || '';
+            const base = `${season}${year ? ` ${year}` : ''}`.trim();
+            const duplicateTitle = state.schedules.some((schedule) => A.lookupKey(schedule?.title || '') === A.lookupKey(base));
+            return duplicateTitle ? `${base} · ${formatDate(startDate, false)}–${formatDate(endDate || startDate, false)}` : base;
+          }
+
+          function buildPreflightScheduleRepairPreview(startDate = '', endDate = '') {
+            const rows = preflightRepairRows(startDate, endDate);
+            const candidates = rows.map(preflightRepairPlacementCandidate);
+            const slotGroups = new Map();
+            candidates.filter((item) => item.placement).forEach((item) => {
+              if (!slotGroups.has(item.slotKey)) slotGroups.set(item.slotKey, []);
+              slotGroups.get(item.slotKey).push(item);
+            });
+            const collisionKeys = new Set([...slotGroups.entries()].filter(([_key, items]) => items.length > 1).map(([key]) => key));
+            const placements = candidates
+              .filter((item) => item.placement && !collisionKeys.has(item.slotKey))
+              .map((item) => item.placement)
+              .sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes || a.programTitle.localeCompare(b.programTitle));
+            const skipped = candidates.filter((item) => !item.placement).length;
+            const collisions = [...collisionKeys].length;
+            const dollars = rows.reduce((sum, row) => sum + (Number(row?.dollars ?? row?.contribution_amount ?? 0) || 0), 0);
+            const pledges = rows.reduce((sum, row) => sum + (Number(row?.pledge_count || row?.pledges || 0) || 0), 0);
+            return { startDate, endDate, title: preflightRepairTitle(startDate, endDate), rows, placements, skipped, collisions, dollars, pledges };
+          }
+
+          function closePreflightScheduleRepair() {
+            document.getElementById('preflight-schedule-repair-modal')?.remove();
+          }
+
+          async function executePreflightScheduleRepair(preview) {
+            if (!preview?.startDate || !preview?.endDate || !preview?.placements?.length) return;
+            const overlap = state.schedules.find((schedule) => {
+              const start = A.text(schedule?.startDate || '');
+              const end = A.text(schedule?.endDate || start || '');
+              return start && end && start <= preview.endDate && end >= preview.startDate;
+            });
+            if (overlap) {
+              setStatus(`Repair stopped: ${overlap.title || 'a saved fundraiser'} now overlaps ${preview.startDate}–${preview.endDate}. Refresh Preflight before making changes.`, 'warn');
+              closePreflightScheduleRepair();
+              return;
+            }
+            const confirmed = window.confirm(`Create a missing fundraiser schedule for ${preview.startDate}–${preview.endDate} with ${preview.placements.length} reconstructed program placement${preview.placements.length === 1 ? '' : 's'}?\n\nThis creates one new fundraiser schedule. It does not delete, merge, shorten, or overwrite any existing schedule.`);
+            if (!confirmed) return;
+            const now = new Date().toISOString();
+            const randomPart = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/[^a-z0-9-]/gi, '');
+            const id = `schedule-${randomPart}`;
+            const scheduleData = {
+              id,
+              title: preview.title,
+              startDate: preview.startDate,
+              endDate: preview.endDate,
+              dayStartHour: 7,
+              dayEndHour: 25,
+              dayStartMinutes: 420,
+              dayEndMinutes: 1500,
+              placements: preview.placements,
+              onlineDollars: 0,
+              mailDollars: 0,
+              goalDollars: 0,
+              meta: {
+                autoCreatedFromReports: true,
+                importedFromReports: true,
+                repairedFromPreflight: true,
+                repairCreatedAt: now,
+                repairSourceRange: `${preview.startDate}|${preview.endDate}`,
+                repairImportedRowCount: preview.rows.length,
+                repairPlacementCount: preview.placements.length
+              }
+            };
+            setStatus(`Creating recovered fundraiser ${preview.startDate}–${preview.endDate}…`);
+            const { error } = await state.client.from('pledge_fundraiser_schedules').insert({
+              id,
+              title: preview.title,
+              start_date: preview.startDate,
+              end_date: preview.endDate,
+              day_start_hour: 7,
+              day_end_hour: 25,
+              schedule_data: scheduleData,
+              updated_at: now
+            });
+            if (error) throw error;
+            closePreflightScheduleRepair();
+            await loadData();
+            renderPreflightReport();
+            setStatus(`Recovered ${preview.title}: ${preview.placements.length} imported placement${preview.placements.length === 1 ? '' : 's'} across ${preview.startDate}–${preview.endDate}. Existing schedules were untouched.`);
+          }
+
+          function previewPreflightScheduleRepair(startDate = '', endDate = '') {
+            closePreflightScheduleRepair();
+            const preview = buildPreflightScheduleRepairPreview(startDate, endDate);
+            const modal = document.createElement('div');
+            modal.id = 'preflight-schedule-repair-modal';
+            modal.className = 'report-modal-backdrop';
+            const canCreate = preview.placements.length > 0 && preview.collisions === 0;
+            modal.innerHTML = `<div class="report-modal" role="dialog" aria-modal="true" aria-labelledby="preflight-schedule-repair-title">
+              <div class="report-kicker">Non-destructive schedule repair preview</div>
+              <h2 id="preflight-schedule-repair-title">${escapeHtml(preview.title)}</h2>
+              <p><strong>${escapeHtml(preview.startDate)}–${escapeHtml(preview.endDate)}</strong></p>
+              <div class="duration-warning-list">
+                <div><strong>${escapeHtml(count(preview.rows.length))} imported rows</strong><span>${escapeHtml(money(preview.dollars))} Broadcast · ${escapeHtml(count(preview.pledges))} pledges</span></div>
+                <div><strong>${escapeHtml(count(preview.placements.length))} reconstructable placements</strong><span>Program Library identity, air date/time, and usable duration are all known.</span></div>
+                ${preview.skipped ? `<div><strong>${escapeHtml(count(preview.skipped))} rows not placed automatically</strong><span>Non-Specific, unmatched, invalid date/time, or missing-duration rows stay in imported history for manual review.</span></div>` : ''}
+                ${preview.collisions ? `<div><strong>${escapeHtml(count(preview.collisions))} ambiguous schedule slots</strong><span>More than one imported program occupies the same date/time. Automatic creation is blocked until those are reviewed.</span></div>` : ''}
+              </div>
+              <p class="report-modal-note">This repair is intentionally additive. It creates a missing historical fundraiser from imported evidence and leaves every existing fundraiser, including standalone pledge activity outside this date range, untouched. Imported results are evidence of what aired, but may not reconstruct programs absent from the pledge report.</p>
+              <div class="report-modal-actions">
+                <button type="button" class="report-button primary" data-action="create" ${canCreate ? '' : 'disabled'}>Create missing schedule</button>
+                <button type="button" class="report-button" data-action="cancel">Cancel</button>
+              </div>
+            </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('[data-action="cancel"]')?.addEventListener('click', closePreflightScheduleRepair);
+            modal.addEventListener('click', (event) => { if (event.target === modal) closePreflightScheduleRepair(); });
+            modal.querySelector('[data-action="create"]')?.addEventListener('click', () => {
+              void executePreflightScheduleRepair(preview).catch((error) => {
+                console.error(error);
+                setStatus(`Schedule repair failed: ${error?.message || error}`, 'warn');
+              });
+            });
+          }
+
+          '''
+          reports_marker = '  function ensurePreflightProgramEditor() {'
+          if reports.count(reports_marker) != 1:
+              raise SystemExit('preflight helper insertion marker not unique')
+          reports = reports.replace(reports_marker, preflight_helpers + reports_marker, 1)
+
+          old_listener = '''    output.addEventListener('click', (event) => {
+              const button = event.target?.closest?.('[data-preflight-program-id]');
+              if (!button) return;
+              openPreflightProgramEditor(button.getAttribute('data-preflight-program-id') || '', button.getAttribute('data-preflight-program-title') || button.textContent || '');
+            });
+          '''
+          new_listener = '''    output.addEventListener('click', (event) => {
+              const repairButton = event.target?.closest?.('[data-preflight-repair-start]');
+              if (repairButton) {
+                previewPreflightScheduleRepair(repairButton.getAttribute('data-preflight-repair-start') || '', repairButton.getAttribute('data-preflight-repair-end') || '');
+                return;
+              }
+              const button = event.target?.closest?.('[data-preflight-program-id]');
+              if (!button) return;
+              openPreflightProgramEditor(button.getAttribute('data-preflight-program-id') || '', button.getAttribute('data-preflight-program-title') || button.textContent || '');
+            });
+          '''
+          reports = replace_once(reports, old_listener, new_listener, 'extend preflight delegated click handler')
+
+          old_detail = '''      const mismatchTypes = Array.isArray(item.mismatchTypes) ? item.mismatchTypes.filter(Boolean) : [];
+              const titleMarkup = programId && title
+                ? `<button type="button" class="preflight-program-link" data-preflight-program-id="${escapeHtml(programId)}" data-preflight-program-title="${escapeHtml(title)}" title="Edit ${escapeHtml(title)}">${escapeHtml(title)}</button>`
+                : escapeHtml(title);
+              const tags = mismatchTypes.length ? `<span class="preflight-mismatch-tags">${mismatchTypes.map((type) => `<span class="preflight-mismatch-tag">${escapeHtml(type)}</span>`).join('')}</span>` : '';
+              return `<span class="preflight-detail-line">${titleMarkup}${tags}${detail ? `<span class="preflight-detail-copy">${escapeHtml(detail)}</span>` : ''}</span>` || '—';
+          '''
+          new_detail = '''      const mismatchTypes = Array.isArray(item.mismatchTypes) ? item.mismatchTypes.filter(Boolean) : [];
+              const repair = item.repair && typeof item.repair === 'object' ? item.repair : null;
+              const titleMarkup = programId && title
+                ? `<button type="button" class="preflight-program-link" data-preflight-program-id="${escapeHtml(programId)}" data-preflight-program-title="${escapeHtml(title)}" title="Edit ${escapeHtml(title)}">${escapeHtml(title)}</button>`
+                : escapeHtml(title);
+              const tags = mismatchTypes.length ? `<span class="preflight-mismatch-tags">${mismatchTypes.map((type) => `<span class="preflight-mismatch-tag">${escapeHtml(type)}</span>`).join('')}</span>` : '';
+              const repairMarkup = repair?.type === 'create-missing-schedule' && repair.startDate
+                ? `<button type="button" class="report-button preflight-repair-button" data-preflight-repair-start="${escapeHtml(repair.startDate)}" data-preflight-repair-end="${escapeHtml(repair.endDate || repair.startDate)}">Preview schedule repair</button>`
+                : '';
+              return `<span class="preflight-detail-line">${titleMarkup}${tags}${detail ? `<span class="preflight-detail-copy">${escapeHtml(detail)}</span>` : ''}${repairMarkup}</span>` || '—';
+          '''
+          reports = replace_once(reports, old_detail, new_detail, 'render preflight schedule repair action')
+
+          reports = replace_once(
+              reports,
+              'PASS means no blocking defects were found in Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges.',
+              'PASS means no blocking defects were found in fundraiser schedule coverage, Broadcast reconciliation, program duration coverage, imported program attribution, or duplicate fundraiser ranges.',
+              'update preflight footer scope'
+          )
+          reports_path.write_text(reports, encoding='utf-8')
+
+          html_path = Path('reports.html')
+          html = html_path.read_text(encoding='utf-8')
+          html = html.replace('0.22.114', '0.22.115')
+          html_path.write_text(html, encoding='utf-8')
+
+          version_path = Path('version.json')
+          version = json.loads(version_path.read_text(encoding='utf-8'))
+          if version.get('appVersion') != '0.22.114':
+              raise SystemExit(f"Expected v0.22.114 before bump, found {version.get('appVersion')}")
+          version['appVersion'] = '0.22.115'
+          version['releasedAt'] = '2026-09-01'
+          version_path.write_text(json.dumps(version, separators=(',', ':')) + '\n', encoding='utf-8')
+
+          test_path = Path('tests/data-health-preflight.test.mjs')
+          test = test_path.read_text(encoding='utf-8')
+          historical_tests = r'''
+
+          const strayDecemberSchedule = A.normalizeSchedule({
+            id: 'dec-2019-stray', title: 'December 2019 standalone', start_date: '2019-12-26', end_date: '2019-12-27',
+            schedule_data: { placements: [] }
+          });
+          const historicalDecemberAirings = [
+            { id: 'nov14', row_hash: 'nov14', air_date: '2019-11-14', air_time: '21:00', imported_program_title: "Mister Rogers: It's You I Like", dollars: 564 },
+            { id: 'nov30', row_hash: 'nov30', air_date: '2019-11-30', air_time: '18:00', imported_program_title: 'Fundraiser Opening', dollars: 100 },
+            { id: 'dec03', row_hash: 'dec03', air_date: '2019-12-03', air_time: '20:00', imported_program_title: 'Fundraiser Middle', dollars: 200 },
+            { id: 'dec11', row_hash: 'dec11', air_date: '2019-12-11', air_time: '21:00', imported_program_title: 'Fundraiser Closing', dollars: 300 },
+            { id: 'dec26', row_hash: 'dec26', air_date: '2019-12-26', air_time: '20:00', imported_program_title: 'Standalone Holiday Pledge', dollars: 50 }
+          ];
+          const strayAnalysis = A.analyzeSchedule(strayDecemberSchedule, historicalDecemberAirings, A.buildLibraryIndexes([]));
+          assert.deepEqual(
+            Array.from(strayAnalysis.importedRows, (row) => row.air_date),
+            ['2019-12-26'],
+            'a saved Dec 26–27 schedule must not absorb every November/December airing just because they share the December pledge season'
+          );
+          const historicalCoverageHealth = A.dataHealthReport([strayDecemberSchedule], [strayAnalysis], historicalDecemberAirings, []);
+          const scheduleCoverageCheck = historicalCoverageHealth.checks.find((check) => check.id === 'schedule-coverage');
+          assert.equal(scheduleCoverageCheck.count, 2, 'uncovered Nov 14 and Nov 30–Dec 11 activity should be grouped into two schedule-level findings');
+          assert.ok(scheduleCoverageCheck.details.some((item) => /2019-11-30–2019-12-11/.test(item.detail)), 'the missing main December fundraiser window should be visible as one grouped finding');
+          assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-30' && item.repair?.endDate === '2019-12-11'), 'the missing fundraiser finding should carry a non-destructive repair range');
+          assert.equal(historicalCoverageHealth.metrics.importedRows, 5, 'Preflight imported-row metric must count the full canonical dataset, including rows outside saved schedules');
+          '''
+          test = test.rstrip() + historical_tests + '\n'
+          test_path.write_text(test, encoding='utf-8')
+
+          reports_test_path = Path('tests/one-sheet-reports.test.mjs')
+          reports_test = reports_test_path.read_text(encoding='utf-8')
+          reports_test = replace_once(
+              reports_test,
+              "assert.match(reportSource, /Data Health \\/ Preflight/);",
+              "assert.match(reportSource, /Data Health \\/ Preflight/);\nassert.match(reportSource, /Preview schedule repair/);\nassert.match(reportSource, /repairedFromPreflight/);\nassert.match(reportHtml, /0\\.22\\.115/);",
+              'add schedule repair report assertions'
+          )
+          reports_test_path.write_text(reports_test, encoding='utf-8')
+          PY
+
+      - name: Validate JavaScript and run regression suite
+        shell: bash
+        run: |
+          node --check assets/js/one-sheet-analysis.js
+          node --check assets/js/one-sheet-reports.js
+          git diff --check
+          node --test tests/*.test.mjs
+
+      - name: Commit tested source changes
+        shell: bash
+        run: |
+          rm -f .github/workflows/apply-preflight-schedule-integrity-v0.22.115.yml
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git add -A
+          git commit -m "Release v0.22.115 schedule integrity preflight and repair"
+          git push origin HEAD:fix/preflight-schedule-integrity-v0.22.115
