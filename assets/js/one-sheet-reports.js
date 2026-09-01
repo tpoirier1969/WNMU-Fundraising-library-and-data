@@ -929,30 +929,12 @@
   const rows = [...(analysis?.placementRows || [])]
     .filter((row) => A.text(row?.dateKey) && !rowIsNonSpecific(row))
     .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
-  if (!rows.length) {
-    return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Programs and airtimes for this fundraiser.</p></div></div><div class="chart-empty">No program schedule is recorded for this fundraiser.</div></section>`;
-  }
-  const byDate = new Map();
-  rows.forEach((row) => {
-    const key = A.text(row.dateKey);
-    if (!byDate.has(key)) byDate.set(key, []);
-    byDate.get(key).push(row);
-  });
-  const days = [...byDate.entries()].map(([dateKey, dayRows]) => {
-    const date = A.parseDate(dateKey);
-    const dayLabel = date
-      ? date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
-      : dateKey;
-    const programs = dayRows.map((row) => {
-      const title = A.text(row.title || row.plannedTitle || 'Untitled program');
-      const duration = Number(row.minutes || 0);
-      const durationLabel = duration > 0 ? `${count(duration)} min` : 'Duration missing';
-      const unresolved = !row.known;
-      return `<li><time class="air-schedule-time">${escapeHtml(formatTime(row.startMinutes))}</time><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(durationLabel)}</small>${unresolved ? '<em>Scheduled · result unresolved</em>' : ''}</div></li>`;
-    }).join('');
-    return `<section class="air-schedule-day"><h3>${escapeHtml(dayLabel)}</h3><ol>${programs}</ol></section>`;
+  const body = rows.map((row) => {
+    const title = A.text(row.title || row.plannedTitle || 'Untitled program');
+    const known = Boolean(row.known);
+    return `<tr><td>${escapeHtml(formatDate(row.dateKey))}</td><th class="program-result-title">${escapeHtml(title)}</th><td>${escapeHtml(formatTime(row.startMinutes))}</td><td>${known ? escapeHtml(count(row.pledges)) : '<span class="muted-cell">—</span>'}</td><td class="${known ? 'metric-primary' : 'muted-cell'}">${known ? escapeHtml(money(row.dollars)) : '—'}</td></tr>`;
   }).join('');
-  return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Actual imported titles and airtimes where available; unresolved placements remain visible from the saved schedule.</p></div></div><div class="fundraiser-air-schedule-grid">${days}</div></section>`;
+  return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Airing schedule & results</h2><p>Date, title, start time, pledges, and Broadcast income for each program airing.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Title</th><th>Start time</th><th>Pledges</th><th>Income</th></tr></thead><tbody>${body || '<tr><td colspan="5">No program airings are recorded for this fundraiser.</td></tr>'}</tbody></table></div></section>`;
 }
 
   function fundraiserDailyTable(analysis) {
