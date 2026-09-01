@@ -1,12 +1,13 @@
 name: Regression tests
 
 on:
+  pull_request:
   push:
     branches:
-      - release/v0.22.124-short-fundraiser-alignment
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   node-tests:
@@ -19,108 +20,5 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply short-fundraiser alignment fix
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          analysis_path = Path('assets/js/one-sheet-analysis.js')
-          source = analysis_path.read_text()
-          old = (
-              "    const start = parseDate(analysis.schedule?.startDate);\n"
-              "    if (!start) return null;\n"
-              "    const next = new Date(start);\n"
-              "    while (next.getDay() !== 6) next.setDate(next.getDate() + 1);\n"
-              "    return next;"
-          )
-          new = (
-              "    const start = parseDate(analysis.schedule?.startDate);\n"
-              "    if (!start) return null;\n"
-              "    const end = parseDate(analysis.schedule?.endDate || analysis.schedule?.startDate);\n"
-              "    const next = new Date(start);\n"
-              "    while (next.getDay() !== 6) next.setDate(next.getDate() + 1);\n"
-              "    if (!end || next <= end) return next;\n"
-              "    const previous = new Date(start);\n"
-              "    while (previous.getDay() !== 6) previous.setDate(previous.getDate() - 1);\n"
-              "    return previous;"
-          )
-          if source.count(old) != 1:
-              raise SystemExit(f'expected one firstSaturdayAnchor fallback block, found {source.count(old)}')
-          analysis_path.write_text(source.replace(old, new, 1))
-
-          test_path = Path('tests/one-sheet-analysis-hardening.test.mjs')
-          tests = test_path.read_text()
-          marker = "{\n  const april = {"
-          regression = (
-              "{\n"
-              "  const sundayOnly = {\n"
-              "    schedule: { id: 'aug-2021', title: 'Aug 15, 2021 - Aug 15, 2021', startDate: '2021-08-15', endDate: '2021-08-15' },\n"
-              "    importedRows: [{ air_date: '2021-08-15' }],\n"
-              "    placementRows: [{\n"
-              "      dateKey: '2021-08-15', countsTowardScheduleMinutes: false, minutes: 60,\n"
-              "      known: true, durationMissing: false, dollars: 4321, pledges: 12,\n"
-              "      startMinutes: 1080, endMinutes: 1140\n"
-              "    }]\n"
-              "  };\n"
-              "  const anchor = A.firstSaturdayAnchor(sundayOnly);\n"
-              "  assert.equal(anchor?.getFullYear(), 2021);\n"
-              "  assert.equal(anchor?.getMonth(), 7);\n"
-              "  assert.equal(anchor?.getDate(), 14, 'a fundraiser with no Saturday in its saved range anchors to the preceding Saturday');\n"
-              "  assert.equal(A.fundraiserDayOffset(sundayOnly, { dateKey: '2021-08-15' }), 1, 'Sunday-only fundraiser must align as 1st Sunday, not be discarded as Day -6');\n"
-              "  const aligned = A.alignedDailyRows([sundayOnly]);\n"
-              "  assert.equal(aligned.length, 1);\n"
-              "  assert.equal(aligned[0].offset, 1);\n"
-              "  assert.equal(aligned[0].label.title, '1st Sunday');\n"
-              "  assert.equal(aligned[0].days[0].dollars, 4321, 'Sunday-only fundraiser daily dollars must survive alignment');\n"
-              "}\n\n"
-          )
-          if tests.count(marker) != 1:
-              raise SystemExit(f'expected one hardening-test insertion marker, found {tests.count(marker)}')
-          test_path.write_text(tests.replace(marker, regression + marker, 1))
-
-          version_targets = [Path('version.json'), Path('reports.html'), *Path('tests').glob('*.mjs')]
-          changed_version_files = []
-          for path in version_targets:
-              text = path.read_text()
-              if '0.22.123' in text:
-                  path.write_text(text.replace('0.22.123', '0.22.124'))
-                  changed_version_files.append(str(path))
-          if 'version.json' not in changed_version_files:
-              raise SystemExit('version.json did not contain expected 0.22.123 version')
-
-          workflow_path = Path('.github/workflows/regression-tests.yml')
-          workflow_path.write_text(
-              "name: Regression tests\n\n"
-              "on:\n"
-              "  pull_request:\n"
-              "  push:\n"
-              "    branches:\n"
-              "      - main\n\n"
-              "permissions:\n"
-              "  contents: read\n\n"
-              "jobs:\n"
-              "  node-tests:\n"
-              "    runs-on: ubuntu-latest\n"
-              "    timeout-minutes: 10\n"
-              "    steps:\n"
-              "      - name: Check out repository\n"
-              "        uses: actions/checkout@v4\n"
-              "      - name: Set up Node.js\n"
-              "        uses: actions/setup-node@v4\n"
-              "        with:\n"
-              "          node-version: '22'\n"
-              "      - name: Run regression tests\n"
-              "        run: node --test tests/*.test.mjs\n"
-          )
-          print('Version-updated files:', ', '.join(changed_version_files))
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/js/one-sheet-analysis.js tests/one-sheet-analysis-hardening.test.mjs version.json reports.html tests .github/workflows/regression-tests.yml
-          git diff --cached --check
-          git diff --cached --stat
-          git commit -m "Fix short fundraiser day alignment (v0.22.124)"
-          git push
       - name: Run regression tests
         run: node --test tests/*.test.mjs

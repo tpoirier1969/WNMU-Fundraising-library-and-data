@@ -76,6 +76,28 @@ assert.ok(A, 'analysis API should load');
 }
 
 {
+  const sundayOnly = {
+    schedule: { id: 'aug-2021', title: 'Aug 15, 2021 - Aug 15, 2021', startDate: '2021-08-15', endDate: '2021-08-15' },
+    importedRows: [{ air_date: '2021-08-15' }],
+    placementRows: [{
+      dateKey: '2021-08-15', countsTowardScheduleMinutes: false, minutes: 60,
+      known: true, durationMissing: false, dollars: 4321, pledges: 12,
+      startMinutes: 1080, endMinutes: 1140
+    }]
+  };
+  const anchor = A.firstSaturdayAnchor(sundayOnly);
+  assert.equal(anchor?.getFullYear(), 2021);
+  assert.equal(anchor?.getMonth(), 7);
+  assert.equal(anchor?.getDate(), 14, 'a fundraiser with no Saturday in its saved range anchors to the preceding Saturday');
+  assert.equal(A.fundraiserDayOffset(sundayOnly, { dateKey: '2021-08-15' }), 1, 'Sunday-only fundraiser must align as 1st Sunday, not be discarded as Day -6');
+  const aligned = A.alignedDailyRows([sundayOnly]);
+  assert.equal(aligned.length, 1);
+  assert.equal(aligned[0].offset, 1);
+  assert.equal(aligned[0].label.title, '1st Sunday');
+  assert.equal(aligned[0].days[0].dollars, 4321, 'Sunday-only fundraiser daily dollars must survive alignment');
+}
+
+{
   const april = {
     schedule: { id: 'april', startDate: '2016-04-30' },
     importedRows: [],

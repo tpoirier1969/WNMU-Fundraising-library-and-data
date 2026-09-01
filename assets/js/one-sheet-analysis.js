@@ -788,9 +788,13 @@
     if (saturday) return saturday;
     const start = parseDate(analysis.schedule?.startDate);
     if (!start) return null;
+    const end = parseDate(analysis.schedule?.endDate || analysis.schedule?.startDate);
     const next = new Date(start);
     while (next.getDay() !== 6) next.setDate(next.getDate() + 1);
-    return next;
+    if (!end || next <= end) return next;
+    const previous = new Date(start);
+    while (previous.getDay() !== 6) previous.setDate(previous.getDate() - 1);
+    return previous;
   }
 
   function firstSaturdaySeasonalOffsets(analyses = []) {
