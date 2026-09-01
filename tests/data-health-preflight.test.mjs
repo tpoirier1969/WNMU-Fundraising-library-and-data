@@ -47,6 +47,18 @@ const cleanHealth = A.dataHealthReport([cleanSchedule], [cleanAnalysis], [{ row_
 assert.equal(cleanHealth.status, 'pass');
 assert.equal(cleanHealth.failures, 0);
 
+const offSeasonSchedule = A.normalizeSchedule({
+  id: 'jan-special', title: 'January Special Event', start_date: '2016-01-03', end_date: '2016-01-04',
+  schedule_data: { placements: [{ dateKey: '2016-01-03', startMinutes: 1200, programId: 'jan-program', programTitle: 'January Special', lengthMinutes: 60 }] }
+});
+assert.equal(offSeasonSchedule.season, '', 'January special event should remain off-season rather than being mislabeled as a normal pledge season');
+assert.equal(offSeasonSchedule.year, 2016);
+const offSeasonAirings = [{ row_hash: 'jan-row', air_date: '2016-01-03', air_time: '20:00', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 1460, pledge_count: 9 }];
+const offSeasonLibrary = [{ id: 'jan-program', title: 'January Special', topic_primary: 'Music', length_bucket_minutes: 60 }];
+const offSeasonAnalysis = A.analyzeSchedule(offSeasonSchedule, offSeasonAirings, A.buildLibraryIndexes(offSeasonLibrary));
+const offSeasonHealth = A.dataHealthReport([offSeasonSchedule], [offSeasonAnalysis], offSeasonAirings, offSeasonLibrary);
+assert.equal(offSeasonHealth.checks.find((check) => check.id === 'schedule-coverage').count, 0, 'a saved off-season fundraiser must cover its imported air dates normally');
+
 console.log('data health preflight tests passed');
 
 

@@ -351,7 +351,7 @@
       fetchAll('pledge_program_airings_v2', '*', 'air_date'),
       fetchAll('pledge_programs_v2', '*')
     ]);
-    state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule)).filter((schedule) => schedule.season && schedule.year);
+    state.schedules = A.prepareSchedules(scheduleRows.map(A.normalizeSchedule)).filter((schedule) => schedule.startDate && schedule.endDate && schedule.year);
     const canonicalAirings = A.canonicalizeImportedAirings ? A.canonicalizeImportedAirings(airings) : airings;
     state.rawAiringsCount = airings.length;
     state.supersededAiringsCount = Math.max(0, airings.length - canonicalAirings.length);
@@ -516,12 +516,14 @@
   }
 
   function seasonsAvailable() {
-    return A.SEASONS.filter((season) => state.schedules.some((schedule) => schedule.season === season));
+    const seasons = A.SEASONS.filter((season) => state.schedules.some((schedule) => schedule.season === season));
+    if (state.schedules.some((schedule) => !schedule.season)) seasons.push('Special events');
+    return seasons;
   }
 
   function defaultSeason() {
     const latest = state.schedules[0];
-    return latest?.season || seasonsAvailable()[0] || 'all';
+    return latest ? (latest.season || 'Special events') : (seasonsAvailable()[0] || 'all');
   }
 
   function scheduleOptionLabel(schedule) {
@@ -535,7 +537,11 @@
   }
 
   function comparisonSchedules() {
-    return state.schedules.filter((schedule) => state.season === 'all' || schedule.season === state.season);
+    return state.schedules.filter((schedule) => {
+      if (state.season === 'all') return true;
+      if (state.season === 'Special events') return !schedule.season;
+      return schedule.season === state.season;
+    });
   }
 
   function ensureDefaultComparisonSelection() {
@@ -1185,7 +1191,7 @@
       }
     };
     setStatus(`Creating recovered fundraiser ${preview.startDate}–${preview.endDate}…`);
-    const { error } = await state.client.from('pledge_fundraiser_schedules').insert({
+    const { data: createdRows, error } = await state.client.from('pledge_fundraiser_schedules').insert({
       id,
       title: resolvedTitle,
       start_date: preview.startDate,
@@ -1194,10 +1200,17 @@
       day_end_hour: 25,
       schedule_data: scheduleData,
       updated_at: now
-    });
+    }).select('id,title,start_date,end_date');
     if (error) throw error;
+    const created = Array.isArray(createdRows) ? createdRows[0] : null;
+    if (!created || A.text(created.id) !== id || A.text(created.start_date) !== preview.startDate || A.text(created.end_date) !== preview.endDate) {
+      throw new Error('Supabase did not confirm the newly created fundraiser schedule. Nothing will be treated as repaired until the saved row can be read back.');
+    }
     closePreflightScheduleRepair();
     await loadData();
+    if (!state.schedules.some((schedule) => schedule.id === id)) {
+      throw new Error(`The fundraiser was saved as ${id}, but the report loader did not retain it. Refresh before attempting another repair.`);
+    }
     renderPreflightReport();
     setStatus(`Recovered ${resolvedTitle}: ${preview.placements.length} imported placement${preview.placements.length === 1 ? '' : 's'} across ${preview.startDate}–${preview.endDate}. Existing schedules were untouched.`);
   }
