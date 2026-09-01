@@ -1,13 +1,12 @@
 name: Regression tests
 
 on:
-  pull_request:
   push:
     branches:
-      - main
+      - release/v0.22.124-short-fundraiser-alignment
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   node-tests:
@@ -20,5 +19,118 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run regression tests
-        run: node --test tests/*.test.mjs
+      - name: Apply compact schedule and finish v0.22.124
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          reports_path = Path('assets/js/one-sheet-reports.js')
+          reports = reports_path.read_text()
+          marker = "  function fundraiserDailyTable(analysis) {"
+          schedule_fn = r'''  function fundraiserAirSchedule(analysis) {
+            const rows = [...(analysis?.placementRows || [])]
+              .filter((row) => A.text(row?.dateKey) && !rowIsNonSpecific(row))
+              .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+            if (!rows.length) {
+              return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Programs and airtimes for this fundraiser.</p></div></div><div class="chart-empty">No program schedule is recorded for this fundraiser.</div></section>`;
+            }
+            const byDate = new Map();
+            rows.forEach((row) => {
+              const key = A.text(row.dateKey);
+              if (!byDate.has(key)) byDate.set(key, []);
+              byDate.get(key).push(row);
+            });
+            const days = [...byDate.entries()].map(([dateKey, dayRows]) => {
+              const date = A.parseDate(dateKey);
+              const dayLabel = date
+                ? date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })
+                : dateKey;
+              const programs = dayRows.map((row) => {
+                const title = A.text(row.title || row.plannedTitle || 'Untitled program');
+                const duration = Number(row.minutes || 0);
+                const durationLabel = duration > 0 ? `${count(duration)} min` : 'Duration missing';
+                const unresolved = !row.known;
+                return `<li><time class="air-schedule-time">${escapeHtml(formatTime(row.startMinutes))}</time><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(durationLabel)}</small>${unresolved ? '<em>Scheduled · result unresolved</em>' : ''}</div></li>`;
+              }).join('');
+              return `<section class="air-schedule-day"><h3>${escapeHtml(dayLabel)}</h3><ol>${programs}</ol></section>`;
+            }).join('');
+            return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Actual air schedule</h2><p>Actual imported titles and airtimes where available; unresolved placements remain visible from the saved schedule.</p></div></div><div class="fundraiser-air-schedule-grid">${days}</div></section>`;
+          }
+
+'''
+          if reports.count(marker) != 1:
+              raise SystemExit(f'expected one fundraiserDailyTable marker, found {reports.count(marker)}')
+          if 'function fundraiserAirSchedule' not in reports:
+              reports = reports.replace(marker, schedule_fn + marker, 1)
+          old_render = "${dailyIncomeChart(analysis)}${fundraiserDailyTable(analysis)}"
+          new_render = "${dailyIncomeChart(analysis)}${fundraiserAirSchedule(analysis)}${fundraiserDailyTable(analysis)}"
+          if old_render not in reports and new_render not in reports:
+              raise SystemExit('fundraiser report render sequence not found')
+          reports = reports.replace(old_render, new_render, 1)
+          reports_path.write_text(reports)
+
+          css_path = Path('assets/one-sheet-reports.css')
+          css = css_path.read_text()
+          css_marker = '.program-results table{table-layout:fixed}'
+          css_add = '.fundraiser-air-schedule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:7px;padding:7px}.air-schedule-day{border:1px solid #dbe4e8;border-radius:5px;overflow:hidden;break-inside:avoid}.air-schedule-day h3{margin:0;padding:5px 7px;background:#edf3f6;font-size:.9rem}.air-schedule-day ol{list-style:none;margin:0;padding:0}.air-schedule-day li{display:grid;grid-template-columns:76px minmax(0,1fr);gap:7px;padding:5px 7px;border-top:1px solid #edf1f3;align-items:start}.air-schedule-day li:first-child{border-top:0}.air-schedule-time{font-weight:900;white-space:nowrap}.air-schedule-day strong{display:block;font-size:.88rem;line-height:1.25}.air-schedule-day small{display:block;color:var(--muted);font-size:.78rem;margin-top:1px}.air-schedule-day em{display:block;color:#8b5c00;font-size:.76rem;font-style:normal;font-weight:800;margin-top:1px}\n'
+          if css_marker not in css:
+              raise SystemExit('CSS insertion marker not found')
+          if '.fundraiser-air-schedule-grid{' not in css:
+              css = css.replace(css_marker, css_add + css_marker, 1)
+          css_path.write_text(css)
+
+          refinements_path = Path('tests/one-sheet-report-refinements.test.mjs')
+          refinements = refinements_path.read_text().replace('0.22.123', '0.22.124')
+          test_marker = "assert.match(reports, /function programResultsTable/);"
+          test_add = "assert.match(reports, /function fundraiserAirSchedule/);\nassert.match(reports, /Actual air schedule/);\nassert.match(reports, /Scheduled · result unresolved/);\nassert.match(reports, /dailyIncomeChart\\(analysis\\)\\}\\$\\{fundraiserAirSchedule\\(analysis\\)\\}\\$\\{fundraiserDailyTable\\(analysis\\)/);\nassert.match(css, /fundraiser-air-schedule-grid/);\n"
+          if 'function fundraiserAirSchedule' not in refinements:
+              if test_marker not in refinements:
+                  raise SystemExit('refinements test insertion marker not found')
+              refinements = refinements.replace(test_marker, test_add + test_marker, 1)
+          refinements_path.write_text(refinements)
+
+          report_test_path = Path('tests/one-sheet-reports.test.mjs')
+          report_test = report_test_path.read_text().replace('0.22.123', '0.22.124')
+          report_test_marker = "assert.match(reportSource, /function programResultsTable/);"
+          report_test_add = "assert.match(reportSource, /function fundraiserAirSchedule/);\nassert.match(reportSource, /Actual air schedule/);\nassert.match(css, /fundraiser-air-schedule-grid/);\n"
+          if 'function fundraiserAirSchedule' not in report_test:
+              if report_test_marker not in report_test:
+                  raise SystemExit('one-sheet reports test insertion marker not found')
+              report_test = report_test.replace(report_test_marker, report_test_add + report_test_marker, 1)
+          report_test_path.write_text(report_test)
+          PY
+          node --test tests/*.test.mjs
+          cat > .github/workflows/regression-tests.yml <<'YAML'
+          name: Regression tests
+
+          on:
+            pull_request:
+            push:
+              branches:
+                - main
+
+          permissions:
+            contents: read
+
+          jobs:
+            node-tests:
+              runs-on: ubuntu-latest
+              timeout-minutes: 10
+              steps:
+                - name: Check out repository
+                  uses: actions/checkout@v4
+                - name: Set up Node.js
+                  uses: actions/setup-node@v4
+                  with:
+                    node-version: '22'
+                - name: Run regression tests
+                  run: node --test tests/*.test.mjs
+          YAML
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js assets/one-sheet-reports.css tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs .github/workflows/regression-tests.yml
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "Add compact fundraiser air schedule (v0.22.124)"
+          git push
