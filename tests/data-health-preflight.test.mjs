@@ -8,6 +8,8 @@ vm.createContext(sandbox);
 vm.runInContext(source, sandbox);
 const A = sandbox.WNMUOneSheetAnalysis;
 assert.ok(A?.dataHealthReport, 'dataHealthReport should be exported');
+assert.equal(A.MAIN_SCHEDULE_TOLERANCE_DAYS, 3, 'normal fundraiser ownership should allow a three-day boundary tolerance');
+assert.equal(A.REPORT_ONLY_EVENT_MAX_DAYS, 2, 'one- and two-day imported-only events should remain valid special events');
 
 const schedule = A.normalizeSchedule({
   id: 's1', title: 'August 2026', start_date: '2026-08-08', end_date: '2026-08-18',
@@ -73,8 +75,35 @@ const offSeasonAnalysis = A.analyzeSchedule(offSeasonSchedule, offSeasonAirings,
 const offSeasonHealth = A.dataHealthReport([offSeasonSchedule], [offSeasonAnalysis], offSeasonAirings, offSeasonLibrary);
 assert.equal(offSeasonHealth.checks.find((check) => check.id === 'schedule-coverage').count, 0, 'a saved off-season fundraiser must cover its imported air dates normally');
 
-console.log('data health preflight tests passed');
+const boundarySchedule = A.normalizeSchedule({
+  id: 'boundary', title: 'August 2026 main drive', start_date: '2026-08-08', end_date: '2026-08-18',
+  schedule_data: { placements: [] }
+});
+const lateRepeat = { row_hash: 'late-repeat', air_date: '2026-08-20', air_time: '20:00', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 125, pledge_count: 1 };
+assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, lateRepeat), true, 'a forgotten/late-added repeat within three days of a manual drive should remain owned by that drive');
+assert.equal(A.analyzeSchedule(boundarySchedule, [lateRepeat], A.buildLibraryIndexes(offSeasonLibrary)).broadcastDollars, 125, 'boundary-tolerance imported dollars must stay in the main fundraiser total');
+const tooLateRepeat = { ...lateRepeat, row_hash: 'too-late', air_date: '2026-08-22' };
+assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, tooLateRepeat), false, 'a row more than three days outside the manual drive must not be absorbed automatically');
 
+const shortDistinctRows = [
+  { row_hash: 'short-1', air_date: '2026-08-20', air_time: '20:00', drive_start_date: '2026-08-20', drive_end_date: '2026-08-21', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 75, pledge_count: 1 },
+  { row_hash: 'short-2', air_date: '2026-08-21', air_time: '20:00', drive_start_date: '2026-08-20', drive_end_date: '2026-08-21', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 80, pledge_count: 1 }
+];
+assert.equal(A.scheduleOwnsImportedRow(boundarySchedule, shortDistinctRows[0]), false, 'an explicit standalone one- or two-day event must not be swallowed by a nearby main drive merely because it is within three days');
+const shortSpecials = A.reportOnlySchedulesFromAirings([boundarySchedule], shortDistinctRows, A.buildLibraryIndexes(offSeasonLibrary));
+assert.equal(shortSpecials.length, 1, 'a distinct two-day imported event should become one report-only special event');
+assert.equal(shortSpecials[0].reportOnly, true);
+assert.equal(shortSpecials[0].startDate, '2026-08-20');
+assert.equal(shortSpecials[0].endDate, '2026-08-21');
+
+const importedOnlyJanAirings = [
+  { row_hash: 'jan-import-1', air_date: '2016-01-03', air_time: '20:00', drive_start_date: '2016-01-03', drive_end_date: '2016-01-04', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 700, pledge_count: 4 },
+  { row_hash: 'jan-import-2', air_date: '2016-01-04', air_time: '20:00', drive_start_date: '2016-01-03', drive_end_date: '2016-01-04', program_id: 'jan-program', imported_program_title: 'January Special', dollars: 760, pledge_count: 5 }
+];
+const importedOnlyHealth = A.dataHealthReport([], [], importedOnlyJanAirings, offSeasonLibrary);
+assert.equal(importedOnlyHealth.checks.find((check) => check.id === 'schedule-coverage').count, 0, 'a genuine one- or two-day imported-only pledge event must not be a missing-main-schedule blocker');
+assert.equal(importedOnlyHealth.checks.find((check) => check.id === 'report-only-events').count, 1, 'Preflight should identify the imported-only special event explicitly');
+assert.equal(importedOnlyHealth.status, 'pass', 'a valid report-only special event should not by itself fail Preflight');
 
 assert.ok(A.canonicalizeImportedAirings, 'canonicalizeImportedAirings should be exported');
 const rawDuplicateAirings = [
@@ -114,7 +143,6 @@ const actionableMissing = actionableHealth.checks.find((check) => check.id === '
 assert.equal(actionableMissing.programId, 'p-match', 'actionable Preflight details should preserve Program Library IDs for deep links');
 assert.equal(actionableMissing.title, 'Matched Program');
 
-
 const mismatchSchedule = A.normalizeSchedule({
   id: 'mismatch', title: 'Mismatch Drive', start_date: '2026-08-08', end_date: '2026-08-18',
   schedule_data: { placements: [{ dateKey: '2026-08-08', startMinutes: 1200, programTitle: 'Expected Program', importedBroadcastDollars: 35, lengthMinutes: 60 }] }
@@ -139,7 +167,6 @@ assert.match(mismatchDetail.detail, /8:00 PM/);
 assert.match(mismatchDetail.detail, /\$40\.00/);
 assert.match(mismatchDetail.detail, /\$35\.00/);
 
-
 const strayDecemberSchedule = A.normalizeSchedule({
   id: 'dec-2019-stray', title: 'December 2019 standalone', start_date: '2019-12-26', end_date: '2019-12-27',
   schedule_data: { placements: [] }
@@ -161,10 +188,11 @@ assert.deepEqual(
 assert.equal(strayAnalysis.broadcastDollars, 50, 'actual air date inside a saved standalone event must win over stale imported drive-boundary metadata');
 const historicalCoverageHealth = A.dataHealthReport([strayDecemberSchedule], [strayAnalysis], historicalDecemberAirings, []);
 const scheduleCoverageCheck = historicalCoverageHealth.checks.find((check) => check.id === 'schedule-coverage');
-assert.ok(scheduleCoverageCheck.count >= 3, 'standalone uncovered dates and the explicit missing fundraiser should be schedule-level findings');
+const reportOnlyCheck = historicalCoverageHealth.checks.find((check) => check.id === 'report-only-events');
+assert.equal(scheduleCoverageCheck.count, 1, 'only the multi-day missing December fundraiser should block schedule coverage');
 assert.ok(scheduleCoverageCheck.details.some((item) => /2019-11-30–2019-12-11/.test(item.detail)), 'explicit imported drive dates should expose the missing main December fundraiser window');
-assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-30' && item.repair?.endDate === '2019-12-11'), 'the missing fundraiser finding should carry its explicit source range into the repair preview');
-assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-14' && item.repair?.endDate === '2019-11-14'), 'uncovered standalone pledge activity must not be silently rolled into the later fundraiser');
+assert.ok(scheduleCoverageCheck.details.some((item) => item.repair?.startDate === '2019-11-30' && item.repair?.endDate === '2019-12-11'), 'the missing main fundraiser finding should carry its explicit source range into the repair preview');
+assert.equal(reportOnlyCheck.count, 2, 'the two isolated November pledge dates should be classified as report-only special events rather than missing main schedules');
 assert.equal(historicalCoverageHealth.metrics.importedRows, 6, 'Preflight imported-row metric must count the full canonical dataset, including rows outside saved schedules');
 
 const missingOwnershipHealth = A.dataHealthReport([matchedSchedule], [{
@@ -176,5 +204,23 @@ const missingOwnershipHealth = A.dataHealthReport([matchedSchedule], [{
   scheduled: 1
 }], canonical, matchedLibrary);
 const ownershipCheck = missingOwnershipHealth.checks.find((check) => check.id === 'result-ownership');
-assert.equal(ownershipCheck.count, 1, 'Preflight must fail when covered imported rows disappear from fundraiser analysis');
-assert.match(ownershipCheck.details[0].detail, /1 covered imported rows \/ \$80\.00 Broadcast vs 0 attached rows \/ \$0\.00/);
+assert.equal(ownershipCheck.count, 1, 'Preflight must fail when owned imported rows disappear from fundraiser analysis');
+assert.match(ownershipCheck.details[0].detail, /1 owned imported rows \/ \$80\.00 Broadcast vs 0 attached rows \/ \$0\.00/);
+
+const overlapA = A.normalizeSchedule({ id: 'overlap-a', title: 'Drive A', start_date: '2026-08-01', end_date: '2026-08-10', schedule_data: { placements: [] } });
+const overlapB = A.normalizeSchedule({ id: 'overlap-b', title: 'Drive B', start_date: '2026-08-12', end_date: '2026-08-20', schedule_data: { placements: [] } });
+const overlapRow = { row_hash: 'overlap-row', air_date: '2026-08-11', air_time: '20:00', imported_program_title: 'Boundary Program', dollars: 100 };
+assert.equal(A.scheduleOwnsImportedRow(overlapA, overlapRow), true);
+assert.equal(A.scheduleOwnsImportedRow(overlapB, overlapRow), true);
+const overlapHealth = A.dataHealthReport(
+  [overlapA, overlapB],
+  [A.analyzeSchedule(overlapA, [overlapRow], A.buildLibraryIndexes([])), A.analyzeSchedule(overlapB, [overlapRow], A.buildLibraryIndexes([]))],
+  [overlapRow],
+  []
+);
+const multipleOwnership = overlapHealth.checks.find((check) => check.id === 'multiple-fundraiser-ownership');
+assert.equal(multipleOwnership.count, 1, 'Preflight must block a result that the three-day tolerance causes two fundraiser windows to claim');
+assert.match(multipleOwnership.details[0].detail, /Drive A/);
+assert.match(multipleOwnership.details[0].detail, /Drive B/);
+
+console.log('data health preflight tests passed');
