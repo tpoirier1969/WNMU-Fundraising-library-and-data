@@ -1,0 +1,205 @@
+from pathlib import Path
+
+
+def replace_once(path, old, new):
+    p = Path(path)
+    data = p.read_text()
+    count = data.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected one match, found {count}: {old[:140]!r}")
+    p.write_text(data.replace(old, new, 1))
+
+
+analysis = 'assets/js/one-sheet-analysis.js'
+ranking_decl = "  function historicalRanking(analyses = [], dimension, options = {}) {"
+season_fn = '''  function historicalSeasonRanking(analyses = [], options = {}) {
+    const groups = new Map();
+    (analyses || []).forEach((analysis) => {
+      const key = canonicalCategory(analysis?.schedule?.season || seasonForDate(analysis?.schedule?.startDate), 'Special events');
+      const normalized = lookupKey(key);
+      if (!groups.has(normalized)) groups.set(normalized, { key, rates: [], rateAirings: 0, broadcastDollars: 0, fundraisers: new Set(), titles: new Set() });
+      const scheduledRows = (analysis?.placementRows || []).filter((row) => row?.countsTowardScheduleMinutes !== false);
+      const complete = scheduledRows.length > 0 && scheduledRows.every((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0);
+      if (!complete) return;
+      const rateMinutes = scheduledRows.reduce((sum, row) => sum + Number(row.minutes || 0), 0);
+      const rateDollars = scheduledRows.reduce((sum, row) => sum + Number(row.dollars || 0), 0);
+      if (!(rateMinutes > 0)) return;
+      const item = groups.get(normalized);
+      item.rates.push(dollarsPerHour(rateDollars, rateMinutes));
+      item.rateAirings += scheduledRows.length;
+      item.broadcastDollars += Number(analysis?.broadcastDollars || rateDollars || 0);
+      item.fundraisers.add(text(analysis?.schedule?.id || analysis?.schedule?.title));
+      scheduledRows.forEach((row) => {
+        const title = lookupKey(row?.title || row?.plannedTitle || '');
+        if (title) item.titles.add(title);
+      });
+    });
+    const minFundraisers = Number(options.minFundraisers ?? 1);
+    return [...groups.values()].map((item) => ({
+      key: item.key,
+      airings: item.rateAirings,
+      rateAirings: item.rateAirings,
+      fundraisers: item.fundraisers.size,
+      titles: item.titles.size,
+      broadcastDollars: item.broadcastDollars,
+      medianDollarsPerHour: median(item.rates),
+      averageDollarsPerHour: item.rates.length ? item.rates.reduce((sum, value) => sum + value, 0) / item.rates.length : 0,
+      minutes: 0,
+      sufficient: item.fundraisers.size >= minFundraisers
+    })).filter((item) => item.sufficient)
+      .sort((a, b) => b.medianDollarsPerHour - a.medianDollarsPerHour || b.fundraisers - a.fundraisers || String(a.key).localeCompare(String(b.key)));
+  }
+
+'''
+replace_once(analysis, ranking_decl, season_fn + ranking_decl)
+replace_once(
+    analysis,
+    ranking_decl + "\n    const rows = historicalRows(analyses);",
+    ranking_decl + "\n    if (dimension === 'season') return historicalSeasonRanking(analyses, options);\n    const rows = historicalRows(analyses);"
+)
+
+reconciliation = "    add('broadcast-reconciliation', 'Broadcast reconciliation', 'fail', reconciliation.length ? 'Imported Broadcast totals do not fully reconcile to the analyzed result rows.' : 'Imported Broadcast totals reconcile to the analyzed result rows.', reconciliation);"
+unknown_block = '''
+
+    const unknownResults = [];
+    (analyses || []).forEach((analysis) => {
+      (analysis?.placementRows || []).forEach((row) => {
+        if (row?.countsTowardScheduleMinutes === false || row?.known) return;
+        unknownResults.push({
+          title: text(row?.title || row?.plannedTitle || 'Untitled program'),
+          programId: text(row?.programId || ''),
+          mismatchTypes: ['Unknown result'],
+          detail: `${analysis.schedule?.title || 'Fundraiser'} · ${row?.dateKey || 'unknown date'}${Number.isFinite(Number(row?.startMinutes)) ? ` ${preflightClockLabel(row.startMinutes)}` : ''} · no Broadcast result is recorded for this scheduled pledge airing`
+        });
+      });
+    });
+    add('unknown-results', 'Unknown scheduled program results', 'fail', unknownResults.length ? 'Scheduled pledge airings exist without a known Broadcast result. Resolve them before trusting fundraiser $/hour analytics.' : 'Every scheduled pledge airing in completed fundraiser history has a known Broadcast result, including explicit $0 results.', unknownResults);'''
+replace_once(analysis, reconciliation, reconciliation + unknown_block)
+
+reports = 'assets/js/one-sheet-reports.js'
+for old, new in [
+    ("{ stroke: '#145f91', dash: '' }", "{ stroke: '#145f91', dash: '', width: 4 }"),
+    ("{ stroke: '#7a3e65', dash: '10 5' }", "{ stroke: '#7a3e65', dash: '12 5', width: 3 }"),
+    ("{ stroke: '#2d6a4f', dash: '3 4' }", "{ stroke: '#2d6a4f', dash: '2 5', width: 3.5 }"),
+    ("{ stroke: '#9a5b13', dash: '12 4 3 4' }", "{ stroke: '#9a5b13', dash: '12 4 2 4', width: 4 }"),
+    ("{ stroke: '#4f5d75', dash: '7 4' }", "{ stroke: '#4f5d75', dash: '6 3', width: 2.5 }")
+]:
+    replace_once(reports, old, new)
+replace_once(
+    reports,
+    'stroke="${style.stroke}" stroke-width="3"${style.dash ? ` stroke-dasharray="${style.dash}"` : \'\'}',
+    'stroke="${style.stroke}" stroke-width="${style.width}"${style.dash ? ` stroke-dasharray="${style.dash}"` : \'\'}'
+)
+replace_once(
+    reports,
+    'stroke="${style.stroke}" stroke-width="3" stroke-linejoin="round"',
+    'stroke="${style.stroke}" stroke-width="${style.width}" stroke-linejoin="round"'
+)
+
+# Keep temperature and precipitation in separate footer lanes in the compact fundraiser chart.
+replace_once(
+    reports,
+    "    const height = 286;\n    const margin = { left: 70, right: 18, top: 26, bottom: 74 };",
+    "    const height = 304;\n    const margin = { left: 70, right: 18, top: 26, bottom: 92 };"
+)
+replace_once(reports, "      const center = xpos + (barWidth / 2);", "      const center = xpos + (barWidth / 2);\n      const weather = weatherParts(day);")
+replace_once(
+    reports,
+    '<text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label">${escapeHtml(weatherLine(day))}</text>',
+    '<text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-temp">${escapeHtml(weather.temp)}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 68}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-precip">${escapeHtml(weather.precip)}</text>'
+)
+weather_fn = '''  function weatherLine(day) {
+    if (!day) return '';
+    const weather = weatherForDay(day.dateKey);
+    if (!weather) return '—';
+    const temp = Number.isFinite(weather.avgTemp) ? `${Math.round(weather.avgTemp)}°F` : '—';
+    const precip = Number.isFinite(weather.precip) ? `${weather.precip.toFixed(weather.precip < 0.1 ? 2 : 1)} in` : '—';
+    return `${temp} · ${precip}`;
+  }
+'''
+weather_new = '''  function weatherParts(day) {
+    if (!day) return { temp: '', precip: '' };
+    const weather = weatherForDay(day.dateKey);
+    if (!weather) return { temp: '—', precip: '—' };
+    return {
+      temp: Number.isFinite(weather.avgTemp) ? `${Math.round(weather.avgTemp)}°F` : '—',
+      precip: Number.isFinite(weather.precip) ? `${weather.precip.toFixed(weather.precip < 0.1 ? 2 : 1)} in` : '—'
+    };
+  }
+
+  function weatherLine(day) {
+    const weather = weatherParts(day);
+    if (!(weather.temp || weather.precip)) return '';
+    return `${weather.temp} · ${weather.precip}`;
+  }
+'''
+replace_once(reports, weather_fn, weather_new)
+
+replace_once(
+    reports,
+    "    const rows = A.historicalRanking(analyses, dimension, options);\n    const body = rows.map((row) =>",
+    "    const rows = A.historicalRanking(analyses, dimension, options);\n    const medianHeading = options.rateUnit === 'fundraiser' ? 'Median fundraiser $/hr' : 'Median $/hr';\n    const averageHeading = options.rateUnit === 'fundraiser' ? 'Avg fundraiser $/hr' : 'Avg $/hr';\n    const body = rows.map((row) =>"
+)
+replace_once(reports, '<th>Median $/hr</th><th>Avg $/hr</th>', '<th>${escapeHtml(medianHeading)}</th><th>${escapeHtml(averageHeading)}</th>')
+replace_once(reports, "'Season-level performance across the full historical record.'", "'Each fundraiser contributes one $/pledge-hour observation. Median and average therefore describe the typical fundraiser in that season, not the typical individual program airing.'")
+replace_once(reports, "{ minAirings: 1, minFundraisers: 1, minTitles: 1 }", "{ minAirings: 1, minFundraisers: 1, minTitles: 1, rateUnit: 'fundraiser' }")
+
+health_test = 'tests/data-health-preflight.test.mjs'
+health_anchor = "assert.equal(cleanHealth.failures, 0);\nassert.equal(A.canonicalCategory('MUSIC'), 'Music');"
+health_insert = '''assert.equal(cleanHealth.failures, 0);
+
+const unknownSchedule = { id: 'unknown', title: 'Unknown Results Drive', startDate: '2026-08-01', endDate: '2026-08-01', placements: [], onlineTrackedExplicit: true, mailTrackedExplicit: true };
+const unknownAnalysis = { schedule: unknownSchedule, importedRows: [], placementRows: [{ known: false, dollars: 0, durationMissing: false, title: 'No Result Yet', programId: 'p-unknown', dateKey: '2026-08-01', startMinutes: 1200, minutes: 60, countsTowardScheduleMinutes: true }], unmatchedImportedRows: [], missingDurationRows: [], scheduled: 1 };
+const unknownHealth = A.dataHealthReport([unknownSchedule], [unknownAnalysis], [], [{ id: 'p-unknown', title: 'No Result Yet', length_bucket_minutes: 60 }]);
+const unknownCheck = unknownHealth.checks.find((check) => check.id === 'unknown-results');
+assert.equal(unknownCheck.count, 1, 'a scheduled pledge airing without a result must be a blocking Preflight defect');
+assert.equal(unknownHealth.status, 'review');
+assert.equal(cleanHealth.checks.find((check) => check.id === 'unknown-results').count, 0, 'known results must pass the unknown-result check');
+
+assert.equal(A.canonicalCategory('MUSIC'), 'Music');'''
+replace_once(health_test, health_anchor, health_insert)
+
+hardening = 'tests/one-sheet-analysis-hardening.test.mjs'
+season_test = '''{
+  const seasonAnalyses = [
+    { schedule: { id: 'june-a', title: 'June A', season: 'June', startDate: '2024-06-01' }, broadcastDollars: 1000, placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 600, dollars: 1000, title: 'A' }] },
+    { schedule: { id: 'june-b', title: 'June B', season: 'June', startDate: '2025-06-01' }, broadcastDollars: 300, placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 300, title: 'B' }] },
+    { schedule: { id: 'june-c', title: 'June C', season: 'June', startDate: '2026-06-01' }, broadcastDollars: 500, placementRows: [{ known: true, durationMissing: false, countsTowardScheduleMinutes: true, minutes: 60, dollars: 500, title: 'C' }] }
+  ];
+  const season = A.historicalRanking(seasonAnalyses, 'season', { minFundraisers: 1 });
+  assert.equal(season.length, 1);
+  assert.equal(season[0].medianDollarsPerHour, 300, 'season median must be the median of fundraiser-level $/hr values');
+  assert.equal(season[0].averageDollarsPerHour, 300, 'season average must give each fundraiser equal weight rather than weighting by pledge hours');
+  assert.equal(season[0].fundraisers, 3);
+}
+
+'''
+report_source_decl = "const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');"
+replace_once(hardening, report_source_decl, season_test + report_source_decl)
+replace_once(hardening, "  globalThis.__reportHarness = { lineChartSvg };", "  globalThis.__reportHarness = { lineChartSvg, CHART_STYLES };")
+replace_once(
+    hardening,
+    "assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');\nconst overlapHtml = reportSandbox.__reportHarness.lineChartSvg({",
+    "assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');\nassert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 5);\nconst monochromeStyles = reportSandbox.__reportHarness.CHART_STYLES.map((style) => `${style.dash}|${style.width}`);\nassert.equal(new Set(monochromeStyles).size, 5, 'all five series must remain distinguishable when color is removed');\nconst overlapHtml = reportSandbox.__reportHarness.lineChartSvg({"
+)
+
+refinement = 'tests/one-sheet-report-refinements.test.mjs'
+replace_once(
+    refinement,
+    "assert.match(reports, /chart-weather-label/);",
+    "assert.match(reports, /chart-weather-label/);\nassert.match(reports, /chart-weather-temp/);\nassert.match(reports, /chart-weather-precip/);\nassert.match(reports, /bottom: 92/);\nassert.match(reports, /width: 4/);\nassert.match(reports, /stroke-width=\\\"\\$\\{style\\.width\\}\\\"/);"
+)
+
+for path in [
+    'version.json',
+    'reports.html',
+    'tests/library-load-performance.test.mjs',
+    'tests/one-sheet-report-refinements.test.mjs',
+    'tests/one-sheet-reports.test.mjs'
+]:
+    p = Path(path)
+    data = p.read_text()
+    changed = data.replace('0.22.122', '0.22.123').replace(r'0\.22\.122', r'0\.22\.123')
+    if changed == data:
+        raise SystemExit(f'{path}: no v0.22.122 marker found')
+    p.write_text(changed)
