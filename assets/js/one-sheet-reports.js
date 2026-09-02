@@ -35,7 +35,9 @@
     season: '',
     activeFundraiserId: '',
     loadingWeather: false,
-    durationApprovals: new Set()
+    durationApprovals: new Set(),
+    historicalStartDate: '',
+    historicalEndDate: ''
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -131,7 +133,7 @@
     }).join('')}</div>`;
   }
 
-  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '', legendTop = false, yLabel = 'Broadcast dollars', axisFormatter = compactMoney, pointFormatter = money } = {}) {
+  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '', legendTop = false, yLabel = 'Broadcast dollars', axisFormatter = compactMoney, pointFormatter = money, xLabelEvery = 1, verticalGridEvery = 0 } = {}) {
     if (!labels.length || !series.length) return '<div class="chart-empty">No chartable results.</div>';
     const width = 760;
     const height = 285;
@@ -145,6 +147,7 @@
     const yTicks = Array.from({ length: tickCount + 1 }, (_item, index) => index * step);
     const rotate = labels.length > 8 || labels.some((label) => String(label).length > 12);
     const xLabels = labels.map((label, index) => {
+      if (index % Math.max(1, Number(xLabelEvery || 1)) !== 0 && index !== labels.length - 1) return '';
       const xpos = x(index);
       const ypos = margin.top + plotHeight + 21;
       const labelText = escapeHtml(chartLabel(label, rotate ? 15 : 19));
@@ -152,6 +155,11 @@
         ? `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="end" transform="rotate(-38 ${xpos.toFixed(1)} ${ypos})">${labelText}</text>`
         : `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="middle">${labelText}</text>`;
     }).join('');
+    const verticalGrid = verticalGridEvery > 0 ? labels.map((_label, index) => {
+      if (index % Math.max(1, Number(verticalGridEvery)) !== 0 && index !== labels.length - 1) return '';
+      const xpos = x(index);
+      return `<g><line x1="${xpos.toFixed(1)}" y1="${margin.top}" x2="${xpos.toFixed(1)}" y2="${margin.top + plotHeight}" class="chart-grid-line chart-grid-line-vertical"/><line x1="${xpos.toFixed(1)}" y1="${margin.top + plotHeight}" x2="${xpos.toFixed(1)}" y2="${margin.top + plotHeight + 6}" class="chart-axis"/></g>`;
+    }).join('') : '';
     const grid = yTicks.map((value) => {
       const ypos = y(value);
       return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(axisFormatter(value))}</text></g>`;
@@ -169,7 +177,7 @@
       return touching.length > 1 ? { sections: touching.map((candidate) => candidate.tooltip) } : tooltip;
     };
     const plotted = series.map((item, seriesIndex) => {
-      const style = CHART_STYLES[seriesIndex % CHART_STYLES.length];
+      const style = item.style || CHART_STYLES[seriesIndex % CHART_STYLES.length];
       const values = item.values || [];
       const segments = [];
       let segment = [];
@@ -194,7 +202,7 @@
       return `${paths}${points}`;
     }).join('');
     const legend = chartLegend(series);
-    const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">${escapeHtml(yLabel)}</text></svg>`;
+    const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${verticalGrid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">${escapeHtml(yLabel)}</text></svg>`;
     return `<div class="report-chart ${escapeHtml(className)}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
   }
 
@@ -1030,6 +1038,41 @@
     return `<section class="sheet-section topic-summary"><div class="section-heading"><div><h2>Topic airtime & performance</h2><p>Program topics are ranked by Broadcast $/hour. Non-Specific Pledges appear as a separate giving category with no program airtime or $/hour.</p></div></div><div class="table-scroll"><table><thead><tr><th>Topic / giving category</th><th>Fundraiser result</th></tr></thead><tbody>${body || '<tr><td colspan="2">No topic data.</td></tr>'}</tbody></table></div></section>`;
   }
 
+  function fiscalYearToDateSection(analysis, history = []) {
+    const asOf = A.parseDate(analysis?.schedule?.endDate || analysis?.schedule?.startDate);
+    if (!asOf) return '';
+    const calendarYear = asOf.getFullYear();
+    const fiscalStartYear = asOf.getMonth() >= 6 ? calendarYear : calendarYear - 1;
+    const fiscalEndYear = fiscalStartYear + 1;
+    const fiscalStart = `${fiscalStartYear}-07-01`;
+    const asOfKey = A.dateKey ? A.dateKey(asOf) : `${asOf.getFullYear()}-${String(asOf.getMonth() + 1).padStart(2, '0')}-${String(asOf.getDate()).padStart(2, '0')}`;
+    const included = history.filter((item) => {
+      const start = A.text(item.schedule?.startDate || '');
+      const end = A.text(item.schedule?.endDate || start);
+      return start && end && end >= fiscalStart && start <= asOfKey && end <= asOfKey;
+    });
+    if (!included.length) return '';
+    const broadcast = included.reduce((sum, item) => sum + Number(item.broadcastDollars || 0), 0);
+    const pledges = included.reduce((sum, item) => sum + Number(item.pledges || 0), 0);
+    const minutes = included.reduce((sum, item) => sum + Number(item.scheduledMinutes || 0), 0);
+    const rate = minutes > 0 ? A.dollarsPerHour(broadcast, minutes) : 0;
+    const pledgeRate = minutes > 0 ? A.pledgesPerHour(pledges, minutes) : 0;
+    const gift = pledges > 0 ? A.dollarsPerPledge(broadcast, pledges) : 0;
+    const topics = rankingRows(included, 'topic', { minAirings: 1, minFundraisers: 1, minTitles: 1 }).slice(0, 3);
+    return `<section class="sheet-section fiscal-ytd"><div class="section-heading"><div><h2>Fiscal Year to Date | FY${escapeHtml(fiscalEndYear)}</h2><p>${escapeHtml(formatDate(fiscalStart))} through ${escapeHtml(formatDate(asOfKey))}. Only completed factual fundraiser results through the selected fundraiser are included.</p></div></div>
+      <section class="fundraiser-kpis fiscal-ytd-kpis">
+        <div><span>Fundraisers</span><strong>${escapeHtml(count(included.length))}</strong></div>
+        <div><span>Broadcast $</span><strong>${escapeHtml(money(broadcast))}</strong></div>
+        <div><span>Pledge hours</span><strong>${escapeHtml(hours(minutes))}</strong></div>
+        <div><span>Broadcast $ / pledge hour</span><strong>${escapeHtml(money(rate))}</strong></div>
+        <div><span>Pledges</span><strong>${escapeHtml(count(pledges))}</strong></div>
+        <div><span>Pledges / hour</span><strong>${escapeHtml(count(pledgeRate, 2))}</strong></div>
+        <div><span>$ / pledge</span><strong>${escapeHtml(money(gift))}</strong></div>
+      </section>
+      ${topics.length ? `<p class="fiscal-ytd-note"><strong>Leading YTD topics by fundraiser-balanced $/hour:</strong> ${topics.map((row) => `${escapeHtml(row.key)} ${escapeHtml(money(row.medianDollarsPerHour))}/hr`).join(' · ')}</p>` : ''}
+    </section>`;
+  }
+
   async function renderFundraiserReport() {
     const schedule = state.schedules.find((item) => item.id === state.activeFundraiserId) || defaultReportSchedule();
     if (!schedule) {
@@ -1039,8 +1082,8 @@
     state.activeFundraiserId = schedule.id;
     const analysis = analysisFor(schedule);
     if (!(await ensureDurationDecision([analysis]))) return;
-    const history = historicalAnalyses();
-    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${fundraiserVisualOverview(analysis, history)}${fundraiserHistoricalContext(analysis, history)}${fundraiserAirSchedule(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program, daily, and topic $/hour use only observations with known results and valid duration; the displayed rate base identifies the denominator when it differs from scheduled pledge hours. Historical context uses fundraiser-balanced comparisons and excludes the selected fundraiser from its baseline when prior history is available. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time performance is reserved for historical analytics where sufficient sample size can be required. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
+    const history = allHistoricalAnalyses();
+    const render = () => `<article class="one-sheet fundraiser-sheet">${fundraiserSummary(analysis)}${durationNoticeSection([analysis])}${fundraiserVisualOverview(analysis, history)}${fundraiserHistoricalContext(analysis, history)}${fiscalYearToDateSection(analysis, history)}${fundraiserAirSchedule(analysis)}${fundraiserDailyTable(analysis)}${programResultsTable(analysis)}${singleTopicSummary(analysis)}<footer class="sheet-footer">Program, daily, and topic $/hour use only observations with known results and valid duration; the displayed rate base identifies the denominator when it differs from scheduled pledge hours. Historical context uses fundraiser-balanced comparisons and excludes the selected fundraiser from its baseline when prior history is available. Fiscal YTD uses the July 1–June 30 WNMU fiscal calendar and includes only completed factual results through the selected fundraiser. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time performance is reserved for historical analytics where sufficient sample size can be required. Regional weather averages available Ironwood, Houghton, Marquette, Escanaba, and Sault Ste. Marie observations during each pledge window.</footer></article>`;
     $('#report-output').innerHTML = render();
     bindChartTooltips($('#report-output'));
     await ensureWeatherForAnalyses([analysis]);
@@ -1057,13 +1100,66 @@
     await renderFundraiserReport();
   }
 
+  function allHistoricalAnalyses() {
+    return state.schedules.filter(scheduleHasImportedResults).map(analysisFor).filter(Boolean);
+  }
+
+  function historicalDateBounds() {
+    const analyses = allHistoricalAnalyses();
+    const starts = analyses.map((analysis) => A.text(analysis.schedule?.startDate || '')).filter(Boolean).sort();
+    const ends = analyses.map((analysis) => A.text(analysis.schedule?.endDate || analysis.schedule?.startDate || '')).filter(Boolean).sort();
+    return { min: starts[0] || '', max: ends.slice(-1)[0] || '' };
+  }
+
+  function setHistoricalRange(startDate = '', endDate = '') {
+    const bounds = historicalDateBounds();
+    state.historicalStartDate = A.text(startDate || bounds.min);
+    state.historicalEndDate = A.text(endDate || bounds.max);
+    const start = $('#historical-start-date');
+    const end = $('#historical-end-date');
+    if (start) start.value = state.historicalStartDate;
+    if (end) end.value = state.historicalEndDate;
+    void renderHistoricalReport();
+  }
+
   function historicalControls() {
-    $('#report-controls').innerHTML = `<div class="report-control-row"><div class="historical-control-copy"><strong>All saved fundraiser history</strong><span>Historical rankings use fundraiser-balanced median Broadcast $/hour and minimum evidence rules.</span></div><button type="button" class="report-button" id="report-print">Print report</button></div>`;
+    const bounds = historicalDateBounds();
+    if (!state.historicalStartDate) state.historicalStartDate = bounds.min;
+    if (!state.historicalEndDate) state.historicalEndDate = bounds.max;
+    const currentYear = A.parseDate(bounds.max)?.getFullYear() || new Date().getFullYear();
+    const fiveYearStart = `${Math.max(1900, currentYear - 4)}-01-01`;
+    $('#report-controls').innerHTML = `<div class="report-control-row historical-range-controls">
+      <div class="historical-control-copy"><strong>Historical analysis range</strong><span>Every chart, median, and evidence threshold is recalculated from only the selected fundraiser history.</span></div>
+      <label class="report-field"><span>Start date</span><input type="date" id="historical-start-date" min="${escapeHtml(bounds.min)}" max="${escapeHtml(bounds.max)}" value="${escapeHtml(state.historicalStartDate)}"></label>
+      <label class="report-field"><span>End date</span><input type="date" id="historical-end-date" min="${escapeHtml(bounds.min)}" max="${escapeHtml(bounds.max)}" value="${escapeHtml(state.historicalEndDate)}"></label>
+      <div class="historical-range-presets">
+        <button type="button" class="report-button" data-history-range="all">All history</button>
+        <button type="button" class="report-button" data-history-range="five">Last 5 years</button>
+        <button type="button" class="report-button" data-history-range="pre">Pre-COVID</button>
+        <button type="button" class="report-button" data-history-range="post">Post-COVID</button>
+      </div>
+      <button type="button" class="report-button" id="report-print">Print report</button>
+    </div>`;
+    $('#historical-start-date')?.addEventListener('change', (event) => { state.historicalStartDate = event.target.value || bounds.min; void renderHistoricalReport(); });
+    $('#historical-end-date')?.addEventListener('change', (event) => { state.historicalEndDate = event.target.value || bounds.max; void renderHistoricalReport(); });
+    $$('[data-history-range]').forEach((button) => button.addEventListener('click', () => {
+      const preset = button.dataset.historyRange;
+      if (preset === 'all') setHistoricalRange(bounds.min, bounds.max);
+      else if (preset === 'five') setHistoricalRange(fiveYearStart < bounds.min ? bounds.min : fiveYearStart, bounds.max);
+      else if (preset === 'pre') setHistoricalRange(bounds.min, '2019-12-31' < bounds.max ? '2019-12-31' : bounds.max);
+      else if (preset === 'post') setHistoricalRange('2022-01-01' > bounds.min ? '2022-01-01' : bounds.min, bounds.max);
+    }));
     $('#report-print')?.addEventListener('click', () => window.print());
   }
 
   function historicalAnalyses() {
-    return state.schedules.filter(scheduleHasImportedResults).map(analysisFor).filter(Boolean);
+    const start = A.text(state.historicalStartDate || '');
+    const end = A.text(state.historicalEndDate || '');
+    return allHistoricalAnalyses().filter((analysis) => {
+      const scheduleStart = A.text(analysis.schedule?.startDate || '');
+      const scheduleEnd = A.text(analysis.schedule?.endDate || scheduleStart);
+      return (!start || scheduleEnd >= start) && (!end || scheduleStart <= end);
+    });
   }
 
   function historicalHeader(analyses) {
@@ -1147,38 +1243,64 @@
     return `${season} ${year}`.trim();
   }
 
-  function lifecycleForAnalysis(analysis) {
-    const labels = ['Opening 20%', 'Early 20%', 'Middle 20%', 'Late 20%', 'Closing 20%'];
-    const buckets = labels.map((label) => ({ label, dollars: 0, pledges: 0, minutes: 0, days: 0 }));
-    const days = A.calendarDays(analysis).filter((day) => Number(day.minutes || 0) > 0 || Number(day.rateMinutes || 0) > 0 || Number(day.dollars || 0) > 0 || Number(day.pledges || 0) > 0);
-    days.forEach((day, index) => {
-      const bucketIndex = Math.min(4, Math.floor((index * 5) / Math.max(1, days.length)));
-      const bucket = buckets[bucketIndex];
-      bucket.dollars += Number(day.dollars || 0);
-      bucket.pledges += Number(day.pledges || 0);
-      bucket.minutes += Number(day.rateMinutes || day.minutes || 0);
-      bucket.days += 1;
+  function fiveYearHistoryBands(analyses = []) {
+    const ordered = chronologicalAnalyses(analyses);
+    const years = ordered.map((analysis) => Number(analysis.schedule?.year || 0) || A.parseDate(analysis.schedule?.startDate)?.getFullYear()).filter(Number.isFinite);
+    if (!years.length) return [];
+    const minYear = Math.min(...years);
+    const maxYear = Math.max(...years);
+    const firstStart = Math.floor(minYear / 5) * 5;
+    const bands = [];
+    for (let bandStart = firstStart; bandStart <= maxYear; bandStart += 5) {
+      const bandEnd = bandStart + 4;
+      const subset = ordered.filter((analysis) => {
+        const year = Number(analysis.schedule?.year || 0) || A.parseDate(analysis.schedule?.startDate)?.getFullYear();
+        return year >= bandStart && year <= bandEnd;
+      });
+      if (subset.length) bands.push({ start: bandStart, end: Math.min(bandEnd, maxYear), label: `${bandStart}–${Math.min(bandEnd, maxYear)}`, analyses: subset });
+    }
+    return bands;
+  }
+
+  function correspondingDaySeries(analyses = []) {
+    const aligned = A.alignedDailyRows(analyses);
+    return {
+      labels: aligned.map((entry) => entry.label.title),
+      values: aligned.map((entry) => {
+        const values = (entry.days || []).filter(Boolean).map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite);
+        return values.length ? medianNumber(values) : null;
+      })
+    };
+  }
+
+  function historicalCorrespondingDayBandData(analyses = []) {
+    const combined = correspondingDaySeries(analyses);
+    const bands = fiveYearHistoryBands(analyses);
+    const labels = combined.labels;
+    const series = bands.map((band) => {
+      const data = correspondingDaySeries(band.analyses);
+      const byLabel = new Map(data.labels.map((label, index) => [label, data.values[index]]));
+      return { label: band.label, values: labels.map((label) => byLabel.has(label) ? byLabel.get(label) : null) };
     });
-    return buckets.map((bucket) => ({
-      ...bucket,
-      dollarsPerHour: bucket.minutes > 0 ? A.dollarsPerHour(bucket.dollars, bucket.minutes) : null,
-      pledgesPerHour: bucket.minutes > 0 ? A.pledgesPerHour(bucket.pledges, bucket.minutes) : null
-    }));
+    series.push({ label: 'All selected years', values: combined.values, style: { stroke: '#667781', dash: '5 5', width: 1.5 } });
+    return { labels, series };
   }
 
-  function historicalLifecycleMedians(analyses = []) {
-    const byFundraiser = analyses.map(lifecycleForAnalysis);
-    const labels = ['Opening 20%', 'Early 20%', 'Middle 20%', 'Late 20%', 'Closing 20%'];
-    return labels.map((label, index) => ({
-      label,
-      dollarsPerHour: (() => { const values = byFundraiser.map((rows) => rows[index]?.dollarsPerHour).filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value))); return values.length ? medianNumber(values) : null; })(),
-      pledgesPerHour: (() => { const values = byFundraiser.map((rows) => rows[index]?.pledgesPerHour).filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value))); return values.length ? medianNumber(values) : null; })(),
-      fundraisers: byFundraiser.filter((rows) => Number.isFinite(Number(rows[index]?.dollarsPerHour))).length
-    }));
+  function currentCorrespondingDayComparisonData(analysis, historical = []) {
+    const baseline = historical.filter((item) => A.text(item.schedule?.id || '') !== A.text(analysis.schedule?.id || ''));
+    const combined = A.alignedDailyRows([analysis, ...baseline]);
+    return {
+      labels: combined.map((entry) => entry.label.title),
+      current: combined.map((entry) => entry.days?.[0] ? Number(entry.days[0].dollarsPerHour) : null),
+      historical: combined.map((entry) => {
+        const values = (entry.days || []).slice(1).filter(Boolean).map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite);
+        return values.length ? medianNumber(values) : null;
+      })
+    };
   }
 
-  function chartCard(title, description, chart) {
-    return `<section class="visual-card"><div class="section-heading"><div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div></div>${chart}</section>`;
+  function chartCard(title, description, chart, className = '') {
+    return `<section class="visual-card ${escapeHtml(className)}"><div class="section-heading"><div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div></div>${chart}</section>`;
   }
 
   function rateChartOptions(yLabel = 'Broadcast $ / pledge hour') {
@@ -1215,14 +1337,7 @@
   }
 
   function historicalCorrespondingDayData(analyses = []) {
-    const aligned = A.alignedDailyRows(analyses);
-    return {
-      labels: aligned.map((entry) => entry.label.title),
-      values: aligned.map((entry) => {
-        const values = (entry.days || []).filter(Boolean).map((day) => Number(day.dollarsPerHour || 0)).filter((value) => Number.isFinite(value));
-        return values.length ? medianNumber(values) : null;
-      })
-    };
+    return correspondingDaySeries(analyses);
   }
 
   function rankingRows(analyses, dimension, options = {}) {
@@ -1267,17 +1382,20 @@
   function historicalVisualOverview(analyses = []) {
     const productivity = trendSeriesForHistory(analyses, rateForAnalysis);
     const gifts = trendSeriesForHistory(analyses, (analysis) => A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges));
-    const lifecycle = historicalLifecycleMedians(analyses);
     const seasonal = historicalSeasonTrendData(analyses);
-    const corresponding = historicalCorrespondingDayData(analyses);
+    const correspondingBands = historicalCorrespondingDayBandData(analyses);
+    const trendEvery = Math.max(1, Math.ceil(productivity.labels.length / 14));
+    const giftEvery = Math.max(1, Math.ceil(gifts.labels.length / 14));
     const overview = [
-      chartCard('Fundraiser productivity over time', 'One observation per fundraiser. This exposes long-term movement that lifetime medians can hide.', lineChartSvg({
+      chartCard('Fundraiser productivity over time', 'One observation per fundraiser. Full width, selected date labels, vertical guides, and nodes make long-term movement easier to follow without shrinking the type.', lineChartSvg({
         labels: productivity.labels,
         series: [{ label: 'Broadcast $ / pledge hour', values: productivity.values }],
         ariaLabel: 'Historical fundraiser productivity over time',
         className: 'historical-productivity-trend',
+        xLabelEvery: trendEvery,
+        verticalGridEvery: trendEvery,
         ...rateChartOptions()
-      })),
+      }), 'visual-card-wide'),
       chartCard('Average gift over time', 'Broadcast dollars per pledge by fundraiser, separating changes in gift size from changes in donor frequency.', lineChartSvg({
         labels: gifts.labels,
         series: [{ label: '$ / pledge', values: gifts.values }],
@@ -1285,36 +1403,34 @@
         className: 'historical-gift-trend',
         yLabel: 'Broadcast $ / pledge',
         axisFormatter: (value) => money(value),
-        pointFormatter: (value) => money(value)
-      })),
-      chartCard('Fundraiser lifecycle', 'Each fundraiser is normalized into five equal day-sequence bands, then the fundraiser-level rates are combined by median so longer drives cannot dominate the result.', lineChartSvg({
-        labels: lifecycle.map((row) => row.label),
-        series: [{ label: 'Historical median', values: lifecycle.map((row) => row.dollarsPerHour) }],
-        ariaLabel: 'Historical fundraiser lifecycle performance',
-        className: 'historical-lifecycle',
-        ...rateChartOptions()
-      })),
+        pointFormatter: (value) => money(value),
+        xLabelEvery: giftEvery,
+        verticalGridEvery: giftEvery
+      }), 'visual-card-wide'),
       chartCard('Season performance over time', 'March, June, August, and December are shown across years rather than collapsed into one lifetime season ranking.', lineChartSvg({
         labels: seasonal.labels,
         series: seasonal.series,
         ariaLabel: 'Historical fundraiser season performance over time',
         className: 'historical-season-trend',
         legendTop: true,
+        verticalGridEvery: 1,
         ...rateChartOptions()
       })),
-      chartCard('Corresponding fundraiser days', 'Median $/pledge-hour for matching fundraiser-day positions around the first Saturday.', lineChartSvg({
-        labels: corresponding.labels,
-        series: [{ label: 'Historical median', values: corresponding.values }],
-        ariaLabel: 'Historical corresponding fundraiser day performance',
+      chartCard('Corresponding fundraiser days by era', 'Five-year bands show how the fundraiser calendar and day-by-day productivity have changed. The thin dashed line is the combined result for the selected date range.', lineChartSvg({
+        labels: correspondingBands.labels,
+        series: correspondingBands.series,
+        ariaLabel: 'Historical corresponding fundraiser day performance by five-year period',
         className: 'historical-corresponding-days',
+        legendTop: true,
+        verticalGridEvery: 1,
         ...rateChartOptions()
-      })),
+      }), 'visual-card-wide'),
       rankingBarCard(analyses, 'topic', 'Topic performance', 'Top historical topics by fundraiser-balanced median $/hour. Full evidence counts appear in the table below.'),
       rankingBarCard(analyses, 'subtopic', 'Subtopic performance', 'Top historical subtopics by fundraiser-balanced median $/hour. Full evidence counts appear in the table below.', {}, 10),
       historicalStartTimeOverviewCard(analyses),
       rankingBarCard(analyses, 'daypart', 'Daypart performance', 'Historical median performance by morning, afternoon, early evening, prime, and overnight.'),
       rankingBarCard(analyses, 'weekpart', 'Weekday / Saturday / Sunday', 'Historical median performance by day type.'),
-      rankingBarCard(analyses, 'breakType', 'Live vs pre-recorded breaks', 'Historical median performance using saved schedule live-break flags.'),
+      rankingBarCard(analyses, 'breakType', 'Live vs pre-recorded breaks', 'Historical median performance using saved schedule live-break flags. Live evidence is shown even when only one fundraiser currently retains the flag.', { minAirings: 1, minFundraisers: 1, minTitles: 1 }),
       rankingBarCard(analyses, 'distributor', 'Distributor performance', 'Top distributors by historical fundraiser-balanced median $/hour.', {}, 10)
     ];
     return `<section class="sheet-section visual-overview historical-visual-overview"><div class="section-heading"><div><h2>Historical patterns at a glance</h2><p>Graphs come first for quick reading. The detailed evidence tables below use the same fundraiser-balanced methodology and provide the sample sizes behind each picture.</p></div></div><div class="visual-grid">${overview.join('')}</div></section>`;
@@ -1364,21 +1480,21 @@
 
   function fundraiserVisualOverview(analysis, historical = []) {
     const days = A.calendarDays(analysis);
-    const lifecycle = lifecycleForAnalysis(analysis);
-    const historicalLifecycle = historicalLifecycleMedians(historical);
+    const corresponding = currentCorrespondingDayComparisonData(analysis, baseline);
     const topics = currentTopicComparisonData(analysis, historical);
     const programs = currentProgramRateData(analysis);
     const cards = [
       chartCard('Daily Broadcast income', 'Daily Broadcast dollars. The day-by-day table later in the report supplies hours, $/hour, pledges, and weather.', incomeBarChartSvg(days)),
-      chartCard('Fundraiser lifecycle vs history', 'This fundraiser and the historical fundraiser-balanced median, normalized into opening through closing fifths.', lineChartSvg({
-        labels: lifecycle.map((row) => row.label),
+      chartCard('Corresponding fundraiser days vs history', 'The selected fundraiser is aligned to the same fundraiser-day positions used in Historical Analytics, preserving actual calendar behavior around the first Saturday.', lineChartSvg({
+        labels: corresponding.labels,
         series: [
-          { label: 'This fundraiser', values: lifecycle.map((row) => row.dollarsPerHour) },
-          { label: 'Historical median', values: historicalLifecycle.map((row) => row.dollarsPerHour) }
+          { label: 'This fundraiser', values: corresponding.current },
+          { label: 'Historical median', values: corresponding.historical }
         ],
-        ariaLabel: 'Current fundraiser lifecycle compared with history',
-        className: 'fundraiser-lifecycle-comparison',
+        ariaLabel: 'Current corresponding fundraiser days compared with historical median',
+        className: 'fundraiser-corresponding-days-comparison',
         legendTop: true,
+        verticalGridEvery: 1,
         ...rateChartOptions()
       })),
       selectedHistoryTrendCard(analysis, historical, rateForAnalysis, 'Productivity in historical context', 'Broadcast $/pledge-hour across the complete fundraiser history, with the selected fundraiser marked.', 'Broadcast $ / pledge hour'),
@@ -1424,10 +1540,10 @@
     const giftMedian = medianNumber(baseline.map((item) => A.dollarsPerPledge(item.broadcastDollars, item.pledges)).filter((value) => Number.isFinite(Number(value))));
     const currentPledgesPerHour = pledgeRateForAnalysis(analysis);
     const pledgeRateMedian = medianNumber(baseline.map(pledgeRateForAnalysis).filter((value) => Number.isFinite(Number(value))));
-    const currentLifecycle = lifecycleForAnalysis(analysis);
-    const historyLifecycle = historicalLifecycleMedians(baseline);
-    const currentPeak = [...currentLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];
-    const historicalPeak = [...historyLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];
+    const corresponding = currentCorrespondingDayComparisonData(analysis, baseline);
+    const comparableDays = corresponding.labels.map((label, index) => ({ label, current: corresponding.current[index], historical: corresponding.historical[index] }))
+      .filter((row) => Number.isFinite(Number(row.current)) && Number.isFinite(Number(row.historical)));
+    const strongestDay = [...comparableDays].sort((a, b) => Number(b.current || 0) - Number(a.current || 0))[0] || null;
     const topicRows = currentTopicComparisonData(analysis, baseline);
     let topicText = 'There is not enough rate-valid topic data for a historical comparison.';
     if (topicRows.labels.length) {
@@ -1454,10 +1570,10 @@
         text: `Average Broadcast gift was ${money(currentGift)}, ${comparisonPhrase(currentGift, giftMedian, 'historical $/pledge median')}. Pledges arrived at ${count(currentPledgesPerHour, 2)} per pledge hour, ${comparisonPhrase(currentPledgesPerHour, pledgeRateMedian, 'historical pledges/hour median')}. This helps distinguish stronger donor volume from larger gifts.`
       },
       {
-        title: 'Fundraiser lifecycle',
-        text: currentPeak && historicalPeak
-          ? `This fundraiser peaked in its ${currentPeak.label.toLowerCase()} at ${money(currentPeak.dollarsPerHour)}/hr. Historically, the strongest median lifecycle band is the ${historicalPeak.label.toLowerCase()} at ${money(historicalPeak.dollarsPerHour)}/hr.${currentPeak.label === historicalPeak.label ? ' The timing of this fundraiser’s peak matches the long-term pattern.' : ' Its peak occurred in a different part of the drive than the long-term pattern.'}`
-          : 'Lifecycle comparison is unavailable because the fundraiser does not have enough day-level rate data.'
+        title: 'Fundraiser-day pattern',
+        text: strongestDay
+          ? `${strongestDay.label} was the strongest directly comparable fundraiser-day position at ${money(strongestDay.current)}/hr, ${comparisonPhrase(strongestDay.current, strongestDay.historical, `${strongestDay.label} historical median`)}. The comparison preserves actual fundraiser-day placement rather than normalizing the drive into arbitrary fifths.`
+          : 'Corresponding-day comparison is unavailable because there are not enough directly aligned day-level rate observations.'
       },
       { title: 'Programming mix', text: topicText },
       { title: 'Scheduling pattern', text: timingText }
@@ -1478,7 +1594,7 @@
       historicalStartTimeTables(analyses),
       historicalRankingTable(analyses, 'weekpart', 'Weekday / Saturday / Sunday', 'Each fundraiser contributes one aggregated weekday, Saturday, or Sunday $/pledge-hour observation.'),
       historicalRankingTable(analyses, 'daypart', 'Daypart performance', 'Each fundraiser contributes one $/pledge-hour observation for each daypart it used: morning, afternoon, early evening, prime, or overnight.'),
-      historicalRankingTable(analyses, 'breakType', 'Live break vs pre-recorded break', 'Each fundraiser contributes one rate per break type. Uses saved schedule live-break flags only; unmatched imported rows are excluded.'),
+      historicalRankingTable(analyses, 'breakType', 'Live break vs pre-recorded break', 'Each fundraiser contributes one rate per break type. Uses saved schedule live-break flags only; unmatched imported rows are excluded. Live evidence is shown when at least one rate-valid live airing survives in saved schedule history.', { minAirings: 1, minFundraisers: 1, minTitles: 1 }),
       historicalRankingTable(analyses, 'distributor', 'Distributor performance', 'Each fundraiser contributes one distributor-specific $/pledge-hour observation; distributors require at least 3 rate-valid airings across at least 2 fundraisers.')
     ].join('');
   }

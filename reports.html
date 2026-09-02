@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WNMU One-Sheet Reports</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.130">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.131">
   <style>
     .report-selection{position:relative;min-width:280px}
     .report-fundraiser-picker{position:relative;width:100%}
@@ -45,6 +45,12 @@
     .visual-overview{break-inside:auto}
     .visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:12px}
     .visual-card{border:1px solid #d5e1e7;border-radius:9px;background:#fbfdfe;padding:12px;min-width:0;break-inside:avoid}
+    .visual-card-wide{grid-column:1 / -1}
+    .historical-range-controls{align-items:flex-end;flex-wrap:wrap}
+    .historical-range-presets{display:flex;gap:6px;flex-wrap:wrap}
+    .historical-range-controls .report-field{min-width:150px}
+    .chart-grid-line-vertical{opacity:.55}
+    .fiscal-ytd-note{margin:10px 0 0;color:#334f5e}
     .visual-card .section-heading{margin-bottom:4px}
     .visual-card h3{margin:0;color:#17384a;font-size:1rem}
     .visual-card .section-heading p{margin-top:4px;font-size:.82rem;line-height:1.35}
@@ -66,8 +72,8 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.130"></script>
-  <script defer src="assets/js/one-sheet-reports.js?v=0.22.130"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.131"></script>
+  <script defer src="assets/js/one-sheet-reports.js?v=0.22.131"></script>
 </head>
 <body>
   <div id="report-access-gate" class="report-access-gate hidden"></div>
