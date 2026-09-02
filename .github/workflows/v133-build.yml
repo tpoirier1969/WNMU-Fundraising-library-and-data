@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Prepare updater
+        run: python .github/v133_prepare_updater.py
       - name: Apply v0.22.133 changes
         run: python .github/v133_weekday_tooltips_library.py
       - name: Syntax checks
