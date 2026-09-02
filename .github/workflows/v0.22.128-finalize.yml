@@ -1,0 +1,73 @@
+name: v0.22.128 finalizer
+
+on:
+  push:
+    branches:
+      - release/v0.22.128-presentation-data-cleanup
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Finalize release files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          version_path = Path('version.json')
+          version = json.loads(version_path.read_text())
+          version['appVersion'] = '0.22.128'
+          version['releasedAt'] = '2026-09-02'
+          version_path.write_text(json.dumps(version, separators=(',', ':')) + '\n')
+
+          reports = Path('reports.html')
+          text = reports.read_text()
+          if text.count('0.22.127') != 3:
+              raise RuntimeError(f'reports.html expected 3 v0.22.127 refs, found {text.count("0.22.127")}')
+          reports.write_text(text.replace('0.22.127', '0.22.128'))
+
+          replacements = {
+              'tests/library-load-performance.test.mjs': [('0.22.127','0.22.128',1)],
+              'tests/one-sheet-report-refinements.test.mjs': [('0\\.22\\.127','0\\.22\\.128',5)],
+              'tests/one-sheet-reports.test.mjs': [('0\\.22\\.127','0\\.22\\.128',1)]
+          }
+          for filename, pairs in replacements.items():
+              path = Path(filename)
+              text = path.read_text()
+              for old, new, expected in pairs:
+                  count = text.count(old)
+                  if count != expected:
+                      raise RuntimeError(f'{filename}: expected {expected} occurrence(s) of {old!r}, found {count}')
+                  text = text.replace(old, new)
+              path.write_text(text)
+          PY
+
+          rm -f .github/v128_compact_labels.py .github/workflows/v0.22.128-finalize.yml
+      - name: Run complete regression suite
+        run: node --test tests/*.test.mjs
+      - name: Verify release hygiene
+        shell: bash
+        run: |
+          test ! -e .github/v128_compact_labels.py
+          test ! -e .github/workflows/v0.22.128-finalize.yml
+          test "$(git show HEAD:.github/workflows/regression-tests.yml | git hash-object --stdin)" = "8e3c286c6550b64aa6c00a834023a18b1aa29dbd"
+      - name: Commit clean release candidate
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Prepare clean v0.22.128 presentation cleanup release'
+          git push origin HEAD:release/v0.22.128-presentation-data-cleanup
