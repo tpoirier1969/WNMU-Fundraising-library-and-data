@@ -61,8 +61,8 @@
 
   function compactMoney(value) {
     const numeric = Number(value || 0);
-    if (Math.abs(numeric) >= 1000000) return `$${(numeric / 1000000).toFixed(numeric % 1000000 ? 1 : 0)}m`;
-    if (Math.abs(numeric) >= 1000) return `$${(numeric / 1000).toFixed(numeric % 1000 ? 1 : 0)}k`;
+    if (Math.abs(numeric) >= 1000000) return `$${(numeric / 1000000).toFixed(2)}m`;
+    if (Math.abs(numeric) >= 1000) return `$${(numeric / 1000).toFixed(2)}k`;
     return money(numeric);
   }
 
