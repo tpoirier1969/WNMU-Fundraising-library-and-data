@@ -39,17 +39,19 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          # Version assertions are release locks, not analytics behavior. Advance them with the release.
-          for filename in [
-              'tests/library-load-performance.test.mjs',
-              'tests/one-sheet-report-refinements.test.mjs',
-              'tests/one-sheet-reports.test.mjs',
-          ]:
+          replacements = {
+              'tests/library-load-performance.test.mjs': [('0.22.129', '0.22.130')],
+              'tests/one-sheet-report-refinements.test.mjs': [('0\\.22\\.129', '0\\.22\\.130')],
+              'tests/one-sheet-reports.test.mjs': [('0\\.22\\.129', '0\\.22\\.130')],
+          }
+          for filename, pairs in replacements.items():
               path = Path(filename)
               text = path.read_text()
-              if '0.22.129' not in text:
-                  raise SystemExit(f'{filename}: expected v0.22.129 release lock')
-              path.write_text(text.replace('0.22.129', '0.22.130'))
+              for old, new in pairs:
+                  if old not in text:
+                      raise SystemExit(f'{filename}: expected release lock {old}')
+                  text = text.replace(old, new)
+              path.write_text(text)
 
           # Missing comparison evidence must stay missing, never become a synthetic zero bar.
           path = Path('assets/js/one-sheet-reports.js')
