@@ -1,0 +1,28 @@
+name: v0.22.133 inspect report targets
+on:
+  push:
+    branches:
+      - release/v0.22.133-weekday-tooltips-library-filter
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect report and library targets
+        run: |
+          echo '=== corresponding ==='
+          grep -n -B 30 -A 80 "Corresponding fundraiser days by era" assets/js/one-sheet-reports.js || true
+          echo '=== weekday summary ==='
+          grep -n -B 30 -A 80 "Weekday / Saturday / Sunday" assets/js/one-sheet-reports.js || true
+          echo '=== tooltip functions ==='
+          grep -n -B 20 -A 100 "function bindChartTooltips" assets/js/one-sheet-reports.js || true
+          echo '=== historical chart data functions ==='
+          grep -n -B 20 -A 120 "historicalEra" assets/js/one-sheet-reports.js || true
+          echo '=== bar rect ==='
+          grep -n -B 10 -A 25 "<rect" assets/js/one-sheet-reports.js | head -120 || true
+          echo '=== distributor filter ==='
+          grep -n -B 20 -A 50 "distributorOptions" assets/js/ui-list.js || true
+          echo '=== state distributor ==='
+          grep -R -n -B 5 -A 10 "distributorFilter" assets/js | head -200 || true
