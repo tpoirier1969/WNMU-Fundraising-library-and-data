@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  update-and-test:
-    if: github.event.head_commit.message != 'v0.22.131 historical report refinements and fiscal YTD'
+  finalize-and-test:
+    if: github.event.head_commit.message != 'v0.22.131 finalize historical report refinements'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -23,69 +23,36 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Align updater targets
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('.github/v131_historical_refinements.py')
-          s = p.read_text()
-          s = s.replace("const lifecycle = lifecycleForAnalysis(analysis);\\n    const historyLifecycle = historicalLifecycleMedians(baseline);", "const lifecycle = lifecycleForAnalysis(analysis);\\n    const historicalLifecycle = historicalLifecycleMedians(historical);")
-          s = s.replace("historyLifecycle.map((row) => row.dollarsPerHour)", "historicalLifecycle.map((row) => row.dollarsPerHour)", 1)
-          s = s.replace("'The selected fundraiser and historical medians are normalized into five equal day-sequence bands so beginning, middle, and ending productivity can be compared fairly.'", "'This fundraiser and the historical fundraiser-balanced median, normalized into opening through closing fifths.'", 1)
-          s = s.replace("'Current fundraiser lifecycle compared with historical median'", "'Current fundraiser lifecycle compared with history'", 1)
-          old = "    if old not in text:\n        raise SystemExit(f'missing target: {label}')"
-          new = "    if old not in text:\n        if label in {'historical context corresponding data', 'context lifecycle paragraph'}:\n            return text\n        raise SystemExit(f'missing target: {label}')"
-          if old not in s:
-              raise SystemExit('replace_once helper target not found')
-          s = s.replace(old, new, 1)
-          p.write_text(s)
-          PY
-      - name: Apply refinements
-        run: python .github/v131_historical_refinements.py
-      - name: Ensure historical lifecycle narrative is replaced
+      - name: Fix current-fundraiser corresponding-day baseline
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('assets/js/one-sheet-reports.js')
           s = p.read_text()
-          new_vars = """    const corresponding = currentCorrespondingDayComparisonData(analysis, baseline);\n    const comparableDays = corresponding.labels.map((label, index) => ({ label, current: corresponding.current[index], historical: corresponding.historical[index] }))\n      .filter((row) => Number.isFinite(Number(row.current)) && Number.isFinite(Number(row.historical)));\n    const strongestDay = [...comparableDays].sort((a, b) => Number(b.current || 0) - Number(a.current || 0))[0] || null;\n"""
-          if new_vars not in s:
-              old_vars = """    const currentLifecycle = lifecycleForAnalysis(analysis);\n    const historyLifecycle = historicalLifecycleMedians(baseline);\n    const currentPeak = [...currentLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\n    const historicalPeak = [...historyLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\n"""
-              if old_vars not in s:
-                  raise SystemExit('neither old nor new context variables found')
-              s = s.replace(old_vars, new_vars, 1)
-          new_para = """      {\n        title: 'Fundraiser-day pattern',\n        text: strongestDay\n          ? `${strongestDay.label} was the strongest directly comparable fundraiser-day position at ${money(strongestDay.current)}/hr, ${comparisonPhrase(strongestDay.current, strongestDay.historical, `${strongestDay.label} historical median`)}. The comparison preserves actual fundraiser-day placement rather than normalizing the drive into arbitrary fifths.`\n          : 'Corresponding-day comparison is unavailable because there are not enough directly aligned day-level rate observations.'\n      },\n"""
-          if new_para not in s:
-              old_para = """      {\n        title: 'Fundraiser lifecycle',\n        text: currentPeak && historicalPeak\n          ? `This fundraiser peaked in its ${currentPeak.label.toLowerCase()} at ${money(currentPeak.dollarsPerHour)}/hr. Historically, the strongest median lifecycle band is the ${historicalPeak.label.toLowerCase()} at ${money(historicalPeak.dollarsPerHour)}/hr.${currentPeak.label === historicalPeak.label ? ' The timing of this fundraiser’s peak matches the long-term pattern.' : ' Its peak occurred in a different part of the drive than the long-term pattern.'}`\n          : 'Lifecycle comparison is unavailable because the fundraiser does not have enough day-level rate data.'\n      },\n"""
-              if old_para not in s:
-                  raise SystemExit('neither old nor new lifecycle context paragraph found')
-              s = s.replace(old_para, new_para, 1)
+          old = """  function fundraiserVisualOverview(analysis, historical = []) {\n    const days = A.calendarDays(analysis);\n    const corresponding = currentCorrespondingDayComparisonData(analysis, baseline);\n"""
+          new = """  function fundraiserVisualOverview(analysis, historical = []) {\n    const days = A.calendarDays(analysis);\n    const corresponding = currentCorrespondingDayComparisonData(analysis, historical);\n"""
+          if old not in s:
+              raise SystemExit('fundraiser corresponding-day baseline target not found')
+          s = s.replace(old, new, 1)
           p.write_text(s)
-          PY
-      - name: Update visual regression expectations
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('tests/report-visual-historical-context-v130.test.mjs')
-          s = p.read_text()
-          s = s.replace('v0.22.130', 'v0.22.131')
-          s = s.replace("    'Fundraiser lifecycle',\n", "    'Corresponding fundraiser days by era',\n")
-          s = s.replace("  assert.match(reports, /historicalLifecycleMedians\\(baseline\\)/);\n", "  assert.match(reports, /currentCorrespondingDayComparisonData\\(analysis, baseline\\)/);\n")
-          s = s.replace("  assert.equal(version.appVersion, '0.22.130');", "  assert.equal(version.appVersion, '0.22.131');")
-          s = s.replace("one-sheet-reports.css?v=0.22.130", "one-sheet-reports.css?v=0.22.131")
-          s = s.replace("one-sheet-analysis.js?v=0.22.130", "one-sheet-analysis.js?v=0.22.131")
-          s = s.replace("one-sheet-reports.js?v=0.22.130", "one-sheet-reports.js?v=0.22.131")
-          p.write_text(s)
+
+          t = Path('tests/historical-refinements-v131.test.mjs')
+          ts = t.read_text()
+          marker = "assert.match(source, /Corresponding fundraiser days vs history/);\n"
+          addition = marker + "assert.match(source, /currentCorrespondingDayComparisonData\\(analysis, historical\\)/);\nassert.doesNotMatch(source, /currentCorrespondingDayComparisonData\\(analysis, baseline\\);\\n    const topics/);\n"
+          if marker not in ts:
+              raise SystemExit('v131 test insertion point not found')
+          t.write_text(ts.replace(marker, addition, 1))
           PY
       - name: Syntax check report code
         run: node --check assets/js/one-sheet-reports.js
       - name: Run regression tests
         run: node --test tests/*.test.mjs
-      - name: Commit generated changes
+      - name: Commit final generated changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/js/one-sheet-reports.js reports.html version.json tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs tests/report-visual-historical-context-v130.test.mjs tests/historical-refinements-v131.test.mjs
+          git add assets/js/one-sheet-reports.js tests/historical-refinements-v131.test.mjs
           git diff --cached --quiet && exit 0
-          git commit -m "v0.22.131 historical report refinements and fiscal YTD"
+          git commit -m "v0.22.131 finalize historical report refinements"
           git push origin HEAD:release/v0.22.131-historical-refinements
