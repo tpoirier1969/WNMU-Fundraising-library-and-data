@@ -22,6 +22,8 @@ jobs:
         run: python .github/v133_prepare_updater.py
       - name: Apply v0.22.133 changes
         run: python .github/v133_weekday_tooltips_library.py
+      - name: Apply post-updater refinements
+        run: python .github/v133_post_updater.py
       - name: Syntax checks
         run: |
           node --check assets/js/one-sheet-analysis.js
