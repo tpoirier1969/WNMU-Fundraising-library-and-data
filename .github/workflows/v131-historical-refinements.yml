@@ -62,6 +62,21 @@ jobs:
               s = s.replace(old_para, new_para, 1)
           p.write_text(s)
           PY
+      - name: Update visual regression expectations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tests/report-visual-historical-context-v130.test.mjs')
+          s = p.read_text()
+          s = s.replace('v0.22.130', 'v0.22.131')
+          s = s.replace("    'Fundraiser lifecycle',\n", "    'Corresponding fundraiser days by era',\n")
+          s = s.replace("  assert.match(reports, /historicalLifecycleMedians\\(baseline\\)/);\n", "  assert.match(reports, /currentCorrespondingDayComparisonData\\(analysis, baseline\\)/);\n")
+          s = s.replace("  assert.equal(version.appVersion, '0.22.130');", "  assert.equal(version.appVersion, '0.22.131');")
+          s = s.replace("one-sheet-reports.css?v=0.22.130", "one-sheet-reports.css?v=0.22.131")
+          s = s.replace("one-sheet-analysis.js?v=0.22.130", "one-sheet-analysis.js?v=0.22.131")
+          s = s.replace("one-sheet-reports.js?v=0.22.130", "one-sheet-reports.js?v=0.22.131")
+          p.write_text(s)
+          PY
       - name: Syntax check report code
         run: node --check assets/js/one-sheet-reports.js
       - name: Run regression tests
@@ -70,7 +85,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/js/one-sheet-reports.js reports.html version.json tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs tests/historical-refinements-v131.test.mjs
+          git add assets/js/one-sheet-reports.js reports.html version.json tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs tests/report-visual-historical-context-v130.test.mjs tests/historical-refinements-v131.test.mjs
           git diff --cached --quiet && exit 0
           git commit -m "v0.22.131 historical report refinements and fiscal YTD"
           git push origin HEAD:release/v0.22.131-historical-refinements
