@@ -16,6 +16,8 @@ assert.match(source, /Corresponding fundraiser days by era/);
 assert.doesNotMatch(source, /chartCard\('Fundraiser lifecycle'/);
 assert.doesNotMatch(source, /title: 'Fundraiser lifecycle'/);
 assert.match(source, /Corresponding fundraiser days vs history/);
+assert.match(source, /currentCorrespondingDayComparisonData\(analysis, historical\)/);
+assert.doesNotMatch(source, /currentCorrespondingDayComparisonData\(analysis, baseline\);\n    const topics/);
 assert.match(source, /verticalGridEvery/);
 assert.match(source, /visual-card-wide/);
 assert.match(source, /Fiscal Year to Date \| FY/);

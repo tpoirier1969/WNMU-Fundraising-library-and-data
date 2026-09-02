@@ -1480,7 +1480,7 @@
 
   function fundraiserVisualOverview(analysis, historical = []) {
     const days = A.calendarDays(analysis);
-    const corresponding = currentCorrespondingDayComparisonData(analysis, baseline);
+    const corresponding = currentCorrespondingDayComparisonData(analysis, historical);
     const topics = currentTopicComparisonData(analysis, historical);
     const programs = currentProgramRateData(analysis);
     const cards = [
