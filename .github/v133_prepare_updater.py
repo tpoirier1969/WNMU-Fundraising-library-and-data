@@ -37,14 +37,10 @@ text, count = block_pattern.subn(block_replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'current corresponding updater block count={count}')
 
-# The updater's original trend-tooltip replacement is too exact. Replace that updater code with a direct source-line patch.
-trend_pattern = re.compile(r'''text = replace_once\(text,\n\s*"""\s*values: ordered\.map\(\(analysis\) => Number\(metric\(analysis\) \|\| 0\)\).*?'trend tooltips'\)\n''', re.S)
-trend_replacement = '''text = replace_once(text,\n    "values: ordered.map((analysis) => Number(metric(analysis) || 0))",\n    "values: ordered.map((analysis) => Number(metric(analysis) || 0)),\\n      tooltips: ordered.map((analysis) => fundraiserTooltip(analysis))",\n    'trend tooltips')\n'''
+# Replace the updater's brittle trend tooltip block with a direct source-line replacement.
+trend_pattern = re.compile(r'''text = replace_once\(text,.*?'trend tooltips'\)\n''', re.S)
+trend_replacement = '''text = replace_once(text,\n    "values: ordered.map((analysis) => Number(metric(analysis) || 0))",\n    "values: ordered.map((analysis) => Number(metric(analysis) || 0)),\\\\n      tooltips: ordered.map((analysis) => fundraiserTooltip(analysis))",\n    'trend tooltips')\n'''
 text, count = trend_pattern.subn(trend_replacement, text, count=1)
-if count != 1:
-    # Fall back to rewriting any existing replace_once block carrying this label.
-    trend_pattern = re.compile(r'''text = replace_once\(text,.*?'trend tooltips'\)\n''', re.S)
-    text, count = trend_pattern.subn(trend_replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'trend updater block count={count}')
 
