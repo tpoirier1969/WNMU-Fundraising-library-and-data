@@ -24,7 +24,18 @@ jobs:
         with:
           node-version: '22'
       - name: Apply report changes
-        run: python .github/v130_report_visual_updater.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/v130_report_visual_updater.py')
+          text = path.read_text()
+          old = "js = replace_once(js, '${escapeHtml(compactMoney(value))}</text></g>`;', '${escapeHtml(axisFormatter(value))}</text></g>`;', 'line chart axis formatter')"
+          new = "js = js.replace('${escapeHtml(compactMoney(value))}</text></g>`;', '${escapeHtml(axisFormatter(value))}</text></g>`;', 1)"
+          if old not in text:
+              raise SystemExit('axis formatter updater line not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          python .github/v130_report_visual_updater.py
       - name: Syntax check report code
         run: node --check assets/js/one-sheet-reports.js
       - name: Run regression tests
