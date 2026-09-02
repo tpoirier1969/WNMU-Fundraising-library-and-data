@@ -30,8 +30,8 @@ text, count = block_pattern.subn(block_replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'current corresponding updater block count={count}')
 
-for label in ['trend tooltips', 'season tooltips']:
-    tooltip_pattern = re.compile(rf'''(?:old = .*?\nnew = .*?\n)?text = replace_once\(text,.*?'{re.escape(label)}'\)\n''', re.S)
+for label in ['trend tooltips', 'season tooltips', 'day of week report helpers']:
+    tooltip_pattern = re.compile(rf'''(?:old = .*?\nnew = .*?\n|needle = .*?\ninsert = .*?\n)?text = replace_once\(text,.*?'{re.escape(label)}'\)\n''', re.S)
     text, count = tooltip_pattern.subn(f"# {label} applied by v133_post_updater.py\n", text, count=1)
     if count != 1:
         raise SystemExit(f'{label} updater block count={count}')
