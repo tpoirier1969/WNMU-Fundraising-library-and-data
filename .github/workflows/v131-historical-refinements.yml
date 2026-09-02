@@ -29,12 +29,10 @@ jobs:
           from pathlib import Path
           p = Path('.github/v131_historical_refinements.py')
           s = p.read_text()
-          # Match the exact v0.22.130 fundraiser overview wording without changing context-search literals.
           s = s.replace("const lifecycle = lifecycleForAnalysis(analysis);\\n    const historyLifecycle = historicalLifecycleMedians(baseline);", "const lifecycle = lifecycleForAnalysis(analysis);\\n    const historicalLifecycle = historicalLifecycleMedians(historical);")
           s = s.replace("historyLifecycle.map((row) => row.dollarsPerHour)", "historicalLifecycle.map((row) => row.dollarsPerHour)", 1)
           s = s.replace("'The selected fundraiser and historical medians are normalized into five equal day-sequence bands so beginning, middle, and ending productivity can be compared fairly.'", "'This fundraiser and the historical fundraiser-balanced median, normalized into opening through closing fifths.'", 1)
           s = s.replace("'Current fundraiser lifecycle compared with historical median'", "'Current fundraiser lifecycle compared with history'", 1)
-          # Let the main updater leave the historical-context prose alone. We patch that exact production block below.
           old = "    if old not in text:\n        raise SystemExit(f'missing target: {label}')"
           new = "    if old not in text:\n        if label in {'historical context corresponding data', 'context lifecycle paragraph'}:\n            return text\n        raise SystemExit(f'missing target: {label}')"
           if old not in s:
@@ -44,22 +42,24 @@ jobs:
           PY
       - name: Apply refinements
         run: python .github/v131_historical_refinements.py
-      - name: Replace historical lifecycle narrative
+      - name: Ensure historical lifecycle narrative is replaced
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('assets/js/one-sheet-reports.js')
           s = p.read_text()
-          old_vars = """    const currentLifecycle = lifecycleForAnalysis(analysis);\n    const historyLifecycle = historicalLifecycleMedians(baseline);\n    const currentPeak = [...currentLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\n    const historicalPeak = [...historyLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\n"""
           new_vars = """    const corresponding = currentCorrespondingDayComparisonData(analysis, baseline);\n    const comparableDays = corresponding.labels.map((label, index) => ({ label, current: corresponding.current[index], historical: corresponding.historical[index] }))\n      .filter((row) => Number.isFinite(Number(row.current)) && Number.isFinite(Number(row.historical)));\n    const strongestDay = [...comparableDays].sort((a, b) => Number(b.current || 0) - Number(a.current || 0))[0] || null;\n"""
-          if old_vars not in s:
-              raise SystemExit('production lifecycle context variables not found')
-          s = s.replace(old_vars, new_vars, 1)
-          old_para = """      {\n        title: 'Fundraiser lifecycle',\n        text: currentPeak && historicalPeak\n          ? `This fundraiser peaked in its ${currentPeak.label.toLowerCase()} at ${money(currentPeak.dollarsPerHour)}/hr. Historically, the strongest median lifecycle band is the ${historicalPeak.label.toLowerCase()} at ${money(historicalPeak.dollarsPerHour)}/hr.${currentPeak.label === historicalPeak.label ? ' The timing of this fundraiser’s peak matches the long-term pattern.' : ' Its peak occurred in a different part of the drive than the long-term pattern.'}`\n          : 'Lifecycle comparison is unavailable because the fundraiser does not have enough day-level rate data.'\n      },\n"""
+          if new_vars not in s:
+              old_vars = """    const currentLifecycle = lifecycleForAnalysis(analysis);\n    const historyLifecycle = historicalLifecycleMedians(baseline);\n    const currentPeak = [...currentLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\n    const historicalPeak = [...historyLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\n"""
+              if old_vars not in s:
+                  raise SystemExit('neither old nor new context variables found')
+              s = s.replace(old_vars, new_vars, 1)
           new_para = """      {\n        title: 'Fundraiser-day pattern',\n        text: strongestDay\n          ? `${strongestDay.label} was the strongest directly comparable fundraiser-day position at ${money(strongestDay.current)}/hr, ${comparisonPhrase(strongestDay.current, strongestDay.historical, `${strongestDay.label} historical median`)}. The comparison preserves actual fundraiser-day placement rather than normalizing the drive into arbitrary fifths.`\n          : 'Corresponding-day comparison is unavailable because there are not enough directly aligned day-level rate observations.'\n      },\n"""
-          if old_para not in s:
-              raise SystemExit('production lifecycle context paragraph not found')
-          s = s.replace(old_para, new_para, 1)
+          if new_para not in s:
+              old_para = """      {\n        title: 'Fundraiser lifecycle',\n        text: currentPeak && historicalPeak\n          ? `This fundraiser peaked in its ${currentPeak.label.toLowerCase()} at ${money(currentPeak.dollarsPerHour)}/hr. Historically, the strongest median lifecycle band is the ${historicalPeak.label.toLowerCase()} at ${money(historicalPeak.dollarsPerHour)}/hr.${currentPeak.label === historicalPeak.label ? ' The timing of this fundraiser’s peak matches the long-term pattern.' : ' Its peak occurred in a different part of the drive than the long-term pattern.'}`\n          : 'Lifecycle comparison is unavailable because the fundraiser does not have enough day-level rate data.'\n      },\n"""
+              if old_para not in s:
+                  raise SystemExit('neither old nor new lifecycle context paragraph found')
+              s = s.replace(old_para, new_para, 1)
           p.write_text(s)
           PY
       - name: Syntax check report code
