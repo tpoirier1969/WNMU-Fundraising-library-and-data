@@ -10,13 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect remaining targets
+      - name: Inspect historical ranking internals
         run: |
-          echo '=== tooltip styles ==='
-          grep -R -n -B 20 -A 60 "chart-hover-tooltip" assets reports.html || true
-          echo '=== analysis exports ==='
-          tail -n 140 assets/js/one-sheet-analysis.js
-          echo '=== report tooltip data helpers ==='
-          grep -n -B 20 -A 80 "function dailyTooltip\|tooltips:" assets/js/one-sheet-reports.js | head -260 || true
-          echo '=== report version refs ==='
-          grep -R -n "0.22.132" reports.html version.json tests | head -120 || true
+          echo '=== historical normalize ==='
+          grep -n -B 20 -A 80 "historicalNormalizeKey" assets/js/one-sheet-analysis.js || true
+          echo '=== historical ranking ==='
+          grep -n -B 20 -A 180 "function historicalRanking" assets/js/one-sheet-analysis.js || true
+          echo '=== exports ==='
+          tail -n 100 assets/js/one-sheet-analysis.js
