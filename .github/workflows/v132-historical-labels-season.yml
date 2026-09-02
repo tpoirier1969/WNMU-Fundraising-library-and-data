@@ -1,0 +1,39 @@
+name: v0.22.132 historical labels and season filter
+
+on:
+  push:
+    branches:
+      - release/v0.22.132-historical-labels-season-filter
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-test:
+    if: github.event.head_commit.message != 'v0.22.132 historical labels and season filter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.22.132-historical-labels-season-filter
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply v0.22.132 refinements
+        run: python .github/v132_historical_labels_season.py
+      - name: Syntax check report code
+        run: node --check assets/js/one-sheet-reports.js
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js reports.html version.json tests
+          git diff --cached --quiet && exit 0
+          git commit -m "v0.22.132 historical labels and season filter"
+          git push origin HEAD:release/v0.22.132-historical-labels-season-filter
