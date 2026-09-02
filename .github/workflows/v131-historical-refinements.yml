@@ -1,0 +1,39 @@
+name: v0.22.131 historical refinements
+
+on:
+  push:
+    branches:
+      - release/v0.22.131-historical-refinements
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-test:
+    if: github.event.head_commit.message != 'v0.22.131 historical report refinements and fiscal YTD'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/v0.22.131-historical-refinements
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply refinements
+        run: python .github/v131_historical_refinements.py
+      - name: Syntax check report code
+        run: node --check assets/js/one-sheet-reports.js
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js reports.html version.json tests/library-load-performance.test.mjs tests/one-sheet-report-refinements.test.mjs tests/one-sheet-reports.test.mjs tests/historical-refinements-v131.test.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "v0.22.131 historical report refinements and fiscal YTD"
+          git push origin HEAD:release/v0.22.131-historical-refinements
