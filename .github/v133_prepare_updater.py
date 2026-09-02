@@ -30,4 +30,11 @@ text = text.replace("return WEEKDAY_ORDER.map((day) => byKey.get(day)).filter(Bo
 text = text.replace('needle = """  function correspondingDaySeries(analyses = []) {\\n"""', 'needle = "  function correspondingDaySeries(analyses = []) {"')
 text = text.replace('  function correspondingDaySeries(analyses = []) {\\n"""\ntext = replace_once(text, needle, insert, \'historical tooltip helpers\')', '  function correspondingDaySeries(analyses = []) {"""\ntext = replace_once(text, needle, insert, \'historical tooltip helpers\')')
 
+# Replace the brittle whole-block current corresponding-day patch with two targeted substitutions.
+block_pattern = re.compile(r'''old = """      current: combined\.map\(.*?text = replace_once\(text, old, new, 'current corresponding gap evidence'\)\n''', re.S)
+block_replacement = '''text = replace_once(text,\n    "current: combined.map((entry) => entry.days?.[0] ? Number(entry.days[0].dollarsPerHour) : null)",\n    "current: combined.map((entry) => entry.days?.[0] && Number(entry.days[0].rateMinutes || 0) > 0 ? Number(entry.days[0].dollarsPerHour) : null)",\n    'current corresponding rate evidence')\ntext = replace_once(text,\n    ".slice(1).filter(Boolean).map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite)",\n    ".slice(1).filter((day) => day && Number(day.rateMinutes || 0) > 0).map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite)",\n    'historical corresponding rate evidence')\n'''
+text, count = block_pattern.subn(block_replacement, text, count=1)
+if count != 1:
+    raise SystemExit(f'current corresponding updater block count={count}')
+
 path.write_text(text)
