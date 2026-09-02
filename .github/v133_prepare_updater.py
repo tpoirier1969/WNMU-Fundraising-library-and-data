@@ -37,10 +37,9 @@ text, count = block_pattern.subn(block_replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'current corresponding updater block count={count}')
 
-# Replace the updater's brittle trend tooltip block with a direct source-line replacement.
+# Remove the updater's brittle trend-tooltip replacement. A post-updater step applies this to the resulting source.
 trend_pattern = re.compile(r'''text = replace_once\(text,.*?'trend tooltips'\)\n''', re.S)
-trend_replacement = '''text = replace_once(text,\n    "values: ordered.map((analysis) => Number(metric(analysis) || 0))",\n    "values: ordered.map((analysis) => Number(metric(analysis) || 0)),\\\\n      tooltips: ordered.map((analysis) => fundraiserTooltip(analysis))",\n    'trend tooltips')\n'''
-text, count = trend_pattern.subn(trend_replacement, text, count=1)
+text, count = trend_pattern.subn("# trend tooltips applied by v133_post_updater.py\n", text, count=1)
 if count != 1:
     raise SystemExit(f'trend updater block count={count}')
 
