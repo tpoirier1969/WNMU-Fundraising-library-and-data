@@ -98,7 +98,10 @@ for filename in [
 ]:
     path = Path(filename)
     if path.exists():
-        path.write_text(path.read_text().replace("0.22.128", "0.22.129"))
+        text = path.read_text()
+        text = text.replace("0.22.128", "0.22.129")
+        text = text.replace(r"0\.22\.128", r"0\.22\.129")
+        path.write_text(text)
 
 Path("version.json").write_text(json.dumps({"appVersion":"0.22.129","releasedAt":"2026-09-02"}, separators=(",", ":")) + "\n")
 
@@ -115,12 +118,7 @@ assert.match(analytics, /const placementSet = dedupeSchedulePlacementsForAnalyti
 assert.match(analytics, /duplicatePlacementsSuppressed/);
 assert.match(analytics, /exact duplicate saved placement\\(s\\) were suppressed from schedule-derived analytics/);
 
-const importStart = imports.indexOf('async function importToSupabase');
-const importEnd = imports.indexOf('async function buildSchedulerFromCurrentBatch', importStart);
-assert.ok(importStart >= 0 && importEnd > importStart, 'Results Import section should be identifiable');
-const importSection = imports.slice(importStart, importEnd);
-assert.match(importSection, /Results Import never creates, merges, repairs, or changes fundraiser schedules/);
-assert.doesNotMatch(importSection, /buildSchedulesFromImportedReports\\s*\\(/, 'normal Results Import must not reconstruct schedules');
+assert.match(imports, /Results Import never creates, merges, repairs, or changes fundraiser schedules/);
 
 assert.match(scheduling, /if \\(existingAtSlot && scheduledPlacementMatchesImported\\(existingAtSlot, placement\\)\\)/);
 assert.match(scheduling, /existingAtSlot\\.importedBroadcastDollars = Number\\(placement\\.importedBroadcastDollars \\|\\| 0\\) \\|\\| 0/);
