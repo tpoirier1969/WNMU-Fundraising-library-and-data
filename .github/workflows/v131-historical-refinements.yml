@@ -29,11 +29,19 @@ jobs:
           from pathlib import Path
           p = Path('.github/v131_historical_refinements.py')
           s = p.read_text()
+          # Match the exact v0.22.130 fundraiser overview wording.
           s = s.replace("const historyLifecycle = historicalLifecycleMedians(baseline);", "const historicalLifecycle = historicalLifecycleMedians(historical);")
           s = s.replace("const historyLifecycle = historicalLifecycleMedians(historical);", "const historicalLifecycle = historicalLifecycleMedians(historical);")
           s = s.replace("historyLifecycle.map((row) => row.dollarsPerHour)", "historicalLifecycle.map((row) => row.dollarsPerHour)")
           s = s.replace("'The selected fundraiser and historical medians are normalized into five equal day-sequence bands so beginning, middle, and ending productivity can be compared fairly.'", "'This fundraiser and the historical fundraiser-balanced median, normalized into opening through closing fifths.'")
           s = s.replace("'Current fundraiser lifecycle compared with historical median'", "'Current fundraiser lifecycle compared with history'")
+          # The substitutions above also touch the literal used to find the context block.
+          # Reset that search literal to the exact production source before applying the patch.
+          marker = "js = replace_once(js, old_context_vars, new_context_vars, 'historical context corresponding data')"
+          replacement = "old_context_vars = \"\"\"    const currentLifecycle = lifecycleForAnalysis(analysis);\\n    const historyLifecycle = historicalLifecycleMedians(baseline);\\n    const currentPeak = [...currentLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\\n    const historicalPeak = [...historyLifecycle].filter((row) => Number.isFinite(Number(row.dollarsPerHour))).sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))[0];\\n\"\"\"\\njs = replace_once(js, old_context_vars, new_context_vars, 'historical context corresponding data')"
+          if marker not in s:
+              raise SystemExit('context patch call not found')
+          s = s.replace(marker, replacement, 1)
           p.write_text(s)
           PY
       - name: Apply refinements
