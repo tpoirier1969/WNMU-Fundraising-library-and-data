@@ -946,15 +946,63 @@
   const sameDay = uniqueRows(sameDayCandidates);
   return sameDay.length === 1 ? sameDay[0] : null;
 }
+  function schedulePlacementDedupeKey(placement = {}) {
+    const dateKey = text(placement.dateKey || placement.date_key || '');
+    const start = Number(placement.startMinutes ?? placement.start_minutes ?? placement.start ?? NaN);
+    const pid = text(firstNonEmpty(placement.programId, placement.program_id, ''));
+    const nola = nolaKey(firstNonEmpty(placement.nolaCode, placement.nola_code, placement.nola, placement.program_nola, ''));
+    const title = lookupKey(firstNonEmpty(placement.programTitle, placement.program_title, placement.title, placement.name, ''));
+    const identity = pid ? `id:${pid}` : (nola ? `nola:${nola}` : (title ? `title:${title}` : ''));
+    if (dateKey && Number.isFinite(start) && identity) return `${dateKey}|${start}|${identity}`;
+    const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+    return hash ? `hash:${hash}` : '';
+  }
+
+  function schedulePlacementPreferenceScore(placement = {}) {
+    let score = 0;
+    if (!placement.importedFromReport) score += 1000;
+    if (placementLive(placement)) score += 500;
+    if (placement.transferredToStation) score += 250;
+    if (placement.manualResultRecorded) score += 200;
+    if (text(placement.sourceAiringHash || placement.source_airing_hash || '')) score += 100;
+    if (placement.importedBroadcastDollars !== '' && placement.importedBroadcastDollars != null) score += 50;
+    if (!placement.isPlaceholder) score += 10;
+    return score;
+  }
+
+  function dedupeSchedulePlacementsForAnalytics(placements = []) {
+    const kept = [];
+    const indexes = new Map();
+    let suppressed = 0;
+    (placements || []).forEach((placement) => {
+      const key = schedulePlacementDedupeKey(placement);
+      if (!key) {
+        kept.push(placement);
+        return;
+      }
+      if (!indexes.has(key)) {
+        indexes.set(key, kept.length);
+        kept.push(placement);
+        return;
+      }
+      suppressed += 1;
+      const index = indexes.get(key);
+      if (schedulePlacementPreferenceScore(placement) > schedulePlacementPreferenceScore(kept[index])) kept[index] = placement;
+    });
+    return { placements: kept, suppressed };
+  }
+
   function buildScheduleRecords(schedules = [], libraryRows = [], airingRecords = []) {
   const indexes = buildLibraryIndexes(libraryRows);
   const airingLookup = buildAiringRecordLookup(airingRecords);
   const importedDates = new Set(airingRecords.map((record) => text(record.dateKey || '')).filter(Boolean));
   const out = [];
   const usedAiringDollarMatches = new Set();
-  const diagnostics = { schedulePlacements: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0, implicitZeroRows: 0 };
+  const diagnostics = { schedulePlacements: 0, duplicatePlacementsSuppressed: 0, livePlacements: 0, liveRows: 0, liveDollars: 0, unmatchedLivePlacements: 0, implicitZeroRows: 0 };
   schedules.forEach((schedule) => {
-    (schedule.placements || []).forEach((placement) => {
+    const placementSet = dedupeSchedulePlacementsForAnalytics(schedule.placements || []);
+    diagnostics.duplicatePlacementsSuppressed += placementSet.suppressed;
+    placementSet.placements.forEach((placement) => {
       diagnostics.schedulePlacements += 1;
       const liveFlag = placementLive(placement);
       if (liveFlag) diagnostics.livePlacements += 1;
@@ -2669,7 +2717,10 @@ function outlierSummary(values = []) {
       const durationNote = durationMismatchCount
         ? ` ${formatNumber(durationMismatchCount)} imported Program_Minutes value(s) differ from internal Program Library/schedule length by more than ${DURATION_MISMATCH_TOLERANCE_MINUTES} minutes; analytics uses the internal length.`
         : '';
-      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.${durationNote}`);
+      const placementDuplicateNote = Number(diag.duplicatePlacementsSuppressed || 0)
+        ? ` ${formatNumber(diag.duplicatePlacementsSuppressed || 0)} exact duplicate saved placement(s) were suppressed from schedule-derived analytics.`
+        : '';
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote}${placementDuplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.${durationNote}`);
     }
   }
 
