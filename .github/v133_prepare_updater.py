@@ -26,4 +26,9 @@ text = text.replace("A.text(day.dateKey || A.dateKey?.(day.date))", "A.text(day.
 text = text.replace("new Map(rankingRows(analyses, 'weekday').map((row) => [row.key, row]))", "new Map(rankingRows(analyses, 'weekday').map((row) => [String(row.key || '').toLowerCase(), row]))")
 text = text.replace("return WEEKDAY_ORDER.map((day) => byKey.get(day)).filter(Boolean);", "return WEEKDAY_ORDER.map((day) => byKey.get(day.toLowerCase())).filter(Boolean);")
 
+# Make the historical tooltip helper insertion match the signature alone.
+text = text.replace('needle = """  function correspondingDaySeries(analyses = []) {\\n"""', 'needle = "  function correspondingDaySeries(analyses = []) {"')
+# The inserted replacement must retain the newline before the body.
+text = text.replace('  function correspondingDaySeries(analyses = []) {\\n"""\ntext = replace_once(text, needle, insert, \'historical tooltip helpers\')', '  function correspondingDaySeries(analyses = []) {\\n"""\ntext = replace_once(text, needle, insert, \'historical tooltip helpers\')')
+
 path.write_text(text)
