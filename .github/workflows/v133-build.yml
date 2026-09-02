@@ -1,0 +1,37 @@
+name: v0.22.133 weekday tooltips library filter
+on:
+  push:
+    branches:
+      - release/v0.22.133-weekday-tooltips-library-filter
+permissions:
+  contents: write
+jobs:
+  update-and-test:
+    if: github.event.head_commit.message != 'v0.22.133 weekday analytics and report refinements'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v0.22.133-weekday-tooltips-library-filter
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply v0.22.133 changes
+        run: python .github/v133_weekday_tooltips_library.py
+      - name: Syntax checks
+        run: |
+          node --check assets/js/one-sheet-analysis.js
+          node --check assets/js/one-sheet-reports.js
+          node --check assets/js/ui-list.js
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-analysis.js assets/js/one-sheet-reports.js assets/one-sheet-reports.css assets/js/ui-list.js reports.html version.json tests
+          git diff --cached --quiet && exit 0
+          git commit -m "v0.22.133 weekday analytics and report refinements"
+          git push origin HEAD:release/v0.22.133-weekday-tooltips-library-filter
