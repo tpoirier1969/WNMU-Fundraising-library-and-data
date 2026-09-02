@@ -25,6 +25,15 @@ jobs:
           node-version: '22'
       - name: Apply v0.22.132 refinements
         run: python .github/v132_historical_labels_season.py
+      - name: Align escaped version expectations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for path in Path('tests').glob('*.test.mjs'):
+              text = path.read_text()
+              text = text.replace(r'0\.22\.131', r'0\.22\.132')
+              path.write_text(text)
+          PY
       - name: Syntax check report code
         run: node --check assets/js/one-sheet-reports.js
       - name: Run regression tests
