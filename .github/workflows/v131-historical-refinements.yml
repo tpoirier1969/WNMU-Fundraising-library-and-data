@@ -23,6 +23,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Align updater targets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/v131_historical_refinements.py')
+          s = p.read_text()
+          s = s.replace("const historyLifecycle = historicalLifecycleMedians(baseline);", "const historyLifecycle = historicalLifecycleMedians(historical);")
+          s = s.replace("const lifecycle = lifecycleForAnalysis(analysis);\\n    const historyLifecycle = historicalLifecycleMedians(baseline);", "const lifecycle = lifecycleForAnalysis(analysis);\\n    const historicalLifecycle = historicalLifecycleMedians(historical);")
+          old = "chartCard('Fundraiser lifecycle vs history', 'The selected fundraiser and historical medians are normalized into five equal day-sequence bands so beginning, middle, and ending productivity can be compared fairly.', lineChartSvg({\\n        labels: lifecycle.map((row) => row.label),\\n        series: [\\n          { label: 'This fundraiser', values: lifecycle.map((row) => row.dollarsPerHour) },\\n          { label: 'Historical median', values: historyLifecycle.map((row) => row.dollarsPerHour) }\\n        ],\\n        ariaLabel: 'Current fundraiser lifecycle compared with historical median',"
+          new = "chartCard('Fundraiser lifecycle vs history', 'This fundraiser and the historical fundraiser-balanced median, normalized into opening through closing fifths.', lineChartSvg({\\n        labels: lifecycle.map((row) => row.label),\\n        series: [\\n          { label: 'This fundraiser', values: lifecycle.map((row) => row.dollarsPerHour) },\\n          { label: 'Historical median', values: historicalLifecycle.map((row) => row.dollarsPerHour) }\\n        ],\\n        ariaLabel: 'Current fundraiser lifecycle compared with history',"
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
       - name: Apply refinements
         run: python .github/v131_historical_refinements.py
       - name: Syntax check report code
