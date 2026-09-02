@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WNMU One-Sheet Reports</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.129">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.130">
   <style>
     .report-selection{position:relative;min-width:280px}
     .report-fundraiser-picker{position:relative;width:100%}
@@ -41,11 +41,33 @@
       .comparison-sheet .day-cell strong,.comparison-sheet .topic-performance-line strong{font-size:9pt}
       .comparison-sheet .day-row-labels span,.comparison-sheet .day-value-lines span{font-size:8pt}
     }
+
+    .visual-overview{break-inside:auto}
+    .visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:12px}
+    .visual-card{border:1px solid #d5e1e7;border-radius:9px;background:#fbfdfe;padding:12px;min-width:0;break-inside:avoid}
+    .visual-card .section-heading{margin-bottom:4px}
+    .visual-card h3{margin:0;color:#17384a;font-size:1rem}
+    .visual-card .section-heading p{margin-top:4px;font-size:.82rem;line-height:1.35}
+    .visual-card .report-chart{margin-top:4px}
+    .historical-context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:10px}
+    .historical-context-grid article{border-left:4px solid #9bb8c7;background:#f6fafc;padding:10px 12px;break-inside:avoid}
+    .historical-context-grid h3{margin:0 0 4px;color:#17384a;font-size:.95rem}
+    .historical-context-grid p{margin:0;color:#334f5e;line-height:1.45}
+    .report-bar-chart-svg rect{vector-effect:non-scaling-stroke}
+    @media(max-width:900px){.visual-grid,.historical-context-grid{grid-template-columns:1fr}}
+    @media print{
+      .visual-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .visual-card{padding:7px}
+      .visual-card .section-heading p{font-size:7.5pt}
+      .visual-card h3{font-size:9pt}
+      .historical-context-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+      .historical-context-grid p{font-size:8pt}
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.129"></script>
-  <script defer src="assets/js/one-sheet-reports.js?v=0.22.129"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.130"></script>
+  <script defer src="assets/js/one-sheet-reports.js?v=0.22.130"></script>
 </head>
 <body>
   <div id="report-access-gate" class="report-access-gate hidden"></div>
