@@ -1,172 +1,33 @@
-name: Apply v0.22.135 historical report fix
+name: Apply historical report fix
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - '.github/workflows/apply-v0.22.135-historical-fix.yml'
+      - .github/workflows/apply-v0.22.135-historical-fix.yml
 
 permissions:
   contents: write
 
 jobs:
-  apply-fix:
+  apply:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Apply historical report fix
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          report_path = Path('assets/js/one-sheet-reports.js')
-          source = report_path.read_text(encoding='utf-8')
-
-          old_sets = """    const sets = [
-              ['Weekday', analysesForWeekpart(analyses, 'Weekday')],
-              ['Saturday', analysesForWeekpart(analyses, 'Saturday')],
-              ['Sunday', analysesForWeekpart(analyses, 'Sunday')]
-            ].map(([label, subset]) => [label, rankingRows(subset, 'startTime')]);
-            const keys = [...new Set(sets.flatMap(([_label, rows]) => rows.map((row) => Number(row.key)).filter(Number.isFinite)))].sort((a, b) => a - b);"""
-          new_sets = """    const sets = [
-              ['Weekday', analysesForWeekpart(analyses, 'Weekday')],
-              ['Saturday', analysesForWeekpart(analyses, 'Saturday')],
-              ['Sunday', analysesForWeekpart(analyses, 'Sunday')]
-            ].map(([label, subset]) => [label, subset, rankingRows(subset, 'startTime')]);
-            const keys = [...new Set(sets.flatMap(([_label, _subset, rows]) => rows.map((row) => Number(row.key)).filter(Number.isFinite)))].sort((a, b) => a - b);"""
-          if old_sets not in source:
-              raise SystemExit('Historical start-time set block did not match expected v0.22.134 source.')
-          source = source.replace(old_sets, new_sets, 1)
-
-          old_series = "series: sets.map(([label, rows]) => {"
-          new_series = "series: sets.map(([label, subset, rows]) => {"
-          if old_series not in source:
-              raise SystemExit('Historical start-time series block did not match expected v0.22.134 source.')
-          source = source.replace(old_series, new_series, 1)
-
-          old_init = """  async function init() {
-            try {
-              if (!A) throw new Error('One-sheet analysis module did not load.');
-              const allowed = await requireAdmin();
-              if (!allowed) return;
-              $('#report-access-gate')?.classList.add('hidden');
-              $('#report-app')?.classList.remove('hidden');
-              await loadData();
-
-              const mode = reportMode();
-              if (mode === 'comparison') await initComparison();
-              else if (mode === 'fundraiser') await initFundraiser();
-              else if (mode === 'historical') await initHistorical();
-              else if (mode === 'preflight') await initPreflight();
-              else renderHub();
-            } catch (error) {
-              console.error(error);
-              showAccessDenied(error?.message || 'The report center could not load.');
-            }
-          }
-"""
-          new_init = """  async function init() {
-            if (!A) {
-              const error = new Error('One-sheet analysis module did not load.');
-              console.error('Report module load failed.', error);
-              $('#report-access-gate')?.classList.add('hidden');
-              $('#report-app')?.classList.remove('hidden');
-              setStatus(error.message, 'error');
-              const output = $('#report-output');
-              if (output) output.innerHTML = `<article class=\"one-sheet\"><header class=\"sheet-title\"><div><div class=\"report-kicker\">Report error</div><h1>Report generation failed</h1><p>${escapeHtml(error.message)}</p></div></header></article>`;
-              return;
-            }
-
-            try {
-              const allowed = await requireAdmin();
-              if (!allowed) return;
-            } catch (error) {
-              console.error('Administrator access check failed.', error);
-              showAccessDenied(error?.message || 'Administrator access could not be verified.');
-              return;
-            }
-
-            $('#report-access-gate')?.classList.add('hidden');
-            $('#report-app')?.classList.remove('hidden');
-
-            try {
-              await loadData();
-
-              const mode = reportMode();
-              if (mode === 'comparison') await initComparison();
-              else if (mode === 'fundraiser') await initFundraiser();
-              else if (mode === 'historical') await initHistorical();
-              else if (mode === 'preflight') await initPreflight();
-              else renderHub();
-            } catch (error) {
-              console.error('Report generation failed.', error);
-              const message = error?.message || 'The report could not be generated.';
-              setStatus(message, 'error');
-              const output = $('#report-output');
-              if (output) output.innerHTML = `<article class=\"one-sheet\"><header class=\"sheet-title\"><div><div class=\"report-kicker\">Report error</div><h1>Report generation failed</h1><p>${escapeHtml(message)}</p></div></header><p class=\"data-quality-note\">Your administrator session is still valid. This is a report-generation error, not an access failure.</p></article>`;
-            }
-          }
-"""
-          if old_init not in source:
-              raise SystemExit('Report init block did not match expected v0.22.134 source.')
-          source = source.replace(old_init, new_init, 1)
-          report_path.write_text(source, encoding='utf-8')
-
-          reports_html = Path('reports.html')
-          html = reports_html.read_text(encoding='utf-8')
-          if '0.22.134' not in html:
-              raise SystemExit('reports.html did not contain v0.22.134 cache-bust references.')
-          reports_html.write_text(html.replace('0.22.134', '0.22.135'), encoding='utf-8')
-
-          version_path = Path('version.json')
-          version_text = version_path.read_text(encoding='utf-8')
-          if '0.22.134' not in version_text:
-              raise SystemExit('version.json did not contain v0.22.134.')
-          version_path.write_text(version_text.replace('0.22.134', '0.22.135'), encoding='utf-8')
-
-          for test_path in Path('tests').glob('*.test.mjs'):
-              text = test_path.read_text(encoding='utf-8')
-              if '0.22.134' in text:
-                  test_path.write_text(text.replace('0.22.134', '0.22.135'), encoding='utf-8')
-
-          regression = Path('tests/chart-program-tooltips-trend-v134.test.mjs')
-          test_source = regression.read_text(encoding='utf-8')
-          anchor = "assert.match(source, /function aggregateProgramTooltip/);\n"
-          additions = """assert.match(source, /\\.map\\(\\(\\[label, subset\\]\\) => \\[label, subset, rankingRows\\(subset, 'startTime'\\)\\]\\)/);
-          assert.match(source, /sets\\.flatMap\\(\\(\\[_label, _subset, rows\\]\\)/);
-          assert.match(source, /series: sets\\.map\\(\\(\\[label, subset, rows\\]\\)/);
-          assert.match(source, /console\\.error\\('Report generation failed\\.', error\\)/);
-          assert.match(source, /Your administrator session is still valid\\. This is a report-generation error, not an access failure\\./);
-          assert.doesNotMatch(source, /showAccessDenied\\(error\\?\\.message \\|\\| 'The report center could not load\\.'\\)/);
-          """
-          if anchor not in test_source:
-              raise SystemExit('v0.22.134 chart regression anchor was not found.')
-          regression.write_text(test_source.replace(anchor, anchor + additions, 1), encoding='utf-8')
-
-          workflow = Path('.github/workflows/apply-v0.22.135-historical-fix.yml')
-          workflow.unlink()
-          PY
-
+      - name: Update original report code
+        run: echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpyZXBvcnRfcGF0aCA9IFBhdGgoImFzc2V0cy9qcy9vbmUtc2hlZXQtcmVwb3J0cy5qcyIpCnNvdXJjZSA9IHJlcG9ydF9wYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQoKcmVwbGFjZW1lbnRzID0gWwogICAgKAogICAgICAgICJdLm1hcCgoW2xhYmVsLCBzdWJzZXRdKSA9PiBbbGFiZWwsIHJhbmtpbmdSb3dzKHN1YnNldCwgJ3N0YXJ0VGltZScpXSk7IiwKICAgICAgICAiXS5tYXAoKFtsYWJlbCwgc3Vic2V0XSkgPT4gW2xhYmVsLCBzdWJzZXQsIHJhbmtpbmdSb3dzKHN1YnNldCwgJ3N0YXJ0VGltZScpXSk7IiwKICAgICksCiAgICAoCiAgICAgICAgInNldHMuZmxhdE1hcCgoW19sYWJlbCwgcm93c10pID0+IHJvd3MubWFwKChyb3cpID0+IE51bWJlcihyb3cua2V5KSkuZmlsdGVyKE51bWJlci5pc0Zpbml0ZSkpIiwKICAgICAgICAic2V0cy5mbGF0TWFwKChbX2xhYmVsLCBfc3Vic2V0LCByb3dzXSkgPT4gcm93cy5tYXAoKHJvdykgPT4gTnVtYmVyKHJvdy5rZXkpKS5maWx0ZXIoTnVtYmVyLmlzRmluaXRlKSkiLAogICAgKSwKICAgICgKICAgICAgICAic2VyaWVzOiBzZXRzLm1hcCgoW2xhYmVsLCByb3dzXSkgPT4geyIsCiAgICAgICAgInNlcmllczogc2V0cy5tYXAoKFtsYWJlbCwgc3Vic2V0LCByb3dzXSkgPT4geyIsCiAgICApLAogICAgKAogICAgICAgICIgIGFzeW5jIGZ1bmN0aW9uIGluaXQoKSB7XG4gICAgdHJ5IHtcbiAgICAgIGlmICghQSkgdGhyb3cgbmV3IEVycm9yKCdPbmUtc2hlZXQgYW5hbHlzaXMgbW9kdWxlIGRpZCBub3QgbG9hZC4nKTsiLAogICAgICAgICIgIGFzeW5jIGZ1bmN0aW9uIGluaXQoKSB7XG4gICAgbGV0IGNoZWNraW5nQWNjZXNzID0gdHJ1ZTtcbiAgICB0cnkge1xuICAgICAgaWYgKCFBKSB7XG4gICAgICAgIGNoZWNraW5nQWNjZXNzID0gZmFsc2U7XG4gICAgICAgIHRocm93IG5ldyBFcnJvcignT25lLXNoZWV0IGFuYWx5c2lzIG1vZHVsZSBkaWQgbm90IGxvYWQuJyk7XG4gICAgICB9IiwKICAgICksCiAgICAoCiAgICAgICAgIiAgICAgIGNvbnN0IGFsbG93ZWQgPSBhd2FpdCByZXF1aXJlQWRtaW4oKTtcbiAgICAgIGlmICghYWxsb3dlZCkgcmV0dXJuO1xuICAgICAgJCgnI3JlcG9ydC1hY2Nlc3MtZ2F0ZScpPy5jbGFzc0xpc3QuYWRkKCdoaWRkZW4nKTsiLAogICAgICAgICIgICAgICBjb25zdCBhbGxvd2VkID0gYXdhaXQgcmVxdWlyZUFkbWluKCk7XG4gICAgICBpZiAoIWFsbG93ZWQpIHJldHVybjtcbiAgICAgIGNoZWNraW5nQWNjZXNzID0gZmFsc2U7XG4gICAgICAkKCcjcmVwb3J0LWFjY2Vzcy1nYXRlJyk/LmNsYXNzTGlzdC5hZGQoJ2hpZGRlbicpOyIsCiAgICApLAogICAgKAogICAgICAgICIgICAgfSBjYXRjaCAoZXJyb3IpIHtcbiAgICAgIGNvbnNvbGUuZXJyb3IoZXJyb3IpO1xuICAgICAgc2hvd0FjY2Vzc0RlbmllZChlcnJvcj8ubWVzc2FnZSB8fCAnVGhlIHJlcG9ydCBjZW50ZXIgY291bGQgbm90IGxvYWQuJyk7XG4gICAgfVxuICB9XG4iLAogICAgICAgICIiIiAgICB9IGNhdGNoIChlcnJvcikgewogICAgICBjb25zb2xlLmVycm9yKGVycm9yKTsKICAgICAgaWYgKGNoZWNraW5nQWNjZXNzKSB7CiAgICAgICAgc2hvd0FjY2Vzc0RlbmllZChlcnJvcj8ubWVzc2FnZSB8fCAnQWRtaW5pc3RyYXRvciBhY2Nlc3MgY291bGQgbm90IGJlIHZlcmlmaWVkLicpOwogICAgICAgIHJldHVybjsKICAgICAgfQogICAgICBjb25zdCBtZXNzYWdlID0gZXJyb3I/Lm1lc3NhZ2UgfHwgJ1RoZSByZXBvcnQgY291bGQgbm90IGJlIGdlbmVyYXRlZC4nOwogICAgICAkKCcjcmVwb3J0LWFjY2Vzcy1nYXRlJyk/LmNsYXNzTGlzdC5hZGQoJ2hpZGRlbicpOwogICAgICAkKCcjcmVwb3J0LWFwcCcpPy5jbGFzc0xpc3QucmVtb3ZlKCdoaWRkZW4nKTsKICAgICAgc2V0U3RhdHVzKG1lc3NhZ2UsICdlcnJvcicpOwogICAgICBjb25zdCBvdXRwdXQgPSAkKCcjcmVwb3J0LW91dHB1dCcpOwogICAgICBpZiAob3V0cHV0KSBvdXRwdXQuaW5uZXJIVE1MID0gYDxhcnRpY2xlIGNsYXNzPSJvbmUtc2hlZXQiPjxoZWFkZXIgY2xhc3M9InNoZWV0LXRpdGxlIj48ZGl2PjxkaXYgY2xhc3M9InJlcG9ydC1raWNrZXIiPlJlcG9ydCBlcnJvcjwvZGl2PjxoMT5SZXBvcnQgZ2VuZXJhdGlvbiBmYWlsZWQ8L2gxPjxwPiR7ZXNjYXBlSHRtbChtZXNzYWdlKX08L3A+PC9kaXY+PC9oZWFkZXI+PHAgY2xhc3M9ImRhdGEtcXVhbGl0eS1ub3RlIj5Zb3VyIGFkbWluaXN0cmF0b3Igc2Vzc2lvbiBpcyBzdGlsbCB2YWxpZC4gVGhpcyBpcyBhIHJlcG9ydC1nZW5lcmF0aW9uIGVycm9yLCBub3QgYW4gYWNjZXNzIGZhaWx1cmUuPC9wPjwvYXJ0aWNsZT5gOwogICAgfQogIH0KIiIiLAogICAgKSwKXQoKZm9yIG9sZCwgbmV3IGluIHJlcGxhY2VtZW50czoKICAgIGNvdW50ID0gc291cmNlLmNvdW50KG9sZCkKICAgIGlmIGNvdW50ICE9IDE6CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmIkV4cGVjdGVkIGV4YWN0bHkgb25lIG1hdGNoLCBmb3VuZCB7Y291bnR9OiB7b2xkWzo5MF0hcn0iKQogICAgc291cmNlID0gc291cmNlLnJlcGxhY2Uob2xkLCBuZXcsIDEpCgpyZXBvcnRfcGF0aC53cml0ZV90ZXh0KHNvdXJjZSwgZW5jb2Rpbmc9InV0Zi04IikKCmZvciBwYXRoIGluIFtQYXRoKCJyZXBvcnRzLmh0bWwiKSwgUGF0aCgidmVyc2lvbi5qc29uIildOgogICAgdGV4dCA9IHBhdGgucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpCiAgICBpZiAiMC4yMi4xMzQiIG5vdCBpbiB0ZXh0OgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7cGF0aH0gZGlkIG5vdCBjb250YWluIDAuMjIuMTM0IikKICAgIHBhdGgud3JpdGVfdGV4dCh0ZXh0LnJlcGxhY2UoIjAuMjIuMTM0IiwgIjAuMjIuMTM1IiksIGVuY29kaW5nPSJ1dGYtOCIpCgpmb3IgcGF0aCBpbiBQYXRoKCJ0ZXN0cyIpLmdsb2IoIioudGVzdC5tanMiKToKICAgIHRleHQgPSBwYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQogICAgaWYgIjAuMjIuMTM0IiBpbiB0ZXh0OgogICAgICAgIHBhdGgud3JpdGVfdGV4dCh0ZXh0LnJlcGxhY2UoIjAuMjIuMTM0IiwgIjAuMjIuMTM1IiksIGVuY29kaW5nPSJ1dGYtOCIpCgpyZWdyZXNzaW9uID0gUGF0aCgidGVzdHMvY2hhcnQtcHJvZ3JhbS10b29sdGlwcy10cmVuZC12MTM0LnRlc3QubWpzIikKdGVzdF9zb3VyY2UgPSByZWdyZXNzaW9uLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQphbmNob3IgPSAiYXNzZXJ0Lm1hdGNoKHNvdXJjZSwgL2Z1bmN0aW9uIGFnZ3JlZ2F0ZVByb2dyYW1Ub29sdGlwLyk7XG4iCmFkZGl0aW9ucyA9IHIiIiJhc3NlcnQubWF0Y2goc291cmNlLCAvXC5tYXBcKFwoXFtsYWJlbCwgc3Vic2V0XF1cKSA9PiBcW2xhYmVsLCBzdWJzZXQsIHJhbmtpbmdSb3dzXChzdWJzZXQsICdzdGFydFRpbWUnXClcXVwpLyk7CmFzc2VydC5tYXRjaChzb3VyY2UsIC9zZXRzXC5mbGF0TWFwXChcKFxbX2xhYmVsLCBfc3Vic2V0LCByb3dzXF1cKS8pOwphc3NlcnQubWF0Y2goc291cmNlLCAvc2VyaWVzOiBzZXRzXC5tYXBcKFwoXFtsYWJlbCwgc3Vic2V0LCByb3dzXF1cKS8pOwphc3NlcnQubWF0Y2goc291cmNlLCAvbGV0IGNoZWNraW5nQWNjZXNzID0gdHJ1ZS8pOwphc3NlcnQubWF0Y2goc291cmNlLCAvY2hlY2tpbmdBY2Nlc3MgPSBmYWxzZS8pOwphc3NlcnQubWF0Y2goc291cmNlLCAvWW91ciBhZG1pbmlzdHJhdG9yIHNlc3Npb24gaXMgc3RpbGwgdmFsaWRcLiBUaGlzIGlzIGEgcmVwb3J0LWdlbmVyYXRpb24gZXJyb3IsIG5vdCBhbiBhY2Nlc3MgZmFpbHVyZVwuLyk7CmFzc2VydC5kb2VzTm90TWF0Y2goc291cmNlLCAvc2hvd0FjY2Vzc0RlbmllZFwoZXJyb3JcP1wubWVzc2FnZSBcfFx8ICdUaGUgcmVwb3J0IGNlbnRlciBjb3VsZCBub3QgbG9hZFwuJ1wpLyk7CiIiIgppZiBhbmNob3Igbm90IGluIHRlc3Rfc291cmNlOgogICAgcmFpc2UgU3lzdGVtRXhpdCgiUmVncmVzc2lvbi10ZXN0IGFuY2hvciBub3QgZm91bmQiKQpyZWdyZXNzaW9uLndyaXRlX3RleHQodGVzdF9zb3VyY2UucmVwbGFjZShhbmNob3IsIGFuY2hvciArIGFkZGl0aW9ucywgMSksIGVuY29kaW5nPSJ1dGYtOCIpCgp3b3JrZmxvdyA9IFBhdGgoIi5naXRodWIvd29ya2Zsb3dzL2FwcGx5LXYwLjIyLjEzNS1oaXN0b3JpY2FsLWZpeC55bWwiKQppZiB3b3JrZmxvdy5leGlzdHMoKToKICAgIHdvcmtmbG93LnVubGluaygpCg==' | base64 --decode | python3
       - name: Run regression tests
         run: node --test tests/*.test.mjs
-
-      - name: Commit v0.22.135
-        shell: bash
+      - name: Commit fixed release
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m "v0.22.135 fix Historical Analytics crash and error routing"
+          git commit -m 'v0.22.135 fix Historical Analytics crash and error routing'
           git push origin main
