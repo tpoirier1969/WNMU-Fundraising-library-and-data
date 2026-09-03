@@ -67,3 +67,8 @@ button,select,input{font:inherit}.hidden{display:none!important}.report-shell{mi
 body.preflight-program-editor-open{overflow:hidden}
 @media(max-width:720px){.preflight-program-editor-backdrop{padding:0}.preflight-program-editor-modal{width:100vw;height:100vh;border-radius:0}.preflight-program-editor-head{align-items:flex-start;flex-direction:column}}
 @media print{.preflight-program-editor-backdrop{display:none!important}.preflight-program-link{color:inherit;text-decoration:none}.preflight-mismatch-tag{font-size:8pt}}
+
+.chart-view-toggle{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin:4px 0 7px}
+.chart-view-toggle .report-button{padding:4px 9px;font-size:.78rem;line-height:1.2}
+.chart-view-toggle .report-button.active{background:#17384a;color:#fff;border-color:#17384a}
+@media print{.chart-view-toggle{display:none!important}}
