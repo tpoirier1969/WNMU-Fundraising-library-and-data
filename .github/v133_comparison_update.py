@@ -26,7 +26,6 @@ if '0.22.132' not in rs:
     raise SystemExit('reports.html does not contain v0.22.132 cache/version refs')
 r.write_text(rs.replace('0.22.132', '0.22.133'))
 
-# Keep regression expectations synchronized with the intentional new current version and comparison limit.
 for name in [
     'tests/historical-labels-season-filter-v132.test.mjs',
     'tests/historical-refinements-v131.test.mjs',
@@ -35,19 +34,23 @@ for name in [
 ]:
     path = Path(name)
     text = path.read_text()
-    if '0.22.132' not in text:
-        raise SystemExit(f'missing current-version expectation in {name}')
-    path.write_text(text.replace('0.22.132', '0.22.133'))
+    text = text.replace('0.22.132', '0.22.133').replace(r'0\.22\.132', r'0\.22\.133')
+    path.write_text(text)
 
 for name in [
     'tests/one-sheet-report-refinements.test.mjs',
     'tests/one-sheet-reports.test.mjs',
 ]:
     path = Path(name)
-    text = path.read_text()
-    if 'Select 2–5 fundraisers' not in text:
-        raise SystemExit(f'missing comparison-selection expectation in {name}')
-    path.write_text(text.replace('Select 2–5 fundraisers', 'Select 2–8 fundraisers'))
+    text = path.read_text().replace('Select 2–5 fundraisers', 'Select 2–8 fundraisers')
+    text = text.replace(r'0\.22\.132', r'0\.22\.133')
+    path.write_text(text)
+
+refinements = Path('tests/one-sheet-report-refinements.test.mjs')
+rt = refinements.read_text()
+if 'assert.match(reports, /width: 4/);' not in rt:
+    raise SystemExit('missing old line-width expectation')
+refinements.write_text(rt.replace('assert.match(reports, /width: 4/);', 'assert.match(reports, /width: 2\\.75/);'))
 
 hardening = Path('tests/one-sheet-analysis-hardening.test.mjs')
 ht = hardening.read_text()
