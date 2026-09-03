@@ -72,3 +72,10 @@ body.preflight-program-editor-open{overflow:hidden}
 .chart-view-toggle .report-button{padding:4px 9px;font-size:.78rem;line-height:1.2}
 .chart-view-toggle .report-button.active{background:#17384a;color:#fff;border-color:#17384a}
 @media print{.chart-view-toggle{display:none!important}}
+
+.report-chart-annotated{overflow-x:auto;overflow-y:visible}
+.report-chart-annotated .report-line-chart-svg{min-width:940px;max-height:400px}
+.chart-x-label{font-size:11px!important}
+.chart-event-label{font-size:10px!important;font-weight:850;fill:#405662!important}
+.chart-event-leader{stroke:#6d7f88;stroke-width:1.1}
+.chart-event-guide{stroke:#7b8790;stroke-width:1;stroke-dasharray:3 3}
