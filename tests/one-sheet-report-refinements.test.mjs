@@ -87,9 +87,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.133/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.133/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.133/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.134/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.134/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.134/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -114,8 +114,8 @@ console.log('one-sheet report refinements tests passed');
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.133/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.133/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.134/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.134/);
 
 
 assert.match(reports, /data-preflight-program-id/);
