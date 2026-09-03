@@ -22,6 +22,15 @@
   ];
 
   const CHART_NODE_OVERLAP_DISTANCE = 10;
+  const HISTORICAL_EVENT_ANNOTATIONS = [
+    { type: 'band', start: '2007-12-01', end: '2009-06-30', label: 'Great Recession · Dec 2007–Jun 2009' },
+    { type: 'marker', date: '2018-01-01', label: 'TCJA changes take effect · Jan 2018' },
+    { type: 'marker', date: '2019-02-01', label: 'WNMU Passport · Feb 2019' },
+    { type: 'band', start: '2020-03-11', end: '2023-05-11', label: 'COVID emergency period · Mar 2020–May 2023' },
+    { type: 'marker', date: '2020-03-11', label: 'COVID emergency begins · Mar 2020' },
+    { type: 'marker', date: '2023-05-11', label: 'COVID emergency ends · May 2023' },
+    { type: 'marker', date: '2025-07-24', label: 'CPB funding rescinded · Jul 2025' }
+  ];
 
   const state = {
     client: null,
@@ -41,7 +50,8 @@
     durationApprovals: new Set(),
     historicalStartDate: '',
     historicalEndDate: '',
-    historicalSeason: 'all'
+    historicalSeason: 'all',
+    historicalCorrespondingView: 'groups'
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -137,16 +147,37 @@
     }).join('')}</div>`;
   }
 
-  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '', legendTop = false, yLabel = 'Broadcast dollars', axisFormatter = compactMoney, pointFormatter = money, xLabelEvery = 1, verticalGridEvery = 0, xDisplayLabels = null } = {}) {
+  function lineChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser comparison line graph', className = '', legendTop = false, yLabel = 'Broadcast dollars', axisFormatter = compactMoney, pointFormatter = money, xLabelEvery = 1, verticalGridEvery = 0, xDisplayLabels = null, xDateValues = null, eventAnnotations = [] } = {}) {
     if (!labels.length || !series.length) return '<div class="chart-empty">No chartable results.</div>';
     const displayLabels = Array.isArray(xDisplayLabels) && xDisplayLabels.length === labels.length ? xDisplayLabels : labels;
+    const dateValues = Array.isArray(xDateValues) && xDateValues.length === labels.length ? xDateValues : null;
+    const hasEventAnnotations = Boolean(dateValues && eventAnnotations?.length);
     const width = 760;
-    const height = 285;
-    const margin = { left: 70, right: 20, top: 22, bottom: labels.length > 8 ? 86 : 62 };
+    const height = hasEventAnnotations ? 330 : 285;
+    const margin = { left: 70, right: 20, top: hasEventAnnotations ? 66 : 22, bottom: labels.length > 8 ? 86 : 62 };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
     const { max, step } = chartScale(series);
-    const x = (index) => labels.length === 1 ? margin.left + (plotWidth / 2) : margin.left + ((plotWidth * index) / (labels.length - 1));
+    const xAt = (position) => labels.length === 1 ? margin.left + (plotWidth / 2) : margin.left + ((plotWidth * position) / (labels.length - 1));
+    const x = (index) => xAt(index);
+    const dateTimes = dateValues ? dateValues.map((value) => A.parseDate(value)?.getTime() ?? null) : null;
+    const xForDate = (value) => {
+      if (!dateTimes || labels.length < 2) return null;
+      const target = A.parseDate(value)?.getTime();
+      const valid = dateTimes.map((time, index) => ({ time, index })).filter((item) => Number.isFinite(item.time));
+      if (!Number.isFinite(target) || valid.length < 2) return null;
+      if (target <= valid[0].time) return xAt(valid[0].index);
+      if (target >= valid[valid.length - 1].time) return xAt(valid[valid.length - 1].index);
+      for (let index = 1; index < valid.length; index += 1) {
+        const previous = valid[index - 1];
+        const next = valid[index];
+        if (target > next.time) continue;
+        const span = Math.max(1, next.time - previous.time);
+        const fraction = Math.max(0, Math.min(1, (target - previous.time) / span));
+        return xAt(previous.index + ((next.index - previous.index) * fraction));
+      }
+      return null;
+    };
     const y = (value) => margin.top + plotHeight - ((Math.max(0, Number(value || 0)) / max) * plotHeight);
     const tickCount = Math.max(1, Math.round(max / step));
     const yTicks = Array.from({ length: tickCount + 1 }, (_item, index) => index * step);
@@ -169,6 +200,22 @@
       const ypos = y(value);
       return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(axisFormatter(value))}</text></g>`;
     }).join('');
+    const eventBands = hasEventAnnotations ? eventAnnotations.filter((item) => item.type === 'band').map((item) => {
+      const startX = xForDate(item.start);
+      const endX = xForDate(item.end);
+      if (!(Number.isFinite(startX) && Number.isFinite(endX))) return '';
+      const left = Math.min(startX, endX);
+      const bandWidth = Math.max(1, Math.abs(endX - startX));
+      return `<g class="chart-event-band"><rect x="${left.toFixed(1)}" y="${margin.top}" width="${bandWidth.toFixed(1)}" height="${plotHeight}" fill="#dbe3e7" fill-opacity="0.42"/><text x="${(left + 4).toFixed(1)}" y="${margin.top + 13}" font-size="9" font-weight="800" fill="#536a76"><title>${escapeHtml(item.label)}</title>${escapeHtml(chartLabel(item.label, 28))}</text></g>`;
+    }).join('') : '';
+    const eventMarkers = hasEventAnnotations ? eventAnnotations.filter((item) => item.type === 'marker').map((item, index) => {
+      const xpos = xForDate(item.date);
+      if (!Number.isFinite(xpos)) return '';
+      const labelY = 14 + ((index % 3) * 15);
+      const shortLabel = chartLabel(item.label, 24);
+      return `<g class="chart-event-marker"><line x1="${xpos.toFixed(1)}" y1="${margin.top}" x2="${xpos.toFixed(1)}" y2="${margin.top + plotHeight}" stroke="#7b8790" stroke-width="1" stroke-dasharray="3 3"/><text x="${xpos.toFixed(1)}" y="${labelY}" text-anchor="middle" font-size="9" font-weight="800" fill="#4f626d"><title>${escapeHtml(item.label)}</title>${escapeHtml(shortLabel)}</text></g>`;
+    }).join('') : '';
+    const eventLayer = `${eventBands}${eventMarkers}`;
     const interactivePoints = series.flatMap((item, seriesIndex) => (item.values || []).map((value, index) => {
       const tooltip = item.tooltips?.[index] || null;
       if (!tooltip || value === null || value === undefined || !Number.isFinite(Number(value))) return null;
@@ -207,7 +254,7 @@
       return `${paths}${points}`;
     }).join('');
     const legend = chartLegend(series);
-    const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${verticalGrid}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">${escapeHtml(yLabel)}</text></svg>`;
+    const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${verticalGrid}${eventLayer}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">${escapeHtml(yLabel)}</text></svg>`;
     return `<div class="report-chart ${escapeHtml(className)}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
   }
 
@@ -839,6 +886,22 @@
     return { title, detail, lines: programTooltipLinesForRows(rows) };
   }
 
+  function historicalEventAnnotationsForDates(dateValues = []) {
+    const times = (dateValues || []).map((value) => A.parseDate(value)?.getTime()).filter(Number.isFinite);
+    if (times.length < 2) return [];
+    const min = Math.min(...times);
+    const max = Math.max(...times);
+    return HISTORICAL_EVENT_ANNOTATIONS.filter((item) => {
+      if (item.type === 'band') {
+        const start = A.parseDate(item.start)?.getTime();
+        const end = A.parseDate(item.end)?.getTime();
+        return Number.isFinite(start) && Number.isFinite(end) && end >= min && start <= max;
+      }
+      const date = A.parseDate(item.date)?.getTime();
+      return Number.isFinite(date) && date >= min && date <= max;
+    });
+  }
+
   function linearTrend(values = []) {
     const points = values.map((value, index) => ({ x: index, y: Number(value) })).filter((point) => Number.isFinite(point.y));
     if (points.length < 2) return { values: values.map(() => null), slope: 0, intercept: 0, r2: 0, n: points.length };
@@ -1389,19 +1452,24 @@
     return `S ${shortYear}`.trim();
   }
 
-  function fiveYearHistoryBands(analyses = []) {
+  function historyYearForAnalysis(analysis = {}) {
+    return Number(analysis?.schedule?.year || 0) || A.parseDate(analysis?.schedule?.startDate)?.getFullYear() || null;
+  }
+
+  function yearHistoryBands(analyses = [], bandSize = 3) {
     const ordered = chronologicalAnalyses(analyses);
-    const years = ordered.map((analysis) => Number(analysis.schedule?.year || 0) || A.parseDate(analysis.schedule?.startDate)?.getFullYear()).filter(Number.isFinite);
+    const years = ordered.map(historyYearForAnalysis).filter(Number.isFinite);
     if (!years.length) return [];
+    const size = Math.max(1, Number(bandSize) || 3);
     const minYear = Math.min(...years);
     const maxYear = Math.max(...years);
-    const firstStart = Math.floor(minYear / 5) * 5;
+    const firstStart = Math.floor(minYear / size) * size;
     const bands = [];
-    for (let bandStart = firstStart; bandStart <= maxYear; bandStart += 5) {
-      const bandEnd = bandStart + 4;
+    for (let bandStart = firstStart; bandStart <= maxYear; bandStart += size) {
+      const bandEnd = bandStart + size - 1;
       const subset = ordered.filter((analysis) => {
-        const year = Number(analysis.schedule?.year || 0) || A.parseDate(analysis.schedule?.startDate)?.getFullYear();
-        return year >= bandStart && year <= bandEnd;
+        const year = historyYearForAnalysis(analysis);
+        return Number.isFinite(year) && year >= bandStart && year <= bandEnd;
       });
       if (subset.length) bands.push({ start: bandStart, end: Math.min(bandEnd, maxYear), label: `${bandStart}–${Math.min(bandEnd, maxYear)}`, analyses: subset });
     }
@@ -1430,24 +1498,32 @@
     };
   }
 
-  function historicalCorrespondingDayBandData(analyses = []) {
+  function historicalCorrespondingDayViewData(analyses = [], view = 'groups') {
     const combined = correspondingDaySeries(analyses);
-    const bands = fiveYearHistoryBands(analyses);
     const labels = combined.labels;
-    const series = bands.map((band) => {
-      const data = correspondingDaySeries(band.analyses);
+    const ordered = chronologicalAnalyses(analyses);
+    const groups = view === 'years'
+      ? [...new Set(ordered.map(historyYearForAnalysis).filter(Number.isFinite))].sort((a, b) => a - b).map((year) => ({
+          label: String(year),
+          analyses: ordered.filter((analysis) => historyYearForAnalysis(analysis) === year)
+        }))
+      : yearHistoryBands(ordered, 3);
+    const series = groups.map((group, groupIndex) => {
+      const data = correspondingDaySeries(group.analyses);
       const byLabel = new Map(data.labels.map((label, index) => [label, { value: data.values[index], tooltip: data.tooltips?.[index] || null }]));
+      const baseStyle = CHART_STYLES[groupIndex % CHART_STYLES.length];
       return {
-        label: band.label,
+        label: group.label,
         values: labels.map((label) => byLabel.has(label) ? byLabel.get(label).value : null),
-        tooltips: labels.map((label) => byLabel.has(label) ? byLabel.get(label).tooltip : null)
+        tooltips: labels.map((label) => byLabel.has(label) ? byLabel.get(label).tooltip : null),
+        style: { ...baseStyle, width: view === 'years' ? 1.15 : 1.5 }
       };
     });
     series.push({
       label: 'All selected years',
       values: combined.values,
       tooltips: combined.tooltips,
-      style: { stroke: '#ff2020', dash: '', width: 3.25 }
+      style: { stroke: '#f0c419', dash: '', width: 1.75 }
     });
     const trend = linearTrend(combined.values);
     if (trend.n >= 2) {
@@ -1456,10 +1532,39 @@
       series.push({
         label: `Long-term linear trend: ${sign}${slope}/hr per fundraiser-day position · R² ${trend.r2.toFixed(2)}`,
         values: trend.values,
-        style: { stroke: '#ff2020', dash: '9 6', width: 2 }
+        style: { stroke: '#ff2020', dash: '', width: 1.1 }
       });
     }
     return { labels, series };
+  }
+
+  function historicalCorrespondingDaysCard(analyses = []) {
+    const view = state.historicalCorrespondingView === 'years' ? 'years' : 'groups';
+    const data = historicalCorrespondingDayViewData(analyses, view);
+    const description = view === 'years'
+      ? 'Each year is shown separately so annual changes in fundraiser-day productivity stay visible. The yellow line combines all selected years; the thin solid red least-squares line reports the long-term slope across fundraiser-day positions with R² in the legend.'
+      : 'Three-year groups reduce single-year noise while preserving more change than the former five-year bands. The yellow line combines all selected years; the thin solid red least-squares line reports the long-term slope across fundraiser-day positions with R² in the legend.';
+    const toggle = `<div class="chart-view-toggle" role="group" aria-label="Corresponding fundraiser day view"><button type="button" class="report-button ${view === 'groups' ? 'active' : ''}" data-corresponding-view="groups" aria-pressed="${view === 'groups' ? 'true' : 'false'}">3-Year Groups</button><button type="button" class="report-button ${view === 'years' ? 'active' : ''}" data-corresponding-view="years" aria-pressed="${view === 'years' ? 'true' : 'false'}">All Years</button></div>`;
+    const chart = lineChartSvg({
+      labels: data.labels,
+      series: data.series,
+      ariaLabel: `Historical corresponding fundraiser day performance by ${view === 'years' ? 'year' : 'three-year period'}`,
+      className: 'historical-corresponding-days',
+      legendTop: true,
+      verticalGridEvery: 1,
+      ...rateChartOptions()
+    });
+    return `<section class="visual-card visual-card-wide historical-corresponding-days-card"><div class="section-heading"><div><h3>Corresponding fundraiser days by era</h3><p>${escapeHtml(description)}</p></div></div>${toggle}${chart}</section>`;
+  }
+
+  function bindHistoricalChartControls(root = $('#report-output')) {
+    if (!root) return;
+    root.querySelectorAll('[data-corresponding-view]').forEach((button) => button.addEventListener('click', () => {
+      const next = button.getAttribute('data-corresponding-view') === 'years' ? 'years' : 'groups';
+      if (state.historicalCorrespondingView === next) return;
+      state.historicalCorrespondingView = next;
+      void renderHistoricalReport();
+    }));
   }
 
   function currentCorrespondingDayComparisonData(analysis, historical = []) {
@@ -1514,6 +1619,7 @@
       labels: ordered.map(analysisTrendLabel),
       axisLabels: ordered.map(compactTrendAxisLabel),
       values: ordered.map((analysis) => Number(metric(analysis) || 0)),
+      dates: ordered.map((analysis) => A.text(analysis.schedule?.startDate || analysis.schedule?.endDate || '')),
       tooltips: ordered.map((analysis) => analysisProgramTooltip(
         analysis,
         analysis.schedule.title,
@@ -1528,6 +1634,7 @@
     const seasons = HISTORICAL_SEASONS.filter((season) => ordered.some((analysis) => historicalSeasonBucket(analysis) === season));
     return {
       labels: years.map(String),
+      dates: years.map((year) => `${year}-01-01`),
       series: seasons.map((season) => ({
         label: season,
         values: years.map((year) => {
@@ -1605,7 +1712,6 @@
     const productivity = trendSeriesForHistory(analyses, rateForAnalysis);
     const gifts = trendSeriesForHistory(analyses, (analysis) => A.dollarsPerPledge(analysis.broadcastDollars, analysis.pledges));
     const seasonal = historicalSeasonTrendData(analyses);
-    const correspondingBands = historicalCorrespondingDayBandData(analyses);
     const overview = [
       chartCard('Fundraiser productivity over time', 'One observation per fundraiser. Every fundraiser keeps its own tick and vertical guide; compact season labels keep the full chronology visible.', lineChartSvg({
         labels: productivity.labels,
@@ -1615,6 +1721,8 @@
         className: 'historical-productivity-trend',
         xLabelEvery: 1,
         verticalGridEvery: 1,
+        xDateValues: productivity.dates,
+        eventAnnotations: historicalEventAnnotationsForDates(productivity.dates),
         ...rateChartOptions()
       }), 'visual-card-wide'),
       chartCard('Average gift over time', 'Broadcast dollars per pledge by fundraiser, separating changes in gift size from changes in donor frequency. Compact labels preserve every fundraiser on the time axis.', lineChartSvg({
@@ -1627,7 +1735,9 @@
         axisFormatter: (value) => money(value),
         pointFormatter: (value) => money(value),
         xLabelEvery: 1,
-        verticalGridEvery: 1
+        verticalGridEvery: 1,
+        xDateValues: gifts.dates,
+        eventAnnotations: historicalEventAnnotationsForDates(gifts.dates)
       }), 'visual-card-wide'),
       chartCard('Season performance over time', 'March, June, August, December, and Special fundraising periods are shown across years rather than collapsed into one lifetime season ranking.', lineChartSvg({
         labels: seasonal.labels,
@@ -1636,17 +1746,11 @@
         className: 'historical-season-trend',
         legendTop: true,
         verticalGridEvery: 1,
+        xDateValues: seasonal.dates,
+        eventAnnotations: historicalEventAnnotationsForDates(seasonal.dates),
         ...rateChartOptions()
       }), 'visual-card-wide'),
-      chartCard('Corresponding fundraiser days by era', 'Five-year bands show how the fundraiser calendar and day-by-day productivity have changed. The bright red line combines all selected years; the dashed red least-squares line reports the long-term slope across fundraiser-day positions with R² in the legend.', lineChartSvg({
-        labels: correspondingBands.labels,
-        series: correspondingBands.series,
-        ariaLabel: 'Historical corresponding fundraiser day performance by five-year period',
-        className: 'historical-corresponding-days',
-        legendTop: true,
-        verticalGridEvery: 1,
-        ...rateChartOptions()
-      }), 'visual-card-wide'),
+      historicalCorrespondingDaysCard(analyses),
       rankingBarCard(analyses, 'topic', 'Topic performance', 'Top historical topics by fundraiser-balanced median $/hour. Full evidence counts appear in the table below.'),
       rankingBarCard(analyses, 'subtopic', 'Subtopic performance', 'Top historical subtopics by fundraiser-balanced median $/hour. Full evidence counts appear in the table below.', {}, 10),
       historicalStartTimeOverviewCard(analyses),
@@ -1715,7 +1819,9 @@
       legendTop: true,
       yLabel,
       axisFormatter: (value) => money(value),
-      pointFormatter: (value) => suffix ? `${money(value)}${suffix}` : money(value)
+      pointFormatter: (value) => suffix ? `${money(value)}${suffix}` : money(value),
+      xDateValues: trend.dates,
+      eventAnnotations: historicalEventAnnotationsForDates(trend.dates)
     }));
   }
 
@@ -1849,6 +1955,7 @@
     if (!(await ensureDurationDecision(analyses))) return;
     $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use fundraiser-balanced median Broadcast $/hour: each fundraiser contributes at most one rate observation to each category or start-time slot, regardless of how many individual programs it aired there. A category is omitted for a fundraiser if any of its scheduled rows in that category has an unknown result or missing duration. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 rate-valid fundraisers and 3 distinct rate-valid titles. Imported results that cannot be reconciled to a saved schedule placement remain in fundraiser totals but are excluded from historical performance rankings.</footer></article>`;
     bindChartTooltips($('#report-output'));
+    bindHistoricalChartControls($('#report-output'));
   }
 
   async function initHistorical() {
