@@ -5,7 +5,7 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.137');
+assert.equal(version.appVersion, '0.22.138');
 assert.match(source, /Compare 2–8 fundraisers/);
 assert.match(source, /Select 2–8 fundraisers/);
 assert.match(source, /state\.selectedIds\.size >= 8/);
@@ -16,5 +16,5 @@ assert.equal(styles.length, 8);
 assert.ok(styles.every((match) => Number(match[1]) <= 2.75));
 assert.match(source, /stroke: '#f0c419', dash: '', width: 1\.75/);
 assert.match(source, /stroke: '#ff2020', dash: '', width: 1\.1/);
-assert.match(html, /0\.22\.137/);
-console.log('v0.22.137 comparison limit and line-weight tests passed');
+assert.match(html, /0\.22\.138/);
+console.log('v0.22.138 comparison limit and line-weight tests passed');

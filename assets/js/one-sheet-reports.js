@@ -23,13 +23,13 @@
 
   const CHART_NODE_OVERLAP_DISTANCE = 10;
   const HISTORICAL_EVENT_ANNOTATIONS = [
-    { type: 'band', start: '2007-12-01', end: '2009-06-30', label: 'Great Recession · Dec 2007–Jun 2009' },
-    { type: 'marker', date: '2018-01-01', label: 'TCJA changes take effect · Jan 2018' },
-    { type: 'marker', date: '2019-02-01', label: 'WNMU Passport · Feb 2019' },
-    { type: 'band', start: '2020-03-11', end: '2023-05-11', label: 'COVID emergency period · Mar 2020–May 2023' },
-    { type: 'marker', date: '2020-03-11', label: 'COVID emergency begins · Mar 2020' },
-    { type: 'marker', date: '2023-05-11', label: 'COVID emergency ends · May 2023' },
-    { type: 'marker', date: '2025-07-24', label: 'CPB funding rescinded · Jul 2025' }
+    { type: 'band', start: '2007-12-01', end: '2009-06-30', label: 'Great Recession · Dec 2007–Jun 2009', lines: ['Great Recession', 'Dec 2007–Jun 2009'], lane: 0 },
+    { type: 'marker', date: '2018-01-01', label: 'Federal tax-law changes · Jan 2018', lines: ['Federal tax-law changes', 'Jan 2018'], lane: 0 },
+    { type: 'marker', date: '2019-02-01', label: 'WNMU Passport · Feb 2019', lines: ['WNMU Passport', 'Feb 2019'], lane: 1 },
+    { type: 'band', start: '2020-03-11', end: '2023-05-11', label: 'COVID emergency period · Mar 2020–May 2023', lines: ['COVID emergency period', 'Mar 2020–May 2023'], lane: 3 },
+    { type: 'marker', date: '2020-03-11', label: 'COVID emergency begins · Mar 2020', lines: ['COVID emergency begins', 'Mar 2020'], lane: 2 },
+    { type: 'marker', date: '2023-05-11', label: 'COVID emergency ends · May 2023', lines: ['COVID emergency ends', 'May 2023'], lane: 0 },
+    { type: 'marker', date: '2025-07-24', label: 'CPB funding rescinded · Jul 2025', lines: ['CPB funding rescinded', 'Jul 2025'], lane: 1 }
   ];
 
   const state = {
@@ -152,9 +152,15 @@
     const displayLabels = Array.isArray(xDisplayLabels) && xDisplayLabels.length === labels.length ? xDisplayLabels : labels;
     const dateValues = Array.isArray(xDateValues) && xDateValues.length === labels.length ? xDateValues : null;
     const hasEventAnnotations = Boolean(dateValues && eventAnnotations?.length);
-    const width = 760;
-    const height = hasEventAnnotations ? 330 : 285;
-    const margin = { left: 70, right: 20, top: hasEventAnnotations ? 66 : 22, bottom: labels.length > 8 ? 86 : 62 };
+    const crowdedChronology = displayLabels.length > 20;
+    const width = hasEventAnnotations ? 980 : (crowdedChronology ? 920 : 760);
+    const height = hasEventAnnotations ? 400 : 285;
+    const margin = {
+      left: 70,
+      right: 24,
+      top: hasEventAnnotations ? 108 : 22,
+      bottom: crowdedChronology ? 118 : (labels.length > 8 ? 92 : 62)
+    };
     const plotWidth = width - margin.left - margin.right;
     const plotHeight = height - margin.top - margin.bottom;
     const { max, step } = chartScale(series);
@@ -182,14 +188,15 @@
     const tickCount = Math.max(1, Math.round(max / step));
     const yTicks = Array.from({ length: tickCount + 1 }, (_item, index) => index * step);
     const rotate = displayLabels.length > 8 || displayLabels.some((label) => String(label).length > 12);
+    const xLabelAngle = crowdedChronology ? -68 : -46;
     const xLabels = displayLabels.map((label, index) => {
       if (index % Math.max(1, Number(xLabelEvery || 1)) !== 0 && index !== labels.length - 1) return '';
       const xpos = x(index);
       const ypos = margin.top + plotHeight + 21;
-      const labelText = escapeHtml(chartLabel(label, rotate ? 15 : 19));
+      const labelText = escapeHtml(chartLabel(label, rotate ? (crowdedChronology ? 18 : 15) : 19));
       return rotate
-        ? `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="end" transform="rotate(-38 ${xpos.toFixed(1)} ${ypos})">${labelText}</text>`
-        : `<text x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="middle">${labelText}</text>`;
+        ? `<text class="chart-x-label" x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="end" transform="rotate(${xLabelAngle} ${xpos.toFixed(1)} ${ypos})">${labelText}</text>`
+        : `<text class="chart-x-label" x="${xpos.toFixed(1)}" y="${ypos}" text-anchor="middle">${labelText}</text>`;
     }).join('');
     const verticalGrid = verticalGridEvery > 0 ? labels.map((_label, index) => {
       if (index % Math.max(1, Number(verticalGridEvery)) !== 0 && index !== labels.length - 1) return '';
@@ -200,20 +207,48 @@
       const ypos = y(value);
       return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(axisFormatter(value))}</text></g>`;
     }).join('');
+    const eventLabelLines = (item = {}) => {
+      if (Array.isArray(item.lines) && item.lines.length) return item.lines.slice(0, 3).map((line) => A.text(line)).filter(Boolean);
+      const words = A.text(item.label || '').split(/\s+/).filter(Boolean);
+      if (!words.length) return [];
+      const lines = [];
+      let current = '';
+      words.forEach((word) => {
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length <= 22 || !current) current = candidate;
+        else {
+          lines.push(current);
+          current = word;
+        }
+      });
+      if (current) lines.push(current);
+      return lines.slice(0, 3);
+    };
+    const eventText = (item, xpos, labelY) => {
+      const lines = eventLabelLines(item);
+      return `<text class="chart-event-label" x="${xpos.toFixed(1)}" y="${labelY}" text-anchor="middle"><title>${escapeHtml(item.label)}</title>${lines.map((line, lineIndex) => `<tspan x="${xpos.toFixed(1)}" dy="${lineIndex === 0 ? 0 : 11}">${escapeHtml(line)}</tspan>`).join('')}</text>`;
+    };
     const eventBands = hasEventAnnotations ? eventAnnotations.filter((item) => item.type === 'band').map((item) => {
       const startX = xForDate(item.start);
       const endX = xForDate(item.end);
       if (!(Number.isFinite(startX) && Number.isFinite(endX))) return '';
       const left = Math.min(startX, endX);
       const bandWidth = Math.max(1, Math.abs(endX - startX));
-      return `<g class="chart-event-band"><rect x="${left.toFixed(1)}" y="${margin.top}" width="${bandWidth.toFixed(1)}" height="${plotHeight}" fill="#dbe3e7" fill-opacity="0.42"/><text x="${(left + 4).toFixed(1)}" y="${margin.top + 13}" font-size="9" font-weight="800" fill="#536a76"><title>${escapeHtml(item.label)}</title>${escapeHtml(chartLabel(item.label, 28))}</text></g>`;
+      const centerX = left + (bandWidth / 2);
+      const lane = Math.max(0, Number(item.lane || 0));
+      const labelY = 16 + (lane * 22);
+      const lines = eventLabelLines(item);
+      const leaderStartY = labelY + (Math.max(0, lines.length - 1) * 11) + 5;
+      return `<g class="chart-event-band"><rect x="${left.toFixed(1)}" y="${margin.top}" width="${bandWidth.toFixed(1)}" height="${plotHeight}" fill="#dbe3e7" fill-opacity="0.42"/><line class="chart-event-leader" x1="${centerX.toFixed(1)}" y1="${leaderStartY}" x2="${centerX.toFixed(1)}" y2="${margin.top - 3}"/>${eventText(item, centerX, labelY)}</g>`;
     }).join('') : '';
-    const eventMarkers = hasEventAnnotations ? eventAnnotations.filter((item) => item.type === 'marker').map((item, index) => {
+    const eventMarkers = hasEventAnnotations ? eventAnnotations.filter((item) => item.type === 'marker').map((item) => {
       const xpos = xForDate(item.date);
       if (!Number.isFinite(xpos)) return '';
-      const labelY = 14 + ((index % 3) * 15);
-      const shortLabel = chartLabel(item.label, 24);
-      return `<g class="chart-event-marker"><line x1="${xpos.toFixed(1)}" y1="${margin.top}" x2="${xpos.toFixed(1)}" y2="${margin.top + plotHeight}" stroke="#7b8790" stroke-width="1" stroke-dasharray="3 3"/><text x="${xpos.toFixed(1)}" y="${labelY}" text-anchor="middle" font-size="9" font-weight="800" fill="#4f626d"><title>${escapeHtml(item.label)}</title>${escapeHtml(shortLabel)}</text></g>`;
+      const lane = Math.max(0, Number(item.lane || 0));
+      const labelY = 16 + (lane * 22);
+      const lines = eventLabelLines(item);
+      const leaderStartY = labelY + (Math.max(0, lines.length - 1) * 11) + 5;
+      return `<g class="chart-event-marker"><line class="chart-event-leader" x1="${xpos.toFixed(1)}" y1="${leaderStartY}" x2="${xpos.toFixed(1)}" y2="${margin.top - 3}"/><line class="chart-event-guide" x1="${xpos.toFixed(1)}" y1="${margin.top}" x2="${xpos.toFixed(1)}" y2="${margin.top + plotHeight}"/>${eventText(item, xpos, labelY)}</g>`;
     }).join('') : '';
     const eventLayer = `${eventBands}${eventMarkers}`;
     const interactivePoints = series.flatMap((item, seriesIndex) => (item.values || []).map((value, index) => {
@@ -255,7 +290,8 @@
     }).join('');
     const legend = chartLegend(series);
     const svg = `<svg class="report-line-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${verticalGrid}${eventLayer}${plotted}${xLabels}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">${escapeHtml(yLabel)}</text></svg>`;
-    return `<div class="report-chart ${escapeHtml(className)}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
+    const chartClasses = ['report-chart', hasEventAnnotations ? 'report-chart-annotated' : '', className].filter(Boolean).map(escapeHtml).join(' ');
+    return `<div class="${chartClasses}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
   }
 
   function barChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser bar graph', className = '', yLabel = 'Broadcast $ / pledge hour', axisFormatter = compactMoney, pointFormatter = money } = {}) {

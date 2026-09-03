@@ -5,8 +5,8 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.137');
-assert.match(html, /0\.22\.137/);
+assert.equal(version.appVersion, '0.22.138');
+assert.match(html, /0\.22\.138/);
 assert.match(source, /function programTooltipLinesForRows/);
 assert.match(source, /function aggregateProgramTooltip/);
 assert.match(source, /\.map\(\(\[label, subset\]\) => \[label, subset, rankingRows\(subset, 'startTime'\)\]\)/);
@@ -28,7 +28,7 @@ assert.match(source, /stroke: '#ff2020', dash: '', width: 1\.1/);
 assert.match(source, /least-squares line reports the long-term slope/);
 assert.match(source, /HISTORICAL_EVENT_ANNOTATIONS/);
 assert.match(source, /Great Recession · Dec 2007–Jun 2009/);
-assert.match(source, /TCJA changes take effect · Jan 2018/);
+assert.match(source, /Federal tax-law changes · Jan 2018/);
 assert.match(source, /WNMU Passport · Feb 2019/);
 assert.match(source, /COVID emergency begins · Mar 2020/);
 assert.match(source, /COVID emergency ends · May 2023/);
@@ -49,6 +49,17 @@ assert.match(source, /view === 'years' \? 1\.15 : 1\.5/);
 assert.match(source, /style: \{ stroke: '#f0c419', dash: '', width: 1\.75 \}/);
 assert.match(source, /style: \{ stroke: '#ff2020', dash: '', width: 1\.1 \}/);
 assert.match(source, /bindHistoricalChartControls\(\$\('#report-output'\)\)/);
+assert.match(source, /const width = hasEventAnnotations \? 980 : \(crowdedChronology \? 920 : 760\)/);
+assert.match(source, /const xLabelAngle = crowdedChronology \? -68 : -46/);
+assert.match(source, /class=\"chart-x-label\"/);
+assert.match(source, /class=\"chart-event-leader\"/);
+assert.match(source, /class=\"chart-event-guide\"/);
+assert.match(source, /function|const eventLabelLines/);
+assert.match(source, /lines: \['WNMU Passport', 'Feb 2019'\]/);
+assert.match(source, /lines: \['COVID emergency begins', 'Mar 2020'\]/);
+assert.match(source, /lines: \['COVID emergency ends', 'May 2023'\]/);
+assert.match(source, /lines: \['CPB funding rescinded', 'Jul 2025'\]/);
+assert.match(source, /report-chart-annotated/);
 
 assert.match(source, /function barChartSvg/);
 assert.match(source, /fill-opacity=\"0\.72\"/);
@@ -64,4 +75,4 @@ assert.match(source, /tooltips: topics\.historicalTooltips/);
 assert.match(source, /tooltips: programs\.tooltips/);
 assert.match(source, /async function renderHistoricalReport\([\s\S]*?bindChartTooltips\(\$\('#report-output'\)\);[\s\S]*?bindHistoricalChartControls\(\$\('#report-output'\)\);\n  \}/);
 
-console.log('v0.22.137 chart hover, event annotation, era toggle, and trend tests passed');
+console.log('v0.22.138 chart hover, event annotation, era toggle, and trend tests passed');
