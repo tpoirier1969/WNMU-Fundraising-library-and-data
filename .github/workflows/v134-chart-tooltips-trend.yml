@@ -1,0 +1,37 @@
+name: v0.22.134 chart tooltip update
+
+on:
+  push:
+    branches:
+      - release/v0.22.134-chart-tooltips-trend
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-test:
+    if: github.event.head_commit.message != 'v0.22.134 add program tooltips and historical trend emphasis'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v0.22.134-chart-tooltips-trend
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply v0.22.134 changes
+        run: python .github/v134_chart_tooltips_trend.py
+      - name: Syntax check
+        run: node --check assets/js/one-sheet-reports.js
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js reports.html version.json tests/*.test.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "v0.22.134 add program tooltips and historical trend emphasis"
+          git push origin HEAD:release/v0.22.134-chart-tooltips-trend
