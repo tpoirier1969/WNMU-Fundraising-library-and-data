@@ -1070,7 +1070,7 @@
   }
 
   function topicComparisonChart(analyses, rows) {
-    return lineChartSvg({
+    return barChartSvg({
       labels: rows.map((row) => row.key),
       series: analyses.map((analysis, analysisIndex) => ({
         label: analysis.schedule.title,
@@ -1089,7 +1089,8 @@
         })
       })),
       ariaLabel: 'Broadcast dollars by topic and non-specific giving across selected fundraisers',
-      className: 'topic-comparison-chart'
+      className: 'topic-comparison-chart',
+      yLabel: 'Broadcast dollars'
     });
   }
 
@@ -1719,7 +1720,7 @@
     return chartCard(
       'Start-time performance',
       'Historical fundraiser-balanced median $/hour by schedule-reconciled 30-minute start slot. The detailed tables below retain the evidence counts and thresholds.',
-      lineChartSvg({
+      barChartSvg({
         labels: keys.map(formatTime),
         series: sets.map(([label, subset, rows]) => {
           const byKey = new Map(rows.map((row) => [Number(row.key), Number(row.medianDollarsPerHour || 0)]));
@@ -1738,7 +1739,6 @@
         }),
         ariaLabel: 'Historical start-time performance by weekday, Saturday, and Sunday',
         className: 'historical-start-time-overview',
-        legendTop: true,
         ...rateChartOptions()
       })
     );

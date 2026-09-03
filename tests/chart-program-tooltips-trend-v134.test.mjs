@@ -5,8 +5,8 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.138');
-assert.match(html, /0\.22\.138/);
+assert.equal(version.appVersion, '0.22.139');
+assert.match(html, /0\.22\.139/);
 assert.match(source, /function programTooltipLinesForRows/);
 assert.match(source, /function aggregateProgramTooltip/);
 assert.match(source, /\.map\(\(\[label, subset\]\) => \[label, subset, rankingRows\(subset, 'startTime'\)\]\)/);
@@ -73,6 +73,9 @@ assert.match(source, /incomeBarChartSvg\(days, analysis\)/);
 assert.match(source, /tooltips: topics\.currentTooltips/);
 assert.match(source, /tooltips: topics\.historicalTooltips/);
 assert.match(source, /tooltips: programs\.tooltips/);
+assert.match(source, /function topicComparisonChart\(analyses, rows\)[\s\S]*?return barChartSvg\(\{/);
+assert.match(source, /className: 'topic-comparison-chart',\n      yLabel: 'Broadcast dollars'/);
+assert.match(source, /function historicalStartTimeOverviewCard\(analyses = \[\]\)[\s\S]*?barChartSvg\(\{/);
 assert.match(source, /async function renderHistoricalReport\([\s\S]*?bindChartTooltips\(\$\('#report-output'\)\);[\s\S]*?bindHistoricalChartControls\(\$\('#report-output'\)\);\n  \}/);
 
 console.log('v0.22.138 chart hover, event annotation, era toggle, and trend tests passed');
