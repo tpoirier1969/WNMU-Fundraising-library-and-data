@@ -5,8 +5,8 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.138');
-assert.match(html, /0\.22\.138/);
+assert.equal(version.appVersion, '0.22.139');
+assert.match(html, /0\.22\.139/);
 assert.match(source, /function programTooltipLinesForRows/);
 assert.match(source, /function aggregateProgramTooltip/);
 assert.match(source, /\.map\(\(\[label, subset\]\) => \[label, subset, rankingRows\(subset, 'startTime'\)\]\)/);
