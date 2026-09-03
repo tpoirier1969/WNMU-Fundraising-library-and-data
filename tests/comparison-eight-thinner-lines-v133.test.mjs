@@ -14,6 +14,7 @@ assert.match(source, /analyses\.length < 2 \|\| analyses\.length > 8/);
 const styles = [...source.matchAll(/\{ stroke: '#[0-9a-fA-F]{6}', dash: '[^']*', width: ([0-9.]+) \}/g)].slice(0, 8);
 assert.equal(styles.length, 8);
 assert.ok(styles.every((match) => Number(match[1]) <= 2.75));
-assert.match(source, /width: 1\.25/);
+assert.match(source, /stroke: '#ff2020', dash: '', width: 3\.25/);
+assert.match(source, /stroke: '#ff2020', dash: '9 6', width: 2/);
 assert.match(html, /0\.22\.134/);
 console.log('v0.22.134 comparison limit and line-weight tests passed');
