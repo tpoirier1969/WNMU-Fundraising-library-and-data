@@ -23,6 +23,26 @@ jobs:
       - name: Apply chart audit changes
         run: |
           python .github/scripts/apply_v137_chart_audit.py
+          python - <<'PY'
+          from pathlib import Path
+
+          chart = Path('tests/chart-program-tooltips-trend-v134.test.mjs')
+          lines = chart.read_text().splitlines()
+          lines = [
+              "assert.match(source, /async function renderHistoricalReport\\([\\s\\S]*?bindChartTooltips\\(\\$\\('#report-output'\\)\\);[\\s\\S]*?bindHistoricalChartControls\\(\\$\\('#report-output'\\)\\);\\n  \\}/);"
+              if line.startswith('assert.match(source, /async function renderHistoricalReport')
+              else line
+              for line in lines
+          ]
+          chart.write_text('\n'.join(lines) + '\n')
+
+          historical = Path('tests/historical-refinements-v131.test.mjs')
+          text = historical.read_text().replace(
+              'assert.match(source, /fiveYearHistoryBands/);',
+              "assert.match(source, /function yearHistoryBands\\(analyses = \\[\\], bandSize = 3\\)/);\nassert.match(source, /yearHistoryBands\\(ordered, 3\\)/);"
+          )
+          historical.write_text(text)
+          PY
           node --check assets/js/one-sheet-reports.js
           node --test tests/*.test.mjs
       - name: Commit audited report changes
