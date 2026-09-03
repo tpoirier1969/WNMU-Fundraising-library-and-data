@@ -26,6 +26,37 @@ if '0.22.132' not in rs:
     raise SystemExit('reports.html does not contain v0.22.132 cache/version refs')
 r.write_text(rs.replace('0.22.132', '0.22.133'))
 
+# Keep regression expectations synchronized with the intentional new current version and comparison limit.
+for name in [
+    'tests/historical-labels-season-filter-v132.test.mjs',
+    'tests/historical-refinements-v131.test.mjs',
+    'tests/library-load-performance.test.mjs',
+    'tests/report-visual-historical-context-v130.test.mjs',
+]:
+    path = Path(name)
+    text = path.read_text()
+    if '0.22.132' not in text:
+        raise SystemExit(f'missing current-version expectation in {name}')
+    path.write_text(text.replace('0.22.132', '0.22.133'))
+
+for name in [
+    'tests/one-sheet-report-refinements.test.mjs',
+    'tests/one-sheet-reports.test.mjs',
+]:
+    path = Path(name)
+    text = path.read_text()
+    if 'Select 2–5 fundraisers' not in text:
+        raise SystemExit(f'missing comparison-selection expectation in {name}')
+    path.write_text(text.replace('Select 2–5 fundraisers', 'Select 2–8 fundraisers'))
+
+hardening = Path('tests/one-sheet-analysis-hardening.test.mjs')
+ht = hardening.read_text()
+old = "assert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 5);\nconst monochromeStyles = reportSandbox.__reportHarness.CHART_STYLES.map((style) => `${style.dash}|${style.width}`);\nassert.equal(new Set(monochromeStyles).size, 5, 'all five series must remain distinguishable when color is removed');"
+new = "assert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 8);\nconst monochromeStyles = reportSandbox.__reportHarness.CHART_STYLES.map((style) => `${style.dash}|${style.width}`);\nassert.equal(new Set(monochromeStyles).size, 8, 'all eight series must remain distinguishable when color is removed');"
+if old not in ht:
+    raise SystemExit('missing five-style hardening expectation')
+hardening.write_text(ht.replace(old, new))
+
 Path('tests/comparison-eight-thinner-lines-v133.test.mjs').write_text(r"""import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
