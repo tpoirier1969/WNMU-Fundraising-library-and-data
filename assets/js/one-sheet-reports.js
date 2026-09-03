@@ -132,7 +132,7 @@
 
   function chartLegend(series = []) {
     return `<div class="chart-legend">${series.map((item, index) => {
-      const style = CHART_STYLES[index % CHART_STYLES.length];
+      const style = item.style || CHART_STYLES[index % CHART_STYLES.length];
       return `<span><svg viewBox="0 0 36 12" aria-hidden="true"><line x1="2" y1="6" x2="34" y2="6" stroke="${style.stroke}" stroke-width="${style.width}"${style.dash ? ` stroke-dasharray="${style.dash}"` : ''}/><circle cx="18" cy="6" r="3" fill="#fff" stroke="${style.stroke}" stroke-width="2"/></svg><strong>${escapeHtml(item.label)}</strong></span>`;
     }).join('')}</div>`;
   }
@@ -211,7 +211,6 @@
     return `<div class="report-chart ${escapeHtml(className)}">${legendTop ? legend : ''}${svg}${legendTop ? '' : legend}</div>`;
   }
 
-
   function barChartSvg({ labels = [], series = [], ariaLabel = 'Fundraiser bar graph', className = '', yLabel = 'Broadcast $ / pledge hour', axisFormatter = compactMoney, pointFormatter = money } = {}) {
     if (!labels.length || !series.length) return '<div class="chart-empty">No chartable results.</div>';
     const width = 760;
@@ -234,14 +233,18 @@
       return `<g><line x1="${margin.left}" y1="${ypos.toFixed(1)}" x2="${width - margin.right}" y2="${ypos.toFixed(1)}" class="chart-grid-line"/><text x="${margin.left - 9}" y="${(ypos + 4).toFixed(1)}" text-anchor="end">${escapeHtml(axisFormatter(value))}</text></g>`;
     }).join('');
     const bars = cleanSeries.map((item, seriesIndex) => {
-      const style = CHART_STYLES[seriesIndex % CHART_STYLES.length];
+      const style = item.style || CHART_STYLES[seriesIndex % CHART_STYLES.length];
       return item.values.map((value, index) => {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
         const x = margin.left + (index * groupWidth) + ((groupWidth - innerWidth) / 2) + (seriesIndex * (barWidth + barGap));
         const ypos = y(value);
         const h = Math.max(0, (margin.top + plotHeight) - ypos);
         const title = `${item.label} · ${labels[index]}: ${pointFormatter(value)}`;
-        return `<rect x="${x.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="none" stroke="${style.stroke}" stroke-width="${Math.max(2, style.width - 1)}"><title>${escapeHtml(title)}</title></rect>`;
+        const rect = `<rect class="chart-bar" x="${x.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${style.stroke}" fill-opacity="0.72" stroke="${style.stroke}" stroke-width="${Math.max(2, style.width - 1)}"/>`;
+        const tooltip = item.tooltips?.[index] || null;
+        if (!tooltip) return `${rect.slice(0, -2)}><title>${escapeHtml(title)}</title></rect>`;
+        const payload = encodeURIComponent(JSON.stringify(tooltip));
+        return `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(payload)}">${rect}</g>`;
       }).join('');
     }).join('');
     const xLabels = labels.map((label, index) => {
@@ -294,7 +297,8 @@
     const tooltip = chartTooltipElement();
     const renderSection = (section = {}) => {
       const lines = Array.isArray(section.lines) ? section.lines.filter(Boolean) : [];
-      return `<div class="chart-tooltip-section"><strong>${escapeHtml(section.title || '')}</strong>${section.detail ? `<span>${escapeHtml(section.detail)}</span>` : ''}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : '<em>No program titles recorded for this day.</em>'}</div>`;
+      const emptyMessage = section.emptyMessage || 'No program titles are associated with this chart point.';
+      return `<div class="chart-tooltip-section"><strong>${escapeHtml(section.title || '')}</strong>${section.detail ? `<span>${escapeHtml(section.detail)}</span>` : ''}${lines.length ? `<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : `<em>${escapeHtml(emptyMessage)}</em>`}</div>`;
     };
     const sections = Array.isArray(payload.sections) ? payload.sections.filter(Boolean) : [];
     tooltip.innerHTML = (sections.length ? sections : [payload]).map(renderSection).join(sections.length > 1 ? '<hr aria-hidden="true">' : '');
@@ -321,7 +325,7 @@
     });
   }
 
-  function incomeBarChartSvg(days = []) {
+  function incomeBarChartSvg(days = [], analysis = null) {
     if (!days.length) return '<div class="chart-empty">No daily results.</div>';
     const width = 760;
     const height = 304;
@@ -347,7 +351,17 @@
       const barHeight = Math.max(dollars > 0 ? 2 : 0, margin.top + plotHeight - ypos);
       const center = xpos + (barWidth / 2);
       const weather = weatherParts(day);
-      return `<g><rect x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"><title>${escapeHtml(formatDate(day.date))}: ${escapeHtml(money(dollars))}</title></rect><text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-temp">${escapeHtml(weather.temp)}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 68}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-precip">${escapeHtml(weather.precip)}</text></g>`;
+      const title = `${formatDate(day.date)}: ${money(dollars)}`;
+      const tooltip = analysis ? {
+        title: `${formatDate(day.date)} · ${day.weekday || ''}`.trim(),
+        detail: `${money(dollars)} Broadcast · ${money(day.dollarsPerHour)}/hr · ${count(day.pledges)} pledges`,
+        lines: programResultsForFundraiserDay(analysis, day).map((item) => item.known ? `${item.title} — ${money(item.dollars)}` : `${item.title} — result unavailable`)
+      } : null;
+      const rect = `<rect class="chart-bar" x="${xpos.toFixed(1)}" y="${ypos.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="2" fill="#3d789d"/>`;
+      const bar = tooltip
+        ? `<g class="chart-node" tabindex="0" role="button" aria-label="${escapeHtml(title)}. Hover or focus for program titles." data-chart-tooltip="${escapeHtml(encodeURIComponent(JSON.stringify(tooltip)))}">${rect}</g>`
+        : `${rect.slice(0, -2)}><title>${escapeHtml(title)}</title></rect>`;
+      return `<g>${bar}<text x="${center.toFixed(1)}" y="${Math.max(14, ypos - 7).toFixed(1)}" text-anchor="middle" class="chart-value-label">${escapeHtml(compactMoney(dollars))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 20}" text-anchor="middle">${escapeHtml(formatDate(day.date, false))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 36}" text-anchor="middle" class="chart-secondary-label">${escapeHtml(String(day.weekday || '').slice(0, 3))}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 52}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-temp">${escapeHtml(weather.temp)}</text><text x="${center.toFixed(1)}" y="${margin.top + plotHeight + 68}" text-anchor="middle" class="chart-secondary-label chart-weather-label chart-weather-precip">${escapeHtml(weather.precip)}</text></g>`;
     }).join('');
     return `<div class="report-chart income-chart"><svg class="income-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Daily Broadcast income across the fundraiser"><line x1="${margin.left}" y1="${margin.top + plotHeight}" x2="${width - margin.right}" y2="${margin.top + plotHeight}" class="chart-axis"/><line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotHeight}" class="chart-axis"/>${grid}${bars}<text x="18" y="${margin.top + (plotHeight / 2)}" transform="rotate(-90 18 ${margin.top + (plotHeight / 2)})" text-anchor="middle" class="chart-axis-title">Broadcast dollars</text></svg></div>`;
   }
@@ -789,7 +803,6 @@
     return [...groups.values()];
   }
 
-
   function programTooltipLinesForRows(rows = [], limit = 24) {
     const groups = new Map();
     (rows || []).filter((row) => !rowIsNonSpecific(row)).forEach((row) => {
@@ -845,6 +858,42 @@
     if (!Number.isFinite(Number(row.startMinutes))) return null;
     const normalized = ((Number(row.startMinutes) % 1440) + 1440) % 1440;
     return Math.floor(normalized / 30) * 30;
+  }
+
+  function distributorKeyForRow(row = {}) {
+    const distributor = A.text(row.distributor || 'Unknown').toUpperCase();
+    return distributor === 'EPS TV' ? 'EPS' : (distributor || 'UNKNOWN');
+  }
+
+  function historicalDimensionMatchesRow(row = {}, dimension = '', key = '') {
+    if (dimension === 'topic') return A.lookupKey(row.topic || 'Uncategorized') === A.lookupKey(key);
+    if (dimension === 'subtopic') return A.lookupKey(row.secondary || 'Unspecified') === A.lookupKey(key);
+    if (dimension === 'startTime') return startBucketForRow(row) === Number(key);
+    if (dimension === 'weekpart') return A.lookupKey(weekpartForDate(row.dateKey)) === A.lookupKey(key);
+    if (dimension === 'daypart') return A.lookupKey(row.daypart || 'Unknown') === A.lookupKey(key);
+    if (dimension === 'breakType') return A.lookupKey(row.liveBreak ? 'Live break' : 'Pre-recorded break') === A.lookupKey(key);
+    if (dimension === 'distributor') return A.lookupKey(distributorKeyForRow(row)) === A.lookupKey(key);
+    return false;
+  }
+
+  function historicalContributingRows(analyses = [], dimension = '', key = '') {
+    const rows = [];
+    (analyses || []).forEach((analysis) => {
+      const matching = (analysis?.placementRows || []).filter((row) => row?.countsTowardScheduleMinutes !== false && !row?.unmatchedImported && historicalDimensionMatchesRow(row, dimension, key));
+      if (!matching.length) return;
+      if (!matching.every((row) => row?.known && !row?.durationMissing && Number(row?.minutes) > 0)) return;
+      rows.push(...matching);
+    });
+    return rows;
+  }
+
+  function historicalRankingTooltip(analyses = [], dimension = '', row = {}) {
+    const contributing = historicalContributingRows(analyses, dimension, row.key);
+    return {
+      title: historicalKeyLabel(dimension, row.key),
+      detail: `${money(row.medianDollarsPerHour)}/hr median · ${count(row.rateAirings)} rate-valid airings · ${count(row.fundraisers)} fundraisers · ${count(row.titles)} titles`,
+      lines: programTooltipLinesForRows(contributing)
+    };
   }
 
   function dailyComparisonChart(analyses, aligned) {
@@ -928,7 +977,17 @@
         label: analysis.schedule.title,
         values: rows.map((row) => row.isNonSpecific
           ? Number(row.values?.[analysisIndex]?.dollars || 0)
-          : (Number(row.values?.[analysisIndex]?.scheduled || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0))
+          : (Number(row.values?.[analysisIndex]?.scheduled || 0) > 0 ? Number(row.values[analysisIndex].dollars || 0) : 0)),
+        tooltips: rows.map((row) => {
+          const value = row.values?.[analysisIndex] || null;
+          if (row.isNonSpecific || !(Number(value?.scheduled || 0) > 0)) return null;
+          return aggregateProgramTooltip(
+            [analysis],
+            `${analysis.schedule.title} · ${row.key}`,
+            `${money(value.dollars)} Broadcast · ${count(value.pledges)} pledges · ${count(value.scheduled)} airings`,
+            (placement) => A.lookupKey(placement.topic) === A.lookupKey(row.key)
+          );
+        })
       })),
       ariaLabel: 'Broadcast dollars by topic and non-specific giving across selected fundraisers',
       className: 'topic-comparison-chart'
@@ -1004,7 +1063,7 @@
   async function initComparison() {
     document.title = 'WNMU Fundraiser Comparison Report';
     $('#report-page-title').textContent = 'Fundraiser Comparison';
-    $('#report-page-subtitle').textContent = 'Retrospective comparison of 2–5 fundraiser periods';
+    $('#report-page-subtitle').textContent = 'Retrospective comparison of 2–8 fundraiser periods';
     state.season = defaultSeason();
     ensureDefaultComparisonSelection();
     renderComparisonControls();
@@ -1039,20 +1098,20 @@
 
   function dailyIncomeChart(analysis) {
     const days = A.calendarDays(analysis);
-    return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars across the fundraiser.</p></div></div>${incomeBarChartSvg(days)}</section>`;
+    return `<section class="sheet-section income-curve"><div class="section-heading"><div><h2>Income across the fundraiser</h2><p>Daily Broadcast dollars across the fundraiser.</p></div></div>${incomeBarChartSvg(days, analysis)}</section>`;
   }
 
   function fundraiserAirSchedule(analysis) {
-  const rows = [...(analysis?.placementRows || [])]
-    .filter((row) => A.text(row?.dateKey) && !rowIsNonSpecific(row))
-    .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
-  const body = rows.map((row) => {
-    const title = A.text(row.title || row.plannedTitle || 'Untitled program');
-    const known = Boolean(row.known);
-    return `<tr><td>${escapeHtml(formatDate(row.dateKey))}</td><th class="program-result-title">${escapeHtml(title)}</th><td>${escapeHtml(formatTime(row.startMinutes))}</td><td>${known ? escapeHtml(count(row.pledges)) : '<span class="muted-cell">—</span>'}</td><td class="${known ? 'metric-primary' : 'muted-cell'}">${known ? escapeHtml(money(row.dollars)) : '—'}</td></tr>`;
-  }).join('');
-  return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Airing schedule & results</h2><p>Date, title, start time, pledges, and Broadcast income for each program airing.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Title</th><th>Start time</th><th>Pledges</th><th>Income</th></tr></thead><tbody>${body || '<tr><td colspan="5">No program airings are recorded for this fundraiser.</td></tr>'}</tbody></table></div></section>`;
-}
+    const rows = [...(analysis?.placementRows || [])]
+      .filter((row) => A.text(row?.dateKey) && !rowIsNonSpecific(row))
+      .sort((a, b) => A.text(a.dateKey).localeCompare(A.text(b.dateKey)) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    const body = rows.map((row) => {
+      const title = A.text(row.title || row.plannedTitle || 'Untitled program');
+      const known = Boolean(row.known);
+      return `<tr><td>${escapeHtml(formatDate(row.dateKey))}</td><th class="program-result-title">${escapeHtml(title)}</th><td>${escapeHtml(formatTime(row.startMinutes))}</td><td>${known ? escapeHtml(count(row.pledges)) : '<span class="muted-cell">—</span>'}</td><td class="${known ? 'metric-primary' : 'muted-cell'}">${known ? escapeHtml(money(row.dollars)) : '—'}</td></tr>`;
+    }).join('');
+    return `<section class="sheet-section fundraiser-air-schedule"><div class="section-heading"><div><h2>Airing schedule & results</h2><p>Date, title, start time, pledges, and Broadcast income for each program airing.</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Title</th><th>Start time</th><th>Pledges</th><th>Income</th></tr></thead><tbody>${body || '<tr><td colspan="5">No program airings are recorded for this fundraiser.</td></tr>'}</tbody></table></div></section>`;
+  }
 
   function fundraiserDailyTable(analysis) {
     const days = A.calendarDays(analysis);
@@ -1286,7 +1345,6 @@
     ].join('');
   }
 
-
   function medianNumber(values = []) {
     const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
     if (!sorted.length) return 0;
@@ -1497,7 +1555,11 @@
     const rows = rankingRows(analyses, dimension, options).slice(0, limit);
     return chartCard(title, description, barChartSvg({
       labels: rows.map((row) => historicalKeyLabel(dimension, row.key)),
-      series: [{ label: 'Historical median', values: rows.map((row) => Number(row.medianDollarsPerHour || 0)) }],
+      series: [{
+        label: 'Historical median',
+        values: rows.map((row) => Number(row.medianDollarsPerHour || 0)),
+        tooltips: rows.map((row) => historicalRankingTooltip(analyses, dimension, row))
+      }],
       ariaLabel: `${title} historical median rate`,
       className: `historical-${dimension}-overview`,
       ...rateChartOptions()
@@ -1603,11 +1665,21 @@
       .sort((a, b) => Number(b.value.dollarsPerHour || 0) - Number(a.value.dollarsPerHour || 0))
       .slice(0, 10);
     const historicalRows = rankingRows(historical, 'topic');
-    const historicalByKey = new Map(historicalRows.map((row) => [A.lookupKey(row.key), Number(row.medianDollarsPerHour || 0)]));
+    const historicalByKey = new Map(historicalRows.map((row) => [A.lookupKey(row.key), row]));
     return {
       labels: current.map((item) => item.key),
       current: current.map((item) => Number(item.value.dollarsPerHour || 0)),
-      historical: current.map((item) => historicalByKey.has(A.lookupKey(item.key)) ? historicalByKey.get(A.lookupKey(item.key)) : null)
+      currentTooltips: current.map((item) => aggregateProgramTooltip(
+        [analysis],
+        `${analysis.schedule.title} · ${item.key}`,
+        `${money(item.value.dollarsPerHour)}/hr · ${money(item.value.dollars)} Broadcast · ${count(item.value.pledges)} pledges`,
+        (row) => A.lookupKey(row.topic) === A.lookupKey(item.key)
+      )),
+      historical: current.map((item) => historicalByKey.has(A.lookupKey(item.key)) ? Number(historicalByKey.get(A.lookupKey(item.key)).medianDollarsPerHour || 0) : null),
+      historicalTooltips: current.map((item) => {
+        const row = historicalByKey.get(A.lookupKey(item.key));
+        return row ? historicalRankingTooltip(historical, 'topic', row) : null;
+      })
     };
   }
 
@@ -1616,7 +1688,16 @@
       .filter((row) => !isNonSpecificLabel(row.title) && Number(row.rateMinutes || 0) > 0)
       .sort((a, b) => Number(b.dollarsPerHour || 0) - Number(a.dollarsPerHour || 0))
       .slice(0, 10);
-    return { labels: rows.map((row) => row.title), values: rows.map((row) => Number(row.dollarsPerHour || 0)) };
+    return {
+      labels: rows.map((row) => row.title),
+      values: rows.map((row) => Number(row.dollarsPerHour || 0)),
+      tooltips: rows.map((row) => aggregateProgramTooltip(
+        [analysis],
+        row.title,
+        `${money(row.dollarsPerHour)}/hr · ${money(row.dollars)} Broadcast · ${count(row.pledges)} pledges · ${count(row.airings)} airing${Number(row.airings) === 1 ? '' : 's'}`,
+        (placement) => A.lookupKey(placement.title || placement.plannedTitle || '') === A.lookupKey(row.title)
+      ))
+    };
   }
 
   function selectedHistoryTrendCard(analysis, historical, metric, title, description, yLabel, suffix = '/hr') {
@@ -1644,7 +1725,7 @@
     const topics = currentTopicComparisonData(analysis, historical);
     const programs = currentProgramRateData(analysis);
     const cards = [
-      chartCard('Daily Broadcast income', 'Daily Broadcast dollars. The day-by-day table later in the report supplies hours, $/hour, pledges, and weather.', incomeBarChartSvg(days)),
+      chartCard('Daily Broadcast income', 'Daily Broadcast dollars. The day-by-day table later in the report supplies hours, $/hour, pledges, and weather.', incomeBarChartSvg(days, analysis)),
       chartCard('Corresponding fundraiser days vs history', 'The selected fundraiser is aligned to the same fundraiser-day positions used in Historical Analytics, preserving actual calendar behavior around the first Saturday.', lineChartSvg({
         labels: corresponding.labels,
         series: [
@@ -1662,8 +1743,8 @@
       chartCard('Topic performance vs history', 'Current topic $/hour beside the historical fundraiser-level median for the same topic when enough historical evidence exists.', barChartSvg({
         labels: topics.labels,
         series: [
-          { label: 'This fundraiser', values: topics.current },
-          { label: 'Historical median', values: topics.historical }
+          { label: 'This fundraiser', values: topics.current, tooltips: topics.currentTooltips },
+          { label: 'Historical median', values: topics.historical, tooltips: topics.historicalTooltips }
         ],
         ariaLabel: 'Current topic performance compared with historical medians',
         className: 'fundraiser-topic-comparison',
@@ -1671,7 +1752,7 @@
       })),
       chartCard('Top program rates', 'The strongest rate-valid programs in this fundraiser. The program-results table later supplies dollars, pledges, length, and airing counts.', barChartSvg({
         labels: programs.labels,
-        series: [{ label: 'This fundraiser', values: programs.values }],
+        series: [{ label: 'This fundraiser', values: programs.values, tooltips: programs.tooltips }],
         ariaLabel: 'Top current fundraiser program rates',
         className: 'fundraiser-program-overview',
         ...rateChartOptions()
@@ -1767,6 +1848,7 @@
     }
     if (!(await ensureDurationDecision(analyses))) return;
     $('#report-output').innerHTML = `<article class="one-sheet historical-sheet">${historicalHeader(analyses)}${durationNoticeSection(analyses)}${historicalReportBody(analyses)}<footer class="sheet-footer">Historical rankings use fundraiser-balanced median Broadcast $/hour: each fundraiser contributes at most one rate observation to each category or start-time slot, regardless of how many individual programs it aired there. A category is omitted for a fundraiser if any of its scheduled rows in that category has an unknown result or missing duration. Non-Specific Pledges are not treated as incomplete program/topic data. Start-time rankings are evaluated separately for Weekdays, Saturdays, and Sundays; each requires 5 rate-valid airings across 3 rate-valid fundraisers and 3 distinct rate-valid titles. Imported results that cannot be reconciled to a saved schedule placement remain in fundraiser totals but are excluded from historical performance rankings.</footer></article>`;
+    bindChartTooltips($('#report-output'));
   }
 
   async function initHistorical() {
@@ -1776,7 +1858,6 @@
     historicalControls();
     await renderHistoricalReport();
   }
-
 
   function preflightResolveLibraryRow(row = {}) {
     const id = A.text(row?.pledge_program_id || row?.manual_match_program_id || row?.program_id || '');
