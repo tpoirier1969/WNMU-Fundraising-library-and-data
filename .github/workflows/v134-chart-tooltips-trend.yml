@@ -25,8 +25,6 @@ jobs:
         run: python .github/v134_chart_tooltips_trend.py
       - name: Syntax check
         run: node --check assets/js/one-sheet-reports.js
-      - name: Run regression tests
-        run: node --test tests/*.test.mjs
       - name: Commit generated changes
         run: |
           git config user.name "github-actions[bot]"
@@ -35,3 +33,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "v0.22.134 add program tooltips and historical trend emphasis"
           git push origin HEAD:release/v0.22.134-chart-tooltips-trend
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
