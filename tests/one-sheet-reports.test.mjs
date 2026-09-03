@@ -147,7 +147,7 @@ const indexes = A.buildLibraryIndexes([
 const reportSource = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../assets/one-sheet-reports.css', import.meta.url), 'utf8');
 const reportHtml = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
-assert.match(reportSource, /Select 2–5 fundraisers/);
+assert.match(reportSource, /Select 2–8 fundraisers/);
 assert.match(reportSource, /function fundraiserAirSchedule/);
 assert.match(reportSource, /Airing schedule & results/);
 assert.match(css, /fundraiser-air-schedule table/);
@@ -175,7 +175,7 @@ assert.match(reportSource, /state\.schedules\.filter\(scheduleHasImportedResults
 assert.match(reportSource, /Preview schedule repair/);
 assert.match(reportSource, /repairedFromPreflight/);
 assert.match(reportSource, /The imported pledge report proves activity occurred/);
-assert.match(reportHtml, /0\.22\.132/);
+assert.match(reportHtml, /0\.22\.133/);
 assert.match(reportSource, /programResultsForFundraiserDay/);
 assert.match(reportSource, /Regional \${weatherLine\(day\)}/);
 assert.match(reportSource, /Affected title/);

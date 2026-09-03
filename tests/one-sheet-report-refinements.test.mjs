@@ -19,7 +19,7 @@ assert.match(reports, /Broadcast dollars by topic and non-specific giving across
 assert.match(reports, /function recurringProgramKeys/);
 assert.match(reports, /Programs shown in bold aired in two or more selected fundraisers/);
 assert.match(reports, /legendTop: true/);
-assert.match(reports, /Select 2–5 fundraisers/);
+assert.match(reports, /Select 2–8 fundraisers/);
 assert.match(reports, /function fundraiserAirSchedule/);
 assert.match(reports, /Airing schedule & results/);
 assert.match(reports, /<th>Date<\/th><th>Title<\/th><th>Start time<\/th><th>Pledges<\/th><th>Income<\/th>/);
@@ -59,7 +59,7 @@ assert.match(reports, /chart-weather-label/);
 assert.match(reports, /chart-weather-temp/);
 assert.match(reports, /chart-weather-precip/);
 assert.match(reports, /bottom: 92/);
-assert.match(reports, /width: 4/);
+assert.match(reports, /width: 2\.75/);
 assert.match(reports, /stroke-width=\"\$\{style\.width\}\"/);
 assert.match(reports, /\$\{escapeHtml\(weatherLine\(day\)\)\}/);
 assert.match(reports, /Regional \${weatherLine\(day\)}/);
@@ -87,9 +87,9 @@ assert.match(css, /thead th\{font-size:9pt/);
 assert.match(css, /\.fundraiser-kpis strong\{font-size:13pt/);
 assert.match(css, /\.report-chart svg text\{font-size:9pt/);
 
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.132/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.132/);
-assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.132/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.133/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.133/);
+assert.match(reportHtml, /one-sheet-reports\.css\?v=0\.22\.133/);
 assert.match(reportHtml, /report-fundraiser-picker/);
 assert.match(reportHtml, /report-fundraiser-trigger/);
 assert.match(reportHtml, /function enhanceFundraiserPicker/);
@@ -114,8 +114,8 @@ console.log('one-sheet report refinements tests passed');
 assert.match(reports, /A\.canonicalizeImportedAirings \? A\.canonicalizeImportedAirings\(airings\) : airings/);
 assert.match(reports, /preflight-program-link/);
 assert.match(reports, /Superseded imported observations/);
-assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.132/);
-assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.132/);
+assert.match(reportHtml, /one-sheet-analysis\.js\?v=0\.22\.133/);
+assert.match(reportHtml, /one-sheet-reports\.js\?v=0\.22\.133/);
 
 
 assert.match(reports, /data-preflight-program-id/);

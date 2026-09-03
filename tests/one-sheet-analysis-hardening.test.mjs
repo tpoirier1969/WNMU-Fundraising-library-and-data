@@ -233,9 +233,9 @@ const reportSandbox = { console, window: {}, document: { addEventListener() {} }
 vm.createContext(reportSandbox);
 vm.runInContext(reportHarnessSource, reportSandbox);
 assert.ok(reportSandbox.__reportHarness?.lineChartSvg, 'report chart harness should expose lineChartSvg');
-assert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 5);
+assert.equal(reportSandbox.__reportHarness.CHART_STYLES.length, 8);
 const monochromeStyles = reportSandbox.__reportHarness.CHART_STYLES.map((style) => `${style.dash}|${style.width}`);
-assert.equal(new Set(monochromeStyles).size, 5, 'all five series must remain distinguishable when color is removed');
+assert.equal(new Set(monochromeStyles).size, 8, 'all eight series must remain distinguishable when color is removed');
 const overlapHtml = reportSandbox.__reportHarness.lineChartSvg({
   labels: ['1st Saturday'],
   series: [
