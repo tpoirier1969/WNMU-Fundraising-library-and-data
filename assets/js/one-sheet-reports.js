@@ -789,6 +789,64 @@
     return [...groups.values()];
   }
 
+
+  function programTooltipLinesForRows(rows = [], limit = 24) {
+    const groups = new Map();
+    (rows || []).filter((row) => !rowIsNonSpecific(row)).forEach((row) => {
+      const title = A.text(row.title || row.plannedTitle || '');
+      if (!title) return;
+      const key = title.toLowerCase();
+      if (!groups.has(key)) groups.set(key, { title, dollars: 0, pledges: 0, airings: 0, known: 0 });
+      const item = groups.get(key);
+      item.airings += 1;
+      if (row.known) {
+        item.known += 1;
+        item.dollars += Number(row.dollars || 0);
+        item.pledges += Number(row.pledges || 0);
+      }
+    });
+    const items = [...groups.values()].sort((a, b) => Number(b.dollars || 0) - Number(a.dollars || 0) || a.title.localeCompare(b.title));
+    const shown = items.slice(0, limit).map((item) => item.known
+      ? `${item.title} — ${money(item.dollars)} · ${count(item.pledges)} pledge${Number(item.pledges) === 1 ? '' : 's'}${item.airings > 1 ? ` · ${item.airings} airings` : ''}`
+      : `${item.title} — result unavailable`);
+    if (items.length > limit) shown.push(`+ ${items.length - limit} more program title${items.length - limit === 1 ? '' : 's'}`);
+    return shown;
+  }
+
+  function analysisProgramTooltip(analysis, title = '', detail = '') {
+    return {
+      title: title || A.text(analysis?.schedule?.title || 'Fundraiser'),
+      detail,
+      lines: programTooltipLinesForRows(analysis?.placementRows || [])
+    };
+  }
+
+  function aggregateProgramTooltip(analyses = [], title = '', detail = '', rowFilter = null) {
+    const rows = (analyses || []).flatMap((analysis) => (analysis?.placementRows || []).filter((row) => !rowFilter || rowFilter(row, analysis)));
+    return { title, detail, lines: programTooltipLinesForRows(rows) };
+  }
+
+  function linearTrend(values = []) {
+    const points = values.map((value, index) => ({ x: index, y: Number(value) })).filter((point) => Number.isFinite(point.y));
+    if (points.length < 2) return { values: values.map(() => null), slope: 0, intercept: 0, r2: 0, n: points.length };
+    const meanX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+    const meanY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+    const ssX = points.reduce((sum, point) => sum + ((point.x - meanX) ** 2), 0);
+    const slope = ssX ? points.reduce((sum, point) => sum + ((point.x - meanX) * (point.y - meanY)), 0) / ssX : 0;
+    const intercept = meanY - (slope * meanX);
+    const predicted = values.map((_value, index) => intercept + (slope * index));
+    const ssTot = points.reduce((sum, point) => sum + ((point.y - meanY) ** 2), 0);
+    const ssRes = points.reduce((sum, point) => sum + ((point.y - (intercept + (slope * point.x))) ** 2), 0);
+    const r2 = ssTot ? Math.max(0, Math.min(1, 1 - (ssRes / ssTot))) : 1;
+    return { values: predicted, slope, intercept, r2, n: points.length };
+  }
+
+  function startBucketForRow(row = {}) {
+    if (!Number.isFinite(Number(row.startMinutes))) return null;
+    const normalized = ((Number(row.startMinutes) % 1440) + 1440) % 1440;
+    return Math.floor(normalized / 30) * 30;
+  }
+
   function dailyComparisonChart(analyses, aligned) {
     return lineChartSvg({
       labels: aligned.map((entry) => entry.label.title),
@@ -1299,6 +1357,17 @@
       values: aligned.map((entry) => {
         const values = (entry.days || []).filter(Boolean).map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite);
         return values.length ? medianNumber(values) : null;
+      }),
+      tooltips: aligned.map((entry) => {
+        const contributing = (entry.days || []).map((day, index) => day ? { day, analysis: analyses[index] } : null).filter(Boolean);
+        const values = contributing.map(({ day }) => Number(day.dollarsPerHour)).filter(Number.isFinite);
+        if (!values.length) return null;
+        const rows = contributing.flatMap(({ day, analysis }) => (analysis?.placementRows || []).filter((row) => A.text(row.dateKey) === A.text(day.dateKey)));
+        return {
+          title: `Corresponding ${entry.label.title}`,
+          detail: `${contributing.length} fundraiser observation${contributing.length === 1 ? '' : 's'} · median ${money(medianNumber(values))}/hr`,
+          lines: programTooltipLinesForRows(rows)
+        };
       })
     };
   }
@@ -1309,10 +1378,29 @@
     const labels = combined.labels;
     const series = bands.map((band) => {
       const data = correspondingDaySeries(band.analyses);
-      const byLabel = new Map(data.labels.map((label, index) => [label, data.values[index]]));
-      return { label: band.label, values: labels.map((label) => byLabel.has(label) ? byLabel.get(label) : null) };
+      const byLabel = new Map(data.labels.map((label, index) => [label, { value: data.values[index], tooltip: data.tooltips?.[index] || null }]));
+      return {
+        label: band.label,
+        values: labels.map((label) => byLabel.has(label) ? byLabel.get(label).value : null),
+        tooltips: labels.map((label) => byLabel.has(label) ? byLabel.get(label).tooltip : null)
+      };
     });
-    series.push({ label: 'All selected years', values: combined.values, style: { stroke: '#667781', dash: '5 5', width: 1.25 } });
+    series.push({
+      label: 'All selected years',
+      values: combined.values,
+      tooltips: combined.tooltips,
+      style: { stroke: '#ff2020', dash: '', width: 3.25 }
+    });
+    const trend = linearTrend(combined.values);
+    if (trend.n >= 2) {
+      const sign = trend.slope >= 0 ? '+' : '−';
+      const slope = money(Math.abs(trend.slope));
+      series.push({
+        label: `Long-term linear trend: ${sign}${slope}/hr per fundraiser-day position · R² ${trend.r2.toFixed(2)}`,
+        values: trend.values,
+        style: { stroke: '#ff2020', dash: '9 6', width: 2 }
+      });
+    }
     return { labels, series };
   }
 
@@ -1322,9 +1410,29 @@
     return {
       labels: combined.map((entry) => entry.label.title),
       current: combined.map((entry) => entry.days?.[0] ? Number(entry.days[0].dollarsPerHour) : null),
+      currentTooltips: combined.map((entry) => {
+        const day = entry.days?.[0] || null;
+        if (!day) return null;
+        return {
+          title: `${analysis.schedule.title} · ${entry.label.title}`,
+          detail: `${formatDate(day.date)} · ${money(day.dollarsPerHour)}/hr`,
+          lines: programResultsForFundraiserDay(analysis, day).map((item) => item.known ? `${item.title} — ${money(item.dollars)}` : `${item.title} — result unavailable`)
+        };
+      }),
       historical: combined.map((entry) => {
         const values = (entry.days || []).slice(1).filter(Boolean).map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite);
         return values.length ? medianNumber(values) : null;
+      }),
+      historicalTooltips: combined.map((entry) => {
+        const pairs = (entry.days || []).slice(1).map((day, index) => day ? { day, analysis: baseline[index] } : null).filter(Boolean);
+        const values = pairs.map(({ day }) => Number(day.dollarsPerHour)).filter(Number.isFinite);
+        if (!values.length) return null;
+        const rows = pairs.flatMap(({ day, analysis: item }) => (item?.placementRows || []).filter((row) => A.text(row.dateKey) === A.text(day.dateKey)));
+        return {
+          title: `Historical median · ${entry.label.title}`,
+          detail: `${pairs.length} fundraiser observation${pairs.length === 1 ? '' : 's'} · ${money(medianNumber(values))}/hr`,
+          lines: programTooltipLinesForRows(rows)
+        };
       })
     };
   }
@@ -1347,7 +1455,12 @@
       ordered,
       labels: ordered.map(analysisTrendLabel),
       axisLabels: ordered.map(compactTrendAxisLabel),
-      values: ordered.map((analysis) => Number(metric(analysis) || 0))
+      values: ordered.map((analysis) => Number(metric(analysis) || 0)),
+      tooltips: ordered.map((analysis) => analysisProgramTooltip(
+        analysis,
+        analysis.schedule.title,
+        `${formatDate(analysis.schedule.startDate)}–${formatDate(analysis.schedule.endDate)} · ${money(analysis.broadcastDollars)} Broadcast · ${count(analysis.pledges)} pledges`
+      ))
     };
   }
 
@@ -1362,6 +1475,11 @@
         values: years.map((year) => {
           const values = ordered.filter((analysis) => Number(analysis.schedule?.year || 0) === year && historicalSeasonBucket(analysis) === season).map(rateForAnalysis).filter((value) => Number.isFinite(Number(value)));
           return values.length ? medianNumber(values) : null;
+        }),
+        tooltips: years.map((year) => {
+          const subset = ordered.filter((analysis) => Number(analysis.schedule?.year || 0) === year && historicalSeasonBucket(analysis) === season);
+          if (!subset.length) return null;
+          return aggregateProgramTooltip(subset, `${season} ${year}`, `${subset.length} fundraiser${subset.length === 1 ? '' : 's'} contributing to this point`);
         })
       }))
     };
@@ -1400,7 +1518,18 @@
         labels: keys.map(formatTime),
         series: sets.map(([label, rows]) => {
           const byKey = new Map(rows.map((row) => [Number(row.key), Number(row.medianDollarsPerHour || 0)]));
-          return { label, values: keys.map((key) => byKey.has(key) ? byKey.get(key) : null) };
+          return {
+            label,
+            values: keys.map((key) => byKey.has(key) ? byKey.get(key) : null),
+            tooltips: keys.map((key) => byKey.has(key)
+              ? aggregateProgramTooltip(
+                  subset,
+                  `${label} · ${formatTime(key)}`,
+                  `${money(byKey.get(key))}/hr historical fundraiser-balanced median`,
+                  (row) => startBucketForRow(row) === key
+                )
+              : null)
+          };
         }),
         ariaLabel: 'Historical start-time performance by weekday, Saturday, and Sunday',
         className: 'historical-start-time-overview',
@@ -1419,7 +1548,7 @@
       chartCard('Fundraiser productivity over time', 'One observation per fundraiser. Every fundraiser keeps its own tick and vertical guide; compact season labels keep the full chronology visible.', lineChartSvg({
         labels: productivity.labels,
         xDisplayLabels: productivity.axisLabels,
-        series: [{ label: 'Broadcast $ / pledge hour', values: productivity.values }],
+        series: [{ label: 'Broadcast $ / pledge hour', values: productivity.values, tooltips: productivity.tooltips }],
         ariaLabel: 'Historical fundraiser productivity over time',
         className: 'historical-productivity-trend',
         xLabelEvery: 1,
@@ -1429,7 +1558,7 @@
       chartCard('Average gift over time', 'Broadcast dollars per pledge by fundraiser, separating changes in gift size from changes in donor frequency. Compact labels preserve every fundraiser on the time axis.', lineChartSvg({
         labels: gifts.labels,
         xDisplayLabels: gifts.axisLabels,
-        series: [{ label: '$ / pledge', values: gifts.values }],
+        series: [{ label: '$ / pledge', values: gifts.values, tooltips: gifts.tooltips }],
         ariaLabel: 'Historical dollars per pledge over time',
         className: 'historical-gift-trend',
         yLabel: 'Broadcast $ / pledge',
@@ -1447,7 +1576,7 @@
         verticalGridEvery: 1,
         ...rateChartOptions()
       }), 'visual-card-wide'),
-      chartCard('Corresponding fundraiser days by era', 'Five-year bands show how the fundraiser calendar and day-by-day productivity have changed. The thin dashed line is the combined result for the selected date range.', lineChartSvg({
+      chartCard('Corresponding fundraiser days by era', 'Five-year bands show how the fundraiser calendar and day-by-day productivity have changed. The bright red line combines all selected years; the dashed red least-squares line reports the long-term slope across fundraiser-day positions with R² in the legend.', lineChartSvg({
         labels: correspondingBands.labels,
         series: correspondingBands.series,
         ariaLabel: 'Historical corresponding fundraiser day performance by five-year period',
@@ -1497,8 +1626,8 @@
     return chartCard(title, description, lineChartSvg({
       labels: trend.labels,
       series: [
-        { label: 'Historical', values: trend.values },
-        { label: 'Selected fundraiser', values: marker }
+        { label: 'Historical', values: trend.values, tooltips: trend.tooltips },
+        { label: 'Selected fundraiser', values: marker, tooltips: trend.tooltips.map((tooltip, index) => marker[index] === null ? null : tooltip) }
       ],
       ariaLabel: title,
       className: 'fundraiser-history-trend',
@@ -1519,8 +1648,8 @@
       chartCard('Corresponding fundraiser days vs history', 'The selected fundraiser is aligned to the same fundraiser-day positions used in Historical Analytics, preserving actual calendar behavior around the first Saturday.', lineChartSvg({
         labels: corresponding.labels,
         series: [
-          { label: 'This fundraiser', values: corresponding.current },
-          { label: 'Historical median', values: corresponding.historical }
+          { label: 'This fundraiser', values: corresponding.current, tooltips: corresponding.currentTooltips },
+          { label: 'Historical median', values: corresponding.historical, tooltips: corresponding.historicalTooltips }
         ],
         ariaLabel: 'Current corresponding fundraiser days compared with historical median',
         className: 'fundraiser-corresponding-days-comparison',
