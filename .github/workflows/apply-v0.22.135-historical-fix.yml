@@ -1,0 +1,172 @@
+name: Apply v0.22.135 historical report fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-v0.22.135-historical-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Apply historical report fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          report_path = Path('assets/js/one-sheet-reports.js')
+          source = report_path.read_text(encoding='utf-8')
+
+          old_sets = """    const sets = [
+              ['Weekday', analysesForWeekpart(analyses, 'Weekday')],
+              ['Saturday', analysesForWeekpart(analyses, 'Saturday')],
+              ['Sunday', analysesForWeekpart(analyses, 'Sunday')]
+            ].map(([label, subset]) => [label, rankingRows(subset, 'startTime')]);
+            const keys = [...new Set(sets.flatMap(([_label, rows]) => rows.map((row) => Number(row.key)).filter(Number.isFinite)))].sort((a, b) => a - b);"""
+          new_sets = """    const sets = [
+              ['Weekday', analysesForWeekpart(analyses, 'Weekday')],
+              ['Saturday', analysesForWeekpart(analyses, 'Saturday')],
+              ['Sunday', analysesForWeekpart(analyses, 'Sunday')]
+            ].map(([label, subset]) => [label, subset, rankingRows(subset, 'startTime')]);
+            const keys = [...new Set(sets.flatMap(([_label, _subset, rows]) => rows.map((row) => Number(row.key)).filter(Number.isFinite)))].sort((a, b) => a - b);"""
+          if old_sets not in source:
+              raise SystemExit('Historical start-time set block did not match expected v0.22.134 source.')
+          source = source.replace(old_sets, new_sets, 1)
+
+          old_series = "series: sets.map(([label, rows]) => {"
+          new_series = "series: sets.map(([label, subset, rows]) => {"
+          if old_series not in source:
+              raise SystemExit('Historical start-time series block did not match expected v0.22.134 source.')
+          source = source.replace(old_series, new_series, 1)
+
+          old_init = """  async function init() {
+            try {
+              if (!A) throw new Error('One-sheet analysis module did not load.');
+              const allowed = await requireAdmin();
+              if (!allowed) return;
+              $('#report-access-gate')?.classList.add('hidden');
+              $('#report-app')?.classList.remove('hidden');
+              await loadData();
+
+              const mode = reportMode();
+              if (mode === 'comparison') await initComparison();
+              else if (mode === 'fundraiser') await initFundraiser();
+              else if (mode === 'historical') await initHistorical();
+              else if (mode === 'preflight') await initPreflight();
+              else renderHub();
+            } catch (error) {
+              console.error(error);
+              showAccessDenied(error?.message || 'The report center could not load.');
+            }
+          }
+"""
+          new_init = """  async function init() {
+            if (!A) {
+              const error = new Error('One-sheet analysis module did not load.');
+              console.error('Report module load failed.', error);
+              $('#report-access-gate')?.classList.add('hidden');
+              $('#report-app')?.classList.remove('hidden');
+              setStatus(error.message, 'error');
+              const output = $('#report-output');
+              if (output) output.innerHTML = `<article class=\"one-sheet\"><header class=\"sheet-title\"><div><div class=\"report-kicker\">Report error</div><h1>Report generation failed</h1><p>${escapeHtml(error.message)}</p></div></header></article>`;
+              return;
+            }
+
+            try {
+              const allowed = await requireAdmin();
+              if (!allowed) return;
+            } catch (error) {
+              console.error('Administrator access check failed.', error);
+              showAccessDenied(error?.message || 'Administrator access could not be verified.');
+              return;
+            }
+
+            $('#report-access-gate')?.classList.add('hidden');
+            $('#report-app')?.classList.remove('hidden');
+
+            try {
+              await loadData();
+
+              const mode = reportMode();
+              if (mode === 'comparison') await initComparison();
+              else if (mode === 'fundraiser') await initFundraiser();
+              else if (mode === 'historical') await initHistorical();
+              else if (mode === 'preflight') await initPreflight();
+              else renderHub();
+            } catch (error) {
+              console.error('Report generation failed.', error);
+              const message = error?.message || 'The report could not be generated.';
+              setStatus(message, 'error');
+              const output = $('#report-output');
+              if (output) output.innerHTML = `<article class=\"one-sheet\"><header class=\"sheet-title\"><div><div class=\"report-kicker\">Report error</div><h1>Report generation failed</h1><p>${escapeHtml(message)}</p></div></header><p class=\"data-quality-note\">Your administrator session is still valid. This is a report-generation error, not an access failure.</p></article>`;
+            }
+          }
+"""
+          if old_init not in source:
+              raise SystemExit('Report init block did not match expected v0.22.134 source.')
+          source = source.replace(old_init, new_init, 1)
+          report_path.write_text(source, encoding='utf-8')
+
+          reports_html = Path('reports.html')
+          html = reports_html.read_text(encoding='utf-8')
+          if '0.22.134' not in html:
+              raise SystemExit('reports.html did not contain v0.22.134 cache-bust references.')
+          reports_html.write_text(html.replace('0.22.134', '0.22.135'), encoding='utf-8')
+
+          version_path = Path('version.json')
+          version_text = version_path.read_text(encoding='utf-8')
+          if '0.22.134' not in version_text:
+              raise SystemExit('version.json did not contain v0.22.134.')
+          version_path.write_text(version_text.replace('0.22.134', '0.22.135'), encoding='utf-8')
+
+          for test_path in Path('tests').glob('*.test.mjs'):
+              text = test_path.read_text(encoding='utf-8')
+              if '0.22.134' in text:
+                  test_path.write_text(text.replace('0.22.134', '0.22.135'), encoding='utf-8')
+
+          regression = Path('tests/chart-program-tooltips-trend-v134.test.mjs')
+          test_source = regression.read_text(encoding='utf-8')
+          anchor = "assert.match(source, /function aggregateProgramTooltip/);\n"
+          additions = """assert.match(source, /\\.map\\(\\(\\[label, subset\\]\\) => \\[label, subset, rankingRows\\(subset, 'startTime'\\)\\]\\)/);
+          assert.match(source, /sets\\.flatMap\\(\\(\\[_label, _subset, rows\\]\\)/);
+          assert.match(source, /series: sets\\.map\\(\\(\\[label, subset, rows\\]\\)/);
+          assert.match(source, /console\\.error\\('Report generation failed\\.', error\\)/);
+          assert.match(source, /Your administrator session is still valid\\. This is a report-generation error, not an access failure\\./);
+          assert.doesNotMatch(source, /showAccessDenied\\(error\\?\\.message \\|\\| 'The report center could not load\\.'\\)/);
+          """
+          if anchor not in test_source:
+              raise SystemExit('v0.22.134 chart regression anchor was not found.')
+          regression.write_text(test_source.replace(anchor, anchor + additions, 1), encoding='utf-8')
+
+          workflow = Path('.github/workflows/apply-v0.22.135-historical-fix.yml')
+          workflow.unlink()
+          PY
+
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+
+      - name: Commit v0.22.135
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v0.22.135 fix Historical Analytics crash and error routing"
+          git push origin main
