@@ -73,6 +73,9 @@ assert.match(source, /incomeBarChartSvg\(days, analysis\)/);
 assert.match(source, /tooltips: topics\.currentTooltips/);
 assert.match(source, /tooltips: topics\.historicalTooltips/);
 assert.match(source, /tooltips: programs\.tooltips/);
+assert.match(source, /function topicComparisonChart\(analyses, rows\)[\s\S]*?return barChartSvg\(\{/);
+assert.match(source, /className: 'topic-comparison-chart',\n      yLabel: 'Broadcast dollars'/);
+assert.match(source, /function historicalStartTimeOverviewCard\(analyses = \[\]\)[\s\S]*?barChartSvg\(\{/);
 assert.match(source, /async function renderHistoricalReport\([\s\S]*?bindChartTooltips\(\$\('#report-output'\)\);[\s\S]*?bindHistoricalChartControls\(\$\('#report-output'\)\);\n  \}/);
 
 console.log('v0.22.138 chart hover, event annotation, era toggle, and trend tests passed');
