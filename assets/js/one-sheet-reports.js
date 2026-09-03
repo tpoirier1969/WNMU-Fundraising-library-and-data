@@ -62,7 +62,7 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/\"/g, '&quot;')
+      .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   }
 
@@ -2111,9 +2111,7 @@
       return;
     }
     const resolvedTitle = A.text(title || preview.title || 'Recovered fundraiser');
-    const confirmed = window.confirm(`Create ${resolvedTitle} for ${preview.startDate}–${preview.endDate} with ${preview.placements.length} reconstructed program placement${preview.placements.length === 1 ? '' : 's'}?\
-\
-This creates one new fundraiser schedule. It does not delete, merge, shorten, or overwrite any existing schedule.`);
+    const confirmed = window.confirm(`Create ${resolvedTitle} for ${preview.startDate}–${preview.endDate} with ${preview.placements.length} reconstructed program placement${preview.placements.length === 1 ? '' : 's'}?\n\nThis creates one new fundraiser schedule. It does not delete, merge, shorten, or overwrite any existing schedule.`);
     if (!confirmed) return;
     const now = new Date().toISOString();
     const randomPart = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)).replace(/[^a-z0-9-]/gi, '');
