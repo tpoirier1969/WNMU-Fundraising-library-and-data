@@ -5,8 +5,8 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.135');
-assert.match(html, /0\.22\.135/);
+assert.equal(version.appVersion, '0.22.136');
+assert.match(html, /0\.22\.136/);
 assert.match(source, /function programTooltipLinesForRows/);
 assert.match(source, /function aggregateProgramTooltip/);
 assert.match(source, /\.map\(\(\[label, subset\]\) => \[label, subset, rankingRows\(subset, 'startTime'\)\]\)/);
@@ -26,4 +26,19 @@ assert.match(source, /Long-term linear trend:/);
 assert.match(source, /R² \$\{trend\.r2\.toFixed\(2\)\}/);
 assert.match(source, /stroke: '#ff2020', dash: '9 6', width: 2/);
 assert.match(source, /least-squares line reports the long-term slope/);
-console.log('v0.22.135 chart program tooltip and trend tests passed');
+
+assert.match(source, /function barChartSvg/);
+assert.match(source, /fill-opacity=\"0\.72\"/);
+assert.doesNotMatch(source, /class=\"chart-bar\"[^>]*fill=\"none\"/);
+assert.match(source, /const tooltip = item\.tooltips\?\.\[index\] \|\| null/);
+assert.match(source, /class=\"chart-node\" tabindex=\"0\" role=\"button\"/);
+assert.match(source, /function historicalRankingTooltip/);
+assert.match(source, /tooltips: rows\.map\(\(row\) => historicalRankingTooltip\(analyses, dimension, row\)\)/);
+assert.match(source, /tooltips: rows\.map\(\(row\) => \{/);
+assert.match(source, /incomeBarChartSvg\(days, analysis\)/);
+assert.match(source, /tooltips: topics\.currentTooltips/);
+assert.match(source, /tooltips: topics\.historicalTooltips/);
+assert.match(source, /tooltips: programs\.tooltips/);
+assert.match(source, /async function renderHistoricalReport\([\s\S]*?bindChartTooltips\(\$\('#report-output'\)\);\n  \}/);
+
+console.log('v0.22.136 chart program tooltip, filled bar, and trend tests passed');
