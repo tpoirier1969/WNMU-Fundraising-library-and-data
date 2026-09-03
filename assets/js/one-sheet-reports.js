@@ -11,11 +11,14 @@
     { name: 'Sault Ste. Marie', latitude: 46.4953, longitude: -84.3453 }
   ];
   const CHART_STYLES = [
-    { stroke: '#145f91', dash: '', width: 4 },
-    { stroke: '#7a3e65', dash: '12 5', width: 3 },
-    { stroke: '#2d6a4f', dash: '2 5', width: 3.5 },
-    { stroke: '#9a5b13', dash: '12 4 2 4', width: 4 },
-    { stroke: '#4f5d75', dash: '6 3', width: 2.5 }
+    { stroke: '#145f91', dash: '', width: 2.75 },
+    { stroke: '#7a3e65', dash: '12 5', width: 2.25 },
+    { stroke: '#2d6a4f', dash: '2 5', width: 2.5 },
+    { stroke: '#9a5b13', dash: '12 4 2 4', width: 2.75 },
+    { stroke: '#4f5d75', dash: '6 3', width: 2 },
+    { stroke: '#6f4e37', dash: '9 3 2 3', width: 2.25 },
+    { stroke: '#5f6f2d', dash: '3 3', width: 2.25 },
+    { stroke: '#6b5b95', dash: '14 4', width: 2.5 }
   ];
 
   const CHART_NODE_OVERLAP_DISTANCE = 10;
@@ -573,7 +576,7 @@
       <section class="report-hub">
         <a class="report-card-link" href="reports.html?report=comparison">
           <div class="report-card-number">01</div>
-          <div><h2>Fundraiser Comparison</h2><p>Compare 2–5 fundraisers by $/pledge hour, Broadcast totals, corresponding fundraiser days, regional weather, and topic airtime + performance.</p></div><span>Open report →</span>
+          <div><h2>Fundraiser Comparison</h2><p>Compare 2–8 fundraisers by $/pledge hour, Broadcast totals, corresponding fundraiser days, regional weather, and topic airtime + performance.</p></div><span>Open report →</span>
         </a>
         <a class="report-card-link" href="reports.html?report=fundraiser">
           <div class="report-card-number">02</div>
@@ -663,7 +666,7 @@
     $('#report-controls').innerHTML = `
       <div class="report-control-row">
         <label class="report-field"><span>Pledge season</span><select id="report-season">${seasonOptions}</select></label>
-        <div class="report-selection"><span>Select 2–5 fundraisers</span><div id="report-fundraiser-checks" class="report-checks">${checks || '<em>No fundraisers in this season.</em>'}</div></div>
+        <div class="report-selection"><span>Select 2–8 fundraisers</span><div id="report-fundraiser-checks" class="report-checks">${checks || '<em>No fundraisers in this season.</em>'}</div></div>
         <button type="button" class="report-button" id="report-print">Print report</button>
       </div>`;
     $('#report-season')?.addEventListener('change', (event) => {
@@ -675,9 +678,9 @@
     });
     $$('#report-fundraiser-checks input').forEach((input) => {
       input.addEventListener('change', () => {
-        if (input.checked && state.selectedIds.size >= 5) {
+        if (input.checked && state.selectedIds.size >= 8) {
           input.checked = false;
-          setStatus('A comparison report can include up to five fundraisers.', 'warn');
+          setStatus('A comparison report can include up to eight fundraisers.', 'warn');
           return;
         }
         if (input.checked) state.selectedIds.add(input.value);
@@ -927,8 +930,8 @@
 
   async function renderComparisonReport() {
     const analyses = selectedComparisonAnalyses();
-    if (analyses.length < 2 || analyses.length > 5) {
-      $('#report-output').innerHTML = `<div class="report-empty"><strong>Select 2–5 fundraisers.</strong><span>${analyses.length} selected.</span></div>`;
+    if (analyses.length < 2 || analyses.length > 8) {
+      $('#report-output').innerHTML = `<div class="report-empty"><strong>Select 2–8 fundraisers.</strong><span>${analyses.length} selected.</span></div>`;
       return;
     }
     if (!(await ensureDurationDecision(analyses))) return;
@@ -1309,7 +1312,7 @@
       const byLabel = new Map(data.labels.map((label, index) => [label, data.values[index]]));
       return { label: band.label, values: labels.map((label) => byLabel.has(label) ? byLabel.get(label) : null) };
     });
-    series.push({ label: 'All selected years', values: combined.values, style: { stroke: '#667781', dash: '5 5', width: 1.5 } });
+    series.push({ label: 'All selected years', values: combined.values, style: { stroke: '#667781', dash: '5 5', width: 1.25 } });
     return { labels, series };
   }
 
