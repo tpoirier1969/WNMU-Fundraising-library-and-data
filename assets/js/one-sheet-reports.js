@@ -1509,14 +1509,14 @@
       ['Weekday', analysesForWeekpart(analyses, 'Weekday')],
       ['Saturday', analysesForWeekpart(analyses, 'Saturday')],
       ['Sunday', analysesForWeekpart(analyses, 'Sunday')]
-    ].map(([label, subset]) => [label, rankingRows(subset, 'startTime')]);
-    const keys = [...new Set(sets.flatMap(([_label, rows]) => rows.map((row) => Number(row.key)).filter(Number.isFinite)))].sort((a, b) => a - b);
+    ].map(([label, subset]) => [label, subset, rankingRows(subset, 'startTime')]);
+    const keys = [...new Set(sets.flatMap(([_label, _subset, rows]) => rows.map((row) => Number(row.key)).filter(Number.isFinite)))].sort((a, b) => a - b);
     return chartCard(
       'Start-time performance',
       'Historical fundraiser-balanced median $/hour by schedule-reconciled 30-minute start slot. The detailed tables below retain the evidence counts and thresholds.',
       lineChartSvg({
         labels: keys.map(formatTime),
-        series: sets.map(([label, rows]) => {
+        series: sets.map(([label, subset, rows]) => {
           const byKey = new Map(rows.map((row) => [Number(row.key), Number(row.medianDollarsPerHour || 0)]));
           return {
             label,
@@ -2256,10 +2256,15 @@
   }
 
   async function init() {
+    let checkingAccess = true;
     try {
-      if (!A) throw new Error('One-sheet analysis module did not load.');
+      if (!A) {
+        checkingAccess = false;
+        throw new Error('One-sheet analysis module did not load.');
+      }
       const allowed = await requireAdmin();
       if (!allowed) return;
+      checkingAccess = false;
       $('#report-access-gate')?.classList.add('hidden');
       $('#report-app')?.classList.remove('hidden');
       await loadData();
@@ -2272,7 +2277,16 @@
       else renderHub();
     } catch (error) {
       console.error(error);
-      showAccessDenied(error?.message || 'The report center could not load.');
+      if (checkingAccess) {
+        showAccessDenied(error?.message || 'Administrator access could not be verified.');
+        return;
+      }
+      const message = error?.message || 'The report could not be generated.';
+      $('#report-access-gate')?.classList.add('hidden');
+      $('#report-app')?.classList.remove('hidden');
+      setStatus(message, 'error');
+      const output = $('#report-output');
+      if (output) output.innerHTML = `<article class="one-sheet"><header class="sheet-title"><div><div class="report-kicker">Report error</div><h1>Report generation failed</h1><p>${escapeHtml(message)}</p></div></header><p class="data-quality-note">Your administrator session is still valid. This is a report-generation error, not an access failure.</p></article>`;
     }
   }
 

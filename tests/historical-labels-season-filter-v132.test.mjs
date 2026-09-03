@@ -24,9 +24,9 @@ test('season chart is full width and historical analytics can filter canonical o
   assert.match(source, /Season performance over time[\s\S]*?visual-card-wide/);
 });
 
-test('v0.22.134 report assets stay synchronized', () => {
-  assert.equal(version.appVersion, '0.22.134');
-  assert.ok(html.includes('one-sheet-reports.css?v=0.22.134'));
-  assert.ok(html.includes('one-sheet-analysis.js?v=0.22.134'));
-  assert.ok(html.includes('one-sheet-reports.js?v=0.22.134'));
+test('v0.22.135 report assets stay synchronized', () => {
+  assert.equal(version.appVersion, '0.22.135');
+  assert.ok(html.includes('one-sheet-reports.css?v=0.22.135'));
+  assert.ok(html.includes('one-sheet-analysis.js?v=0.22.135'));
+  assert.ok(html.includes('one-sheet-reports.js?v=0.22.135'));
 });
