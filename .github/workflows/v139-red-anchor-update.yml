@@ -1,0 +1,37 @@
+name: v0.22.139 red all-years graph update
+
+on:
+  push:
+    branches:
+      - fix/report-chart-types-2026-09-03
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-test:
+    if: github.event.head_commit.message != 'v0.22.139 emphasize all-years line and trend'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/report-chart-types-2026-09-03
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply graph styling changes
+        run: python .github/v139_red_anchor_update.py
+      - name: Syntax check
+        run: node --check assets/js/one-sheet-reports.js
+      - name: Run regression tests
+        run: node --test tests/*.test.mjs
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/one-sheet-reports.js tests/chart-program-tooltips-trend-v134.test.mjs
+          git diff --cached --quiet && exit 0
+          git commit -m "v0.22.139 emphasize all-years line and trend"
+          git push origin HEAD:fix/report-chart-types-2026-09-03
