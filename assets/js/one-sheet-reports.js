@@ -1070,7 +1070,7 @@
   }
 
   function topicComparisonChart(analyses, rows) {
-    return lineChartSvg({
+    return barChartSvg({
       labels: rows.map((row) => row.key),
       series: analyses.map((analysis, analysisIndex) => ({
         label: analysis.schedule.title,
@@ -1089,7 +1089,8 @@
         })
       })),
       ariaLabel: 'Broadcast dollars by topic and non-specific giving across selected fundraisers',
-      className: 'topic-comparison-chart'
+      className: 'topic-comparison-chart',
+      yLabel: 'Broadcast dollars'
     });
   }
 
@@ -1559,7 +1560,7 @@
       label: 'All selected years',
       values: combined.values,
       tooltips: combined.tooltips,
-      style: { stroke: '#f0c419', dash: '', width: 1.75 }
+      style: { stroke: '#ff2020', dash: '', width: 2.8 }
     });
     const trend = linearTrend(combined.values);
     if (trend.n >= 2) {
@@ -1568,7 +1569,7 @@
       series.push({
         label: `Long-term linear trend: ${sign}${slope}/hr per fundraiser-day position · R² ${trend.r2.toFixed(2)}`,
         values: trend.values,
-        style: { stroke: '#ff2020', dash: '', width: 1.1 }
+        style: { stroke: '#ff2020', dash: '9 4', width: 1.4 }
       });
     }
     return { labels, series };
@@ -1578,8 +1579,8 @@
     const view = state.historicalCorrespondingView === 'years' ? 'years' : 'groups';
     const data = historicalCorrespondingDayViewData(analyses, view);
     const description = view === 'years'
-      ? 'Each year is shown separately so annual changes in fundraiser-day productivity stay visible. The yellow line combines all selected years; the thin solid red least-squares line reports the long-term slope across fundraiser-day positions with R² in the legend.'
-      : 'Three-year groups reduce single-year noise while preserving more change than the former five-year bands. The yellow line combines all selected years; the thin solid red least-squares line reports the long-term slope across fundraiser-day positions with R² in the legend.';
+      ? 'Each year is shown separately so annual changes in fundraiser-day productivity stay visible. The bright red solid line combines all selected years; the dashed red least-squares trend line reports the long-term slope across fundraiser-day positions with R² in the legend.'
+      : 'Three-year groups reduce single-year noise while preserving more change than the former five-year bands. The bright red solid line combines all selected years; the dashed red least-squares trend line reports the long-term slope across fundraiser-day positions with R² in the legend.';
     const toggle = `<div class="chart-view-toggle" role="group" aria-label="Corresponding fundraiser day view"><button type="button" class="report-button ${view === 'groups' ? 'active' : ''}" data-corresponding-view="groups" aria-pressed="${view === 'groups' ? 'true' : 'false'}">3-Year Groups</button><button type="button" class="report-button ${view === 'years' ? 'active' : ''}" data-corresponding-view="years" aria-pressed="${view === 'years' ? 'true' : 'false'}">All Years</button></div>`;
     const chart = lineChartSvg({
       labels: data.labels,
@@ -1719,7 +1720,7 @@
     return chartCard(
       'Start-time performance',
       'Historical fundraiser-balanced median $/hour by schedule-reconciled 30-minute start slot. The detailed tables below retain the evidence counts and thresholds.',
-      lineChartSvg({
+      barChartSvg({
         labels: keys.map(formatTime),
         series: sets.map(([label, subset, rows]) => {
           const byKey = new Map(rows.map((row) => [Number(row.key), Number(row.medianDollarsPerHour || 0)]));
@@ -1738,7 +1739,6 @@
         }),
         ariaLabel: 'Historical start-time performance by weekday, Saturday, and Sunday',
         className: 'historical-start-time-overview',
-        legendTop: true,
         ...rateChartOptions()
       })
     );
