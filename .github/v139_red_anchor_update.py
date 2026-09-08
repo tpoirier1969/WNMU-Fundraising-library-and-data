@@ -14,11 +14,15 @@ for old, new in replacements.items():
 p.write_text(s)
 
 # Update regression expectations for the intentional visual emphasis change.
-t = Path('tests/chart-program-tooltips-trend-v134.test.mjs')
-ts = t.read_text()
-ts = ts.replace("stroke: '#f0c419', dash: '', width: 1\\.75", "stroke: '#ff2020', dash: '', width: 2\\.8")
-ts = ts.replace("stroke: '#ff2020', dash: '', width: 1\\.1", "stroke: '#ff2020', dash: '9 4', width: 1\\.4")
-ts = ts.replace("style: \\{ stroke: '#f0c419', dash: '', width: 1\\.75 \\}", "style: \\{ stroke: '#ff2020', dash: '', width: 2\\.8 \\}")
-ts = ts.replace("style: \\{ stroke: '#ff2020', dash: '', width: 1\\.1 \\}", "style: \\{ stroke: '#ff2020', dash: '9 4', width: 1\\.4 \\}")
-ts = ts.replace("least-squares line reports the long-term slope", "dashed red least-squares trend line reports the long-term slope")
-t.write_text(ts)
+for name in [
+    'tests/chart-program-tooltips-trend-v134.test.mjs',
+    'tests/comparison-eight-thinner-lines-v133.test.mjs',
+]:
+    t = Path(name)
+    ts = t.read_text()
+    ts = ts.replace("stroke: '#f0c419', dash: '', width: 1\\.75", "stroke: '#ff2020', dash: '', width: 2\\.8")
+    ts = ts.replace("stroke: '#ff2020', dash: '', width: 1\\.1", "stroke: '#ff2020', dash: '9 4', width: 1\\.4")
+    ts = ts.replace("style: \\{ stroke: '#f0c419', dash: '', width: 1\\.75 \\}", "style: \\{ stroke: '#ff2020', dash: '', width: 2\\.8 \\}")
+    ts = ts.replace("style: \\{ stroke: '#ff2020', dash: '', width: 1\\.1 \\}", "style: \\{ stroke: '#ff2020', dash: '9 4', width: 1\\.4 \\}")
+    ts = ts.replace("least-squares line reports the long-term slope", "dashed red least-squares trend line reports the long-term slope")
+    t.write_text(ts)
