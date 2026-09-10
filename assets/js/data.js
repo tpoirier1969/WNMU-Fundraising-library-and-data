@@ -311,17 +311,132 @@
     return [];
   }
 
-  function attachAiringHistory(rows = [], historyIndex = null) {
+  function buildProgramAiringPerformanceIndex(airingsRows = []) {
+    const byId = new Map();
+    const byLookup = new Map();
+    const byTitle = new Map();
+
+    const addRow = (map, key, row) => {
+      const normalizedKey = utils.normalizeLookupKey(key);
+      if (!normalizedKey || !row) return;
+      const existing = map.get(normalizedKey) || [];
+      if (!existing.includes(row)) existing.push(row);
+      map.set(normalizedKey, existing);
+    };
+
+    (airingsRows || []).forEach((row) => {
+      if (!row || utils.isNonSpecificRow(row)) return;
+      const idCandidates = [row?.pledge_program_id, row?.manual_match_program_id, row?.program_id]
+        .map((value) => utils.normalizeText(value))
+        .filter(Boolean);
+      const titleCandidates = [row?.matched_library_title, row?.imported_program_title, row?.program_title, row?.title, row?.name]
+        .map((value) => utils.normalizeText(value))
+        .filter(Boolean);
+      const nolaCandidates = [row?.nola_code, row?.nola, row?.program_nola]
+        .map((value) => utils.normalizeText(value))
+        .filter(Boolean);
+
+      idCandidates.forEach((value) => addRow(byId, value, row));
+      titleCandidates.forEach((title) => addRow(byTitle, title, row));
+      nolaCandidates.forEach((nola) => {
+        titleCandidates.forEach((title) => {
+          const lookupKey = utils.nolaIdentityKey(nola, title);
+          if (lookupKey) addRow(byLookup, lookupKey, row);
+        });
+      });
+    });
+
+    return { byId, byLookup, byTitle };
+  }
+
+  function resolveAiringRowsForLibraryRow(row, performanceIndex) {
+    if (!row || !performanceIndex) return [];
+    const idKey = utils.normalizeLookupKey(derive.programId(row));
+    if (idKey && performanceIndex.byId.has(idKey)) return performanceIndex.byId.get(idKey);
+
+    const lookupKey = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
+    if (lookupKey && performanceIndex.byLookup.has(lookupKey)) return performanceIndex.byLookup.get(lookupKey);
+
+    const titleKey = utils.normalizeLookupKey(derive.title(row));
+    if (titleKey && performanceIndex.byTitle.has(titleKey)) return performanceIndex.byTitle.get(titleKey);
+
+    return [];
+  }
+
+  function libraryRateDurationMinutes(row = {}, airing = {}) {
+    const seconds = Number(utils.firstNonEmpty(row?.actual_runtime_seconds, row?.runtime_seconds, row?.actual_runtime));
+    if (Number.isFinite(seconds) && seconds > 0) return seconds / 60;
+    const actualMinutes = Number(utils.firstNonEmpty(row?.actual_runtime_minutes, row?.runtime_minutes, row?.length_minutes));
+    if (Number.isFinite(actualMinutes) && actualMinutes > 0) return actualMinutes;
+    const bucket = Number(row?.length_bucket_minutes || 0);
+    if (Number.isFinite(bucket) && bucket > 0) return bucket;
+    const importedMinutes = Number(airing?.program_minutes || 0);
+    return Number.isFinite(importedMinutes) && importedMinutes > 0 ? importedMinutes : null;
+  }
+
+  function libraryRateFundraiserKey(airing = {}) {
+    const label = utils.normalizeText(utils.firstNonEmpty(
+      airing?.fundraiser_label,
+      airing?.fundraiser_name,
+      airing?.drive_label,
+      airing?.drive_name
+    ));
+    if (label) return `label:${utils.normalizeLookupKey(label)}`;
+
+    const start = utils.normalizeText(utils.firstNonEmpty(airing?.drive_start_date, airing?.fundraiser_start_date, '')).slice(0, 10);
+    const end = utils.normalizeText(utils.firstNonEmpty(airing?.drive_end_date, airing?.fundraiser_end_date, '')).slice(0, 10);
+    if (start || end) return `range:${start}|${end}`;
+
+    const dateKey = normalizedAiringDateKey(airing);
+    if (dateKey) return `month:${dateKey.slice(0, 7)}`;
+    return '';
+  }
+
+  function libraryProgramAveragePledgeHour(row = {}, performanceIndex = null) {
+    const airings = resolveAiringRowsForLibraryRow(row, performanceIndex);
+    if (!airings.length) return null;
+    const byFundraiser = new Map();
+    airings.forEach((airing) => {
+      const key = libraryRateFundraiserKey(airing);
+      if (!key) return;
+      if (!byFundraiser.has(key)) byFundraiser.set(key, []);
+      byFundraiser.get(key).push(airing);
+    });
+
+    const rates = [];
+    byFundraiser.forEach((fundraiserAirings) => {
+      const durations = fundraiserAirings.map((airing) => libraryRateDurationMinutes(row, airing));
+      // Match the analytics guardrail: do not turn a fundraiser with missing
+      // duration into a partial $/pledge-hour observation.
+      if (!durations.length || durations.some((minutes) => !(Number(minutes) > 0))) return;
+      const minutes = durations.reduce((sum, value) => sum + Number(value || 0), 0);
+      if (!(minutes > 0)) return;
+      const dollars = fundraiserAirings.reduce((sum, airing) => sum + Number(utils.firstNonEmpty(
+        airing?.dollars,
+        airing?.contribution_amount,
+        airing?.broadcast_dollars,
+        0
+      ) || 0), 0);
+      rates.push((dollars * 60) / minutes);
+    });
+
+    if (!rates.length) return null;
+    return rates.reduce((sum, value) => sum + value, 0) / rates.length;
+  }
+
+  function attachAiringHistory(rows = [], historyIndex = null, performanceIndex = null) {
     return (rows || []).map((row) => {
       const dateKeys = resolveAiringDateKeysForRow(row, historyIndex);
       const display = dateKeys.length
         ? dateKeys.map((value) => utils.formatDate(value, value)).join(' · ')
         : '';
+      const averagePledgeHour = libraryProgramAveragePledgeHour(row, performanceIndex);
       return {
         ...row,
         all_air_dates_display: display || utils.normalizeText(row?.all_air_dates_display || ''),
         all_air_dates_latest: dateKeys[0] || utils.firstNonEmpty(row?.all_air_dates_latest, row?.last_air_date, row?.last_aired_at, row?.last_aired, row?.aired_at, row?.air_date) || '',
-        all_air_dates_count: dateKeys.length
+        all_air_dates_count: dateKeys.length,
+        __avg_dollars_per_pledge_hour: Number.isFinite(averagePledgeHour) ? averagePledgeHour : null
       };
     });
   }
@@ -330,8 +445,9 @@
 
   function applyLibraryAiringHistory(airingsRows = []) {
     const historyIndex = buildAiringHistoryIndex(airingsRows);
-    state.baseRows = attachAiringHistory(state.baseRows, historyIndex);
-    state.rawRows = attachAiringHistory(state.rawRows, historyIndex);
+    const performanceIndex = buildProgramAiringPerformanceIndex(airingsRows);
+    state.baseRows = attachAiringHistory(state.baseRows, historyIndex, performanceIndex);
+    state.rawRows = attachAiringHistory(state.rawRows, historyIndex, performanceIndex);
     return state.rawRows;
   }
 

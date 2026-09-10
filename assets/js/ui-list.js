@@ -109,8 +109,8 @@
         return utils.compareDate(derive.rightsEnd(a), derive.rightsEnd(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'last_aired':
         return utils.compareDate(derive.latestAiredValue(a), derive.latestAiredValue(b)) || utils.compareText(derive.title(a), derive.title(b));
-      case 'avg_per_fundraiser':
-        return utils.compareNumber(derive.avgPerFundraiser(a), derive.avgPerFundraiser(b)) || utils.compareText(derive.title(a), derive.title(b));
+      case 'avg_per_pledge_hour':
+        return utils.compareNumber(derive.avgPerPledgeHour(a), derive.avgPerPledgeHour(b)) || utils.compareText(derive.title(a), derive.title(b));
       case 'topic':
       default:
         return utils.compareText(derive.topicPrimary(a), derive.topicPrimary(b)) || utils.compareText(derive.title(a), derive.title(b));
@@ -199,7 +199,7 @@
 
   function earningsTone(row) {
     if (!hasAired(row)) return 'none';
-    const avg = Number(derive.avgPerFundraiser(row) || 0);
+    const avg = Number(derive.avgPerPledgeHour(row) || 0);
     const total = Number(derive.totalRaised(row) || 0);
     if (avg >= 1000 || total >= 5000) return 'high';
     if (avg >= 500 || total >= 2500) return 'good';
@@ -305,7 +305,7 @@
           <td class="topic-color-cell" style="${utils.escapeHtml(topicStyle)}" title="${utils.escapeHtml(`Topic color: ${topic}`)}">${utils.escapeHtml(topic)}</td>
           <td>${utils.escapeHtml(derive.distributor(row) || '—')}</td>
           <td class="total-cell">${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</td>
-          <td class="avg-cell">${utils.escapeHtml(utils.formatMoney(derive.avgPerFundraiser(row)))}</td>
+          <td class="avg-cell" title="Average fundraiser $ / pledge hour from rate-valid program history">${derive.avgPerPledgeHour(row) == null ? '—' : utils.escapeHtml(utils.formatMoney(derive.avgPerPledgeHour(row)))}</td>
           <td class="premiums-cell">${premiumSummaryHtml(derive.premiumSummary(row))}</td>
           <td>${utils.escapeHtml(utils.formatDate(derive.rightsBegin(row)))}</td>
           <td class="rights-end-heat-cell" style="${utils.escapeHtml(rightsEndStyle)}" title="${utils.escapeHtml(rightsEndTitle)}">${utils.escapeHtml(utils.formatDate(rightsEnd))}</td>
