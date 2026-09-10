@@ -35,9 +35,9 @@ test('historical context remains fundraiser-balanced and excludes the selected f
   assert.match(reports, /currentCorrespondingDayComparisonData\(analysis, baseline\)/);
 });
 
-test('report assets and application version are synchronized at v0.22.139', () => {
-  assert.equal(version.appVersion, '0.22.139');
-  assert.ok(html.includes('one-sheet-reports.css?v=0.22.139'));
-  assert.ok(html.includes('one-sheet-analysis.js?v=0.22.139'));
-  assert.ok(html.includes('one-sheet-reports.js?v=0.22.139'));
+test('report assets and application version are synchronized at v0.22.140', () => {
+  assert.equal(version.appVersion, '0.22.140');
+  assert.ok(html.includes('one-sheet-reports.css?v=0.22.140'));
+  assert.ok(html.includes('one-sheet-analysis.js?v=0.22.140'));
+  assert.ok(html.includes('one-sheet-reports.js?v=0.22.140'));
 });

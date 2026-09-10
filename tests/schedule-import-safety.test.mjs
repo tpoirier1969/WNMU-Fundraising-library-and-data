@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -77,6 +77,7 @@ const derive = {
 };
 const data = {
   deleteScheduleRemote: async () => {},
+  upsertScheduleRemote: async () => {},
   fetchImportedAirings: async () => []
 };
 const context = {
@@ -142,7 +143,9 @@ function resetState() {
   state.scheduleSyncMessage = '';
   stored.clear();
   data.deleteScheduleRemote = async () => {};
+  data.upsertScheduleRemote = async () => {};
 }
+
 
 function libraryRow(id, title) {
   return { id, title, runtime_minutes: 60 };
@@ -194,6 +197,47 @@ function importedDuplicate(id = 'dup') {
     meta: { autoCreatedFromReports: true, importedFromReports: true }
   };
 }
+
+test('Scheduling autosave serializes full-row Supabase writes so an older placement snapshot cannot overwrite a newer one', async () => {
+  resetState();
+  state.scheduleStoreMode = 'remote';
+  state.client = {};
+  const schedule = targetSchedule([{ id: 'one', programId: 'p1', programTitle: 'One' }]);
+  state.schedules = [schedule];
+  const snapshots = [];
+  let releaseFirst = null;
+  data.upsertScheduleRemote = async (saved) => {
+    snapshots.push((saved.placements || []).map((placement) => placement.id));
+    if (snapshots.length === 1) await new Promise((resolve) => { releaseFirst = resolve; });
+  };
+
+  const first = hooks.persistSchedules(schedule);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  schedule.placements.push({ id: 'two', programId: 'p2', programTitle: 'Two' });
+  const second = hooks.persistSchedules(schedule);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(snapshots.length, 1, 'second remote write must wait for the first save to finish');
+  assert.ok(releaseFirst, 'first queued save should be waiting in the remote stub');
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.equal(JSON.stringify(snapshots), JSON.stringify([['one'], ['one', 'two']]));
+});
+
+test('Scheduling break warning treats zero-second timing rows as missing break information', () => {
+  resetState();
+  assert.equal(hooks.scheduleDetailHasBreakInfo({ timings: [] }), false);
+  assert.equal(hooks.scheduleDetailHasBreakInfo({ timings: [{ pledge_break_seconds: 0, local_cutin_seconds: 0 }] }), false);
+  assert.equal(hooks.scheduleDetailHasBreakInfo({ timings: [{ pledge_break_seconds: 30, local_cutin_seconds: 0 }] }), true);
+  assert.equal(hooks.scheduleDetailHasBreakInfo({ timings: [{ pledge_break_seconds: 0, local_cutin_seconds: 15 }] }), true);
+});
+
+test('Scheduling break-detail lookup can recover an older title-only placement', () => {
+  resetState();
+  state.rawRows = [{ title: 'Title Only Program', nola_code: 'TOP1', runtime_minutes: 60 }];
+  const key = hooks.scheduleDetailKeyForPlacement({ programId: '', programTitle: 'Title Only Program' });
+  assert.match(key, /^lookup:/);
+});
 
 test('Scheduling imported-result signature changes when placement result state changes', () => {
   resetState();
