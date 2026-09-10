@@ -1,0 +1,38 @@
+name: v0.22.141 program list pledge-hour metric
+
+on:
+  push:
+    branches:
+      - fix/program-list-avg-pledge-hour-v141
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/program-list-avg-pledge-hour-v141
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply source change
+        run: python .github/scripts/apply_v141_program_list_rate.py
+      - name: Validate source and full regression suite
+        run: |
+          node --check assets/js/core.js
+          node --check assets/js/data.js
+          node --check assets/js/ui-list.js
+          node --test tests/*.test.mjs
+          git diff --check
+      - name: Commit validated source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/core.js assets/js/data.js assets/js/ui-list.js app-shell.html reports.html version.json tests
+          git commit -m "v0.22.141 use pledge-hour average in Program Library list"
+          git push origin HEAD:fix/program-list-avg-pledge-hour-v141
