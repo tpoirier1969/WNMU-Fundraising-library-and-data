@@ -51,7 +51,7 @@ window.PledgeLib = window.PledgeLib || {};
       rights_begin: 'Rights Begin',
       rights_end: 'Rights End',
       last_aired: 'Air Dates',
-      avg_per_fundraiser: 'Average $ / fundraiser'
+      avg_per_pledge_hour: 'Average $ / pledge hour'
     },
     WORKSPACES: [
       { id: 'library', label: 'Program Library', live: true },
@@ -836,6 +836,18 @@ window.PledgeLib = window.PledgeLib || {};
         row?.historical_average,
         row?.historical_avg
       ) || null;
+    },
+
+    avgPerPledgeHour(row) {
+      const value = utils.firstNonEmpty(
+        row?.__avg_dollars_per_pledge_hour,
+        row?.avg_dollars_per_pledge_hour,
+        row?.average_dollars_per_pledge_hour,
+        row?.avg_per_pledge_hour,
+        row?.average_per_pledge_hour
+      );
+      const numeric = Number(value);
+      return value == null || value === '' || !Number.isFinite(numeric) ? null : numeric;
     },
 
     totalRaised(row) {
