@@ -5,6 +5,7 @@
   const { els, setNotice } = App.dom;
   const DELETE_ACTIVE_SCHEDULE_OPTION = '__delete_active_schedule__';
   let scheduledDetailRerenderTimer = 0;
+  const scheduleSaveQueues = new Map();
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
   const scheduleInlineScrollbar = {
@@ -432,21 +433,58 @@
 
   }
 
-  async function persistSchedules(schedule) {
-    state.scheduleSlotRescueCache = {};
-    if (state.scheduleStoreMode === 'remote' && state.client) {
-      try {
-        await App.data.upsertScheduleRemote(schedule);
-        state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
-        return true;
-      } catch (error) {
-        console.warn('Remote schedule save failed.', error);
-        state.scheduleStoreMode = 'local';
-        state.scheduleSyncMessage = `Remote save failed. Using this browser only. ${error.message || ''}`.trim();
-      }
+  function cloneScheduleForPersistence(schedule = {}) {
+    try {
+      return JSON.parse(JSON.stringify(schedule || {}));
+    } catch (_error) {
+      return {
+        ...schedule,
+        placements: [...(schedule?.placements || [])],
+        slotNotes: { ...(schedule?.slotNotes || {}) },
+        meta: { ...(schedule?.meta || {}) }
+      };
     }
-    utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
-    return false;
+  }
+
+  async function persistSchedules(schedule, options = {}) {
+    state.scheduleSlotRescueCache = {};
+    if (!schedule) return false;
+    const requireRemote = Boolean(options.requireRemote);
+    const key = utils.normalizeText(schedule?.id || '') || '__schedule__';
+    const previous = scheduleSaveQueues.get(key) || Promise.resolve();
+    const task = previous.catch(() => {}).then(async () => {
+      // Snapshot only when this save reaches the head of the queue. That way a later
+      // placement added while an earlier request is in flight cannot be overwritten
+      // by an older full-row Supabase upsert completing out of order.
+      const snapshot = cloneScheduleForPersistence(schedule);
+      if (state.scheduleStoreMode === 'remote' && state.client) {
+        try {
+          await App.data.upsertScheduleRemote(snapshot);
+          state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
+          return true;
+        } catch (error) {
+          console.warn('Remote schedule save failed.', error);
+          if (requireRemote) {
+            state.scheduleSyncMessage = `Remote save failed. Manual fundraiser dollars were NOT saved to Supabase. ${error.message || ''}`.trim();
+            throw error;
+          }
+          state.scheduleStoreMode = 'local';
+          state.scheduleSyncMessage = `Remote save failed. Using this browser only. ${error.message || ''}`.trim();
+        }
+      }
+      if (requireRemote) {
+        state.scheduleSyncMessage = 'Manual fundraiser dollars were NOT saved because Supabase schedule sync is unavailable.';
+        return false;
+      }
+      utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
+      return false;
+    });
+    scheduleSaveQueues.set(key, task);
+    try {
+      return await task;
+    } finally {
+      if (scheduleSaveQueues.get(key) === task) scheduleSaveQueues.delete(key);
+    }
   }
 
   async function deleteScheduleRecord(scheduleId) {
@@ -3460,11 +3498,22 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (existing) existing.remove();
   }
 
+  function scheduleProgramRowForPlacement(placement = {}) {
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return null;
+    const directId = String(placement.programId || '').trim();
+    const directRow = directId ? getProgramRowById(directId) : null;
+    if (directRow) return directRow;
+    const titleKey = utils.normalizeLookupKey(placement.programTitle || placement.title || '');
+    if (!titleKey) return null;
+    return [...(state.rawRows || []), ...(state.nonPledgeRows || [])]
+      .find((row) => utils.normalizeLookupKey(derive.title(row)) === titleKey) || null;
+  }
+
   function scheduleDetailKeyForPlacement(placement = {}) {
     if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return '';
     const directId = String(placement.programId || '').trim();
-    const row = directId ? getProgramRowById(directId) : null;
-    return String(derive.programId(row) || directId || '').trim();
+    const row = scheduleProgramRowForPlacement(placement);
+    return String(scheduleRowLookupId(row) || directId || '').trim();
   }
 
   function scheduleCalendarBreakInfoNeededHtml(placement = null) {
@@ -3862,7 +3911,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
 
   function scheduleDetailHasBreakInfo(detail = {}) {
     const rows = normalizeScheduledTimingRows(detail?.timings || []);
-    return rows.some((entry) => Number.isFinite(entry.breakSeconds) || Number.isFinite(entry.localCutInSeconds));
+    return rows.some((entry) => (Number.isFinite(entry.breakSeconds) && entry.breakSeconds > 0)
+      || (Number.isFinite(entry.localCutInSeconds) && entry.localCutInSeconds > 0));
   }
 
   function breakInfoNeededHtml(cache = null) {
@@ -4015,11 +4065,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       grouped.get(key).push(placement);
     });
     const groupedEntries = [...grouped.entries()];
-    const detailKeyByGroup = new Map(groupedEntries.map(([groupKey, occurrences]) => {
-      const row = getProgramRowById(groupKey) || getProgramRowById(occurrences?.[0]?.programId || '') || null;
-      const detailProgramId = String(derive.programId(row) || '').trim();
-      return [groupKey, detailProgramId];
-    }));
+    const detailKeyByGroup = new Map(groupedEntries.map(([groupKey, occurrences]) => [
+      groupKey,
+      scheduleDetailKeyForPlacement(occurrences?.[0] || {})
+    ]));
     void ensureScheduledDetailsBatch([...new Set(groupedEntries.map(([groupKey]) => detailKeyByGroup.get(groupKey)).filter(Boolean))]);
     const loadingCount = groupedEntries.filter(([groupKey]) => {
       const detailKey = detailKeyByGroup.get(groupKey);
@@ -4034,7 +4083,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       : '';
 
     els.scheduleProgramDetails.innerHTML = fundraiserSummaryHtml + progressHtml + groupedEntries.map(([programId, occurrences]) => {
-      const row = getProgramRowById(programId) || getProgramRowById(occurrences?.[0]?.programId || '') || {};
+      const row = scheduleProgramRowForPlacement(occurrences?.[0] || {}) || getProgramRowById(programId) || {};
       const cache = state.scheduleDetailCache[detailKeyByGroup.get(programId) || ''];
       const detail = cache?.detail || null;
       const displayRow = detail?.program ? utils.mergeRows(detail.program, row) : row;
@@ -4363,48 +4412,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
 
-  async function persistScheduleMetadataOnly(schedule, options = {}) {
-    const requireRemote = Boolean(options.requireRemote);
-    if (state.scheduleStoreMode === 'remote' && state.client) {
-      try {
-        await state.client.from(constants.SCHEDULES_TABLE).upsert({
-          id: schedule.id,
-          title: schedule.title,
-          start_date: schedule.startDate,
-          end_date: schedule.endDate,
-          day_start_hour: Math.floor((schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60)) / 60),
-          day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60),
-          schedule_data: {
-            placements: schedule.placements || [],
-            slotNotes: schedule.slotNotes || {},
-            dayStartMinutes: schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60),
-            dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60),
-            onlineDollars: Number(schedule.onlineDollars || 0) || 0,
-            mailDollars: Number(schedule.mailDollars || 0) || 0,
-            goalDollars: Number(schedule.goalDollars || 0) || 0,
-            meta: schedule.meta || {}
-          }
-        });
-        state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
-        return true;
-      } catch (error) {
-        console.warn('Remote schedule metadata save failed.', error);
-        if (requireRemote) {
-          state.scheduleSyncMessage = `Remote save failed. Manual fundraiser dollars were NOT saved to Supabase. ${error.message || ''}`.trim();
-          throw error;
-        }
-        state.scheduleStoreMode = 'local';
-        state.scheduleSyncMessage = `Remote save failed. Using this browser only. ${error.message || ''}`.trim();
-      }
-    }
-    if (requireRemote) {
-      state.scheduleSyncMessage = 'Manual fundraiser dollars were NOT saved because Supabase schedule sync is unavailable.';
-      return false;
-    }
-    utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
-    return false;
-  }
-
   async function saveActiveScheduleDraft(options = {}) {
     if (!canScheduleEdit()) { setNotice('Sign in as admin to edit fundraiser calendars.', 'warn'); return false; }
     const schedule = getActiveSchedule();
@@ -4466,9 +4473,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     state.scheduleDraft.onlineDollars = nextOnlineDollars;
     state.scheduleDraft.mailDollars = nextMailDollars;
     state.scheduleDraft.goalDollars = nextGoalDollars;
-    if (!(titleChanged || dateRangeChanged || windowChanged || moneyChanged)) return true;
+    const forcePersist = Boolean(options.forcePersist);
+    if (!(titleChanged || dateRangeChanged || windowChanged || moneyChanged || forcePersist)) return true;
     try {
-      const remoteSaved = await persistScheduleMetadataOnly(schedule, { requireRemote: moneyChanged });
+      const remoteSaved = await persistSchedules(schedule, { requireRemote: moneyChanged });
       if (moneyChanged && !remoteSaved) {
         renderScheduleForm();
         renderHomeDriveSummary();
@@ -4496,7 +4504,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (!canScheduleEdit()) { setNotice('Sign in as admin to build or edit fundraiser schedules.', 'warn'); return; }
     const activeSchedule = getActiveSchedule();
     if (activeSchedule) {
-      const saved = await saveActiveScheduleDraft({ silent: true });
+      const saved = await saveActiveScheduleDraft({ silent: true, forcePersist: true });
       if (saved) {
         setNotice(`Saved existing fundraiser ${activeSchedule.title || 'Untitled fundraiser'}. To create a blank fundraiser, click New blank fundraiser first.`);
       }
@@ -4635,7 +4643,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     const base = {
       id: existing?.id || utils.makeId('place'),
-      programId: derive.programId(row),
+      programId: scheduleRowLookupId(row),
       programTitle: derive.title(row),
       lengthMinutes,
       dateKey: slot.dateKey,
@@ -4701,6 +4709,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     state.scheduleView.dayStartHour = Math.floor(state.scheduleView.dayStartMinutes / 60);
     state.scheduleView.dayEndHour = Math.floor(state.scheduleView.dayEndMinutes / 60);
     renderScheduleGrid();
+    if (getActiveSchedule()) void saveActiveScheduleDraft({ silent: true });
   }
 
   async function movePlacement(placementId, targetDateKey, targetMinutes) {
