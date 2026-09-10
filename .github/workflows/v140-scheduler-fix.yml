@@ -1,0 +1,36 @@
+name: v0.22.140 scheduler repair
+
+on:
+  push:
+    branches:
+      - fix/scheduler-autosave-break-info-v140
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/scheduler-autosave-break-info-v140
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply source repair
+        run: python .github/scripts/apply_v140_scheduler_fix.py
+      - name: Validate scheduler source and full regression suite
+        run: |
+          node --check assets/js/ui-scheduling.js
+          node --test tests/*.test.mjs
+          git diff --check
+      - name: Commit validated source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/js/ui-scheduling.js reports.html version.json tests
+          git commit -m "v0.22.140 restore scheduler autosave and break warnings"
+          git push origin HEAD:fix/scheduler-autosave-break-info-v140
