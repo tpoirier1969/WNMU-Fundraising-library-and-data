@@ -25,6 +25,88 @@
       || null;
   }
 
+  function targetFundraiserWindow() {
+    const schedules = Array.isArray(App.state?.schedules) ? App.state.schedules : [];
+    if (!schedules.length) return null;
+    const active = schedules.find((schedule) => String(schedule?.id || '') === String(App.state?.activeScheduleId || '')) || null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const candidates = schedules.map((schedule) => {
+      const start = App.utils.parseDateLike(schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
+      const end = App.utils.parseDateLike(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
+      return { schedule, start, end };
+    }).filter((entry) => entry.start instanceof Date && !Number.isNaN(entry.start.getTime()));
+    let chosen = null;
+    if (active) {
+      chosen = candidates.find((entry) => entry.schedule === active) || null;
+    }
+    if (!chosen) {
+      chosen = candidates.filter((entry) => (entry.end || entry.start) >= now).sort((a, b) => a.start - b.start)[0] || null;
+    }
+    if (!chosen) return null;
+    return {
+      title: text(chosen.schedule?.title || chosen.schedule?.name || 'Target fundraiser'),
+      start: chosen.start,
+      end: chosen.end instanceof Date && !Number.isNaN(chosen.end.getTime()) ? chosen.end : chosen.start
+    };
+  }
+
+  function targetRightsPolicy(program = {}) {
+    const target = targetFundraiserWindow();
+    if (!target) return { target: null, unavailable: false, partial: false, retiringSoonAfter: false, note: '' };
+    const rightsStart = App.utils.parseDateLike(App.derive.rightsBegin(program), { preferDateOnlyLocal: true });
+    const rightsEnd = App.utils.parseDateLike(App.derive.rightsEnd(program), { preferDateOnlyLocal: true });
+    const validStart = rightsStart instanceof Date && !Number.isNaN(rightsStart.getTime());
+    const validEnd = rightsEnd instanceof Date && !Number.isNaN(rightsEnd.getTime());
+
+    if (validEnd && rightsEnd < target.start) {
+      return { target, unavailable: true, partial: false, retiringSoonAfter: false, note: `Rights end ${App.utils.formatDate(rightsEnd)} before ${target.title}.` };
+    }
+    if (validStart && rightsStart > target.end) {
+      return { target, unavailable: true, partial: false, retiringSoonAfter: false, note: `Rights begin ${App.utils.formatDate(rightsStart)} after ${target.title}.` };
+    }
+    if (validStart && rightsStart > target.start && rightsStart <= target.end) {
+      return { target, unavailable: false, partial: true, retiringSoonAfter: false, note: `Rights begin ${App.utils.formatDate(rightsStart)} during ${target.title}.` };
+    }
+    if (validEnd && rightsEnd >= target.start && rightsEnd < target.end) {
+      return { target, unavailable: false, partial: true, retiringSoonAfter: false, note: `Rights end ${App.utils.formatDate(rightsEnd)} during ${target.title}.` };
+    }
+    const daysAfter = validEnd ? Math.ceil((rightsEnd.getTime() - target.end.getTime()) / 86400000) : null;
+    return {
+      target,
+      unavailable: false,
+      partial: false,
+      retiringSoonAfter: Number.isFinite(daysAfter) && daysAfter >= 0 && daysAfter <= 90,
+      note: Number.isFinite(daysAfter) && daysAfter >= 0 && daysAfter <= 90
+        ? `Rights end ${App.utils.formatDate(rightsEnd)}, within 90 days after ${target.title}.`
+        : ''
+    };
+  }
+
+  function applyTargetPolicy(program, sourceResult = {}) {
+    const policy = targetRightsPolicy(program);
+    const result = {
+      ...sourceResult,
+      badges: [...(sourceResult.badges || [])],
+      cautions: [...(sourceResult.cautions || [])],
+      targetRightsPolicy: policy
+    };
+    if (policy.unavailable) {
+      result.outlook = 'Unavailable for target fundraiser';
+      result.tone = 'bad';
+      result.cautions.unshift(policy.note);
+    } else if (policy.partial) {
+      result.outlook = 'Rights window needs attention';
+      result.tone = 'warn';
+      result.cautions.unshift(policy.note);
+    } else if (policy.retiringSoonAfter) {
+      result.badges.unshift('Rights ending soon after drive');
+    }
+    result.badges = [...new Set(result.badges)];
+    result.cautions = [...new Set(result.cautions)];
+    return result;
+  }
+
   function ensureListHeader() {
     const table = libraryTable();
     const headerRow = table?.querySelector('thead tr');
@@ -45,8 +127,25 @@
     });
   }
 
+  function listOutlookHtml(program = {}) {
+    const result = applyTargetPolicy(program, App.programScorecard.baseAssessment(program));
+    const badges = (result.badges || []).slice(0, 3);
+    const targetBit = result.targetRightsPolicy?.target?.title ? `Target: ${result.targetRightsPolicy.target.title}` : '';
+    const tooltipBits = [
+      `${result.outlook} (${result.confidence || 'Low'} confidence)`,
+      targetBit,
+      ...(result.badges || []),
+      ...(result.cautions || [])
+    ].filter(Boolean);
+    return `
+      <div class="scorecard-list scorecard-tone-${App.utils.escapeHtml(result.tone || 'neutral')}" title="${App.utils.escapeHtml(tooltipBits.join(' · '))}">
+        <div class="scorecard-list-outlook">${App.utils.escapeHtml(result.outlook || 'Worth consideration')}</div>
+        <div class="scorecard-list-badges">${badges.map((badge) => `<span>${App.utils.escapeHtml(badge)}</span>`).join('')}</div>
+      </div>`;
+  }
+
   function decorateListRows() {
-    if (!App.programScorecard?.listCellHtml) return;
+    if (!App.programScorecard?.baseAssessment) return;
     ensureListHeader();
     const body = document.getElementById('library-body');
     if (!body) return;
@@ -62,7 +161,7 @@
         if (avgCell) avgCell.after(cell);
         else tr.append(cell);
       }
-      const html = App.programScorecard.listCellHtml(program);
+      const html = listOutlookHtml(program);
       if (cell.innerHTML !== html) cell.innerHTML = html;
     });
     syncPlaceholderColspan();
@@ -119,7 +218,7 @@
       result.season?.matchesTarget ? 'Seasonal fit' : '',
       result.local ? 'Local / U.P.' : '',
       result.drama?.currentCycle ? 'Current Drama Doc' : '',
-      result.rights?.retiring ? 'Rights ending soon' : ''
+      result.targetRightsPolicy?.retiringSoonAfter ? 'Rights ending soon after drive' : result.rights?.retiring ? 'Rights ending soon' : ''
     ].filter(Boolean).slice(0, 5);
 
     const cautions = (result.cautions || []).slice(0, 2);
@@ -134,6 +233,14 @@
         ${quick.map((item) => `<span>${App.utils.escapeHtml(item)}</span>`).join('')}
         ${cautions.map((item) => `<span class="warn">${App.utils.escapeHtml(item)}</span>`).join('')}
       </div>`;
+  }
+
+  function targetRightsNoticeHtml(result = {}) {
+    const policy = result.targetRightsPolicy;
+    if (!policy?.target || (!policy.unavailable && !policy.partial && !policy.retiringSoonAfter)) return '';
+    const typeClass = policy.unavailable ? 'bad' : policy.partial ? 'warn' : 'info';
+    const lead = policy.unavailable ? 'Target fundraiser rights conflict' : policy.partial ? 'Target fundraiser rights window' : 'Rights urgency';
+    return `<div class="scorecard-target-rights scorecard-target-rights-${typeClass}"><strong>${App.utils.escapeHtml(lead)}:</strong> ${App.utils.escapeHtml(policy.note)}</div>`;
   }
 
   function renderDetailScorecard() {
@@ -151,11 +258,11 @@
 
     const driveResults = App.state?.currentDetailDriveResults || [];
     const airings = App.state?.currentDetailAirings || [];
-    const result = App.programScorecard.detailedAssessment(program, driveResults, airings);
+    const result = applyTargetPolicy(program, App.programScorecard.detailedAssessment(program, driveResults, airings));
     renderDetailHeaderScorecard(program, result);
 
     host.classList.remove('hidden');
-    const html = App.programScorecard.detailHtml(program, driveResults, airings);
+    const html = `${targetRightsNoticeHtml(result)}${App.programScorecard.detailHtml(program, driveResults, airings)}`;
     if (host.innerHTML !== html) host.innerHTML = html;
   }
 
