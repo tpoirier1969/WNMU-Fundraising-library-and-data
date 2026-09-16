@@ -9,6 +9,9 @@
   const originalDetailedAssessment = App.programScorecard.detailedAssessment.bind(App.programScorecard);
   const DAY_MS = 86400000;
   const CHRISTMAS_PATTERN = /\b(?:christmas|holiday|holidays|noel|yuletide|nativity)\b/i;
+  const LOCAL_WORD_PATTERN = /\b(?:michigan|upper peninsula|yooper|marquette|negaunee|ishpeming|keweenaw|mackinac|lake superior|great lakes|pelkie)\b/i;
+  const LOCAL_UP_PATTERN = /(?:^|\W)(?:UP|U\.P\.?)(?=\W|$)/;
+  const FOCUS_STORAGE_KEY = 'wnmuProgramOutlookFundraiserIdV2';
   const PROGRAMMER_WEIGHTS = {
     dont_air: -30,
     low_confidence: -14,
@@ -51,33 +54,23 @@
   }
 
   function defaultFundraiserEntry() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const entries = scheduleEntries();
-    const future = entries.find((entry) => entry.start > today);
-    if (future) return future;
-    const active = entries.find((entry) => entry.start <= today && entry.end >= today);
-    if (active) return active;
-    return entries[entries.length - 1] || null;
+    return null;
   }
 
   function focusedFundraiserEntry() {
     const entries = scheduleEntries();
     const manualId = text(state.programOutlookFundraiserId || '');
-    if (manualId) {
-      const manual = entries.find((entry) => entry.id === manualId);
-      if (manual) return manual;
-    }
-    return defaultFundraiserEntry();
+    if (!manualId) return null;
+    return entries.find((entry) => entry.id === manualId) || null;
   }
 
   function setFocusedFundraiser(id = '') {
     state.programOutlookFundraiserId = text(id);
     try {
       if (state.programOutlookFundraiserId) {
-        window.sessionStorage.setItem('wnmuProgramOutlookFundraiserId', state.programOutlookFundraiserId);
+        window.sessionStorage.setItem(FOCUS_STORAGE_KEY, state.programOutlookFundraiserId);
       } else {
-        window.sessionStorage.removeItem('wnmuProgramOutlookFundraiserId');
+        window.sessionStorage.removeItem(FOCUS_STORAGE_KEY);
       }
     } catch (_error) {
       // Browser storage is optional.
@@ -87,7 +80,7 @@
   function restoreFocusedFundraiser() {
     if (text(state.programOutlookFundraiserId)) return;
     try {
-      const stored = text(window.sessionStorage.getItem('wnmuProgramOutlookFundraiserId') || '');
+      const stored = text(window.sessionStorage.getItem(FOCUS_STORAGE_KEY) || '');
       if (stored) state.programOutlookFundraiserId = stored;
     } catch (_error) {
       // Browser storage is optional.
@@ -149,6 +142,11 @@
     return [derive.title(program), derive.description(program), derive.topicPrimary(program), derive.topicSecondary(program)]
       .filter(Boolean)
       .join(' ');
+  }
+
+  function localRelevance(program = {}) {
+    const value = programText(program);
+    return LOCAL_WORD_PATTERN.test(value) || LOCAL_UP_PATTERN.test(value);
   }
 
   function isPrimeRow(row = {}) {
@@ -232,7 +230,7 @@
 
     const christmas = CHRISTMAS_PATTERN.test(programText(program));
     let explicitSeasonAdjustment = 0;
-    if (christmas) explicitSeasonAdjustment = targetSeason === 'December' ? 14 : -18;
+    if (christmas && targetSeason) explicitSeasonAdjustment = targetSeason === 'December' ? 14 : -18;
     adjustment += explicitSeasonAdjustment;
 
     return {
@@ -251,8 +249,16 @@
     };
   }
 
-  function cleanLegacyProgrammerBadges(badges = []) {
-    return (badges || []).filter((badge) => !/^Programmer rating:/i.test(String(badge || '')));
+  function cleanLegacyBadges(badges = []) {
+    return (badges || []).filter((badge) => {
+      const value = String(badge || '');
+      return !/^Programmer rating:/i.test(value)
+        && !/^Focus:/i.test(value)
+        && value !== 'Seasonal fit'
+        && value !== 'Local / U.P.'
+        && value !== 'Rights ending soon'
+        && value !== 'Rights ending soon after drive';
+    });
   }
 
   function classify(result = {}, { detailed = false, primeAirings = null } = {}) {
@@ -314,24 +320,29 @@
   function applyEnhancements(program = {}, sourceResult = {}, options = {}) {
     const seasonEvidence = seasonalEvidence(program, options.exactAirings || null);
     const programmer = programmerEvidence(program, options.exactAirings || null);
+    const correctLocal = localRelevance(program);
     let score = number(sourceResult.score, 50);
 
     if (seasonEvidence.christmas && sourceResult.season?.matchesTarget) score -= 10;
+    if (sourceResult.local && !correctLocal) score -= 8;
+    else if (!sourceResult.local && correctLocal) score += 8;
     score += seasonEvidence.adjustment;
     score += programmer.adjustment;
 
-    const badges = cleanLegacyProgrammerBadges(sourceResult.badges || []);
+    const badges = cleanLegacyBadges(sourceResult.badges || []);
     const cautions = [...(sourceResult.cautions || [])];
+    if (correctLocal) badges.push('Local / U.P.');
     if (programmer.rating) badges.unshift(`Programmer: ${App.programEditorialOverrides?.ratingLabel?.(programmer.rating) || programmer.rating}`);
     if (seasonEvidence.target?.title) badges.push(`Focus: ${seasonEvidence.target.title}`);
     if (seasonEvidence.christmas && seasonEvidence.targetSeason === 'December') badges.push('Seasonal fit');
-    if (seasonEvidence.christmas && seasonEvidence.targetSeason !== 'December') cautions.push('Christmas / holiday programming is out of season for the selected fundraiser.');
+    if (seasonEvidence.christmas && seasonEvidence.targetSeason && seasonEvidence.targetSeason !== 'December') cautions.push('Christmas / holiday programming is out of season for the selected fundraiser.');
     if (programmer.rating === 'must_air' && programmer.weakCount === 1) cautions.unshift('One weak prime test since the Must air rating; one more will restore automated Low Confidence if warranted.');
     if (programmer.rating === 'must_air' && programmer.weakCount >= 2) cautions.unshift('Must air rating has two weak prime tests; its formula boost has been reduced and automated confidence is back in control.');
 
     const next = {
       ...sourceResult,
       score: clampScore(score),
+      local: correctLocal,
       badges: [...new Set(badges)],
       cautions: [...new Set(cautions)],
       seasonEvidence,
@@ -412,8 +423,10 @@
 
     const seasonValue = season.targetSeason
       ? `${season.targetSeason} focus${season.sameSeasonRows ? ` · ${season.sameSeasonRows} matching airing${season.sameSeasonRows === 1 ? '' : 's'}` : ''}`
-      : 'No fundraiser selected';
-    const seasonNote = season.comparison || 'No same-season evidence is available yet.';
+      : 'N/A';
+    const seasonNote = season.targetSeason
+      ? (season.comparison || 'No same-season evidence is available yet.')
+      : 'No seasonal fundraiser weighting is being applied.';
     const primeAirings = number(result.primeAirings, 0);
     const primeNote = history.airings > 0
       ? `${primeAirings} verified prime-time airing${primeAirings === 1 ? '' : 's'}. A plausible title needs two weak prime tests before weak performance alone can retire it.`
@@ -470,6 +483,7 @@
   App.programOutlookEnhancements = {
     seasonalEvidence,
     programmerEvidence,
+    localRelevance,
     PROGRAMMER_WEIGHTS,
     WEAK_PRIME_RATE
   };
