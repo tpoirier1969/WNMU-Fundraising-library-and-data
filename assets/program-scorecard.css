@@ -126,6 +126,30 @@ body.library-split-default .programs-table td:nth-child(9) {
   padding-top: 14px;
 }
 
+.scorecard-target-rights {
+  margin: 0 0 9px;
+  padding: 8px 10px;
+  border: 1px solid #d7e1e6;
+  border-radius: 8px;
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+.scorecard-target-rights-bad {
+  background: #fff0f2;
+  border-color: #e4b9c0;
+  color: #8b3940;
+}
+.scorecard-target-rights-warn {
+  background: #fff6ee;
+  border-color: #e9cdb9;
+  color: #805034;
+}
+.scorecard-target-rights-info {
+  background: #f2f8fa;
+  border-color: #cbdde5;
+  color: #3d6477;
+}
+
 .program-scorecard-head {
   display: flex;
   justify-content: space-between;
