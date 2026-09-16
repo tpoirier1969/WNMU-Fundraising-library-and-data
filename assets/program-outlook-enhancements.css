@@ -7,24 +7,54 @@
   max-width: 250px;
 }
 
+/* Detail header: title, outlook, programmer rating, then action buttons.
+   The scorecard wrapper contributes its children directly to the header flex row. */
+#detail-modal .detail-header {
+  align-items: flex-start;
+}
+
+#detail-modal .detail-header > div:first-child {
+  flex: 1 1 220px;
+  min-width: 140px;
+  max-width: 320px;
+}
+
+#detail-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.15;
+}
+
+#detail-subtitle {
+  display: none !important;
+}
+
 .program-scorecard-header {
-  flex: 1 1 auto;
-  max-width: none;
-  min-width: 360px;
-  justify-content: space-between;
-  align-items: center;
+  display: contents;
 }
 
 .program-scorecard-header-main {
+  flex: 1 1 230px;
   min-width: 180px;
+  max-width: 320px;
+  border-left: 4px solid #6f93a7;
+  padding: 4px 8px;
 }
 
 .program-scorecard-header-rating {
-  flex: 0 0 190px;
+  flex: 0 0 170px;
   display: flex;
   justify-content: flex-end;
-  align-items: center;
+  align-items: flex-start;
+  align-self: flex-start;
   min-width: 0;
+}
+
+#detail-modal .detail-header > .toolbar-actions {
+  flex: 0 0 auto;
+  align-items: flex-start;
+  flex-wrap: nowrap;
 }
 
 .programmer-rating-header-control,
@@ -32,7 +62,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  min-width: 170px;
+  min-width: 160px;
   margin: 0;
 }
 
@@ -146,11 +176,29 @@
 }
 
 @media (max-width: 1250px) {
+  #detail-modal .detail-header > div:first-child {
+    max-width: 270px;
+  }
+  .program-scorecard-header-main {
+    max-width: 275px;
+  }
   .program-scorecard-header-rating {
-    flex-basis: 165px;
+    flex-basis: 155px;
   }
   .programmer-rating-header-control,
   .programmer-rating-header-readonly {
-    min-width: 150px;
+    min-width: 145px;
+  }
+}
+
+@media (max-width: 850px) {
+  #detail-modal .detail-header {
+    flex-wrap: wrap;
+  }
+  #detail-modal .detail-header > div:first-child {
+    max-width: none;
+  }
+  .program-scorecard-header-main {
+    max-width: none;
   }
 }
