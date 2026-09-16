@@ -25,6 +25,11 @@
       || null;
   }
 
+  function isNonSpecificProgram(program = {}) {
+    const title = text(App.derive?.title?.(program) || program?.title || program?.program_title || program?.imported_program_title || '');
+    return /^\.?\s*non[-\s]?specific\s+pledges?\s*$/i.test(title);
+  }
+
   function targetFundraiserWindow() {
     const schedules = Array.isArray(App.state?.schedules) ? App.state.schedules : [];
     if (!schedules.length) return null;
@@ -128,6 +133,7 @@
   }
 
   function listOutlookHtml(program = {}) {
+    if (isNonSpecificProgram(program)) return '';
     const result = applyTargetPolicy(program, App.programScorecard.baseAssessment(program));
     const badges = (result.badges || []).slice(0, 3);
     const targetBit = result.targetRightsPolicy?.target?.title ? `Target: ${result.targetRightsPolicy.target.title}` : '';
@@ -205,7 +211,7 @@
   function renderDetailHeaderScorecard(program, result) {
     const host = ensureDetailHeaderHost();
     if (!host) return;
-    if (!program || !result || App.state?.detailCreateMode || !text(App.state?.selectedProgramId)) {
+    if (!program || !result || isNonSpecificProgram(program) || App.state?.detailCreateMode || !text(App.state?.selectedProgramId)) {
       host.innerHTML = '';
       host.classList.add('hidden');
       return;
@@ -249,7 +255,7 @@
     if (!host || !headerHost || !App.programScorecard?.detailHtml || !App.programScorecard?.detailedAssessment) return;
     const program = App.state?.currentDetailProgram;
     const createMode = Boolean(App.state?.detailCreateMode);
-    if (!program || createMode || !text(App.state?.selectedProgramId)) {
+    if (!program || createMode || !text(App.state?.selectedProgramId) || isNonSpecificProgram(program)) {
       host.innerHTML = '';
       host.classList.add('hidden');
       renderDetailHeaderScorecard(null, null);
