@@ -80,22 +80,82 @@
     return host;
   }
 
+  function ensureDetailHeaderHost() {
+    const header = document.querySelector('#detail-modal .detail-header');
+    const actions = header?.querySelector('.toolbar-actions');
+    if (!header || !actions) return null;
+    let host = document.getElementById('program-scorecard-header');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'program-scorecard-header';
+      host.className = 'program-scorecard-header hidden';
+      actions.before(host);
+    }
+    return host;
+  }
+
+  function restLabel(result = {}) {
+    const days = Number(result?.history?.restDays);
+    if (!Number.isFinite(days)) return 'Fresh / unaired';
+    if (days < 31) return `${Math.max(0, Math.round(days))}d rest`;
+    const months = Math.round(days / 30.4375);
+    if (months < 24) return `${months} mo rest`;
+    return `${Math.round((days / 365.25) * 10) / 10} yr rest`;
+  }
+
+  function renderDetailHeaderScorecard(program, result) {
+    const host = ensureDetailHeaderHost();
+    if (!host) return;
+    if (!program || !result || App.state?.detailCreateMode || !text(App.state?.selectedProgramId)) {
+      host.innerHTML = '';
+      host.classList.add('hidden');
+      return;
+    }
+
+    const quick = [
+      restLabel(result),
+      result.totalPledges > 0 ? `${App.utils.formatCount(result.totalPledges)} pledges` : '',
+      result.trend?.label && result.trend.label !== 'Not enough history' ? `Trend: ${result.trend.label}` : '',
+      result.season?.matchesTarget ? 'Seasonal fit' : '',
+      result.local ? 'Local / U.P.' : '',
+      result.drama?.currentCycle ? 'Current Drama Doc' : '',
+      result.rights?.retiring ? 'Rights ending soon' : ''
+    ].filter(Boolean).slice(0, 5);
+
+    const cautions = (result.cautions || []).slice(0, 2);
+    host.classList.remove('hidden');
+    host.innerHTML = `
+      <div class="program-scorecard-header-main scorecard-tone-${App.utils.escapeHtml(result.tone || 'neutral')}">
+        <div class="program-scorecard-header-label">Programming outlook</div>
+        <div class="program-scorecard-header-title">${App.utils.escapeHtml(result.outlook || 'Worth consideration')}</div>
+        <div class="program-scorecard-header-confidence">${App.utils.escapeHtml(result.confidence || 'Low')} confidence</div>
+      </div>
+      <div class="program-scorecard-header-facts">
+        ${quick.map((item) => `<span>${App.utils.escapeHtml(item)}</span>`).join('')}
+        ${cautions.map((item) => `<span class="warn">${App.utils.escapeHtml(item)}</span>`).join('')}
+      </div>`;
+  }
+
   function renderDetailScorecard() {
     const host = ensureDetailHost();
-    if (!host || !App.programScorecard?.detailHtml) return;
+    const headerHost = ensureDetailHeaderHost();
+    if (!host || !headerHost || !App.programScorecard?.detailHtml || !App.programScorecard?.detailedAssessment) return;
     const program = App.state?.currentDetailProgram;
     const createMode = Boolean(App.state?.detailCreateMode);
     if (!program || createMode || !text(App.state?.selectedProgramId)) {
       host.innerHTML = '';
       host.classList.add('hidden');
+      renderDetailHeaderScorecard(null, null);
       return;
     }
+
+    const driveResults = App.state?.currentDetailDriveResults || [];
+    const airings = App.state?.currentDetailAirings || [];
+    const result = App.programScorecard.detailedAssessment(program, driveResults, airings);
+    renderDetailHeaderScorecard(program, result);
+
     host.classList.remove('hidden');
-    const html = App.programScorecard.detailHtml(
-      program,
-      App.state?.currentDetailDriveResults || [],
-      App.state?.currentDetailAirings || []
-    );
+    const html = App.programScorecard.detailHtml(program, driveResults, airings);
     if (host.innerHTML !== html) host.innerHTML = html;
   }
 
@@ -125,6 +185,7 @@
     }
     initialized = true;
     ensureListHeader();
+    ensureDetailHeaderHost();
     observeList();
     observeDetail();
 
