@@ -30,8 +30,26 @@
     return id ? (byProgramId.get(id) || null) : null;
   }
 
+  function pulseScorecard() {
+    const body = document.getElementById('library-body');
+    if (body) {
+      const marker = document.createElement('span');
+      marker.hidden = true;
+      body.append(marker);
+      marker.remove();
+    }
+    const overview = document.getElementById('overview-grid');
+    if (overview) {
+      const marker = document.createElement('span');
+      marker.hidden = true;
+      overview.append(marker);
+      marker.remove();
+    }
+  }
+
   function emitChanged(reason = 'update') {
     document.dispatchEvent(new CustomEvent('pledge-editorial-overrides-changed', { detail: { reason } }));
+    window.setTimeout(pulseScorecard, 0);
   }
 
   async function waitForClient() {
@@ -117,9 +135,9 @@
     const activeProtection = Boolean(overrideInfo?.activeProtection);
     const note = current === 'high'
       ? activeProtection
-        ? `High rating is protecting this title from a Low Confidence label. Clear weak prime tests since rating: ${weakCount}/2.`
+        ? `High rating is protecting this title from a Low Confidence label. Clear weak prime tests since rating: ${weakCount}/2. A weak test is below $150 per pledge hour; a $0 prime airing counts even when duration is unavailable.`
         : weakCount >= 2
-          ? 'High rating remains recorded, but two weak prime tests since the rating returned confidence to the automated evidence.'
+          ? 'High rating remains recorded, but two clear weak prime tests since the rating returned confidence to the automated evidence.'
           : 'High programmer rating recorded.'
       : 'Automatic confidence rules are in control.';
 
@@ -168,6 +186,7 @@
   };
 
   document.addEventListener('change', handleChange, true);
+  document.addEventListener('pledge-scorecard-airings-ready', () => window.setTimeout(pulseScorecard, 0));
   document.addEventListener('DOMContentLoaded', () => {
     window.setTimeout(() => load(), 500);
   }, { once: true });
