@@ -137,6 +137,7 @@
       const popupCss=doc.createElement('link');popupCss.rel='stylesheet';popupCss.href=`assets/library-detail-popup-restore.css?v=${VERSION}`;doc.head.append(popupCss);
       const scoreCss=doc.createElement('link');scoreCss.rel='stylesheet';scoreCss.href=`assets/program-scorecard.css?v=${VERSION}`;doc.head.append(scoreCss);
       const rulesCss=doc.createElement('link');rulesCss.rel='stylesheet';rulesCss.href=`assets/program-outlook-rules.css?v=${VERSION}`;doc.head.append(rulesCss);
+      const enhancementCss=doc.createElement('link');enhancementCss.rel='stylesheet';enhancementCss.href=`assets/program-outlook-enhancements.css?v=${VERSION}`;doc.head.append(enhancementCss);
       const core=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/core\.js/i.test(script.getAttribute('src')||''));
       if(core){const seed=doc.createElement('script');seed.textContent=`window.__PLEDGE_APP_VERSION__=${JSON.stringify(LABEL)};`;core.before(seed)}
       const appInit=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/app-init\.js/i.test(script.getAttribute('src')||''));
@@ -146,9 +147,10 @@
       const scoreLogic=doc.createElement('script');scoreLogic.defer=true;scoreLogic.src=`assets/js/program-scorecard.js?v=${VERSION}`;
       const scoreRules=doc.createElement('script');scoreRules.defer=true;scoreRules.src=`assets/js/program-outlook-rules.js?v=${VERSION}`;
       const editorialOverrides=doc.createElement('script');editorialOverrides.defer=true;editorialOverrides.src=`assets/js/program-editorial-overrides.js?v=${VERSION}`;
+      const outlookEnhancements=doc.createElement('script');outlookEnhancements.defer=true;outlookEnhancements.src=`assets/js/program-outlook-enhancements.js?v=${VERSION}`;
       const scoreUi=doc.createElement('script');scoreUi.defer=true;scoreUi.src=`assets/js/program-scorecard-ui.js?v=${VERSION}`;
       const airingIntegrity=doc.createElement('script');airingIntegrity.defer=true;airingIntegrity.src=`assets/js/airing-link-integrity.js?v=${VERSION}`;
-      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreRules);appInit.before(editorialOverrides);appInit.before(scoreUi);appInit.before(airingIntegrity)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreRules,editorialOverrides,scoreUi,airingIntegrity)}
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreRules);appInit.before(editorialOverrides);appInit.before(outlookEnhancements);appInit.before(scoreUi);appInit.before(airingIntegrity)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreRules,editorialOverrides,outlookEnhancements,scoreUi,airingIntegrity)}
     }
     try{
       setStatus('Loading the application shell…');
