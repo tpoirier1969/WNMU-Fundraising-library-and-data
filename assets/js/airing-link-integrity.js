@@ -98,6 +98,12 @@
       : await App.data.fetchImportedAirings();
     const safeRows = sanitizeAiringsForLibraryHistory(sourceRows);
 
+    // Reuse the same sanitized history for scorecard rules. This adds no database
+    // request and guarantees editorial-override evidence can never use the airing
+    // row primary key or stale title/NOLA fallbacks as program identity.
+    state.scorecardAiringRows = safeRows;
+    document.dispatchEvent(new CustomEvent('pledge-scorecard-airings-ready'));
+
     // The original enrichment routine also computes pledge-hour metrics. Feed it
     // a safe, short-lived cache instead of duplicating that logic. The original
     // routine consumes an existing cache synchronously before its Promise returns,
