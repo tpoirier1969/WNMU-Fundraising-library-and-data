@@ -136,6 +136,7 @@
       const css=doc.createElement('link');css.rel='stylesheet';css.href=`assets/library-split-default.css?v=${VERSION}`;doc.head.append(css);
       const popupCss=doc.createElement('link');popupCss.rel='stylesheet';popupCss.href=`assets/library-detail-popup-restore.css?v=${VERSION}`;doc.head.append(popupCss);
       const scoreCss=doc.createElement('link');scoreCss.rel='stylesheet';scoreCss.href=`assets/program-scorecard.css?v=${VERSION}`;doc.head.append(scoreCss);
+      const rulesCss=doc.createElement('link');rulesCss.rel='stylesheet';rulesCss.href=`assets/program-outlook-rules.css?v=${VERSION}`;doc.head.append(rulesCss);
       const core=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/core\.js/i.test(script.getAttribute('src')||''));
       if(core){const seed=doc.createElement('script');seed.textContent=`window.__PLEDGE_APP_VERSION__=${JSON.stringify(LABEL)};`;core.before(seed)}
       const appInit=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/app-init\.js/i.test(script.getAttribute('src')||''));
