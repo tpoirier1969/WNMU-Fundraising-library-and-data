@@ -1,0 +1,177 @@
+.programs-table th.col-outlook,
+.programs-table td.outlook-cell {
+  min-width: 185px;
+  width: 185px;
+}
+
+.scorecard-list {
+  border: 1px solid #d6e0e5;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #f8fbfc;
+  padding: 6px 7px;
+  line-height: 1.15;
+}
+
+.scorecard-list-outlook {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #173d54;
+  margin-bottom: 5px;
+}
+
+.scorecard-list-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.scorecard-list-badges span {
+  display: inline-block;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #edf3f6;
+  color: #536b78;
+  font-size: 0.67rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.scorecard-tone-strong { border-left-color: #138a68; }
+.scorecard-tone-good { border-left-color: #4d9d79; }
+.scorecard-tone-neutral { border-left-color: #6f93a7; }
+.scorecard-tone-caution { border-left-color: #c18a28; }
+.scorecard-tone-warn { border-left-color: #b95f46; }
+.scorecard-tone-bad { border-left-color: #8b3940; }
+
+#program-scorecard {
+  margin-top: 14px;
+  border-top: 1px solid #d7e1e6;
+  padding-top: 14px;
+}
+
+.program-scorecard-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  border: 1px solid #d7e1e6;
+  border-left-width: 5px;
+  border-radius: 10px;
+  background: #f8fbfc;
+  padding: 11px 12px;
+}
+
+.program-scorecard-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-size: 0.67rem;
+  font-weight: 800;
+  color: #607783;
+}
+
+.program-scorecard-title {
+  margin-top: 2px;
+  font-size: 1rem;
+  font-weight: 850;
+  color: #173d54;
+}
+
+.program-scorecard-confidence {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: #617783;
+}
+
+.program-scorecard-auto {
+  max-width: 360px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #6c7f88;
+}
+
+.scorecard-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.scorecard-metric {
+  border: 1px solid #dce5e9;
+  border-radius: 9px;
+  background: #fff;
+  padding: 9px 10px;
+  min-width: 0;
+}
+
+.scorecard-metric-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #6c818b;
+}
+
+.scorecard-metric-value {
+  margin-top: 3px;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #1c455b;
+}
+
+.scorecard-metric-note {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #617580;
+}
+
+.scorecard-cautions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+  border-radius: 8px;
+  background: #fff6ee;
+  color: #7f4b2f;
+  padding: 7px 9px;
+  font-size: 0.72rem;
+}
+
+.scorecard-cautions span {
+  border: 1px solid #edd6c4;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: #fffaf6;
+}
+
+.scorecard-cautions-clear {
+  background: #f2f8f5;
+  color: #3c6d58;
+}
+
+@media (max-width: 1400px) {
+  .programs-table th.col-outlook,
+  .programs-table td.outlook-cell {
+    min-width: 165px;
+    width: 165px;
+  }
+  .scorecard-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .program-scorecard-head {
+    display: block;
+  }
+  .program-scorecard-auto {
+    margin-top: 7px;
+    max-width: none;
+  }
+  .scorecard-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
