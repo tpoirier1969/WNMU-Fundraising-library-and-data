@@ -77,9 +77,17 @@
   }
 
   function usableScheduleEntries() {
-    const schedules = Array.isArray(state.schedules) && state.schedules.length
-      ? state.schedules
-      : (Array.isArray(state.scorecardSchedules) ? state.scorecardSchedules : []);
+    const combined = [
+      ...(Array.isArray(state.schedules) ? state.schedules : []),
+      ...(Array.isArray(state.scorecardSchedules) ? state.scorecardSchedules : [])
+    ];
+    const seen = new Set();
+    const schedules = combined.filter((schedule) => {
+      const key = String(schedule?.id || `${schedule?.title || ''}|${schedule?.startDate || schedule?.start_date || ''}`);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     return schedules.map((schedule) => {
       const start = utils.parseDateLike(schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
       const end = utils.parseDateLike(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
@@ -251,7 +259,9 @@
         const dollars = rows.reduce((sum, airing) => sum + rowContribution(airing), 0);
         if (minutes > 0) rates.push((dollars * 60) / minutes);
       });
-      const avgPledgeHour = rates.length ? rates.reduce((sum, value) => sum + value, 0) / rates.length : null;
+      const avgPledgeHour = rates.length
+        ? rates.reduce((sum, value) => sum + value, 0) / rates.length
+        : (airings.length && airings.every((airing) => rowContribution(airing) <= 0) ? 0 : null);
       const primeRows = airings.filter(isPrimeAiring);
       const now = new Date();
       const recentSix = airings.filter((row) => {
@@ -352,11 +362,10 @@
     return { sixMonths, twelveMonths };
   }
 
-  function classifyOutlook({ score, history, rights, drama, season, local, core, biography, trend = null, exposure = null }) {
+  function classifyOutlook({ score, history, rights, drama, season, local, core, biography, exposure = null }) {
     const contextualFit = Boolean(season.matchesTarget || local || drama.currentCycle || core);
     const heavyExposure = history.airings >= 8 || (exposure?.sixMonths || history.recentSixMonths) >= 3;
     const enoughPrimeEvidence = history.primeAirings >= 2;
-    const trendFading = trend?.tone === 'warn';
 
     if (rights.expired) return { outlook: 'Do not schedule', tone: 'bad' };
     if (drama.olderCycle) return { outlook: 'Context check first', tone: 'warn' };
@@ -371,7 +380,7 @@
       return { outlook: 'Limited evidence', tone: 'neutral' };
     }
 
-    if (score < 40 && (enoughPrimeEvidence || heavyExposure || trendFading)) return { outlook: 'Low priority / rest', tone: 'warn' };
+    if (score < 40 && (enoughPrimeEvidence || heavyExposure)) return { outlook: 'Low priority / rest', tone: 'warn' };
     if (score < 50) return { outlook: 'Mixed evidence', tone: 'caution' };
     return { outlook: 'Situational option', tone: 'neutral' };
   }
@@ -486,7 +495,6 @@
       local: result.local,
       core: result.core,
       biography: result.biography,
-      trend,
       exposure
     });
 
