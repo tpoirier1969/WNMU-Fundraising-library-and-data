@@ -1,0 +1,156 @@
+.outlook-fundraiser-focus {
+  min-width: 190px;
+}
+
+.outlook-fundraiser-focus select {
+  min-width: 190px;
+  max-width: 250px;
+}
+
+.program-scorecard-header {
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 360px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.program-scorecard-header-main {
+  min-width: 180px;
+}
+
+.program-scorecard-header-rating {
+  flex: 0 0 190px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 0;
+}
+
+.programmer-rating-header-control,
+.programmer-rating-header-readonly {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 170px;
+  margin: 0;
+}
+
+.programmer-rating-header-control > span,
+.programmer-rating-header-readonly > span {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.61rem;
+  font-weight: 800;
+  color: #68808c;
+}
+
+.programmer-rating-header-control select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid #c8d7de;
+  border-radius: 9px;
+  background: #fff;
+  color: #173d54;
+  font-weight: 750;
+  padding: 4px 8px;
+}
+
+.programmer-rating-header-readonly strong {
+  font-size: 0.8rem;
+  color: #173d54;
+}
+
+.program-scorecard-explanation {
+  border: 1px solid #d7e1e6;
+  border-left-width: 5px;
+  border-radius: 10px;
+  background: #f8fbfc;
+  padding: 11px 12px;
+}
+
+.program-scorecard-explanation p {
+  margin: 5px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.42;
+  color: #506773;
+}
+
+.program-scorecard-formula-line {
+  margin-top: 7px;
+  font-size: 0.7rem;
+  color: #627983;
+}
+
+.program-scorecard-formula-line span {
+  padding: 0 4px;
+  color: #9aabb3;
+}
+
+.rights-combined-header {
+  min-width: 125px;
+}
+
+.rights-combined-title {
+  font-weight: 800;
+  margin-bottom: 3px;
+}
+
+.rights-combined-sort {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.rights-combined-sort button {
+  border: 1px solid #cbd9df;
+  border-radius: 999px;
+  background: #f7fafb;
+  color: #38576a;
+  font-size: 0.64rem;
+  font-weight: 750;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.rights-combined-sort button.active {
+  background: #e7f2f5;
+  border-color: #83aab9;
+  color: #123f55;
+}
+
+.rights-date-line {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 4px;
+  align-items: baseline;
+  line-height: 1.2;
+  margin: 2px 0;
+}
+
+.rights-date-line span {
+  font-size: 0.61rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6c7d86;
+}
+
+.rights-date-line strong {
+  font-size: 0.72rem;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.programs-table th.col-outlook .sort-header-button {
+  width: 100%;
+}
+
+@media (max-width: 1250px) {
+  .program-scorecard-header-rating {
+    flex-basis: 165px;
+  }
+  .programmer-rating-header-control,
+  .programmer-rating-header-readonly {
+    min-width: 150px;
+  }
+}
