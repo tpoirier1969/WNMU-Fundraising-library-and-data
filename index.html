@@ -144,7 +144,8 @@
       const timingFast=doc.createElement('script');timingFast.defer=true;timingFast.src=`assets/js/detail-timing-fast.js?v=${VERSION}`;
       const scoreLogic=doc.createElement('script');scoreLogic.defer=true;scoreLogic.src=`assets/js/program-scorecard.js?v=${VERSION}`;
       const scoreUi=doc.createElement('script');scoreUi.defer=true;scoreUi.src=`assets/js/program-scorecard-ui.js?v=${VERSION}`;
-      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreUi)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreUi)}
+      const airingIntegrity=doc.createElement('script');airingIntegrity.defer=true;airingIntegrity.src=`assets/js/airing-link-integrity.js?v=${VERSION}`;
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreUi);appInit.before(airingIntegrity)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreUi,airingIntegrity)}
     }
     try{
       setStatus('Loading the application shell…');
