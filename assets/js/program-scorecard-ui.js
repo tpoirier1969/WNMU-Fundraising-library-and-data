@@ -27,83 +27,50 @@
   }
 
   function isNonSpecificProgram(program = {}) {
+    if (App.utils?.isNonSpecificRow?.(program)) return true;
     const title = text(App.derive?.title?.(program) || program?.title || program?.program_title || program?.imported_program_title || '');
     return /^\.?\s*non[-\s]?specific\b.*\bpledges?\s*$/i.test(title);
   }
 
-  function fallbackTargetFundraiserWindow() {
-    const schedules = Array.isArray(App.state?.schedules) ? App.state.schedules : [];
-    if (!schedules.length) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const candidates = schedules.map((schedule) => {
-      const start = App.utils.parseDateLike(schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
-      const end = App.utils.parseDateLike(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
-      return { schedule, start, end };
-    }).filter((entry) => entry.start instanceof Date && !Number.isNaN(entry.start.getTime())).sort((a, b) => a.start - b.start);
-    const chosen = candidates.find((entry) => entry.start > today)
-      || candidates.find((entry) => entry.start <= today && (entry.end || entry.start) >= today)
-      || candidates[candidates.length - 1]
-      || null;
-    if (!chosen) return null;
-    return {
-      id: text(chosen.schedule?.id || ''),
-      title: text(chosen.schedule?.title || chosen.schedule?.name || 'Target fundraiser'),
-      start: chosen.start,
-      end: chosen.end instanceof Date && !Number.isNaN(chosen.end.getTime()) ? chosen.end : chosen.start
-    };
-  }
-
   function targetFundraiserWindow() {
     const focus = App.programFundraiserFocus?.get?.() || null;
-    if (focus?.start) {
-      return {
-        id: text(focus.id || focus.schedule?.id || ''),
-        title: text(focus.title || focus.schedule?.title || focus.schedule?.name || 'Target fundraiser'),
-        start: focus.start,
-        end: focus.end instanceof Date && !Number.isNaN(focus.end.getTime()) ? focus.end : focus.start
-      };
-    }
-    return fallbackTargetFundraiserWindow();
+    if (!focus?.start) return null;
+    return {
+      id: text(focus.id || focus.schedule?.id || ''),
+      title: text(focus.title || focus.schedule?.title || focus.schedule?.name || 'Target fundraiser'),
+      start: focus.start,
+      end: focus.end instanceof Date && !Number.isNaN(focus.end.getTime()) ? focus.end : focus.start
+    };
   }
 
   function targetRightsPolicy(program = {}) {
     const target = targetFundraiserWindow();
-    if (!target) return { target: null, unavailable: false, partial: false, retiringSoonAfter: false, note: '' };
+    if (!target) return { target: null, unavailable: false, startsDuring: false, endsDuring: false, expiredBefore: false, note: '' };
     const rightsStart = App.utils.parseDateLike(App.derive.rightsBegin(program), { preferDateOnlyLocal: true });
     const rightsEnd = App.utils.parseDateLike(App.derive.rightsEnd(program), { preferDateOnlyLocal: true });
     const validStart = rightsStart instanceof Date && !Number.isNaN(rightsStart.getTime());
     const validEnd = rightsEnd instanceof Date && !Number.isNaN(rightsEnd.getTime());
 
     if (validEnd && rightsEnd < target.start) {
-      return { target, unavailable: true, partial: false, retiringSoonAfter: false, note: `Rights end ${App.utils.formatDate(rightsEnd)} before ${target.title}.` };
+      return { target, unavailable: true, startsDuring: false, endsDuring: false, expiredBefore: true, note: `Rights end ${App.utils.formatDate(rightsEnd)} before ${target.title}.` };
     }
     if (validStart && rightsStart > target.end) {
-      return { target, unavailable: true, partial: false, retiringSoonAfter: false, note: `Rights begin ${App.utils.formatDate(rightsStart)} after ${target.title}.` };
+      return { target, unavailable: true, startsDuring: false, endsDuring: false, expiredBefore: false, note: `Rights begin ${App.utils.formatDate(rightsStart)} after ${target.title}.` };
     }
     if (validStart && rightsStart > target.start && rightsStart <= target.end) {
-      return { target, unavailable: false, partial: true, retiringSoonAfter: false, note: `Rights begin ${App.utils.formatDate(rightsStart)} during ${target.title}.` };
+      return { target, unavailable: false, startsDuring: true, endsDuring: false, expiredBefore: false, note: `Rights begin ${App.utils.formatDate(rightsStart)} during ${target.title}.` };
     }
     if (validEnd && rightsEnd >= target.start && rightsEnd < target.end) {
-      return { target, unavailable: false, partial: true, retiringSoonAfter: false, note: `Rights end ${App.utils.formatDate(rightsEnd)} during ${target.title}.` };
+      return { target, unavailable: false, startsDuring: false, endsDuring: true, expiredBefore: false, note: '' };
     }
-    const daysAfter = validEnd ? Math.ceil((rightsEnd.getTime() - target.end.getTime()) / 86400000) : null;
-    return {
-      target,
-      unavailable: false,
-      partial: false,
-      retiringSoonAfter: Number.isFinite(daysAfter) && daysAfter >= 0 && daysAfter <= 90,
-      note: Number.isFinite(daysAfter) && daysAfter >= 0 && daysAfter <= 90
-        ? `Rights end ${App.utils.formatDate(rightsEnd)}, within 90 days after ${target.title}.`
-        : ''
-    };
+    return { target, unavailable: false, startsDuring: false, endsDuring: false, expiredBefore: false, note: '' };
   }
 
   function applyTargetPolicy(program, sourceResult = {}) {
     const policy = targetRightsPolicy(program);
     const result = {
       ...sourceResult,
-      badges: [...(sourceResult.badges || [])],
+      badges: [...(sourceResult.badges || [])].filter((badge) => !/^Rights ending soon/i.test(String(badge || ''))),
       cautions: [...(sourceResult.cautions || [])],
       targetRightsPolicy: policy
     };
@@ -111,15 +78,13 @@
       result.outlook = 'Unavailable for target fundraiser';
       result.tone = 'bad';
       result.cautions.unshift(policy.note);
-    } else if (policy.partial) {
+    } else if (policy.startsDuring) {
       result.outlook = 'Rights window needs attention';
       result.tone = 'warn';
       result.cautions.unshift(policy.note);
-    } else if (policy.retiringSoonAfter) {
-      result.badges.unshift('Rights ending soon after drive');
     }
     result.badges = [...new Set(result.badges)];
-    result.cautions = [...new Set(result.cautions)];
+    result.cautions = [...new Set(result.cautions.filter(Boolean))];
     return result;
   }
 
@@ -204,6 +169,11 @@
     return `<div class="rights-date-line"><span>Begin</span><strong>${App.utils.escapeHtml(begin)}</strong></div><div class="rights-date-line"><span>End</span><strong>${App.utils.escapeHtml(end)}</strong></div>`;
   }
 
+  function hideForSelectedFundraiser(program = {}) {
+    const policy = targetRightsPolicy(program);
+    return Boolean(policy.target && policy.expiredBefore);
+  }
+
   function decorateListRows() {
     if (!App.programScorecard?.baseAssessment) return;
     ensureListHeader();
@@ -213,6 +183,11 @@
     body.querySelectorAll('tr[data-id]').forEach((tr) => {
       const program = findProgram(tr.dataset.id);
       if (!program) return;
+      const hiddenByRights = hideForSelectedFundraiser(program);
+      tr.hidden = hiddenByRights;
+      tr.classList.toggle('outlook-hidden-by-rights', hiddenByRights);
+      if (hiddenByRights) return;
+
       let cell = tr.querySelector('td.outlook-cell');
       if (!cell) {
         cell = document.createElement('td');
@@ -238,7 +213,7 @@
     if (isNonSpecificProgram(program)) return -10000;
     const result = applyTargetPolicy(program, App.programScorecard.baseAssessment(program));
     if (result.targetRightsPolicy?.unavailable) return -5000;
-    if (result.targetRightsPolicy?.partial) return Number(result.score || 0) - 20;
+    if (result.targetRightsPolicy?.startsDuring) return Number(result.score || 0) - 20;
     return Number(result.score || 0);
   }
 
@@ -256,6 +231,7 @@
     const desiredIds = sorted.map((row) => String(App.derive.programId(row) || '')).filter(Boolean);
     const currentIds = [...body.querySelectorAll('tr[data-id]')].map((tr) => String(tr.dataset.id || ''));
     if (desiredIds.length === currentIds.length && desiredIds.every((id, index) => id === currentIds[index])) {
+      decorateListRows();
       syncSortHeaders();
       return;
     }
@@ -273,7 +249,7 @@
     App.listUi.applyLibraryView = (...args) => {
       const result = original(...args);
       if (App.state?.sortField === 'programming_outlook') window.setTimeout(applyOutlookOrder, 0);
-      else window.setTimeout(syncSortHeaders, 0);
+      else window.setTimeout(decorateListRows, 0);
       return result;
     };
     listApplyWrapped = true;
@@ -287,7 +263,7 @@
       wrap = document.createElement('div');
       wrap.id = 'outlook-fundraiser-focus-wrap';
       wrap.className = 'filter-field outlook-fundraiser-focus';
-      wrap.innerHTML = '<label class="filter-label" for="outlook-fundraiser-focus">Outlook fundraiser</label><select id="outlook-fundraiser-focus"><option value="">Waiting for fundraiser list…</option></select>';
+      wrap.innerHTML = '<label class="filter-label" for="outlook-fundraiser-focus">Outlook fundraiser</label><select id="outlook-fundraiser-focus"><option value="">N/A</option></select>';
       filterRow.append(wrap);
     }
     return wrap.querySelector('select');
@@ -297,16 +273,9 @@
     const select = ensureFundraiserFocusControl();
     if (!select) return;
     const entries = App.programFundraiserFocus?.entries?.() || [];
-    const auto = App.programFundraiserFocus?.getDefault?.() || null;
-    if (!entries.length) {
-      select.disabled = true;
-      select.innerHTML = '<option value="">Waiting for fundraiser list…</option>';
-      return;
-    }
     select.disabled = false;
     const manualId = text(App.state?.programOutlookFundraiserId || '');
-    const autoLabel = auto ? `Auto · ${auto.title}` : 'Auto · next fundraiser';
-    const options = [`<option value="" ${!manualId ? 'selected' : ''}>${App.utils.escapeHtml(autoLabel)}</option>`];
+    const options = [`<option value="" ${!manualId ? 'selected' : ''}>N/A</option>`];
     entries.forEach((entry) => {
       const start = entry.start ? App.utils.formatDate(entry.start) : '';
       const label = start ? `${entry.title} · ${start}` : entry.title;
