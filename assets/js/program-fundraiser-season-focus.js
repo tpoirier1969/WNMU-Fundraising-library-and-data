@@ -1,0 +1,159 @@
+(() => {
+  'use strict';
+
+  const App = window.PledgeLib;
+  const focus = App?.programFundraiserFocus;
+  if (!App || !focus) return;
+
+  const SEASONS = ['March', 'June', 'August', 'December'];
+  const STORAGE_KEY = 'wnmuProgramOutlookSeasonV1';
+  const originalEntries = typeof focus.entries === 'function' ? focus.entries.bind(focus) : () => [];
+  const originalGet = typeof focus.get === 'function' ? focus.get.bind(focus) : () => null;
+  const originalSet = typeof focus.set === 'function' ? focus.set.bind(focus) : () => {};
+  const seasonKeyForDate = typeof focus.seasonKeyForDate === 'function' ? focus.seasonKeyForDate.bind(focus) : () => '';
+
+  function text(value) {
+    return String(value ?? '').trim();
+  }
+
+  function todayStart() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }
+
+  function rawEntries() {
+    return (originalEntries() || []).filter((entry) => entry?.id && entry?.start instanceof Date && !Number.isNaN(entry.start.getTime()));
+  }
+
+  function entriesForSeason(season) {
+    return rawEntries().filter((entry) => seasonKeyForDate(entry.start) === season);
+  }
+
+  function representativeForSeason(season) {
+    const entries = entriesForSeason(season);
+    if (!entries.length) return null;
+    const today = todayStart();
+
+    const active = entries.find((entry) => entry.start <= today && (entry.end || entry.start) >= today);
+    if (active) return active;
+
+    const future = entries.find((entry) => entry.start > today);
+    if (future) return future;
+
+    return entries[entries.length - 1] || null;
+  }
+
+  function seasonChoices() {
+    return SEASONS.map((season) => {
+      const representative = representativeForSeason(season);
+      return {
+        id: representative?.id || `__season_${season.toLowerCase()}__`,
+        title: season,
+        start: null,
+        end: null,
+        season,
+        representative
+      };
+    });
+  }
+
+  function seasonForChoiceId(id) {
+    const value = text(id);
+    if (!value) return '';
+    return seasonChoices().find((choice) => choice.id === value)?.season || '';
+  }
+
+  function storedSeason() {
+    try {
+      const value = text(window.sessionStorage.getItem(STORAGE_KEY) || '');
+      return SEASONS.includes(value) ? value : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function storeSeason(season) {
+    try {
+      if (season) window.sessionStorage.setItem(STORAGE_KEY, season);
+      else window.sessionStorage.removeItem(STORAGE_KEY);
+    } catch (_error) {
+      // Browser storage is optional.
+    }
+  }
+
+  function applySeasonSelection(season) {
+    const normalized = SEASONS.includes(season) ? season : '';
+    if (!normalized) {
+      storeSeason('');
+      originalSet('');
+      return;
+    }
+    const representative = representativeForSeason(normalized);
+    storeSeason(normalized);
+    originalSet(representative?.id || '');
+  }
+
+  function setSeasonChoice(id = '') {
+    const value = text(id);
+    if (!value) {
+      applySeasonSelection('');
+      return;
+    }
+    const season = seasonForChoiceId(value);
+    applySeasonSelection(season);
+  }
+
+  function selectedSeason() {
+    const currentId = text(App.state?.programOutlookFundraiserId || '');
+    const currentSeason = seasonForChoiceId(currentId);
+    if (currentSeason) return currentSeason;
+    return storedSeason();
+  }
+
+  function selectedRepresentative() {
+    const season = selectedSeason();
+    return season ? representativeForSeason(season) : null;
+  }
+
+  function rightsTarget() {
+    const representative = selectedRepresentative();
+    if (!representative?.start) return null;
+    const today = todayStart();
+    const end = representative.end || representative.start;
+    if (end < today) return null;
+    return representative;
+  }
+
+  function normalizeInitialSelection() {
+    const stored = storedSeason();
+    if (stored) {
+      applySeasonSelection(stored);
+      return;
+    }
+
+    const currentId = text(App.state?.programOutlookFundraiserId || '');
+    const currentSeason = seasonForChoiceId(currentId);
+    if (currentSeason) {
+      storeSeason(currentSeason);
+      return;
+    }
+
+    // v0.22.157 briefly stored individual fundraiser IDs. Do not carry those
+    // forward into the seasonal selector. N/A is the default.
+    originalSet('');
+  }
+
+  normalizeInitialSelection();
+
+  App.programFundraiserFocus = {
+    ...focus,
+    entries: seasonChoices,
+    get: rightsTarget,
+    getDefault: () => null,
+    set: setSeasonChoice,
+    selectedSeason,
+    selectedRepresentative,
+    seasons: () => [...SEASONS]
+  };
+})();
