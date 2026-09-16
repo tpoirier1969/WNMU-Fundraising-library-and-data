@@ -4,6 +4,17 @@
   width: 185px;
 }
 
+/* The split Program Library historically hides columns by position. The outlook
+   column is inserted after Avg, so explicitly preserve the intended visible set. */
+body.library-split-default .programs-table th:nth-child(7),
+body.library-split-default .programs-table td:nth-child(7) {
+  display: table-cell !important;
+}
+body.library-split-default .programs-table th:nth-child(9),
+body.library-split-default .programs-table td:nth-child(9) {
+  display: none !important;
+}
+
 .scorecard-list {
   border: 1px solid #d6e0e5;
   border-left-width: 4px;
@@ -215,6 +226,12 @@
 .scorecard-cautions-clear {
   background: #f2f8f5;
   color: #3c6d58;
+}
+
+@container (max-width: 700px) {
+  .program-scorecard-header {
+    display: none !important;
+  }
 }
 
 @media (max-width: 1400px) {
