@@ -19,3 +19,56 @@
 .scorecard-target-rights {
   display: none !important;
 }
+
+.scorecard-editorial-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d8e2e7;
+  border-radius: 9px;
+  background: #f7fafb;
+}
+
+.scorecard-editorial-control label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #3d5968;
+}
+
+.scorecard-editorial-rating {
+  min-width: 105px;
+  padding: 4px 7px;
+  font: inherit;
+}
+
+.scorecard-editorial-note {
+  min-width: 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #607782;
+}
+
+.scorecard-editorial-readonly {
+  display: block;
+  font-size: 0.72rem;
+  color: #4e6774;
+}
+
+.scorecard-editorial-readonly span {
+  display: block;
+  margin-top: 2px;
+  color: #70828b;
+}
+
+@media (max-width: 900px) {
+  .scorecard-editorial-control {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
