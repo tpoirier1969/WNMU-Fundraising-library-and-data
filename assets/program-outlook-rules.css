@@ -1,0 +1,21 @@
+.program-scorecard-header {
+  flex: 0 1 210px;
+  min-width: 170px;
+  max-width: 220px;
+  display: block;
+  padding: 0 4px;
+}
+
+.program-scorecard-header-main {
+  min-width: 0;
+  width: auto;
+  padding: 3px 7px;
+}
+
+/* The detail header should carry only the conclusion and confidence. The
+   supporting evidence already lives in Overview and otherwise collides with
+   the title/action area in the split layout. */
+.program-scorecard-header-facts,
+.scorecard-target-rights {
+  display: none !important;
+}
