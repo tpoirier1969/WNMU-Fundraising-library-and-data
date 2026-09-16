@@ -182,9 +182,9 @@
       const exactCount = Array.isArray(exactAirings) ? exactAirings.length : 0;
       if (summaryAirings > 0 || exactCount > 0) return result;
 
-      let outlook = text(result.outlook || 'Untested');
+      let outlook = text(result.outlook || 'Needs first test');
       if (/^Low confidence\s*·\s*Promising$/i.test(outlook)) outlook = 'Promising new title';
-      else if (/^Low confidence\s*·\s*Untested$/i.test(outlook)) outlook = 'Untested';
+      else if (/^Low confidence\s*·\s*Untested$/i.test(outlook)) outlook = 'Needs first test';
       else if (/^Low confidence\s*·\s*/i.test(outlook)) outlook = outlook.replace(/^Low confidence\s*·\s*/i, '');
 
       return {
@@ -230,7 +230,7 @@
     });
     document.querySelectorAll('.scorecard-list[title]').forEach((node) => {
       const title = node.getAttribute('title') || '';
-      if (/Untested confidence/i.test(title)) node.setAttribute('title', title.replace(/Untested confidence/gi, 'Untested'));
+      if (/Untested confidence/i.test(title)) node.setAttribute('title', title.replace(/Untested confidence/gi, 'Untested evidence'));
     });
   }
 
