@@ -135,13 +135,16 @@
     function injectAssets(doc){
       const css=doc.createElement('link');css.rel='stylesheet';css.href=`assets/library-split-default.css?v=${VERSION}`;doc.head.append(css);
       const popupCss=doc.createElement('link');popupCss.rel='stylesheet';popupCss.href=`assets/library-detail-popup-restore.css?v=${VERSION}`;doc.head.append(popupCss);
+      const scoreCss=doc.createElement('link');scoreCss.rel='stylesheet';scoreCss.href=`assets/program-scorecard.css?v=${VERSION}`;doc.head.append(scoreCss);
       const core=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/core\.js/i.test(script.getAttribute('src')||''));
       if(core){const seed=doc.createElement('script');seed.textContent=`window.__PLEDGE_APP_VERSION__=${JSON.stringify(LABEL)};`;core.before(seed)}
       const appInit=[...doc.querySelectorAll('script[src]')].find((script)=>/assets\/js\/app-init\.js/i.test(script.getAttribute('src')||''));
       const controller=doc.createElement('script');controller.defer=true;controller.src=`assets/js/library-split-default.js?v=${VERSION}`;
       const workspaceFix=doc.createElement('script');workspaceFix.defer=true;workspaceFix.src=`assets/js/library-detail-workspace-fix.js?v=${VERSION}`;
       const timingFast=doc.createElement('script');timingFast.defer=true;timingFast.src=`assets/js/detail-timing-fast.js?v=${VERSION}`;
-      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast)}else{doc.head.append(controller,workspaceFix,timingFast)}
+      const scoreLogic=doc.createElement('script');scoreLogic.defer=true;scoreLogic.src=`assets/js/program-scorecard.js?v=${VERSION}`;
+      const scoreUi=doc.createElement('script');scoreUi.defer=true;scoreUi.src=`assets/js/program-scorecard-ui.js?v=${VERSION}`;
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreUi)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreUi)}
     }
     try{
       setStatus('Loading the application shell…');
