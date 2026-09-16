@@ -148,9 +148,10 @@
       const scoreRules=doc.createElement('script');scoreRules.defer=true;scoreRules.src=`assets/js/program-outlook-rules.js?v=${VERSION}`;
       const editorialOverrides=doc.createElement('script');editorialOverrides.defer=true;editorialOverrides.src=`assets/js/program-editorial-overrides.js?v=${VERSION}`;
       const outlookEnhancements=doc.createElement('script');outlookEnhancements.defer=true;outlookEnhancements.src=`assets/js/program-outlook-enhancements.js?v=${VERSION}`;
+      const seasonFocus=doc.createElement('script');seasonFocus.defer=true;seasonFocus.src=`assets/js/program-fundraiser-season-focus.js?v=${VERSION}`;
       const scoreUi=doc.createElement('script');scoreUi.defer=true;scoreUi.src=`assets/js/program-scorecard-ui.js?v=${VERSION}`;
       const airingIntegrity=doc.createElement('script');airingIntegrity.defer=true;airingIntegrity.src=`assets/js/airing-link-integrity.js?v=${VERSION}`;
-      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreRules);appInit.before(editorialOverrides);appInit.before(outlookEnhancements);appInit.before(scoreUi);appInit.before(airingIntegrity)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreRules,editorialOverrides,outlookEnhancements,scoreUi,airingIntegrity)}
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreRules);appInit.before(editorialOverrides);appInit.before(outlookEnhancements);appInit.before(seasonFocus);appInit.before(scoreUi);appInit.before(airingIntegrity)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreRules,editorialOverrides,outlookEnhancements,seasonFocus,scoreUi,airingIntegrity)}
     }
     try{
       setStatus('Loading the application shell…');
