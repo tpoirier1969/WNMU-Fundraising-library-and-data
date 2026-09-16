@@ -31,9 +31,17 @@
   }
 
   function scheduleEntries() {
-    const schedules = Array.isArray(App.state?.schedules) && App.state.schedules.length
-      ? App.state.schedules
-      : (Array.isArray(App.state?.scorecardSchedules) ? App.state.scorecardSchedules : []);
+    const combined = [
+      ...(Array.isArray(App.state?.schedules) ? App.state.schedules : []),
+      ...(Array.isArray(App.state?.scorecardSchedules) ? App.state.scorecardSchedules : [])
+    ];
+    const seen = new Set();
+    const schedules = combined.filter((schedule) => {
+      const key = String(schedule?.id || `${schedule?.title || ''}|${schedule?.startDate || schedule?.start_date || ''}`);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     return schedules.map((schedule) => {
       const start = App.utils.parseDateLike(schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
       const end = App.utils.parseDateLike(schedule?.endDate || schedule?.end_date || schedule?.startDate || schedule?.start_date || '', { preferDateOnlyLocal: true });
