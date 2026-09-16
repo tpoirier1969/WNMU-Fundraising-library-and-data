@@ -12,6 +12,10 @@
     return String(value ?? '').trim();
   }
 
+  function libraryTable() {
+    return document.getElementById('library-body')?.closest('table') || null;
+  }
+
   function findProgram(programId) {
     const id = text(programId);
     if (!id) return null;
@@ -22,7 +26,8 @@
   }
 
   function ensureListHeader() {
-    const headerRow = document.querySelector('.programs-table thead tr');
+    const table = libraryTable();
+    const headerRow = table?.querySelector('thead tr');
     if (!headerRow || headerRow.querySelector('.col-outlook')) return;
     const avgHeader = headerRow.querySelector('.col-avg');
     if (!avgHeader) return;
@@ -33,7 +38,8 @@
   }
 
   function syncPlaceholderColspan() {
-    const headerCount = document.querySelectorAll('.programs-table thead tr:first-child > th').length || 11;
+    const table = libraryTable();
+    const headerCount = table?.querySelectorAll('thead tr:first-child > th').length || 11;
     document.querySelectorAll('#library-body td[colspan]').forEach((cell) => {
       cell.setAttribute('colspan', String(headerCount));
     });
