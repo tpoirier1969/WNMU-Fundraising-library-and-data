@@ -86,6 +86,30 @@ test('manual match is authoritative when choosing the program identity', async (
   assert.equal(String(safe.manual_match_program_id), '55');
 });
 
+test('invalid manual match is quarantined instead of falling back to another stored id', async () => {
+  const harness = makeHarness({
+    cacheRows: [{ id: 444, program_id: 77, pledge_program_id: '77', manual_match_program_id: 999999, air_date: '2026-06-01' }]
+  });
+
+  await harness.App.data.refreshAiringHistory();
+  const [safe] = harness.getCapturedRows();
+  assert.equal(safe.program_id, null);
+  assert.equal(safe.pledge_program_id, null);
+  assert.equal(safe.manual_match_program_id, null);
+});
+
+test('conflicting machine linkage fields are quarantined instead of guessed', async () => {
+  const harness = makeHarness({
+    cacheRows: [{ id: 444, program_id: 77, pledge_program_id: '123', air_date: '2026-06-01' }]
+  });
+
+  await harness.App.data.refreshAiringHistory();
+  const [safe] = harness.getCapturedRows();
+  assert.equal(safe.program_id, null);
+  assert.equal(safe.pledge_program_id, null);
+  assert.equal(safe.manual_match_program_id, null);
+});
+
 test('unlinked rows stay quarantined even when their airing id or title resembles a library program', async () => {
   const harness = makeHarness({
     cacheRows: [{
