@@ -44,6 +44,71 @@
 .scorecard-tone-warn { border-left-color: #b95f46; }
 .scorecard-tone-bad { border-left-color: #8b3940; }
 
+.program-scorecard-header {
+  flex: 1 1 440px;
+  min-width: 260px;
+  max-width: 620px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+}
+
+.program-scorecard-header-main {
+  flex: 0 0 auto;
+  min-width: 150px;
+  border-left: 4px solid #6f93a7;
+  padding: 4px 8px;
+}
+
+.program-scorecard-header-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #68808c;
+}
+
+.program-scorecard-header-title {
+  margin-top: 1px;
+  font-size: 0.84rem;
+  line-height: 1.15;
+  font-weight: 850;
+  color: #173d54;
+}
+
+.program-scorecard-header-confidence {
+  margin-top: 1px;
+  font-size: 0.65rem;
+  color: #6d8089;
+}
+
+.program-scorecard-header-facts {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-content: center;
+}
+
+.program-scorecard-header-facts span {
+  display: inline-block;
+  border: 1px solid #d7e2e7;
+  border-radius: 999px;
+  background: #f4f8fa;
+  color: #516a76;
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.program-scorecard-header-facts span.warn {
+  border-color: #e9cdb9;
+  background: #fff6ee;
+  color: #8a5032;
+}
+
 #program-scorecard {
   margin-top: 14px;
   border-top: 1px solid #d7e1e6;
@@ -158,8 +223,17 @@
     min-width: 165px;
     width: 165px;
   }
+  .program-scorecard-header {
+    max-width: 500px;
+  }
   .scorecard-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1050px) {
+  .program-scorecard-header {
+    display: none;
   }
 }
 
