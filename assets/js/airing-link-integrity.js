@@ -20,16 +20,29 @@
     return ids;
   }
 
-  function explicitLinkedProgramId(row = {}, validIds = null) {
-    const candidates = [
-      row.manual_match_program_id,
-      row.pledge_program_id,
-      row.program_id
-    ].map(text).filter(Boolean);
+  function isValidProgramId(programId, validIds = null) {
+    const id = text(programId);
+    if (!id) return false;
+    if (!(validIds instanceof Set) || !validIds.size) return true;
+    return validIds.has(id);
+  }
 
-    if (!candidates.length) return '';
-    if (!(validIds instanceof Set) || !validIds.size) return candidates[0];
-    return candidates.find((candidate) => validIds.has(candidate)) || '';
+  function explicitLinkedProgramId(row = {}, validIds = null) {
+    const manual = text(row.manual_match_program_id);
+    const pledge = text(row.pledge_program_id);
+    const program = text(row.program_id);
+
+    // A manual match is an explicit human decision. If it points to a valid
+    // library row, it wins. If it points nowhere, quarantine the airing instead
+    // of silently falling back to a different stored id.
+    if (manual) return isValidProgramId(manual, validIds) ? manual : '';
+
+    // The two machine linkage fields are expected to agree. Never guess when
+    // both are populated but disagree: a conflict is a data-integrity problem.
+    if (pledge && program && pledge !== program) return '';
+
+    const candidate = pledge || program;
+    return isValidProgramId(candidate, validIds) ? candidate : '';
   }
 
   function stripFallbackIdentity(row = {}) {
@@ -54,9 +67,10 @@
     const sanitized = stripFallbackIdentity(row);
 
     if (!linkedProgramId) {
-      // Unlinked/quarantined report rows must not become program history merely
-      // because a title, NOLA, or numeric airing-row id happens to resemble a
-      // library record. They begin contributing only after an explicit link.
+      // Unlinked, stale, or conflicting report rows must not become program
+      // history merely because a title, NOLA, or numeric airing-row id happens
+      // to resemble a library record. They begin contributing only after a
+      // trustworthy explicit link exists.
       sanitized.program_id = null;
       sanitized.pledge_program_id = null;
       sanitized.manual_match_program_id = null;
@@ -64,9 +78,8 @@
     }
 
     // Use one canonical, explicit program identity for library-history enrichment.
-    // Manual links are authoritative when present; otherwise the stored linkage is
-    // preserved. Title/NOLA fallbacks are intentionally blanked above so a linked
-    // row cannot also leak into a different title through a stale imported label.
+    // Title/NOLA fallbacks are intentionally blanked above so a linked row cannot
+    // also leak into a different title through a stale imported label.
     sanitized.program_id = linkedProgramId;
     sanitized.pledge_program_id = linkedProgramId;
     sanitized.manual_match_program_id = linkedProgramId;
@@ -85,10 +98,10 @@
       : await App.data.fetchImportedAirings();
     const safeRows = sanitizeAiringsForLibraryHistory(sourceRows);
 
-    // The original enrichment routine is well-tested and also computes pledge-hour
-    // metrics. Feed it a safe, short-lived cache instead of duplicating that logic.
-    // Call it before restoring the cache: when a cache exists, its history indexing
-    // is synchronous and the returned Promise is already based on safeRows.
+    // The original enrichment routine also computes pledge-hour metrics. Feed it
+    // a safe, short-lived cache instead of duplicating that logic. The original
+    // routine consumes an existing cache synchronously before its Promise returns,
+    // so the shared scheduler cache can be restored immediately and never mutated.
     let refreshPromise;
     state.scheduleImportedAiringsCache = safeRows;
     try {
