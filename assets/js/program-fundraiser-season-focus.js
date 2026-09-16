@@ -8,7 +8,6 @@
   const SEASONS = ['March', 'June', 'August', 'December'];
   const STORAGE_KEY = 'wnmuProgramOutlookSeasonV1';
   const originalEntries = typeof focus.entries === 'function' ? focus.entries.bind(focus) : () => [];
-  const originalGet = typeof focus.get === 'function' ? focus.get.bind(focus) : () => null;
   const originalSet = typeof focus.set === 'function' ? focus.set.bind(focus) : () => {};
   const seasonKeyForDate = typeof focus.seasonKeyForDate === 'function' ? focus.seasonKeyForDate.bind(focus) : () => '';
 
@@ -44,7 +43,7 @@
     return entries[entries.length - 1] || null;
   }
 
-  function seasonChoices() {
+  function buildSeasonChoices() {
     return SEASONS.map((season) => {
       const representative = representativeForSeason(season);
       return {
@@ -56,12 +55,6 @@
         representative
       };
     });
-  }
-
-  function seasonForChoiceId(id) {
-    const value = text(id);
-    if (!value) return '';
-    return seasonChoices().find((choice) => choice.id === value)?.season || '';
   }
 
   function storedSeason() {
@@ -82,6 +75,12 @@
     }
   }
 
+  function seasonForChoiceId(id) {
+    const value = text(id);
+    if (!value) return '';
+    return buildSeasonChoices().find((choice) => choice.id === value)?.season || '';
+  }
+
   function applySeasonSelection(season) {
     const normalized = SEASONS.includes(season) ? season : '';
     if (!normalized) {
@@ -89,9 +88,22 @@
       originalSet('');
       return;
     }
-    const representative = representativeForSeason(normalized);
+
     storeSeason(normalized);
+    const representative = representativeForSeason(normalized);
     originalSet(representative?.id || '');
+  }
+
+  function seasonChoices() {
+    const choices = buildSeasonChoices();
+    const stored = storedSeason();
+    if (stored) {
+      const choice = choices.find((entry) => entry.season === stored);
+      const desiredId = text(choice?.representative?.id || '');
+      const currentId = text(App.state?.programOutlookFundraiserId || '');
+      if (desiredId && currentId !== desiredId) originalSet(desiredId);
+    }
+    return choices;
   }
 
   function setSeasonChoice(id = '') {
@@ -100,8 +112,7 @@
       applySeasonSelection('');
       return;
     }
-    const season = seasonForChoiceId(value);
-    applySeasonSelection(season);
+    applySeasonSelection(seasonForChoiceId(value));
   }
 
   function selectedSeason() {
@@ -128,7 +139,8 @@
   function normalizeInitialSelection() {
     const stored = storedSeason();
     if (stored) {
-      applySeasonSelection(stored);
+      const representative = representativeForSeason(stored);
+      originalSet(representative?.id || '');
       return;
     }
 
