@@ -6,6 +6,12 @@
 
   const TABLE = 'pledge_program_editorial_overrides';
   const byProgramId = new Map();
+  const LABELS = {
+    dont_air: "Don't air",
+    low_confidence: 'Low confidence',
+    promising: 'Promising',
+    must_air: 'Must air'
+  };
   let loadPromise = null;
   let loaded = false;
   let loadError = '';
@@ -16,7 +22,15 @@
 
   function normalizeRating(value) {
     const rating = text(value).toLowerCase();
-    return ['high', 'medium', 'low'].includes(rating) ? rating : '';
+    if (rating === 'high') return 'must_air';
+    if (rating === 'medium') return 'promising';
+    if (rating === 'low') return 'low_confidence';
+    return ['dont_air', 'low_confidence', 'promising', 'must_air'].includes(rating) ? rating : '';
+  }
+
+  function ratingLabel(value) {
+    const rating = normalizeRating(value);
+    return rating ? LABELS[rating] : 'Neutral';
   }
 
   function programIdOf(programOrId) {
@@ -67,7 +81,7 @@
 
     loadPromise = (async () => {
       const client = await waitForClient();
-      if (!client) throw new Error('Supabase client was not ready for editorial overrides.');
+      if (!client) throw new Error('Supabase client was not ready for programmer ratings.');
       const { data, error } = await client.from(TABLE).select('*');
       if (error) throw error;
       byProgramId.clear();
@@ -82,8 +96,8 @@
       emitChanged('loaded');
       return [...byProgramId.values()];
     })().catch((error) => {
-      loadError = String(error?.message || error || 'Unable to load editorial overrides.');
-      console.warn('Editorial override load failed.', error);
+      loadError = String(error?.message || error || 'Unable to load programmer ratings.');
+      console.warn('Programmer rating load failed.', error);
       return [];
     }).finally(() => {
       loadPromise = null;
@@ -125,37 +139,64 @@
     return normalized;
   }
 
+  function optionsHtml(current = '') {
+    return `
+      <option value="dont_air" ${current === 'dont_air' ? 'selected' : ''}>Don't air</option>
+      <option value="low_confidence" ${current === 'low_confidence' ? 'selected' : ''}>Low confidence</option>
+      <option value="" ${!current ? 'selected' : ''}>Neutral</option>
+      <option value="promising" ${current === 'promising' ? 'selected' : ''}>Promising</option>
+      <option value="must_air" ${current === 'must_air' ? 'selected' : ''}>Must air</option>`;
+  }
+
+  function ratingNote(current = '', overrideInfo = null) {
+    const weakCount = Number(overrideInfo?.underperformances || overrideInfo?.weakCount || 0);
+    if (current === 'must_air') {
+      if (weakCount >= 2) return 'Two weak prime tests since this rating have reduced its protection; automated confidence can show again.';
+      return `Heavily boosts the formula and suppresses Low Confidence until two weak prime tests. Weak tests: ${weakCount}/2.`;
+    }
+    if (current === 'promising') return 'Adds a strong positive programmer signal to the formula.';
+    if (current === 'low_confidence') return 'Adds a meaningful caution to the formula.';
+    if (current === 'dont_air') return 'Adds a very strong negative programmer signal, but does not replace hard evidence or rights rules.';
+    return 'No programmer weighting is being added.';
+  }
+
   function controlHtml(program = {}, overrideInfo = null) {
     const id = programIdOf(program);
     if (!id) return '';
     const row = get(id);
     const current = normalizeRating(row?.rating);
     const editable = Boolean(App.auth?.canEdit?.());
-    const weakCount = Number(overrideInfo?.underperformances || 0);
-    const activeProtection = Boolean(overrideInfo?.activeProtection);
-    const note = current === 'high'
-      ? activeProtection
-        ? `High rating is protecting this title from a Low Confidence label. Clear weak prime tests since rating: ${weakCount}/2. A weak test is below $150 per pledge hour; a $0 prime airing counts even when duration is unavailable.`
-        : weakCount >= 2
-          ? 'High rating remains recorded, but two clear weak prime tests since the rating returned confidence to the automated evidence.'
-          : 'High programmer rating recorded.'
-      : 'Automatic confidence rules are in control.';
+    const note = ratingNote(current, overrideInfo);
 
     if (!editable) {
       return current
-        ? `<div class="scorecard-editorial-control scorecard-editorial-readonly"><strong>Programmer rating:</strong> ${App.utils.escapeHtml(current.charAt(0).toUpperCase() + current.slice(1))}<span>${App.utils.escapeHtml(note)}</span></div>`
+        ? `<div class="scorecard-editorial-control scorecard-editorial-readonly"><strong>Programmer rating:</strong> ${App.utils.escapeHtml(ratingLabel(current))}<span>${App.utils.escapeHtml(note)}</span></div>`
         : '';
     }
 
     return `<div class="scorecard-editorial-control">
-      <label><span>Programmer override</span>
-        <select class="scorecard-editorial-rating" data-program-id="${App.utils.escapeHtml(id)}">
-          <option value="" ${!current ? 'selected' : ''}>Automatic</option>
-          <option value="high" ${current === 'high' ? 'selected' : ''}>High</option>
-        </select>
+      <label><span>Programmer rating</span>
+        <select class="scorecard-editorial-rating" data-program-id="${App.utils.escapeHtml(id)}">${optionsHtml(current)}</select>
       </label>
       <div class="scorecard-editorial-note">${App.utils.escapeHtml(note)}</div>
     </div>`;
+  }
+
+  function headerControlHtml(program = {}, overrideInfo = null) {
+    const id = programIdOf(program);
+    if (!id) return '';
+    const row = get(id);
+    const current = normalizeRating(row?.rating);
+    const editable = Boolean(App.auth?.canEdit?.());
+    if (!editable) {
+      return current
+        ? `<div class="programmer-rating-header-readonly"><span>Programmer rating</span><strong>${App.utils.escapeHtml(ratingLabel(current))}</strong></div>`
+        : '';
+    }
+    return `<label class="programmer-rating-header-control">
+      <span>Programmer rating</span>
+      <select class="scorecard-editorial-rating" data-program-id="${App.utils.escapeHtml(id)}">${optionsHtml(current)}</select>
+    </label>`;
   }
 
   async function handleChange(event) {
@@ -181,6 +222,10 @@
     load,
     save,
     controlHtml,
+    headerControlHtml,
+    normalizeRating,
+    ratingLabel,
+    ratingNote,
     get loaded() { return loaded; },
     get loadError() { return loadError; }
   };
