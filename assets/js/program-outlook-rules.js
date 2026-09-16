@@ -8,6 +8,7 @@
   const originalBaseAssessment = App.programScorecard.baseAssessment.bind(App.programScorecard);
   const originalDetailedAssessment = App.programScorecard.detailedAssessment.bind(App.programScorecard);
   const CHRISTMAS_PATTERN = /\b(?:christmas|holiday|holidays|noel|yuletide|nativity)\b/i;
+  const EDITORIAL_WEAK_RATE = 150;
 
   function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -61,13 +62,85 @@
     };
   }
 
+  function rowWhen(row = {}) {
+    const when = utils.rowLocalDateTime?.(row, { preferDriveFallback: true });
+    return when instanceof Date && !Number.isNaN(when.getTime()) ? when : null;
+  }
+
+  function isPrimeRow(row = {}) {
+    const when = rowWhen(row);
+    if (!when) return false;
+    const minutes = when.getHours() * 60 + when.getMinutes();
+    return minutes >= 19 * 60 && minutes < 23 * 60;
+  }
+
   function primeAiringCount(rows = []) {
-    return (Array.isArray(rows) ? rows : []).reduce((count, row) => {
-      const when = utils.rowLocalDateTime?.(row, { preferDriveFallback: true });
-      if (!(when instanceof Date) || Number.isNaN(when.getTime())) return count;
-      const minutes = when.getHours() * 60 + when.getMinutes();
-      return count + (minutes >= 19 * 60 && minutes < 23 * 60 ? 1 : 0);
-    }, 0);
+    return (Array.isArray(rows) ? rows : []).reduce((count, row) => count + (isPrimeRow(row) ? 1 : 0), 0);
+  }
+
+  function rowContribution(row = {}) {
+    return number(utils.firstNonEmpty(
+      row?.__resolved_contribution_amount,
+      row?.contribution_amount,
+      row?.dollars,
+      row?.total_dollars,
+      row?.broadcast_dollars,
+      0
+    ), 0);
+  }
+
+  function durationMinutes(program = {}, row = {}) {
+    const seconds = number(utils.firstNonEmpty(program?.actual_runtime_seconds, program?.runtime_seconds, program?.actual_runtime), 0);
+    if (seconds > 0) return seconds / 60;
+    const minutes = number(utils.firstNonEmpty(program?.actual_runtime_minutes, program?.runtime_minutes, program?.length_minutes), 0);
+    if (minutes > 0) return minutes;
+    const bucket = number(utils.firstNonEmpty(program?.length_bucket_minutes, derive.lengthBucket?.(program)), 0);
+    if (bucket > 0) return bucket;
+    const imported = number(row?.program_minutes, 0);
+    return imported > 0 ? imported : null;
+  }
+
+  function rowsForProgram(program = {}, exactAirings = null) {
+    if (Array.isArray(exactAirings) && exactAirings.length) return exactAirings;
+    const id = String(derive.programId(program) || '').trim();
+    if (!id) return [];
+    return (Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : []).filter((row) => {
+      const linked = String(utils.firstNonEmpty(row?.manual_match_program_id, row?.pledge_program_id, row?.program_id, '') || '').trim();
+      return linked === id;
+    });
+  }
+
+  function editorialUnderperformanceInfo(program = {}, exactAirings = null) {
+    const override = App.programEditorialOverrides?.get?.(program) || null;
+    if (!override || override.rating !== 'high') return override ? { override, underperformances: 0, activeProtection: false, tests: [] } : null;
+
+    const ratedAt = new Date(override.rated_at || override.updated_at || '');
+    if (Number.isNaN(ratedAt.getTime())) return { override, underperformances: 0, activeProtection: true, tests: [] };
+
+    const seen = new Set();
+    const tests = [];
+    rowsForProgram(program, exactAirings).forEach((row) => {
+      const when = rowWhen(row);
+      if (!when || when <= ratedAt || !isPrimeRow(row)) return;
+      const key = `${utils.dateKeyFromDate?.(when) || when.toISOString().slice(0, 10)}|${String(row?.air_time || when.toTimeString().slice(0, 5))}|${String(row?.fundraiser_label || row?.drive_start_date || '')}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      const dollars = rowContribution(row);
+      const minutes = durationMinutes(program, row);
+      const rate = minutes > 0 ? (dollars * 60) / minutes : null;
+      const weak = dollars <= 0 || (Number.isFinite(rate) && rate < EDITORIAL_WEAK_RATE);
+      tests.push({ when, dollars, minutes, rate, weak });
+    });
+
+    const underperformances = tests.filter((test) => test.weak).length;
+    return {
+      override,
+      ratedAt,
+      underperformances,
+      activeProtection: underperformances < 2,
+      tests
+    };
   }
 
   function confidenceLabel(result, { detailed = false, primeAirings = null } = {}) {
@@ -125,6 +198,38 @@
     return { ...result, outlook, tone };
   }
 
+  function applyEditorialOverride(program, result, options = {}) {
+    const info = editorialUnderperformanceInfo(program, options.exactAirings || null);
+    if (!info) return result;
+
+    const next = {
+      ...result,
+      editorialOverride: info,
+      badges: [...(result.badges || [])],
+      cautions: [...(result.cautions || [])]
+    };
+    const rating = info.override?.rating || '';
+    if (rating) next.badges.unshift(`Programmer rating: ${rating.charAt(0).toUpperCase() + rating.slice(1)}`);
+
+    const hardStop = next.rights?.expired || next.drama?.olderCycle;
+    if (rating === 'high' && !hardStop && next.confidence === 'Low') {
+      if (info.activeProtection) {
+        next.confidence = 'Editorial';
+        next.outlook = 'Programmer-rated high';
+        next.tone = 'good';
+        if (info.underperformances === 1) {
+          next.cautions.unshift('One weak prime test since the High rating; a second will return confidence to the automated evidence.');
+        }
+      } else {
+        next.cautions.unshift('High programmer rating has two weak prime tests since it was set; automated confidence is back in control.');
+      }
+    }
+
+    next.badges = [...new Set(next.badges)];
+    next.cautions = [...new Set(next.cautions)];
+    return next;
+  }
+
   function applyRules(program, sourceResult, options = {}) {
     let result = correctSeason(program, { ...sourceResult, cautions: [...(sourceResult.cautions || [])], badges: [...(sourceResult.badges || [])] });
     if (isBiography(program)) {
@@ -133,7 +238,8 @@
       result.biography = true;
     }
     result.cautions = [...new Set(result.cautions)];
-    return confidenceLabel(result, options);
+    result = confidenceLabel(result, options);
+    return applyEditorialOverride(program, result, options);
   }
 
   function baseAssessment(program = {}) {
@@ -142,7 +248,7 @@
 
   function detailedAssessment(program = {}, driveResults = [], exactAirings = []) {
     const primeAirings = primeAiringCount(exactAirings);
-    const result = applyRules(program, originalDetailedAssessment(program, driveResults, exactAirings), { detailed: true, primeAirings });
+    const result = applyRules(program, originalDetailedAssessment(program, driveResults, exactAirings), { detailed: true, primeAirings, exactAirings });
     return { ...result, primeAirings };
   }
 
@@ -189,6 +295,8 @@
       ? `${result.primeAirings} verified prime-time airing${result.primeAirings === 1 ? '' : 's'} in exact airing history. Two prime tests are required before a plausible title is retired for weak performance.`
       : 'No prime-time test yet.';
 
+    const editorialControl = App.programEditorialOverrides?.controlHtml?.(program, result.editorialOverride) || '';
+
     const cautions = result.cautions.length
       ? `<div class="scorecard-cautions"><strong>Watch:</strong> ${result.cautions.map((item) => `<span>${utils.escapeHtml(item)}</span>`).join('')}</div>`
       : '<div class="scorecard-cautions scorecard-cautions-clear"><strong>Watch:</strong> No major automated caution flags.</div>';
@@ -200,8 +308,9 @@
           <div class="program-scorecard-title">${utils.escapeHtml(result.outlook)}</div>
           <div class="program-scorecard-confidence">Evidence confidence: ${utils.escapeHtml(result.confidence)}</div>
         </div>
-        <div class="program-scorecard-auto">Advisory only. Low-confidence titles are deliberately labeled as such instead of receiving a strong recommendation.</div>
+        <div class="program-scorecard-auto">Advisory only. A High programmer rating can replace Low Confidence until the title records two clear weak prime tests after that rating.</div>
       </div>
+      ${editorialControl}
       <div class="scorecard-metric-grid">
         ${metricCard('Fundraising history', history.airings ? `${history.airings} airing${history.airings === 1 ? '' : 's'} · ${history.fundraisers || result.periods?.length || 0} pledge period${(history.fundraisers || result.periods?.length || 0) === 1 ? '' : 's'}` : 'Unaired', rateNote)}
         ${metricCard('Pledge response', result.totalPledges ? `${utils.formatCount(result.totalPledges)} pledges` : 'Not available', pledgeNote)}
@@ -216,5 +325,5 @@
   App.programScorecard.baseAssessment = baseAssessment;
   App.programScorecard.detailedAssessment = detailedAssessment;
   App.programScorecard.detailHtml = detailHtml;
-  App.programOutlookRules = { isBiography, primeAiringCount, targetFundraiserDate };
+  App.programOutlookRules = { isBiography, primeAiringCount, targetFundraiserDate, editorialUnderperformanceInfo, EDITORIAL_WEAK_RATE };
 })();
