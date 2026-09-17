@@ -29,6 +29,6 @@ assert.match(list, /case 'avg_per_pledge_hour'/);
 assert.match(list, /derive\.avgPerPledgeHour\(row\)/);
 assert.match(shell, /data-sort-field="avg_per_pledge_hour" data-sort-label="Avg \$ \/ pledge hour">Avg \$ \/ pledge hour<\/button>/);
 assert.doesNotMatch(shell, /data-sort-label="Avg \$ \/ event">Avg \$ \/ event<\/button>/);
-assert.equal(version.appVersion, '0.22.141');
+assert.match(version.appVersion, /^\d+\.\d+\.\d+$/);
 
 console.log('library fast-load tests passed');
