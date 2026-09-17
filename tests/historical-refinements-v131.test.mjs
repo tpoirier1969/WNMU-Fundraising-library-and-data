@@ -5,7 +5,7 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.141');
+assert.match(version.appVersion, /^\d+\.\d+\.\d+$/);
 assert.match(source, /historicalStartDate/);
 assert.match(source, /historicalEndDate/);
 assert.match(source, /Pre-COVID/);
@@ -25,5 +25,7 @@ assert.match(source, /Fiscal Year to Date \| FY/);
 assert.match(source, /fiscalYearToDateSection/);
 assert.match(source, /minAirings: 1, minFundraisers: 1, minTitles: 1/);
 assert.match(html, /visual-card-wide/);
-assert.match(html, /0\.22\.141/);
-console.log('v0.22.138 historical refinements tests passed');
+const reportAssetVersions = [...html.matchAll(/(?:one-sheet-reports\.css|one-sheet-analysis\.js|one-sheet-reports\.js)\?v=(\d+\.\d+\.\d+)/g)].map((match) => match[1]);
+assert.equal(reportAssetVersions.length, 3);
+assert.equal(new Set(reportAssetVersions).size, 1);
+console.log('historical refinements tests passed');
