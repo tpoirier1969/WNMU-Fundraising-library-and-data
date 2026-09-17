@@ -334,8 +334,14 @@
         windows.push({ ...base, id: `${base.date}-1500`, label: 'Late afternoon', startMinutes: 15 * 60, endMinutes: 17 * 60, confidenceClass: 'experimental', experimental: true });
         experimentalDates.add(base.date);
       }
-      windows.push({ ...base, id: `${base.date}-1700`, label: 'Early evening', startMinutes: 17 * 60, endMinutes: 19 * 60, confidenceClass: 'normal', experimental: false });
-      windows.push({ ...base, id: `${base.date}-1900`, label: 'Prime', startMinutes: 19 * 60, endMinutes: day === 0 ? 22 * 60 : 22 * 60 + 30, confidenceClass: 'normal', experimental: false });
+      windows.push({ ...base, id: `${base.date}-1700`, label: 'Early evening', startMinutes: 17 * 60, endMinutes: 19 * 60, confidenceClass: 'normal', experimental: false, blocked: false });
+      if (day === 5) {
+        windows.push({ ...base, id: `${base.date}-1900`, label: 'Prime', startMinutes: 19 * 60, endMinutes: 20 * 60, confidenceClass: 'normal', experimental: false, blocked: false });
+        windows.push({ ...base, id: `${base.date}-2000-protected`, label: 'Protected regular programming', startMinutes: 20 * 60, endMinutes: 21 * 60, confidenceClass: 'blocked', experimental: false, blocked: true });
+        windows.push({ ...base, id: `${base.date}-2100`, label: 'Prime', startMinutes: 21 * 60, endMinutes: 22 * 60 + 30, confidenceClass: 'normal', experimental: false, blocked: false });
+      } else {
+        windows.push({ ...base, id: `${base.date}-1900`, label: 'Prime', startMinutes: 19 * 60, endMinutes: day === 0 ? 22 * 60 : 22 * 60 + 30, confidenceClass: 'normal', experimental: false, blocked: false });
+      }
     });
     return windows;
   }
@@ -653,7 +659,7 @@
 
   function mixFromSlots(slots = []) {
     const points = new Map();
-    slots.filter((slot) => !slot.experimental).forEach((slot) => {
+    slots.filter((slot) => !slot.experimental && !slot.blocked).forEach((slot) => {
       (slot.recommendations || []).slice(0, 3).forEach((item, index) => {
         const key = lookupKey(item.topic);
         if (!key) return;
@@ -670,14 +676,14 @@
       let strength = 'Situational';
       if (index <= 1 || item.averageScore >= 72) strength = 'Stronger';
       else if (item.averageScore >= 60 || item.appearances >= 3) strength = 'Moderate';
-      const share = total > 0 && slots.filter((slot) => !slot.experimental).length >= 6 ? Math.round((item.points / total) * 20) * 5 : null;
+      const share = total > 0 && slots.filter((slot) => !slot.experimental && !slot.blocked).length >= 6 ? Math.round((item.points / total) * 20) * 5 : null;
       return { ...item, strength, approximateShare: share };
     });
   }
 
   function repeatCandidates(slots = []) {
     const byProgram = new Map();
-    slots.filter((slot) => !slot.experimental && slot.label === 'Prime').forEach((slot) => {
+    slots.filter((slot) => !slot.experimental && !slot.blocked && slot.label === 'Prime').forEach((slot) => {
       (slot.recommendations || []).slice(0, 4).forEach((item) => {
         if (!item.programId) return;
         const current = byProgram.get(item.programId) || { ...item, slots: [] };
@@ -717,6 +723,9 @@
     const baselineRate = baseHistoricalRate(historicalRows);
     const context = { schedule, evidenceRows: historicalRows, overrideByProgramId, baselineRate };
     const windows = planningWindows(schedule).map((slot) => {
+      if (slot.blocked) {
+        return { ...slot, recommendations: [], strongestTopics: [], alternativeTopics: [], evidenceRows: 0 };
+      }
       const ranked = rankProgramsForSlot(library, slot, context);
       const topics = topicChoicesForSlot(ranked);
       return {
@@ -737,7 +746,7 @@
       return { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), season };
     }).filter((item) => item.season.adjustment > 0).sort((a, b) => b.season.adjustment - a.season.adjustment || a.title.localeCompare(b.title)).slice(0, 10);
     const local = viable.filter(isLocal).map((program) => {
-      const slots = windows.filter((slot) => !slot.experimental).map((slot) => scoreProgramForSlot(program, slot, context)).filter(Boolean);
+      const slots = windows.filter((slot) => !slot.experimental && !slot.blocked).map((slot) => scoreProgramForSlot(program, slot, context)).filter(Boolean);
       const best = slots.sort((a, b) => b.score - a.score)[0] || null;
       return best;
     }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
@@ -783,7 +792,8 @@
         'Programmer ratings are weighted inputs, not absolute overrides.',
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored in the report data.',
         'Premium information is shown only as context; premium effectiveness is not scored.',
-        'Experimental windows are labeled separately from established planning windows.'
+        'Experimental windows are labeled separately from established planning windows.',
+        'Friday 8–9 PM is treated as protected regular programming and is excluded from pledge recommendations.'
       ]
     };
   }
