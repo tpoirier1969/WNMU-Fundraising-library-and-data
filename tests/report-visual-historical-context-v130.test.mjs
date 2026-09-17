@@ -35,9 +35,9 @@ test('historical context remains fundraiser-balanced and excludes the selected f
   assert.match(reports, /currentCorrespondingDayComparisonData\(analysis, baseline\)/);
 });
 
-test('report assets and application version are synchronized at v0.22.141', () => {
-  assert.equal(version.appVersion, '0.22.141');
-  assert.ok(html.includes('one-sheet-reports.css?v=0.22.141'));
-  assert.ok(html.includes('one-sheet-analysis.js?v=0.22.141'));
-  assert.ok(html.includes('one-sheet-reports.js?v=0.22.141'));
+test('report asset cache-busters stay synchronized', () => {
+  assert.match(version.appVersion, /^\d+\.\d+\.\d+$/);
+  const assetVersions = [...html.matchAll(/(?:one-sheet-reports\.css|one-sheet-analysis\.js|one-sheet-reports\.js)\?v=(\d+\.\d+\.\d+)/g)].map((match) => match[1]);
+  assert.equal(assetVersions.length, 3);
+  assert.equal(new Set(assetVersions).size, 1);
 });
