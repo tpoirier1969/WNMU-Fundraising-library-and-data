@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Fundraiser Programming Strategy · WNMU-TV PBS</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.169">
-  <link rel="stylesheet" href="assets/programming-strategy-report.css?v=0.22.169">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.172">
+  <link rel="stylesheet" href="assets/programming-strategy-report.css?v=0.22.172">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.169"></script>
-  <script defer src="assets/js/programming-strategy-analysis.js?v=0.22.169"></script>
-  <script defer src="assets/js/programming-strategy-report.js?v=0.22.169"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.172"></script>
+  <script defer src="assets/js/programming-strategy-analysis.js?v=0.22.172"></script>
+  <script defer src="assets/js/programming-strategy-report.js?v=0.22.172"></script>
 </head>
 <body>
   <div id="strategy-access-gate" class="report-access-gate hidden"></div>
-  <div id="strategy-app" class="report-shell">
+  <div id="strategy-app" class="report-shell hidden">
     <header class="report-topbar">
       <div class="report-brand">
         <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
@@ -33,7 +33,7 @@
     <main class="report-main">
       <div class="report-toolbar strategy-toolbar">
         <div class="strategy-controls">
-          <label class="report-field"><span>Fundraiser</span><select id="strategy-fundraiser" disabled><option>Loading fundraiser choices…</option></select></label>
+          <label class="report-field"><span>Fundraiser</span><select id="strategy-fundraiser"></select></label>
           <button id="strategy-print" type="button" class="report-button">Print</button>
         </div>
         <div id="strategy-status" class="strategy-status">Checking administrator access…</div>
