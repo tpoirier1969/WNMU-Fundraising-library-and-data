@@ -179,6 +179,8 @@
   const originalBaseAssessment = App.programScorecard.baseAssessment.bind(App.programScorecard);
   const originalDetailedAssessment = App.programScorecard.detailedAssessment.bind(App.programScorecard);
   const originalDetailHtml = App.programScorecard.detailHtml?.bind(App.programScorecard);
+  const OLD_DRAMA_PENALTY = 10;
+  const CONTEXT_CHECK_MAX_SCORE = 47;
 
   function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -188,17 +190,40 @@
   function normalizeEvaluation(result = {}, { detailed = false, primeAirings = null } = {}) {
     const history = result.history || {};
     const airings = number(history.airings, 0);
-    const score = Math.max(0, Math.min(100, number(result.score, 50)));
+    let score = Math.max(0, Math.min(100, number(result.score, 50)));
+    const programmerRating = String(result.programmerEvidence?.rating || '').trim();
+    const oldDrama = Boolean(result.drama?.olderCycle);
+    const oldDramaException = ['promising', 'must_air'].includes(programmerRating);
+    const cautions = [...(result.cautions || [])];
+
+    if (oldDrama) {
+      score = Math.max(0, score - OLD_DRAMA_PENALTY);
+      if (!cautions.some((item) => /^Older Drama Doc:/i.test(String(item || '')))) {
+        cautions.push('Older Drama Doc: reduced because these titles usually weaken after their original series cycle.');
+      }
+    }
+
     const protectedOutlooks = new Set([
       'Do not schedule',
       'Save for December',
-      'Context check first',
       "Programmer says don't air"
     ]);
 
     let confidence = result.confidence || 'Low';
     if (airings < 1 && confidence === 'Low') confidence = 'Untested';
-    if (protectedOutlooks.has(result.outlook)) return { ...result, confidence };
+    if (protectedOutlooks.has(result.outlook)) return { ...result, score, confidence, cautions };
+
+    if (oldDrama && !oldDramaException) {
+      score = Math.min(score, CONTEXT_CHECK_MAX_SCORE);
+      return {
+        ...result,
+        score,
+        outlook: 'Context check first',
+        tone: 'warn',
+        confidence,
+        cautions
+      };
+    }
 
     let outlook = 'Situational option';
     let tone = 'neutral';
@@ -232,7 +257,7 @@
       }
     }
 
-    return { ...result, score, outlook, tone, confidence };
+    return { ...result, score, outlook, tone, confidence, cautions };
   }
 
   App.programScorecard.baseAssessment = (program = {}) => normalizeEvaluation(originalBaseAssessment(program));
@@ -262,4 +287,15 @@
       return html;
     };
   }
+})();
+
+(() => {
+  'use strict';
+  if (typeof document === 'undefined' || document.querySelector('script[data-program-library-controls]')) return;
+  const script = document.createElement('script');
+  const version = String(window.__PLEDGE_APP_VERSION__ || '').trim().replace(/^v/i, '');
+  script.src = `assets/js/program-library-controls.js${version ? `?v=${encodeURIComponent(version)}` : ''}`;
+  script.async = false;
+  script.dataset.programLibraryControls = 'true';
+  document.head.append(script);
 })();
