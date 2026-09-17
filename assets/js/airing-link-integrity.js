@@ -102,7 +102,9 @@
     // request and guarantees editorial-override evidence can never use the airing
     // row primary key or stale title/NOLA fallbacks as program identity.
     state.scorecardAiringRows = safeRows;
-    document.dispatchEvent(new CustomEvent('pledge-scorecard-airings-ready'));
+    if (typeof document !== 'undefined' && typeof CustomEvent !== 'undefined') {
+      document.dispatchEvent(new CustomEvent('pledge-scorecard-airings-ready'));
+    }
 
     // The original enrichment routine also computes pledge-hour metrics. Feed it
     // a safe, short-lived cache instead of duplicating that logic. The original
@@ -123,5 +125,90 @@
     explicitLinkedProgramId,
     sanitizeAiringForLibraryHistory,
     sanitizeAiringsForLibraryHistory
+  };
+})();
+
+/* Startup guard: an expired/stale Supabase auth session must never prevent the
+   public Program Library from loading. app-init used to display the database
+   probe message before awaiting getSession(), which made an auth lock look like
+   a database hang. Bound the auth check and recover with a clean anonymous client
+   if it stalls; the user can sign in again after the library is available. */
+(() => {
+  'use strict';
+
+  const App = window.PledgeLib;
+  if (!App?.auth?.initAuthRole || !App?.data?.createClient || !App?.state) return;
+
+  const originalInitAuthRole = App.auth.initAuthRole.bind(App.auth);
+  const AUTH_STARTUP_TIMEOUT_MS = 4500;
+
+  function clearStoredSupabaseSession() {
+    try {
+      const ref = new URL(App.cfg?.SUPABASE_URL || '').hostname.split('.')[0];
+      if (!ref) return;
+      const prefix = `sb-${ref}-auth-token`;
+      const keys = [];
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index);
+        if (key && key.startsWith(prefix)) keys.push(key);
+      }
+      keys.forEach((key) => window.localStorage.removeItem(key));
+    } catch (error) {
+      console.warn('Could not clear a stalled Supabase session from browser storage.', error);
+    }
+  }
+
+  function setViewerState() {
+    App.state.session = null;
+    App.state.userEmail = null;
+    App.state.isAdmin = false;
+    App.auth.setRoleUi?.();
+  }
+
+  function createCleanClient() {
+    const previousClient = App.state.client;
+    App.state.client = null;
+    try {
+      return App.data.createClient();
+    } catch (error) {
+      App.state.client = previousClient;
+      throw error;
+    }
+  }
+
+  App.auth.initAuthRole = async function initAuthRoleWithStartupGuard() {
+    App.dom?.setNotice?.('Connected. Checking sign-in session…');
+
+    let timeoutId = 0;
+    const authAttempt = Promise.resolve().then(() => originalInitAuthRole());
+    const outcome = await Promise.race([
+      authAttempt.then(() => ({ status: 'ready' })).catch((error) => ({ status: 'error', error })),
+      new Promise((resolve) => {
+        timeoutId = window.setTimeout(() => resolve({ status: 'timeout' }), AUTH_STARTUP_TIMEOUT_MS);
+      })
+    ]);
+    window.clearTimeout(timeoutId);
+
+    if (outcome.status === 'ready') return;
+
+    if (outcome.status === 'error') {
+      console.warn('Auth startup check failed; continuing viewer-only.', outcome.error);
+      setViewerState();
+      return;
+    }
+
+    console.warn('Auth startup check timed out; clearing the stalled session and continuing viewer-only.');
+    clearStoredSupabaseSession();
+    setViewerState();
+    try {
+      createCleanClient();
+    } catch (error) {
+      console.warn('Could not recreate the Supabase client after auth timeout.', error);
+    }
+
+    // The original auth promise may eventually resolve. Do not await it here:
+    // startup must continue. A later auth-state event or manual sign-in can
+    // restore the admin role normally.
+    void authAttempt.catch(() => {});
   };
 })();
