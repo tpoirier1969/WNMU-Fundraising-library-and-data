@@ -73,6 +73,17 @@ test('normal pledge windows are present and experimental opportunities are visib
   assert.ok(experimental.every((entry) => entry.weekday === 'Saturday' && entry.label === 'Late afternoon' && entry.confidenceClass === 'experimental'));
 });
 
+test('Friday 8–9 PM is protected regular programming, not pledge inventory', () => {
+  const windows = S.planningWindows(schedule);
+  const blocked = windows.find((entry) => entry.weekday === 'Friday' && entry.startMinutes === 20 * 60);
+  assert.ok(blocked);
+  assert.equal(blocked.blocked, true);
+  assert.equal(blocked.endMinutes, 21 * 60);
+  const strategy = S.buildStrategy({ schedule, library: [baseProgram()], evidenceRows: [] });
+  const strategyBlocked = strategy.windows.find((entry) => entry.id === blocked.id);
+  assert.equal(strategyBlocked.recommendations.length, 0);
+});
+
 test('recommended titles come only from the supplied Program Library', () => {
   const library = [baseProgram({ id: 'a', title: 'Library A' }), baseProgram({ id: 'b', title: 'Library B', topic_primary: 'History' })];
   const strategy = S.buildStrategy({ schedule, library, evidenceRows: [row({ programId: 'ghost', title: 'Ghost Result', dollars: 5000 })] });
