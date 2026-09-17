@@ -271,6 +271,9 @@
 
     if (result.rights?.expired) return { ...result, score, outlook: 'Do not schedule', tone: 'bad', confidence };
 
+    // A programmer Low confidence rating is a statement about confidence, not merely a score nudge.
+    // Keep the evidence score visible, but force the displayed outlook into the Low confidence family.
+    if (programmer.rating === 'low_confidence') confidence = 'Low';
     if (programmer.rating === 'must_air' && programmer.activeProtection && confidence === 'Low') confidence = 'Editorial';
 
     let outlook = result.outlook || 'Situational option';
