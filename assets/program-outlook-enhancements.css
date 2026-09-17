@@ -175,6 +175,82 @@
   width: 100%;
 }
 
+/* Program Library filter sizing. Keep useful dropdown text visible without
+   allowing the search box to consume the row. The row may wrap naturally
+   whenever the available workspace becomes narrower than these controls. */
+@media (min-width: 981px) {
+  [data-workspace-pane="library"] .compact-controls .filter-row {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    align-items: end;
+    gap: 6px;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > * {
+    min-width: 0;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field.search-grow {
+    flex: 0 1 330px !important;
+    width: 330px;
+    min-width: 250px !important;
+    max-width: 360px;
+  }
+
+  [data-workspace-pane="library"] .compact-controls #search-field-select {
+    min-width: 100px;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#search-field-select) {
+    flex: 0 0 108px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#topic-filter) {
+    flex: 0 0 98px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#secondary-topic-filter) {
+    flex: 0 0 126px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#length-filter) {
+    flex: 0 0 98px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#distributor-filter) {
+    flex: 0 0 112px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#status-filter) {
+    flex: 0 0 108px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .filter-field:has(#airing-filter) {
+    flex: 0 0 112px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > .library-number-filter {
+    flex: 0 0 92px !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-row > #outlook-fundraiser-focus-wrap {
+    flex: 0 0 112px !important;
+    min-width: 0 !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls #outlook-fundraiser-focus-wrap select {
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  [data-workspace-pane="library"] .compact-controls .filter-actions-inline {
+    flex: 0 0 auto;
+  }
+}
+
 @media (max-width: 1250px) {
   #detail-modal .detail-header > div:first-child {
     max-width: 270px;
