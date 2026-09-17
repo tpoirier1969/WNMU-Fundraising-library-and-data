@@ -2,7 +2,11 @@
   'use strict';
 
   const DAY_MS = 86400000;
-  const HOLIDAY_PATTERN = /\b(?:christmas|holiday|holidays|noel|yuletide|nativity)\b/i;
+  const HOLIDAY_PATTERN = /\b(?:christmas|holiday|holidays|noel|yuletide|nativity|hanukkah|chanukah|ramadan|eid|new year|new year's|new years|kwanzaa)\b/i;
+  const CHRISTMAS_PATTERN = /\b(?:christmas|xmas|noel|yuletide|nativity)\b/i;
+  const JEWISH_HOLIDAY_PATTERN = /\b(?:hanukkah|chanukah)\b/i;
+  const MUSLIM_HOLIDAY_PATTERN = /\b(?:ramadan|eid(?:\s+al[- ](?:fitr|adha))?)\b/i;
+  const NEW_YEAR_PATTERN = /\bnew year(?:'s|s)?\b/i;
   const LOCAL_WORD_PATTERN = /\b(?:michigan|upper peninsula|yooper|marquette|negaunee|ishpeming|keweenaw|mackinac|lake superior|great lakes|pelkie)\b/i;
   const LOCAL_UP_PATTERN = /(?:^|\W)(?:UP|U\.P\.?)(?=\W|$)/;
   const PROGRAMMER_WEIGHTS = Object.freeze({
@@ -125,6 +129,10 @@
     return text(first(program.title, program.program_title, program.name, program.matched_library_title, 'Untitled program'));
   }
 
+  function programNola(program = {}) {
+    return text(first(program.nola_code, program.nola, program.program_nola, ''));
+  }
+
   function programTopic(program = {}) {
     return text(first(program.__resolved_topic_primary, program.topic_primary, program.topic, program.primary_topic, 'Uncategorized'));
   }
@@ -171,8 +179,100 @@
     return LOCAL_WORD_PATTERN.test(value) || LOCAL_UP_PATTERN.test(value);
   }
 
+  function holidayCategory(program = {}) {
+    const primary = lookupKey(programTopic(program));
+    const secondary = lookupKey(programSecondary(program));
+    const value = programText(program);
+    if (primary === 'holiday jewish' || JEWISH_HOLIDAY_PATTERN.test(value)) return 'Holiday - Jewish';
+    if (primary === 'holiday muslim' || MUSLIM_HOLIDAY_PATTERN.test(value)) return 'Holiday - Muslim';
+    if (primary === 'holiday new year' || NEW_YEAR_PATTERN.test(value)) return 'Holiday - New Year';
+    if (primary === 'holiday christmas' || CHRISTMAS_PATTERN.test(value) || (primary === 'holiday' && secondary.includes('christmas'))) return 'Holiday - Christmas';
+    if (primary === 'holiday general' || primary === 'holiday' || primary.startsWith('holiday ')) return 'Holiday - General';
+    return HOLIDAY_PATTERN.test(value) ? 'Holiday - General' : '';
+  }
+
   function isHoliday(program = {}) {
-    return HOLIDAY_PATTERN.test(programText(program));
+    return Boolean(holidayCategory(program));
+  }
+
+  function calendarMonthDay(value, calendar) {
+    const date = parseDate(value);
+    if (!date || !globalThis.Intl?.DateTimeFormat) return null;
+    try {
+      const parts = new Intl.DateTimeFormat(`en-US-u-ca-${calendar}`, { month: 'long', day: 'numeric' }).formatToParts(date);
+      const month = text(parts.find((part) => part.type === 'month')?.value).toLowerCase();
+      const day = Number(parts.find((part) => part.type === 'day')?.value);
+      return month && Number.isFinite(day) ? { month, day } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function driveOverlaps(schedule = {}, predicate = () => false) {
+    return dateRange(schedule).some((date) => predicate(date));
+  }
+
+  function holidaySeasonAdjustment(program = {}, schedule = {}) {
+    const category = holidayCategory(program);
+    if (!category) return { category: '', adjustment: 0, inWindow: false, outOfSeason: false, note: '' };
+    const range = dateRange(schedule);
+    if (!range.length) return { category, adjustment: 0, inWindow: false, outOfSeason: false, note: `${category}: fundraiser dates unavailable for seasonal fit.` };
+    const textValue = programText(program);
+    let inWindow = false;
+    let adjustment = 0;
+    let note = '';
+
+    if (category === 'Holiday - Christmas') {
+      inWindow = driveOverlaps(schedule, (date) => {
+        const month = date.getMonth();
+        const day = date.getDate();
+        return (month === 10 && day >= 15) || (month === 11 && day <= 26);
+      });
+      adjustment = inWindow ? 14 : -18;
+      note = inWindow ? 'Christmas seasonal window fits this fundraiser.' : 'Christmas title is outside its normal seasonal window.';
+    } else if (category === 'Holiday - New Year') {
+      inWindow = driveOverlaps(schedule, (date) => {
+        const month = date.getMonth();
+        const day = date.getDate();
+        return (month === 11 && day >= 27) || (month === 0 && day <= 3);
+      });
+      adjustment = inWindow ? 14 : -14;
+      note = inWindow ? 'New Year seasonal window overlaps this fundraiser.' : 'New Year title is outside the late-December / early-January window.';
+    } else if (category === 'Holiday - Jewish') {
+      const isHanukkah = JEWISH_HOLIDAY_PATTERN.test(textValue) || lookupKey(programSecondary(program)).includes('hanukkah');
+      if (isHanukkah) {
+        inWindow = driveOverlaps(schedule, (date) => {
+          const parts = calendarMonthDay(date, 'hebrew');
+          return Boolean(parts && ((parts.month.includes('kislev') && parts.day >= 25) || (parts.month.includes('tevet') && parts.day <= 3)));
+        });
+        adjustment = inWindow ? 14 : -14;
+        note = inWindow ? 'Hanukkah overlaps this fundraiser.' : 'Hanukkah title is outside the Hanukkah window for this year.';
+      } else {
+        note = 'Jewish holiday title: no specific holiday keyword is stored, so no automatic seasonal boost is applied.';
+      }
+    } else if (category === 'Holiday - Muslim') {
+      const wantsRamadan = /\bramadan\b/i.test(textValue);
+      const wantsEid = /\beid\b/i.test(textValue);
+      inWindow = driveOverlaps(schedule, (date) => {
+        const parts = calendarMonthDay(date, 'islamic');
+        if (!parts) return false;
+        const ramadan = parts.month.includes('ramadan');
+        const fitr = parts.month.includes('shawwal') && parts.day <= 3;
+        const adha = (parts.month.includes('dhu al-hijjah') || parts.month.includes('dhul-hijjah') || parts.month.includes('dhuʻl-hijjah')) && parts.day >= 9 && parts.day <= 13;
+        if (wantsRamadan && !wantsEid) return ramadan;
+        if (wantsEid && !wantsRamadan) return fitr || adha;
+        return ramadan || fitr || adha;
+      });
+      adjustment = inWindow ? 12 : -10;
+      note = inWindow ? 'Muslim holiday window overlaps this fundraiser.' : 'Muslim holiday title is outside the relevant movable holiday window; it is not treated as a generic December title.';
+    } else {
+      const decemberish = driveOverlaps(schedule, (date) => date.getMonth() === 11);
+      adjustment = decemberish ? 6 : 0;
+      inWindow = decemberish;
+      note = decemberish ? 'General holiday programming gets a modest December-season lift.' : 'General holiday programming has no automatic out-of-season penalty.';
+    }
+
+    return { category, adjustment, inWindow, outOfSeason: adjustment < 0, note };
   }
 
   function isBiography(program = {}) {
@@ -240,6 +340,10 @@
 
   function rowProgramId(row = {}) {
     return text(first(row.programId, row.program_id, row.pledge_program_id, row.manual_match_program_id, ''));
+  }
+
+  function rowNola(row = {}) {
+    return text(first(row.nola_code, row.nola, row.program_nola, row.matched_nola_code, ''));
   }
 
   function rowTitle(row = {}) {
@@ -349,7 +453,10 @@
   function programMatchesRow(program = {}, row = {}) {
     const id = programId(program);
     const rowId = rowProgramId(row);
-    if (id && rowId && id === rowId) return true;
+    if (id && rowId) return id === rowId;
+    const nola = lookupKey(programNola(program));
+    const rowCode = lookupKey(rowNola(row));
+    if (nola && rowCode) return nola === rowCode;
     const title = lookupKey(programTitle(program));
     return Boolean(title && title === lookupKey(rowTitle(row)));
   }
@@ -441,13 +548,13 @@
       if (sameSummary.medianRate >= 500) adjustment += 2;
       notes.push(`Only one ${targetSeason} title airing is available; it is not used as negative evidence by itself.`);
     }
-    const holiday = isHoliday(program);
+    const holidayInfo = holidaySeasonAdjustment(program, schedule);
+    const holiday = Boolean(holidayInfo.category);
     if (holiday) {
-      const explicit = targetSeason === 'December' ? 14 : -18;
-      adjustment += explicit;
-      notes.push(targetSeason === 'December' ? 'Christmas / holiday fit for December.' : `Christmas / holiday title is out of season for ${targetSeason}.`);
+      adjustment += holidayInfo.adjustment;
+      if (holidayInfo.note) notes.push(holidayInfo.note);
     }
-    return { targetSeason, holiday, same: sameSummary, other: otherSummary, adjustment, notes };
+    return { targetSeason, holiday, holidayCategory: holidayInfo.category, holidayInWindow: holidayInfo.inWindow, holidayOutOfSeason: holidayInfo.outOfSeason, same: sameSummary, other: otherSummary, adjustment, notes };
   }
 
   function weakPrimeTestsSinceRating(program = {}, historyRows = [], override = null) {
@@ -611,7 +718,9 @@
     else if (score >= 56) fit = 'Supported option';
     else if (score < 40) fit = 'Rest / caution';
     else if (score < 48) fit = 'Mixed evidence';
-    if (season.holiday && season.targetSeason !== 'December' && programmer.rating !== 'must_air') fit = 'Save for December';
+    if (season.holidayOutOfSeason && programmer.rating !== 'must_air') {
+      fit = season.holidayCategory === 'Holiday - Christmas' ? 'Save for Christmas season' : 'Out of seasonal window';
+    }
 
     return {
       program,
@@ -671,13 +780,11 @@
       });
     });
     const list = [...points.values()].map((item) => ({ ...item, averageScore: mean(item.scores) || 0 }));
-    const total = list.reduce((sum, item) => sum + item.points, 0);
     return list.sort((a, b) => b.points - a.points || b.averageScore - a.averageScore || a.topic.localeCompare(b.topic)).map((item, index) => {
       let strength = 'Situational';
       if (index <= 1 || item.averageScore >= 72) strength = 'Stronger';
       else if (item.averageScore >= 60 || item.appearances >= 3) strength = 'Moderate';
-      const share = total > 0 && slots.filter((slot) => !slot.experimental && !slot.blocked).length >= 6 ? Math.round((item.points / total) * 20) * 5 : null;
-      return { ...item, strength, approximateShare: share };
+      return { ...item, strength, approximateShare: null };
     });
   }
 
@@ -764,7 +871,7 @@
       if (restDays != null && restDays < 90) reasons.push(`Very quick return (${restDays} days)`);
       else if (restDays != null && restDays < 180) reasons.push(`Short rest (${restDays} days)`);
       if (drama.olderCycle) reasons.push('Older Drama Doc cycle');
-      if (season.holiday && season.targetSeason !== 'December') reasons.push('Holiday title out of season');
+      if (season.holidayOutOfSeason) reasons.push(`${season.holidayCategory || 'Holiday'} title out of seasonal window`);
       return reasons.length ? { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), reasons, history, rating, drama, season } : null;
     }).filter(Boolean).sort((a, b) => b.reasons.length - a.reasons.length || b.history.rows - a.history.rows || a.title.localeCompare(b.title)).slice(0, 15);
 
@@ -792,6 +899,8 @@
         'Programmer ratings are weighted inputs, not absolute overrides.',
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored in the report data.',
         'Premium information is shown only as context; premium effectiveness is not scored.',
+        'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
+        'Islamic-calendar holiday windows are planning approximations and may differ by local moon sighting.',
         'Experimental windows are labeled separately from established planning windows.',
         'Friday 8–9 PM is treated as protected regular programming and is excluded from pledge recommendations.'
       ]
@@ -812,6 +921,7 @@
     seasonForDate,
     programId,
     programTitle,
+    programNola,
     programTopic,
     programSecondary,
     programRuntimeMinutes,
@@ -819,6 +929,8 @@
     rightsEnd,
     premiumSummary,
     isLocal,
+    holidayCategory,
+    holidaySeasonAdjustment,
     isHoliday,
     dramaInfo,
     titleEligibleForDate,

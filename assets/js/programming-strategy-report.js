@@ -48,6 +48,7 @@
     const admins = Array.isArray(cfg.ADMIN_EMAILS) ? cfg.ADMIN_EMAILS.map((item) => String(item).trim().toLowerCase()).filter(Boolean) : [];
     const allowed = Boolean(session && (!admins.length || admins.includes(email)));
     if (allowed) {
+      $('#strategy-app')?.classList.remove('hidden');
       const role = $('#strategy-role');
       if (role) role.textContent = email ? `Admin · ${email}` : 'Admin';
       return true;
@@ -138,7 +139,7 @@
   function recommendationHtml(item) {
     const flags = [];
     if (item.local) flags.push('Local / U.P.');
-    if (item.season?.holiday && item.season.targetSeason === 'December') flags.push('Seasonal fit');
+    if (item.season?.holidayInWindow) flags.push(item.season.holidayCategory || 'Seasonal fit');
     if (item.drama?.currentCycle) flags.push('Current Drama Doc');
     if (item.premiumPresent) flags.push('Premium info');
     if (item.programmer?.rating) flags.push(`Programmer: ${item.programmer.label}`);
@@ -147,7 +148,7 @@
 
   function mixSection(strategy) {
     if (!strategy.mix.length) return '<section class="sheet-section"><h2>Overall recommended mix</h2><p>No defensible mix could be calculated from the current eligible library and pre-cutoff evidence.</p></section>';
-    return `<section class="sheet-section"><h2>Overall recommended mix</h2><p>Planning signal from the strongest eligible titles across normal pledge windows. Shares are approximate signals, not quotas.</p><div class="strategy-mix-grid">${strategy.mix.slice(0, 10).map((item) => `<div class="strategy-mix-card"><strong>${escapeHtml(item.topic)}</strong><span class="strategy-strength strength-${escapeHtml(item.strength.toLowerCase())}">${escapeHtml(item.strength)}</span><small>${item.appearances} strong-slot appearance${item.appearances === 1 ? '' : 's'} · avg score ${Math.round(item.averageScore)}${item.approximateShare != null ? ` · ~${item.approximateShare}% mix signal` : ''}</small></div>`).join('')}</div></section>`;
+    return `<section class="sheet-section"><h2>Overall recommended mix</h2><p>Qualitative planning signal from the strongest eligible titles across normal pledge windows. No percentage quotas are implied.</p><div class="strategy-mix-grid">${strategy.mix.slice(0, 10).map((item) => `<div class="strategy-mix-card"><strong>${escapeHtml(item.topic)}</strong><span class="strategy-strength strength-${escapeHtml(item.strength.toLowerCase())}">${escapeHtml(item.strength)}</span><small>${item.appearances} strong-slot appearance${item.appearances === 1 ? '' : 's'} · avg score ${Math.round(item.averageScore)}</small></div>`).join('')}</div></section>`;
   }
 
   function groupedDayparts(strategy) {

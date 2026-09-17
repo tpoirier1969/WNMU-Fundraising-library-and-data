@@ -20,7 +20,7 @@ const baseProgram = (overrides = {}) => ({
   ...overrides
 });
 const row = (overrides = {}) => ({
-  programId: overrides.programId || '1',
+  programId: overrides.programId === undefined ? '1' : overrides.programId,
   title: overrides.title || 'Test Program',
   topic: overrides.topic || 'Music',
   dateKey: overrides.dateKey || '2026-08-08',
@@ -28,6 +28,7 @@ const row = (overrides = {}) => ({
   minutes: overrides.minutes ?? 60,
   dollars: overrides.dollars ?? 600,
   fundraiserId: overrides.fundraiserId || 'aug26',
+  nola_code: overrides.nola_code ?? '',
   ...overrides
 });
 
@@ -143,4 +144,56 @@ test('rights constraints separate fully unavailable titles from partial-drive ri
   const rights = S.rightsConstraints(library, schedule);
   assert.deepEqual(Array.from(rights.unavailable, (item) => item.title), ['Expired Before Drive']);
   assert.deepEqual(Array.from(rights.partial, (item) => item.title), ['Partial']);
+});
+
+
+test('holiday taxonomy distinguishes Christmas, Jewish, Muslim, and New Year programming', () => {
+  assert.equal(S.holidayCategory(baseProgram({ title: 'A Classic Christmas', topic_primary: 'Holiday - Christmas' })), 'Holiday - Christmas');
+  assert.equal(S.holidayCategory(baseProgram({ title: 'Hanukkah: A Festival of Delights', topic_primary: 'Holiday - Jewish' })), 'Holiday - Jewish');
+  assert.equal(S.holidayCategory(baseProgram({ title: 'Ramadan Reflections', topic_primary: 'Holiday - Muslim' })), 'Holiday - Muslim');
+  assert.equal(S.holidayCategory(baseProgram({ title: "New Year's Eve Celebration", topic_primary: 'Holiday - New Year' })), 'Holiday - New Year');
+});
+
+test('Jewish and Muslim holiday categories use movable holiday windows rather than a blanket December boost', () => {
+  const hanukkah = baseProgram({ id: 'j', title: 'Hanukkah: A Festival of Delights', topic_primary: 'Holiday - Jewish' });
+  const ramadan = baseProgram({ id: 'm', title: 'Ramadan Reflections', topic_primary: 'Holiday - Muslim' });
+  const hanukkahFit = S.holidaySeasonAdjustment(hanukkah, schedule);
+  const ramadanDecember = S.holidaySeasonAdjustment(ramadan, schedule);
+  const ramadanFit = S.holidaySeasonAdjustment(ramadan, { startDate: '2026-02-18', endDate: '2026-02-25' });
+  assert.equal(hanukkahFit.inWindow, true);
+  assert.ok(hanukkahFit.adjustment > 0);
+  assert.equal(ramadanDecember.inWindow, false);
+  assert.ok(ramadanDecember.adjustment < 0);
+  assert.equal(ramadanFit.inWindow, true);
+  assert.ok(ramadanFit.adjustment > 0);
+});
+
+test('New Year programming gets a narrow late-December / early-January window', () => {
+  const newYear = baseProgram({ id: 'ny', title: "New Year's Eve Celebration", topic_primary: 'Holiday - New Year' });
+  const earlyDecember = S.holidaySeasonAdjustment(newYear, schedule);
+  const newYearDrive = S.holidaySeasonAdjustment(newYear, { startDate: '2026-12-29', endDate: '2027-01-02' });
+  assert.ok(earlyDecember.adjustment < 0);
+  assert.equal(newYearDrive.inWindow, true);
+  assert.ok(newYearDrive.adjustment > 0);
+});
+
+test('historical matching does not fall back to title when both program IDs disagree', () => {
+  const program = baseProgram({ id: 'A', title: 'Shared Title', nola_code: 'AAAA' });
+  const wrongId = row({ programId: 'B', title: 'Shared Title', nola_code: 'AAAA' });
+  assert.equal(S.rowsForProgram(program, [wrongId]).length, 0);
+  const nolaOnly = row({ programId: '', title: 'Different Imported Title', nola_code: 'AAAA' });
+  assert.equal(S.rowsForProgram(program, [nolaOnly]).length, 1);
+});
+
+test('overall mix remains qualitative rather than inventing percentage quotas', () => {
+  const strategy = S.buildStrategy({
+    schedule,
+    library: [
+      baseProgram({ id: 'm1', title: 'Music One', topic_primary: 'Music' }),
+      baseProgram({ id: 'h1', title: 'History One', topic_primary: 'History' })
+    ],
+    evidenceRows: []
+  });
+  assert.ok(strategy.mix.length > 0);
+  assert.ok(strategy.mix.every((item) => item.approximateShare === null));
 });
