@@ -8,6 +8,8 @@
   let rowObserver = null;
   let detailObserver = null;
   let listApplyWrapped = false;
+  let listRefreshFrame = 0;
+  let detailRefreshFrame = 0;
 
   function text(value) {
     return String(value ?? '').trim();
@@ -243,13 +245,29 @@
     decorateListRows();
   }
 
+  function scheduleListRefresh() {
+    if (listRefreshFrame) return;
+    listRefreshFrame = window.requestAnimationFrame(() => {
+      listRefreshFrame = 0;
+      if (App.state?.sortField === 'programming_outlook') applyOutlookOrder();
+      else decorateListRows();
+    });
+  }
+
+  function scheduleDetailRefresh() {
+    if (detailRefreshFrame) return;
+    detailRefreshFrame = window.requestAnimationFrame(() => {
+      detailRefreshFrame = 0;
+      renderDetailScorecard();
+    });
+  }
+
   function wrapListApply() {
     if (listApplyWrapped || !App.listUi?.applyLibraryView) return;
     const original = App.listUi.applyLibraryView.bind(App.listUi);
     App.listUi.applyLibraryView = (...args) => {
       const result = original(...args);
-      if (App.state?.sortField === 'programming_outlook') window.setTimeout(applyOutlookOrder, 0);
-      else window.setTimeout(decorateListRows, 0);
+      scheduleListRefresh();
       return result;
     };
     listApplyWrapped = true;
@@ -358,22 +376,21 @@
   function observeList() {
     const body = document.getElementById('library-body');
     if (!body || rowObserver) return;
-    rowObserver = new MutationObserver(() => {
-      decorateListRows();
-      if (App.state?.sortField === 'programming_outlook') window.setTimeout(applyOutlookOrder, 0);
-    });
-    rowObserver.observe(body, { childList: true, subtree: true });
-    decorateListRows();
+    rowObserver = new MutationObserver(() => scheduleListRefresh());
+    // The list renderer replaces/adds rows directly under tbody. Watching the entire
+    // subtree made this observer react to the scorecard cells it added itself.
+    rowObserver.observe(body, { childList: true, subtree: false });
+    scheduleListRefresh();
   }
 
   function observeDetail() {
     const overview = document.getElementById('overview-grid');
     const title = document.getElementById('detail-title');
     if (!overview || detailObserver) return;
-    detailObserver = new MutationObserver(() => renderDetailScorecard());
+    detailObserver = new MutationObserver(() => scheduleDetailRefresh());
     detailObserver.observe(overview, { childList: true, subtree: true, characterData: true });
     if (title) detailObserver.observe(title, { childList: true, subtree: true, characterData: true });
-    renderDetailScorecard();
+    scheduleDetailRefresh();
   }
 
   function bindSupplementalEvents() {
@@ -393,24 +410,20 @@
       if (rightsSort) {
         event.preventDefault();
         App.listUi?.setSort?.(rightsSort.dataset.rightsSort);
-        window.setTimeout(syncSortHeaders, 0);
+        scheduleListRefresh();
       }
     }, true);
 
     document.addEventListener('change', (event) => {
       if (event.target?.id !== 'outlook-fundraiser-focus') return;
       App.programFundraiserFocus?.set?.(event.target.value || '');
-      decorateListRows();
-      renderDetailScorecard();
-      if (App.state?.sortField === 'programming_outlook') applyOutlookOrder();
+      scheduleListRefresh();
+      scheduleDetailRefresh();
     }, true);
 
     document.addEventListener('pledge-editorial-overrides-changed', () => {
-      window.setTimeout(() => {
-        decorateListRows();
-        renderDetailScorecard();
-        if (App.state?.sortField === 'programming_outlook') applyOutlookOrder();
-      }, 0);
+      scheduleListRefresh();
+      scheduleDetailRefresh();
     });
   }
 
@@ -434,8 +447,8 @@
     if (scheduleSelect) {
       new MutationObserver(() => {
         syncFundraiserFocusControl();
-        decorateListRows();
-        renderDetailScorecard();
+        scheduleListRefresh();
+        scheduleDetailRefresh();
       }).observe(scheduleSelect, { childList: true, subtree: true });
     }
     window.setTimeout(syncFundraiserFocusControl, 800);
@@ -445,9 +458,8 @@
       if (event.target?.closest?.('[data-program-open-id], [data-open-id], [data-workspace-button], #refresh-button')) {
         window.setTimeout(() => {
           syncFundraiserFocusControl();
-          decorateListRows();
-          renderDetailScorecard();
-          if (App.state?.sortField === 'programming_outlook') applyOutlookOrder();
+          scheduleListRefresh();
+          scheduleDetailRefresh();
         }, 80);
       }
     }, true);
