@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const source = fs.readFileSync('assets/js/program-library-controls.js', 'utf8');
 const seasonFocus = fs.readFileSync('assets/js/program-fundraiser-season-focus.js', 'utf8');
+const libraryList = fs.readFileSync('assets/js/ui-list.js', 'utf8');
 
 test('library performance selector exposes average, median, and total dollars', () => {
   assert.match(source, /Avg \$ \/ Pledge Hour/);
@@ -38,4 +39,11 @@ test('median pledge-hour calculation remains fundraiser-balanced', () => {
 test('the new library controls are loaded by the existing library bootstrap path', () => {
   assert.match(seasonFocus, /assets\/js\/program-library-controls\.js/);
   assert.match(source, /program-library-controls-style/);
+});
+
+test('topic taxonomy options remain visible when titles are archived', () => {
+  assert.match(libraryList, /except !== 'topic' && except !== 'secondary' && !rowMatchesStatus\(row\)/);
+  assert.match(libraryList, /sourceRows\.filter\(\(row\) => rowMatchesFiltersExcept\(row, 'topic'\)\)/);
+  assert.match(libraryList, /sourceRows\.filter\(\(row\) => rowMatchesFiltersExcept\(row, 'secondary'\)\)/);
+  assert.match(libraryList, /function rowMatchesFilters\(row\) \{\s*return rowMatchesFiltersExcept\(row, ''\);/);
 });

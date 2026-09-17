@@ -84,7 +84,7 @@
   }
 
   function rowMatchesFiltersExcept(row, except = '') {
-    if (!rowMatchesStatus(row)) return false;
+    if (except !== 'topic' && except !== 'secondary' && !rowMatchesStatus(row)) return false;
     if (except !== 'topic' && state.topicFilter && !sameLookupValue(derive.topicPrimary(row), state.topicFilter)) return false;
     if (except !== 'secondary' && state.secondaryTopicFilter && !sameLookupValue(derive.topicSecondary(row), state.secondaryTopicFilter)) return false;
     if (except !== 'distributor' && state.distributorFilter && !sameLookupValue(derive.distributor(row), state.distributorFilter)) return false;
