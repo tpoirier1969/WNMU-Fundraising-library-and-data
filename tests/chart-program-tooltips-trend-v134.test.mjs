@@ -5,8 +5,10 @@ const source = fs.readFileSync(new URL('../assets/js/one-sheet-reports.js', impo
 const html = fs.readFileSync(new URL('../reports.html', import.meta.url), 'utf8');
 const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
-assert.equal(version.appVersion, '0.22.141');
-assert.match(html, /0\.22\.141/);
+assert.match(version.appVersion, /^\d+\.\d+\.\d+$/);
+const reportAssetVersions = [...html.matchAll(/(?:one-sheet-reports\.css|one-sheet-analysis\.js|one-sheet-reports\.js)\?v=(\d+\.\d+\.\d+)/g)].map((match) => match[1]);
+assert.equal(reportAssetVersions.length, 3);
+assert.equal(new Set(reportAssetVersions).size, 1);
 assert.match(source, /function programTooltipLinesForRows/);
 assert.match(source, /function aggregateProgramTooltip/);
 assert.match(source, /\.map\(\(\[label, subset\]\) => \[label, subset, rankingRows\(subset, 'startTime'\)\]\)/);
@@ -78,4 +80,4 @@ assert.match(source, /className: 'topic-comparison-chart',\n      yLabel: 'Broad
 assert.match(source, /function historicalStartTimeOverviewCard\(analyses = \[\]\)[\s\S]*?barChartSvg\(\{/);
 assert.match(source, /async function renderHistoricalReport\([\s\S]*?bindChartTooltips\(\$\('#report-output'\)\);[\s\S]*?bindHistoricalChartControls\(\$\('#report-output'\)\);\n  \}/);
 
-console.log('v0.22.138 chart hover, event annotation, era toggle, and trend tests passed');
+console.log('chart hover, event annotation, era toggle, and trend tests passed');
