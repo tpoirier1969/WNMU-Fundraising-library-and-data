@@ -169,3 +169,97 @@
     seasons: () => [...SEASONS]
   };
 })();
+
+(() => {
+  'use strict';
+
+  const App = window.PledgeLib;
+  if (!App?.programScorecard?.baseAssessment || !App?.programScorecard?.detailedAssessment) return;
+
+  const originalBaseAssessment = App.programScorecard.baseAssessment.bind(App.programScorecard);
+  const originalDetailedAssessment = App.programScorecard.detailedAssessment.bind(App.programScorecard);
+  const originalDetailHtml = App.programScorecard.detailHtml?.bind(App.programScorecard);
+
+  function number(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function normalizeEvaluation(result = {}, { detailed = false, primeAirings = null } = {}) {
+    const history = result.history || {};
+    const airings = number(history.airings, 0);
+    const score = Math.max(0, Math.min(100, number(result.score, 50)));
+    const protectedOutlooks = new Set([
+      'Do not schedule',
+      'Save for December',
+      'Context check first',
+      "Programmer says don't air"
+    ]);
+
+    let confidence = result.confidence || 'Low';
+    if (airings < 1 && confidence === 'Low') confidence = 'Untested';
+    if (protectedOutlooks.has(result.outlook)) return { ...result, confidence };
+
+    let outlook = 'Situational option';
+    let tone = 'neutral';
+
+    if (score >= 78) {
+      outlook = 'High-priority candidate';
+      tone = 'strong';
+    } else if (score >= 65) {
+      outlook = 'Strong candidate';
+      tone = 'good';
+    } else if (score >= 56) {
+      outlook = airings > 0 ? 'Established option' : 'Promising';
+      tone = airings > 0 ? 'neutral' : 'good';
+    } else if (score >= 48) {
+      outlook = 'Situational option';
+      tone = 'neutral';
+    } else if (score >= 40) {
+      outlook = airings > 0 ? 'Mixed evidence' : 'Caution';
+      tone = 'caution';
+    } else {
+      const heavyExposure = airings >= 8;
+      const enoughPrimeEvidence = detailed
+        ? (primeAirings != null && Number(primeAirings) >= 2)
+        : airings >= 3;
+      if (heavyExposure || enoughPrimeEvidence) {
+        outlook = 'Low priority / rest';
+        tone = 'warn';
+      } else {
+        outlook = 'Caution';
+        tone = 'caution';
+      }
+    }
+
+    return { ...result, score, outlook, tone, confidence };
+  }
+
+  App.programScorecard.baseAssessment = (program = {}) => normalizeEvaluation(originalBaseAssessment(program));
+
+  App.programScorecard.detailedAssessment = (program = {}, driveResults = [], exactAirings = []) => {
+    const result = originalDetailedAssessment(program, driveResults, exactAirings);
+    const primeAirings = Number.isFinite(Number(result?.primeAirings))
+      ? Number(result.primeAirings)
+      : (Array.isArray(exactAirings) ? exactAirings.filter((row) => {
+        const when = App.utils?.rowLocalDateTime?.(row, { preferDriveFallback: true });
+        if (!(when instanceof Date) || Number.isNaN(when.getTime())) return false;
+        const minutes = when.getHours() * 60 + when.getMinutes();
+        return minutes >= 19 * 60 && minutes < 23 * 60;
+      }).length : null);
+    return normalizeEvaluation(result, { detailed: true, primeAirings });
+  };
+
+  if (originalDetailHtml) {
+    App.programScorecard.detailHtml = (program = {}, driveResults = [], exactAirings = []) => {
+      let html = originalDetailHtml(program, driveResults, exactAirings);
+      const normalized = App.programScorecard.detailedAssessment(program, driveResults, exactAirings);
+      html = html
+        .replace('WNMU has no prior airing history for this title, so the model has less evidence to work with.', 'WNMU has no prior airing history for this title.')
+        .replace('No prime-time test yet.', 'No verified prime-time airings.')
+        .replace(/ A plausible title needs two weak prime tests before weak performance alone can retire it\./g, '')
+        .replace(/(<strong>Evidence:<\/strong>\s*)Low(?=<\/div>)/i, `$1${App.utils.escapeHtml(normalized.confidence || 'Low')}`);
+      return html;
+    };
+  }
+})();
