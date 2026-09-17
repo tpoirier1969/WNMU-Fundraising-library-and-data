@@ -24,6 +24,10 @@
   let medianCacheRows = null;
   let medianCache = new Map();
   let filterTimer = 0;
+  let postRenderTimer = 0;
+  let airingsReadyTimer = 0;
+  let airingIndexRows = null;
+  let airingRowsByProgram = new Map();
 
   state.libraryPerformanceMetric = state.libraryPerformanceMetric || 'average';
   state.libraryNumericFilters = state.libraryNumericFilters || {
@@ -48,13 +52,24 @@
     return text(App.programLinks?.resolveId?.(program) || derive.programId?.(program) || '');
   }
 
+  function rebuildAiringIndexIfNeeded() {
+    const rows = Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : [];
+    if (airingIndexRows === rows) return;
+    airingIndexRows = rows;
+    airingRowsByProgram = new Map();
+    rows.forEach((row) => {
+      const linked = text(utils.firstNonEmpty?.(row?.manual_match_program_id, row?.pledge_program_id, row?.program_id, ''));
+      if (!linked) return;
+      if (!airingRowsByProgram.has(linked)) airingRowsByProgram.set(linked, []);
+      airingRowsByProgram.get(linked).push(row);
+    });
+  }
+
   function linkedAiringRows(program = {}) {
     const id = programId(program);
     if (!id) return [];
-    return (Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : []).filter((row) => {
-      const linked = text(utils.firstNonEmpty?.(row?.manual_match_program_id, row?.pledge_program_id, row?.program_id, ''));
-      return linked === id;
-    });
+    rebuildAiringIndexIfNeeded();
+    return airingRowsByProgram.get(id) || [];
   }
 
   function airingDateKey(row = {}) {
@@ -182,21 +197,31 @@
     return numberOrNull(state.libraryNumericFilters?.[name]);
   }
 
+  function hasActiveNumericFilters() {
+    return FILTER_FIELDS.some(([key]) => numericFilterValue(key) != null);
+  }
+
   function matchesNumericFilters(program = {}) {
-    const total = numberOrNull(derive.totalRaised?.(program)) ?? 0;
-    const avg = numberOrNull(derive.avgPerPledgeHour?.(program));
-    const dates = airDateCount(program);
     const minTotal = numericFilterValue('minTotal');
     const maxTotal = numericFilterValue('maxTotal');
     const minAvg = numericFilterValue('minAvgPledgeHour');
     const minDates = numericFilterValue('minAirDates');
     const maxDates = numericFilterValue('maxAirDates');
 
-    if (minTotal != null && total < minTotal) return false;
-    if (maxTotal != null && total > maxTotal) return false;
-    if (minAvg != null && (avg == null || avg < minAvg)) return false;
-    if (minDates != null && dates < minDates) return false;
-    if (maxDates != null && dates > maxDates) return false;
+    if (minTotal != null || maxTotal != null) {
+      const total = numberOrNull(derive.totalRaised?.(program)) ?? 0;
+      if (minTotal != null && total < minTotal) return false;
+      if (maxTotal != null && total > maxTotal) return false;
+    }
+    if (minAvg != null) {
+      const avg = numberOrNull(derive.avgPerPledgeHour?.(program));
+      if (avg == null || avg < minAvg) return false;
+    }
+    if (minDates != null || maxDates != null) {
+      const dates = airDateCount(program);
+      if (minDates != null && dates < minDates) return false;
+      if (maxDates != null && dates > maxDates) return false;
+    }
     return true;
   }
 
@@ -356,6 +381,11 @@
     syncMetricHeader();
   }
 
+  function schedulePostRender() {
+    window.clearTimeout(postRenderTimer);
+    postRenderTimer = window.setTimeout(postRender, 0);
+  }
+
   function wrapListUi() {
     if (wrapped || !App.listUi?.applyLibraryView) return false;
     const originalApply = App.listUi.applyLibraryView.bind(App.listUi);
@@ -368,14 +398,16 @@
       const metricSort = state.sortField === 'library_performance_metric';
       const requestedSort = state.sortField;
       try {
-        state.rawRows = (Array.isArray(originalRows) ? originalRows : []).filter(matchesNumericFilters);
+        state.rawRows = hasActiveNumericFilters()
+          ? (Array.isArray(originalRows) ? originalRows : []).filter(matchesNumericFilters)
+          : originalRows;
         if (metricSort) state.sortField = 'title';
         return originalApply(...args);
       } finally {
         state.rawRows = originalRows;
         state.sortField = requestedSort;
         applyDepth -= 1;
-        window.setTimeout(postRender, 0);
+        schedulePostRender();
       }
     };
 
@@ -408,7 +440,17 @@
     document.addEventListener('pledge-scorecard-airings-ready', () => {
       medianCacheRows = null;
       medianCache.clear();
-      App.listUi?.applyLibraryView?.();
+      airingIndexRows = null;
+      airingRowsByProgram.clear();
+      window.clearTimeout(airingsReadyTimer);
+      airingsReadyTimer = window.setTimeout(() => {
+        if (hasActiveNumericFilters() || state.sortField === 'library_performance_metric') {
+          App.listUi?.applyLibraryView?.();
+        } else {
+          decorateMetricCells();
+          syncMetricHeader();
+        }
+      }, 0);
     });
   }
 

@@ -37,15 +37,22 @@
         App.performanceUi?.renderAll();
       }
 
-      const historyRefresh = App.data.refreshAiringHistory?.();
-      if (historyRefresh?.then) {
-        historyRefresh.then(() => {
-          App.listUi.buildFilterOptions();
-          App.listUi.applyLibraryView();
-          App.workspaceUi?.refreshScaffoldSummary();
-        }).catch((error) => {
-          console.warn('Background air-date history enrichment failed.', error);
-        });
+      // A detail save already has the current airing history in memory. Reloading and
+      // re-enriching every airing after each metadata edit caused repeated main-thread
+      // work while users were correcting topics in sequence. Keep the full history
+      // refresh for normal/manual reloads, but skip it for the save-triggered refresh.
+      const shouldRefreshHistory = options.refreshAiringHistory !== false && !state.detailSaveInProgress;
+      if (shouldRefreshHistory) {
+        const historyRefresh = App.data.refreshAiringHistory?.();
+        if (historyRefresh?.then) {
+          historyRefresh.then(() => {
+            App.listUi.buildFilterOptions();
+            App.listUi.applyLibraryView();
+            App.workspaceUi?.refreshScaffoldSummary();
+          }).catch((error) => {
+            console.warn('Background air-date history enrichment failed.', error);
+          });
+        }
       }
 
       const probeStatus = App.data.getProbeStatusMessage();
@@ -57,7 +64,8 @@
       if (options.preserveDetail && state.selectedProgramId && !els.detailModal.classList.contains('hidden')) {
         await App.detailUi.loadProgramDetail(state.selectedProgramId, { preserveMode: state.detailEditMode });
       }
-      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} source rows. Air-date history is updating in the background.`);
+      const historyNote = shouldRefreshHistory ? ' Air-date history is updating in the background.' : '';
+      setNotice(`Loaded ${utils.formatCount(state.rawRows.length)} source rows.${historyNote}`);
     } catch (error) {
       console.error(error);
       const rawMessage = error?.message || 'Load failed.';

@@ -19,6 +19,9 @@
     must_air: 28
   };
   const WEAK_PRIME_RATE = 150;
+  let airingRowsSource = null;
+  let airingRowsSourceLength = -1;
+  let airingRowsByProgram = new Map();
 
   function text(value) {
     return String(value ?? '').trim();
@@ -128,14 +131,32 @@
     ), 0);
   }
 
+  function invalidateAiringRowCache() {
+    airingRowsSource = null;
+    airingRowsSourceLength = -1;
+    airingRowsByProgram = new Map();
+  }
+
+  function rebuildAiringRowCacheIfNeeded() {
+    const rows = Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : [];
+    if (airingRowsSource === rows && airingRowsSourceLength === rows.length) return;
+    airingRowsSource = rows;
+    airingRowsSourceLength = rows.length;
+    airingRowsByProgram = new Map();
+    rows.forEach((row) => {
+      const linked = text(utils.firstNonEmpty?.(row?.manual_match_program_id, row?.pledge_program_id, row?.program_id, ''));
+      if (!linked) return;
+      if (!airingRowsByProgram.has(linked)) airingRowsByProgram.set(linked, []);
+      airingRowsByProgram.get(linked).push(row);
+    });
+  }
+
   function rowsForProgram(program = {}, exactAirings = null) {
     if (Array.isArray(exactAirings) && exactAirings.length) return exactAirings;
     const id = text(derive.programId?.(program));
     if (!id) return [];
-    return (Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : []).filter((row) => {
-      const linked = text(utils.firstNonEmpty?.(row?.manual_match_program_id, row?.pledge_program_id, row?.program_id, ''));
-      return linked === id;
-    });
+    rebuildAiringRowCacheIfNeeded();
+    return airingRowsByProgram.get(id) || [];
   }
 
   function programText(program = {}) {
@@ -471,6 +492,7 @@
       ${cautions}`;
   }
 
+  document.addEventListener('pledge-scorecard-airings-ready', invalidateAiringRowCache);
   restoreFocusedFundraiser();
 
   App.programFundraiserFocus = {
