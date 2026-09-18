@@ -228,7 +228,18 @@
     const start = when ? when.getHours() * 60 + when.getMinutes() : null;
     const programId = text(derive.programId?.(program));
     const allRows = Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : [];
-    const baseline = median(allRows.map(contextRowRate).filter(Number.isFinite));
+    const historicalDays = new Map();
+    allRows.forEach((candidate) => {
+      const candidateWhen = airingWhen(candidate);
+      if (!candidateWhen) return;
+      const candidateDay = utils.dateKeyFromDate?.(candidateWhen) || candidateWhen.toISOString().slice(0, 10);
+      const candidateRate = contextRowRate(candidate);
+      if (!candidateDay || candidateDay === dayKey || !Number.isFinite(candidateRate)) return;
+      if (!historicalDays.has(candidateDay)) historicalDays.set(candidateDay, []);
+      historicalDays.get(candidateDay).push(candidateRate);
+    });
+    const historicalDayRates = [...historicalDays.values()].map((rates) => median(rates)).filter(Number.isFinite);
+    const baseline = historicalDayRates.length ? median(historicalDayRates) : null;
     const sameDay = allRows.filter((candidate) => {
       const candidateWhen = airingWhen(candidate);
       if (!candidateWhen) return false;
