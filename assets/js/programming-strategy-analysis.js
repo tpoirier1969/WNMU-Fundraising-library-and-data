@@ -556,23 +556,68 @@
     return text(slot.id || `${slot.date}|${slot.startMinutes}|${slot.endMinutes}|${slot.label}`);
   }
 
+  function buildSlotEvidenceIndex(rows = []) {
+    const byWeekday = new Map();
+    const byWeekpart = new Map();
+    for (const row of (rows || [])) {
+      const date = parseDate(airingDate(row));
+      const start = rowStartMinutes(row);
+      if (!date || !Number.isFinite(start)) continue;
+      const weekday = date.getDay();
+      const weekpart = weekday === 6 ? 'Saturday' : weekday === 0 ? 'Sunday' : 'Weekday';
+      const meta = {
+        row,
+        weekday,
+        weekpart,
+        start,
+        daypart: daypartForMinutes(start),
+        topicKey: lookupKey(rowTopic(row))
+      };
+      if (!byWeekday.has(weekday)) byWeekday.set(weekday, []);
+      byWeekday.get(weekday).push(meta);
+      if (!byWeekpart.has(weekpart)) byWeekpart.set(weekpart, []);
+      byWeekpart.get(weekpart).push(meta);
+    }
+    return { byWeekday, byWeekpart };
+  }
+
   function cachedSlotEvidence(slot = {}, context = {}) {
     const cache = context.slotEvidenceCache;
     const key = slotEvidenceCacheKey(slot);
     if (cache?.has(key)) return cache.get(key);
 
-    const rows = context.evidenceRows || [];
-    const exactRows = comparableRows(rows, slot, { exactWeekday: true });
-    const broadRows = comparableRows(rows, slot, { exactWeekday: false });
+    const targetDate = parseDate(slot.date);
+    const targetWeekday = targetDate?.getDay();
+    const targetPart = slot.weekpart || (targetWeekday === 6 ? 'Saturday' : targetWeekday === 0 ? 'Sunday' : 'Weekday');
+    const targetDaypart = daypartForMinutes(slot.startMinutes);
+    const indexed = context.slotEvidenceIndex;
+
+    let exactRows;
+    let broadRows;
+    let exactMeta;
+    let broadMeta;
+    if (indexed && Number.isFinite(targetWeekday)) {
+      const matchesWindow = (meta) => Math.abs(meta.start - slot.startMinutes) <= 90 || meta.daypart === targetDaypart;
+      exactMeta = (indexed.byWeekday.get(targetWeekday) || []).filter(matchesWindow);
+      broadMeta = (indexed.byWeekpart.get(targetPart) || []).filter(matchesWindow);
+      exactRows = exactMeta.map((meta) => meta.row);
+      broadRows = broadMeta.map((meta) => meta.row);
+    } else {
+      const rows = context.evidenceRows || [];
+      exactRows = comparableRows(rows, slot, { exactWeekday: true });
+      broadRows = comparableRows(rows, slot, { exactWeekday: false });
+      exactMeta = exactRows.map((row) => ({ row, topicKey: lookupKey(rowTopic(row)) }));
+      broadMeta = broadRows.map((row) => ({ row, topicKey: lookupKey(rowTopic(row)) }));
+    }
+
     const exactByTopic = new Map();
     const broadByTopic = new Map();
-    const add = (map, row) => {
-      const topicKey = lookupKey(rowTopic(row));
-      if (!map.has(topicKey)) map.set(topicKey, []);
-      map.get(topicKey).push(row);
+    const add = (map, meta) => {
+      if (!map.has(meta.topicKey)) map.set(meta.topicKey, []);
+      map.get(meta.topicKey).push(meta.row);
     };
-    exactRows.forEach((row) => add(exactByTopic, row));
-    broadRows.forEach((row) => add(broadByTopic, row));
+    exactMeta.forEach((meta) => add(exactByTopic, meta));
+    broadMeta.forEach((meta) => add(broadByTopic, meta));
 
     const value = {
       exactRows,
@@ -975,6 +1020,7 @@ return result;}
       overrideByProgramId,
       baselineRate,
       programRowIndex: buildProgramRowIndex(historicalRows),
+      slotEvidenceIndex: buildSlotEvidenceIndex(historicalRows),
       programRowsCache: new Map(),
       programEvidenceCache: new Map(),
       slotEvidenceCache: new Map(),
