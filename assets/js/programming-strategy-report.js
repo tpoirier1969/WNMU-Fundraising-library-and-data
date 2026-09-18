@@ -118,11 +118,11 @@ function topicComparisonSection(strategy){
   const rows=strategy.topicComparison||[];
   if(!rows.length)return'<section class="sheet-section"><h2>Topic performance in selected season</h2><p>No eligible topic data is available.</p></section>';
   const season=rows[0]?.season||seasonForDate(strategy.schedule?.startDate)||'selected';
-  const documentarySubtopics=(items=[])=>{
+  const subtopicBreakdown=(topic,items=[])=>{
     if(!items.length)return'';
-    return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">Documentary subtopics</div>${items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg $${Math.round(item.averageRate)}/pledge hr · ${item.fundraiserSamples} fundraiser${item.fundraiserSamples===1?'':'s'}`:'No seasonal performance history'}</span></div>`).join('')}</div>`;
+    return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg ${Math.round(item.averageRate)}/pledge hr · ${item.fundraiserSamples} fundraiser${item.fundraiserSamples===1?'':'s'}`:'No seasonal performance history'}</span></div>`).join('')}</div>`;
   };
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Ranked by fundraiser-balanced Avg $ / Pledge Hour for this season.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${x.fundraiserSamples?`${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.historyRows} airing${x.historyRows===1?'':'s'}`:'No rate-valid fundraiser sample yet'}</span></div>${documentarySubtopics(x.documentarySubtopics||[])}</div>`).join('')}</div></section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Only topics with at least one title eligible for this fundraiser are shown. Ranked by fundraiser-balanced Avg $ / Pledge Hour for this season.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${x.fundraiserSamples?`${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.historyRows} airing${x.historyRows===1?'':'s'}`:'No rate-valid fundraiser sample yet'}</span></div>${subtopicBreakdown(x.topic,x.subtopicDetails||[])}</div>`).join('')}</div></section>`;
 }
 
 function dayTone(outlook=''){
@@ -190,7 +190,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.179');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.180');
     }catch(error){
       reject(error);
       return;
