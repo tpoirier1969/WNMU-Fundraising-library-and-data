@@ -291,7 +291,7 @@
     if (sourceName) return `source-name:${sourceName}|range:${range}`;
     if (sourceKey) return `source-key:${sourceKey}|range:${range}`;
     if (batch) return `batch:${batch}|range:${range}`;
-    return `range:${range}`;
+    return `row:${text(row?.row_hash || row?.id || importedAiringTimestamp(row))}`;
   }
 
   function aggregateImportedSnapshot(entries = []) {
