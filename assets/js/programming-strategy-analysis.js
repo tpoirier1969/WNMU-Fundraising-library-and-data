@@ -121,12 +121,12 @@
   function seasonForDate(value) {
     const date = parseDate(value);
     if (!date) return 'Special';
-    const month = date.getMonth();
-    if (month === 0 || month >= 9) return 'December';
-    if (month <= 3) return 'March';
-    if (month <= 5) return 'June';
-    if (month <= 8) return 'August';
-    return 'December';
+    const month = date.getMonth() + 1;
+    if (month === 2 || month === 3) return 'March';
+    if (month === 5 || month === 6) return 'June';
+    if (month === 8 || month === 9) return 'August';
+    if (month === 11 || month === 12) return 'December';
+    return 'Special';
   }
 
   function programId(program = {}) {
@@ -547,7 +547,8 @@
     const targetDate = parseDate(slot.date);
     const targetWeekday = targetDate?.getDay();
     const targetPart = slot.weekpart || (targetWeekday === 6 ? 'Saturday' : targetWeekday === 0 ? 'Sunday' : 'Weekday');
-    const targetDaypart = daypartForMinutes(slot.startMinutes);
+    const windowStart = number(slot.startMinutes, 0);
+    const windowEnd = number(slot.endMinutes, windowStart + 60);
     return (rows || []).filter((row) => {
       if (targetTopic && lookupKey(rowTopic(row)) !== targetTopic) return false;
       const start = rowStartMinutes(row);
@@ -555,7 +556,7 @@
       if (!date || !Number.isFinite(start)) return false;
       if (exactWeekday && date.getDay() !== targetWeekday) return false;
       if (!exactWeekday && rowWeekpart(row) !== targetPart) return false;
-      return Math.abs(start - slot.startMinutes) <= 90 || daypartForMinutes(start) === targetDaypart;
+      return start >= windowStart && start < windowEnd;
     });
   }
 
@@ -639,7 +640,8 @@
     const targetDate = parseDate(slot.date);
     const targetWeekday = targetDate?.getDay();
     const targetPart = slot.weekpart || (targetWeekday === 6 ? 'Saturday' : targetWeekday === 0 ? 'Sunday' : 'Weekday');
-    const targetDaypart = daypartForMinutes(slot.startMinutes);
+    const windowStart = number(slot.startMinutes, 0);
+    const windowEnd = number(slot.endMinutes, windowStart + 60);
     const indexed = context.slotEvidenceIndex;
 
     let exactRows;
@@ -647,7 +649,7 @@
     let exactMeta;
     let broadMeta;
     if (indexed && Number.isFinite(targetWeekday)) {
-      const matchesWindow = (meta) => Math.abs(meta.start - slot.startMinutes) <= 90 || meta.daypart === targetDaypart;
+      const matchesWindow = (meta) => meta.start >= windowStart && meta.start < windowEnd;
       exactMeta = (indexed.byWeekday.get(targetWeekday) || []).filter(matchesWindow);
       broadMeta = (indexed.byWeekpart.get(targetPart) || []).filter(matchesWindow);
       exactRows = exactMeta.map((meta) => meta.row);
@@ -695,9 +697,10 @@
     const targetDate = parseDate(slot.date);
     const targetWeekday = targetDate?.getDay();
     const targetPart = slot.weekpart || (targetWeekday === 6 ? 'Saturday' : targetWeekday === 0 ? 'Sunday' : 'Weekday');
-    const targetDaypart = daypartForMinutes(slot.startMinutes);
+    const windowStart = number(slot.startMinutes, 0);
+    const windowEnd = number(slot.endMinutes, windowStart + 60);
     const indexed = context.seasonSlotEvidenceIndex;
-    const matchesWindow = (meta) => Math.abs(meta.start - slot.startMinutes) <= 90 || meta.daypart === targetDaypart;
+    const matchesWindow = (meta) => meta.start >= windowStart && meta.start < windowEnd;
     let exactMeta;
     let broadMeta;
     if (indexed && Number.isFinite(targetWeekday)) {
