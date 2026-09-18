@@ -50,3 +50,6 @@
   .strategy-program-head{font-size:6.5pt}
   .strategy-window-divider{padding:3px 6px;font-size:6.8pt}
 }
+
+.strategy-new-title{display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:#e6f1e9;color:#315c3d;font-size:.62rem;font-weight:900;letter-spacing:.05em;vertical-align:1px}
+@media print{.strategy-new-title{padding:0 3px;font-size:5.8pt}}
