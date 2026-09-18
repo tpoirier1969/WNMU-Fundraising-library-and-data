@@ -509,6 +509,80 @@
     });
   }
 
+  function programEvidenceCacheKey(program = {}) {
+    const id = programId(program);
+    if (id) return `id:${id}`;
+    const nola = lookupKey(programNola(program));
+    const title = lookupKey(programTitle(program));
+    return `nola:${nola}|title:${title}`;
+  }
+
+  function cachedRowsForProgram(program = {}, context = {}) {
+    const rows = context.evidenceRows || [];
+    const cache = context.programRowsCache;
+    if (!cache) return rowsForProgram(program, rows);
+    const key = programEvidenceCacheKey(program);
+    if (!cache.has(key)) cache.set(key, rowsForProgram(program, rows));
+    return cache.get(key);
+  }
+
+  function slotEvidenceCacheKey(slot = {}) {
+    return text(slot.id || `${slot.date}|${slot.startMinutes}|${slot.endMinutes}|${slot.label}`);
+  }
+
+  function cachedSlotEvidence(slot = {}, context = {}) {
+    const rows = context.evidenceRows || [];
+    const cache = context.slotEvidenceCache;
+    const key = slotEvidenceCacheKey(slot);
+    if (cache?.has(key)) return cache.get(key);
+
+    const exactRows = comparableRows(rows, slot, { exactWeekday: true });
+    const broadRows = comparableRows(rows, slot, { exactWeekday: false });
+    const exactByTopic = new Map();
+    const broadByTopic = new Map();
+    const add = (map, row) => {
+      const topicKey = lookupKey(rowTopic(row));
+      if (!map.has(topicKey)) map.set(topicKey, []);
+      map.get(topicKey).push(row);
+    };
+    exactRows.forEach((row) => add(exactByTopic, row));
+    broadRows.forEach((row) => add(broadByTopic, row));
+
+    const value = {
+      exactRows,
+      broadRows,
+      exactByTopic,
+      broadByTopic,
+      exactSummary: rowSummary(exactRows),
+      broadSummary: rowSummary(broadRows)
+    };
+    cache?.set(key, value);
+    return value;
+  }
+
+  function cachedProgramEvidence(program = {}, context = {}) {
+    const cache = context.programEvidenceCache;
+    const key = programEvidenceCacheKey(program);
+    if (cache?.has(key)) return cache.get(key);
+
+    const schedule = context.schedule || {};
+    const titleRows = cachedRowsForProgram(program, context);
+    const override = context.overrideByProgramId?.get(programId(program)) || null;
+    const value = {
+      titleRows,
+      titleHistory: rowSummary(titleRows, program),
+      season: seasonEvidence(program, titleRows, schedule),
+      drama: dramaInfo(program, schedule),
+      override,
+      programmer: programmerEvidence(program, titleRows, override),
+      local: isLocal(program),
+      biography: isBiography(program),
+      corePbs: isCorePbs(program)
+    };
+    cache?.set(key, value);
+    return value;
+  }
+
   function rateAdjustment(rate) {
     if (!Number.isFinite(rate)) return 0;
     if (rate >= 1000) return 18;
@@ -603,14 +677,39 @@
     return median((evidenceRows || []).map((row) => rowRate(row)).filter(Number.isFinite));
   }
 
-  function scoreProgramForSlot(program = {}, slot = {}, context = {}){const schedule = context.schedule || {};if(!titleEligibleForDate(program, slot.date))return null;const rows = context.evidenceRows || [],titleRows=rowsForProgram(program, rows),titleHistory=rowSummary(titleRows, program),exactTitle=rowSummary(comparableRows(titleRows,slot,{exactWeekday:true}),program),broadTitle=rowSummary(comparableRows(titleRows,slot,{exactWeekday:false}),program),topic=programTopic(program),exactTopic=rowSummary(comparableRows(rows,slot,{topic,exactWeekday:true})),broadTopic=rowSummary(comparableRows(rows,slot,{topic,exactWeekday:false})),dayHistory=rowSummary(comparableRows(rows,slot,{exactWeekday:true})),season=seasonEvidence(program, titleRows, schedule),drama=dramaInfo(program, schedule),override=context.overrideByProgramId?.get(programId(program))||null,programmer=programmerEvidence(program, titleRows, override),baseline=Number.isFinite(context.baselineRate)?context.baselineRate:baseHistoricalRate(rows);let score=50;const reasons=[],cautions=[],adjustments=[];
+  function scoreProgramForSlot(program = {}, slot = {}, context = {}) {}, slot = {}, context = {}){const schedule = context.schedule || {};
+const programKey = programEvidenceCacheKey(program);
+const slotKey = slotEvidenceCacheKey(slot);
+const scoreKey = `${programKey}|${slotKey}`;
+if (context.scoreCache?.has(scoreKey)) return context.scoreCache.get(scoreKey);
+if (!titleEligibleForDate(program, slot.date)) {
+  context.scoreCache?.set(scoreKey, null);
+  return null;
+}
+const rows = context.evidenceRows || [];
+const cachedProgram = cachedProgramEvidence(program, context);
+const titleRows = cachedProgram.titleRows;
+const titleHistory = cachedProgram.titleHistory;
+const exactTitle = rowSummary(comparableRows(titleRows, slot, { exactWeekday: true }), program);
+const broadTitle = rowSummary(comparableRows(titleRows, slot, { exactWeekday: false }), program);
+const topic = programTopic(program);
+const slotEvidence = cachedSlotEvidence(slot, context);
+const topicKey = lookupKey(topic);
+const exactTopic = rowSummary(slotEvidence.exactByTopic.get(topicKey) || []);
+const broadTopic = rowSummary(slotEvidence.broadByTopic.get(topicKey) || []);
+const dayHistory = slotEvidence.exactSummary;
+const season = cachedProgram.season;
+const drama = cachedProgram.drama;
+const override = cachedProgram.override;
+const programmer = cachedProgram.programmer;
+const baseline = Number.isFinite(context.baselineRate) ? context.baselineRate : baseHistoricalRate(rows);let score=50;const reasons=[],cautions=[],adjustments=[];
 if(titleHistory.rows){const a=rateAdjustment(titleHistory.medianRate);score+=a;adjustments.push(['titleHistory',a]);reasons.push(`WNMU title history: ${titleHistory.rows} airing${titleHistory.rows===1?'':'s'}${Number.isFinite(titleHistory.medianRate)?`, median $${Math.round(titleHistory.medianRate)}/hr`:''}.`);}else reasons.push('No prior WNMU title airing before the evidence cutoff.');
 if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.medianRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} on this weekday/time.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none on this exact weekday/time.`);
 const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustments.push(['weekdayWindow',dayAdj]);if(dayHistory.rates.length>=2&&Number.isFinite(dayHistory.medianRate))reasons.push(`${slot.weekday} ${slot.label.toLowerCase()} history: ${dayHistory.rates.length} rows, median $${Math.round(dayHistory.medianRate)}/hr.`);if(dayAdj<=-6)cautions.push(`${slot.weekday} ${slot.label.toLowerCase()} is historically weaker than WNMU's overall pledge baseline.`);
 let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);reasons.push(`${topic} has ${exactTopic.rates.length} rate-valid airing${exactTopic.rates.length===1?'':'s'} on this weekday/time${Number.isFinite(exactTopic.medianRate)?`, median $${Math.round(exactTopic.medianRate)}/hr`:''}.`);}else if(!slot.experimental){topicAdj=exactTopic.rates.length===1?-4:-9;cautions.push(exactTopic.rates.length?`Only one ${topic} result exists on this weekday/time.`:`No WNMU ${topic} evidence exists on this weekday/time; treat this as exploratory.`);if(broadTopic.rates.length)reasons.push(`${topic} has ${broadTopic.rates.length} comparable results elsewhere, but not enough here.`);}score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
 if(titleHistory.latest){const d=daysBetween(titleHistory.latest,scheduleStart(schedule));let a=0;if(d>=730)a=8;else if(d>=365)a=6;else if(d>=180)a=2;else if(d<90)a=-10;else if(d<180)a=-5;score+=a;adjustments.push(['rest',a]);if(a>0)reasons.push(`Rested ${d} days since the latest known airing.`);if(a<0)cautions.push(`Short rest: ${d} days since the latest known airing.`);}
 let fatigue=0;if(titleHistory.rows>=12)fatigue=-8;else if(titleHistory.rows>=8)fatigue=-5;else if(titleHistory.rows>=5)fatigue=-2;else if(titleHistory.rows>0&&titleHistory.rows<=2)fatigue=3;score+=fatigue;adjustments.push(['lifetimeExposure',fatigue]);if(titleHistory.rows>=8)cautions.push(`Heavy lifetime exposure: ${titleHistory.rows} known airings.`);
-score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=isLocal(program);if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push('Current-cycle Drama Doc proxy based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push('Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc cycle is unknown because rights-start timing is unavailable.');if(isBiography(program)){score-=4;adjustments.push(['biography',-4]);}if(isCorePbs(program)){score+=4;adjustments.push(['corePbs',4]);}
+score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push('Current-cycle Drama Doc proxy based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push('Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc cycle is unknown because rights-start timing is unavailable.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
 score+=programmer.adjustment;adjustments.push(['programmer',programmer.adjustment]);if(programmer.rating){reasons.push(`Programmer rating: ${programmer.label} (${programmer.adjustment>=0?'+':''}${programmer.adjustment}).`);if(programmer.rating==='low_confidence')cautions.push('Programmer rating is Low confidence; cap recommendation posture accordingly.');if(programmer.rating==='dont_air')cautions.push("Programmer rating says Don't air; strong negative input, not a rights exclusion.");}
 const newTitle=titleHistory.rows===0;
 const reviewedNew=newTitle&&['neutral','viable','promising','must_air'].includes(programmer.rating);
@@ -625,7 +724,9 @@ if(!slot.experimental&&exactTopic.rates.length===0)score=Math.min(score,64);else
 let confidence='Low';if(exactTopic.rates.length>=4&&titleHistory.fundraisers>=3&&titleHistory.rates.length>=5)confidence='High';else if(exactTopic.rates.length>=2||exactTitle.rates.length>=2)confidence='Medium';if(programmer.activeProtection&&confidence==='Low')confidence='Editorial';let fit='Situational';if(score>=78)fit='Strong fit';else if(score>=65)fit='Good candidate';else if(score>=56)fit='Supported option';else if(score<40)fit='Rest / caution';else if(score<48)fit='Mixed evidence';if(programmer.rating==='low_confidence'&&score>=48)fit='Programmer caution';if(programmer.rating==='dont_air')fit="Don't air / caution";if (season.holidayOutOfSeason && programmer.rating !== 'must_air') {
   fit = season.holidayCategory === 'Holiday - Christmas' ? 'Save for Christmas season' : 'Out of seasonal window';
 }
-return{program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};}
+const result={program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};
+context.scoreCache?.set(scoreKey,result);
+return result;}
   function rankProgramsForSlot(library = [], slot = {}, context = {}) {
     return (library || [])
       .map((program) => scoreProgramForSlot(program, slot, context))
@@ -843,12 +944,21 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
     const historicalRows = filterEvidenceAirings(evidenceRows, cutoff);
     const overrideByProgramId = overrideIndex(overrides);
     const baselineRate = baseHistoricalRate(historicalRows);
-    const context = { schedule, evidenceRows: historicalRows, overrideByProgramId, baselineRate };
+    const context = {
+      schedule,
+      evidenceRows: historicalRows,
+      overrideByProgramId,
+      baselineRate,
+      programRowsCache: new Map(),
+      programEvidenceCache: new Map(),
+      slotEvidenceCache: new Map(),
+      scoreCache: new Map()
+    };
     const windows = planningWindows(schedule).map((slot) => {
       if (slot.blocked) return { ...slot, recommendations: [], strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
-      const ranked = rankProgramsForSlot(library, slot, context);
+      const ranked = rankProgramsForSlot(viable, slot, context);
       const topics = topicChoicesForSlot(ranked);
-      const exactRows = comparableRows(historicalRows, slot, { exactWeekday: true });
+      const exactRows = cachedSlotEvidence(slot, context).exactRows;
       return {
         ...slot,
         recommendations: selectRecommendationsForSlot(ranked, 4),
@@ -862,7 +972,7 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
     const viable = (library || []).filter((program) => eligibleSomewhereInFundraiser(program, schedule));
     const rights = rightsConstraints(library, schedule);
     const seasonal = viable.map((program) => {
-      const season = seasonEvidence(program, rowsForProgram(program, historicalRows), schedule);
+      const season = cachedProgramEvidence(program, context).season;
       return { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), season };
     }).filter((item) => item.season.adjustment > 0)
       .sort((a, b) => b.season.adjustment - a.season.adjustment || a.title.localeCompare(b.title)).slice(0, 10);
@@ -871,11 +981,12 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
       .sort((a, b) => b.score - a.score)[0] || null)
       .filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
     const avoid = viable.map((program) => {
-      const rows = rowsForProgram(program, historicalRows);
-      const history = rowSummary(rows, program);
+      const cached = cachedProgramEvidence(program, context);
+      const rows = cached.titleRows;
+      const history = cached.titleHistory;
       const rating = normalizeRating(overrideByProgramId.get(programId(program))?.rating);
-      const drama = dramaInfo(program, schedule);
-      const season = seasonEvidence(program, rows, schedule);
+      const drama = cached.drama;
+      const season = cached.season;
       const rest = history.latest ? daysBetween(history.latest, scheduleStart(schedule)) : null;
       const reasons = [];
       if (rating === 'dont_air') reasons.push("Programmer rating: Don't air");
