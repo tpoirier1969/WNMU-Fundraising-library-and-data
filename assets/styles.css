@@ -6213,3 +6213,17 @@ input.goal-difference-negative {
   font-weight:800 !important;
   opacity:1 !important;
 }
+
+
+/* v0.22.180 program-list topic + subtopic */
+.programs-table td.topic-color-cell .topic-primary-label{
+  font-weight:700;
+  line-height:1.2;
+}
+.programs-table td.topic-color-cell .topic-secondary-label{
+  margin-top:3px;
+  font-size:.74rem;
+  line-height:1.2;
+  font-weight:600;
+  opacity:.78;
+}
