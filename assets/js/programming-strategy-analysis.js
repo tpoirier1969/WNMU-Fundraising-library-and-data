@@ -512,17 +512,14 @@
   function programEvidenceCacheKey(program = {}) {
     const id = programId(program);
     if (id) return `id:${id}`;
-    const nola = lookupKey(programNola(program));
-    const title = lookupKey(programTitle(program));
-    return `nola:${nola}|title:${title}`;
+    return `nola:${lookupKey(programNola(program))}|title:${lookupKey(programTitle(program))}`;
   }
 
   function cachedRowsForProgram(program = {}, context = {}) {
-    const rows = context.evidenceRows || [];
     const cache = context.programRowsCache;
-    if (!cache) return rowsForProgram(program, rows);
+    if (!cache) return rowsForProgram(program, context.evidenceRows || []);
     const key = programEvidenceCacheKey(program);
-    if (!cache.has(key)) cache.set(key, rowsForProgram(program, rows));
+    if (!cache.has(key)) cache.set(key, rowsForProgram(program, context.evidenceRows || []));
     return cache.get(key);
   }
 
@@ -531,11 +528,11 @@
   }
 
   function cachedSlotEvidence(slot = {}, context = {}) {
-    const rows = context.evidenceRows || [];
     const cache = context.slotEvidenceCache;
     const key = slotEvidenceCacheKey(slot);
     if (cache?.has(key)) return cache.get(key);
 
+    const rows = context.evidenceRows || [];
     const exactRows = comparableRows(rows, slot, { exactWeekday: true });
     const broadRows = comparableRows(rows, slot, { exactWeekday: false });
     const exactByTopic = new Map();
@@ -677,32 +674,30 @@
     return median((evidenceRows || []).map((row) => rowRate(row)).filter(Number.isFinite));
   }
 
-  function scoreProgramForSlot(program = {}, slot = {}, context = {}) {}, slot = {}, context = {}){const schedule = context.schedule || {};
+  function scoreProgramForSlot(program = {}, slot = {}, context = {}){
+const schedule = context.schedule || {};
 const programKey = programEvidenceCacheKey(program);
 const slotKey = slotEvidenceCacheKey(slot);
 const scoreKey = `${programKey}|${slotKey}`;
-if (context.scoreCache?.has(scoreKey)) return context.scoreCache.get(scoreKey);
-if (!titleEligibleForDate(program, slot.date)) {
-  context.scoreCache?.set(scoreKey, null);
-  return null;
-}
+if(context.scoreCache?.has(scoreKey))return context.scoreCache.get(scoreKey);
+if(!titleEligibleForDate(program, slot.date)){context.scoreCache?.set(scoreKey,null);return null;}
 const rows = context.evidenceRows || [];
 const cachedProgram = cachedProgramEvidence(program, context);
 const titleRows = cachedProgram.titleRows;
 const titleHistory = cachedProgram.titleHistory;
-const exactTitle = rowSummary(comparableRows(titleRows, slot, { exactWeekday: true }), program);
-const broadTitle = rowSummary(comparableRows(titleRows, slot, { exactWeekday: false }), program);
+const exactTitle = rowSummary(comparableRows(titleRows,slot,{exactWeekday:true}),program);
+const broadTitle = rowSummary(comparableRows(titleRows,slot,{exactWeekday:false}),program);
 const topic = programTopic(program);
 const slotEvidence = cachedSlotEvidence(slot, context);
 const topicKey = lookupKey(topic);
-const exactTopic = rowSummary(slotEvidence.exactByTopic.get(topicKey) || []);
-const broadTopic = rowSummary(slotEvidence.broadByTopic.get(topicKey) || []);
+const exactTopic = rowSummary(slotEvidence.exactByTopic.get(topicKey)||[]);
+const broadTopic = rowSummary(slotEvidence.broadByTopic.get(topicKey)||[]);
 const dayHistory = slotEvidence.exactSummary;
 const season = cachedProgram.season;
 const drama = cachedProgram.drama;
 const override = cachedProgram.override;
 const programmer = cachedProgram.programmer;
-const baseline = Number.isFinite(context.baselineRate) ? context.baselineRate : baseHistoricalRate(rows);let score=50;const reasons=[],cautions=[],adjustments=[];
+const baseline = Number.isFinite(context.baselineRate)?context.baselineRate:baseHistoricalRate(rows);let score=50;const reasons=[],cautions=[],adjustments=[];
 if(titleHistory.rows){const a=rateAdjustment(titleHistory.medianRate);score+=a;adjustments.push(['titleHistory',a]);reasons.push(`WNMU title history: ${titleHistory.rows} airing${titleHistory.rows===1?'':'s'}${Number.isFinite(titleHistory.medianRate)?`, median $${Math.round(titleHistory.medianRate)}/hr`:''}.`);}else reasons.push('No prior WNMU title airing before the evidence cutoff.');
 if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.medianRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} on this weekday/time.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none on this exact weekday/time.`);
 const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustments.push(['weekdayWindow',dayAdj]);if(dayHistory.rates.length>=2&&Number.isFinite(dayHistory.medianRate))reasons.push(`${slot.weekday} ${slot.label.toLowerCase()} history: ${dayHistory.rates.length} rows, median $${Math.round(dayHistory.medianRate)}/hr.`);if(dayAdj<=-6)cautions.push(`${slot.weekday} ${slot.label.toLowerCase()} is historically weaker than WNMU's overall pledge baseline.`);
@@ -944,6 +939,7 @@ return result;}
     const historicalRows = filterEvidenceAirings(evidenceRows, cutoff);
     const overrideByProgramId = overrideIndex(overrides);
     const baselineRate = baseHistoricalRate(historicalRows);
+    const viable = (library || []).filter((program) => eligibleSomewhereInFundraiser(program, schedule));
     const context = {
       schedule,
       evidenceRows: historicalRows,
@@ -969,7 +965,6 @@ return result;}
         experimentalEvidence: slot.experimental ? experimentalEvidence(slot, historicalRows, baselineRate) : null
       };
     });
-    const viable = (library || []).filter((program) => eligibleSomewhereInFundraiser(program, schedule));
     const rights = rightsConstraints(library, schedule);
     const seasonal = viable.map((program) => {
       const season = cachedProgramEvidence(program, context).season;
