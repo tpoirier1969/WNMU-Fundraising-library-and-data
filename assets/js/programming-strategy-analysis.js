@@ -1144,62 +1144,73 @@ return result;}
       if (eligibleSomewhereInFundraiser(program, context.schedule || {})) group.eligiblePrograms.push(program);
     }
 
-    const documentaryKey = lookupKey('Documentary');
+    const detailedTopicKeys = new Set([
+      lookupKey('Documentary'),
+      lookupKey('Music'),
+      lookupKey('Holiday - Christmas')
+    ]);
 
-    return [...groups.entries()].map(([topicKey, group]) => {
-      let history = seasonTopicSummaryCache.get(topicKey);
-      const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
-      if (!history) {
-        history = rowSummary(topicRows);
-        seasonTopicSummaryCache.set(topicKey, history);
-      }
-
-      let documentarySubtopics = [];
-      if (topicKey === documentaryKey) {
-        const subgroups = new Map();
-        for (const program of group.programs) {
-          const label = programSecondary(program) || 'Unassigned';
-          const key = lookupKey(label) || 'unassigned';
-          if (!subgroups.has(key)) subgroups.set(key, { label, programs: [], eligiblePrograms: [] });
-          const sub = subgroups.get(key);
-          sub.programs.push(program);
-          if (eligibleSomewhereInFundraiser(program, context.schedule || {})) sub.eligiblePrograms.push(program);
+    return [...groups.entries()]
+      .filter(([, group]) => group.eligiblePrograms.length > 0)
+      .map(([topicKey, group]) => {
+        let history = seasonTopicSummaryCache.get(topicKey);
+        const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
+        if (!history) {
+          history = rowSummary(topicRows);
+          seasonTopicSummaryCache.set(topicKey, history);
         }
-        documentarySubtopics = [...subgroups.entries()].map(([subKey, sub]) => {
-          const rows = topicRows.filter((row) => {
-            const secondary = rowSecondary(row) || 'Unassigned';
-            return (lookupKey(secondary) || 'unassigned') === subKey;
-          });
-          const summary = rowSummary(rows);
-          return {
-            label: sub.label,
-            programCount: sub.programs.length,
-            eligibleProgramCount: sub.eligiblePrograms.length,
-            fundraiserSamples: summary.fundraisers,
-            averageRate: summary.averageRate
-          };
-        }).sort((a, b) => {
-          const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
-          const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
-          return br - ar || b.programCount - a.programCount || a.label.localeCompare(b.label);
-        });
-      }
 
-      return {
-        topic: group.topic,
-        season: targetSeason,
-        historyRows: history.rates.length,
-        fundraiserSamples: history.fundraisers,
-        averageRate: history.averageRate,
-        programCount: group.programs.length,
-        eligibleProgramCount: group.eligiblePrograms.length,
-        documentarySubtopics
-      };
-    }).sort((a, b) => {
-      const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
-      const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
-      return br - ar || b.fundraiserSamples - a.fundraiserSamples || b.historyRows - a.historyRows || a.topic.localeCompare(b.topic);
-    });
+        let subtopicDetails = [];
+        if (detailedTopicKeys.has(topicKey)) {
+          const subgroups = new Map();
+          for (const program of group.programs) {
+            const label = programSecondary(program) || 'Unassigned';
+            const key = lookupKey(label) || 'unassigned';
+            if (!subgroups.has(key)) subgroups.set(key, { label, programs: [], eligiblePrograms: [] });
+            const sub = subgroups.get(key);
+            sub.programs.push(program);
+            if (eligibleSomewhereInFundraiser(program, context.schedule || {})) sub.eligiblePrograms.push(program);
+          }
+
+          subtopicDetails = [...subgroups.entries()]
+            .filter(([, sub]) => sub.eligiblePrograms.length > 0)
+            .map(([subKey, sub]) => {
+              const rows = topicRows.filter((row) => {
+                const secondary = rowSecondary(row) || 'Unassigned';
+                return (lookupKey(secondary) || 'unassigned') === subKey;
+              });
+              const summary = rowSummary(rows);
+              return {
+                label: sub.label,
+                programCount: sub.programs.length,
+                eligibleProgramCount: sub.eligiblePrograms.length,
+                fundraiserSamples: summary.fundraisers,
+                averageRate: summary.averageRate
+              };
+            })
+            .sort((a, b) => {
+              const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
+              const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
+              return br - ar || b.eligibleProgramCount - a.eligibleProgramCount || b.programCount - a.programCount || a.label.localeCompare(b.label);
+            });
+        }
+
+        return {
+          topic: group.topic,
+          season: targetSeason,
+          historyRows: history.rates.length,
+          fundraiserSamples: history.fundraisers,
+          averageRate: history.averageRate,
+          programCount: group.programs.length,
+          eligibleProgramCount: group.eligiblePrograms.length,
+          subtopicDetails
+        };
+      })
+      .sort((a, b) => {
+        const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
+        const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
+        return br - ar || b.fundraiserSamples - a.fundraiserSamples || b.historyRows - a.historyRows || a.topic.localeCompare(b.topic);
+      });
   }
 
   function experimentalEvidence(slot = {}, evidenceRows = [], baselineRate = null, precomputed = null, allFundraisersValue = null) {
