@@ -464,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.184'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.185'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -472,10 +472,12 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.184', 'programming-strategy-analysis\.js\?v=0\.22\.184'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.185', 'programming-strategy-analysis\.js\?v=0\.22\.185'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
+  assert.match(workerUi, /peerEvidenceForWindow/);
+  assert.match(workerUi, /peerObservations/);
 
   assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
@@ -491,6 +493,10 @@ test('Report 5 presentation removes visible median language and evidence-through
   assert.match(reportUi, /All-season depth/);
   assert.match(reportUi, /subtopics/);
   assert.match(reportUi, /Day\/time performance/);
+  assert.match(reportUi, /Why explore this\?/);
+  assert.match(reportUi, /pledge_peer_evidence_observations/);
+  assert.doesNotMatch(reportUi, /Structured peer-station results are not yet loaded/);
+  assert.doesNotMatch(reportUi, /strategy\.peerEvidence\.note/);
 });
 
 test('main Program Library list shows secondary topic under primary topic', () => {
@@ -731,6 +737,31 @@ test('Saturday 3–5 PM is reported once as a broader-test window when history i
         })
       ],
       overrides: [],
+      peerObservations: [
+        {
+          station_code: 'PBSUTAH',
+          station_name: 'PBS Utah',
+          season: 'March',
+          evidence_scope: 'title',
+          day_of_week: 'Saturday',
+          daypart: 'Afternoon',
+          assessment_signal: 2,
+          evidence_strength: 5,
+          summary: 'A Saturday-afternoon Peter, Paul and Mary airing doubled its goal.'
+        },
+        {
+          station_code: 'ARPBS',
+          station_name: 'Arkansas PBS',
+          season: 'March',
+          evidence_scope: 'timeslot',
+          day_of_week: 'Saturday',
+          start_time_minutes: 12 * 60,
+          end_time_minutes: 22 * 60 + 30,
+          assessment_signal: 1,
+          evidence_strength: 4,
+          summary: 'Steady Saturday pledge results were reported from noon through 10:30 PM.'
+        }
+      ],
       now: '2026-09-18T12:00:00Z'
     }
   });
@@ -742,6 +773,9 @@ test('Saturday 3–5 PM is reported once as a broader-test window when history i
   assert.equal(saturday[0].kind, 'narrow-test');
   assert.equal(saturday[0].dominantTopic, 'Michigan');
   assert.match(saturday[0].rationale, /not a broad test of normal pledge programming/i);
+  assert.ok(saturday[0].evidenceItems.some((item) => item.sourceLabel === 'WNMU history'));
+  assert.ok(saturday[0].evidenceItems.some((item) => item.sourceLabel === 'PBS Utah' && /doubled its goal/i.test(item.text)));
+  assert.ok(saturday[0].evidenceItems.some((item) => item.sourceLabel === 'Arkansas PBS'));
 });
 
 test('worker aggregates separate pledge breaks from the same airing instead of dropping one', () => {

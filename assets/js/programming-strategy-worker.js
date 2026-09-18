@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.184', 'programming-strategy-analysis.js?v=0.22.184');
+importScripts('one-sheet-analysis.js?v=0.22.185', 'programming-strategy-analysis.js?v=0.22.185');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -331,7 +331,76 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
   };
 }
 
-function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
+function daypartRange(label = '') {
+  const key = text(label).toLowerCase();
+  if (key.includes('morning')) return [6 * 60, 12 * 60];
+  if (key.includes('afternoon')) return [12 * 60, 17 * 60];
+  if (key.includes('prime')) return [19 * 60, 22 * 60 + 30];
+  if (key.includes('evening') || key.includes('night')) return [17 * 60, 23 * 60 + 30];
+  return null;
+}
+
+function windowsOverlap(aStart, aEnd, bStart, bEnd) {
+  return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
+}
+
+function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', startMinutes = 0, endMinutes = 0) {
+  const targetSeason = S.seasonForDate(schedule.startDate);
+  const matched = [];
+
+  for (const item of observations || []) {
+    if (text(item.day_of_week).toLowerCase() !== text(weekday).toLowerCase()) continue;
+
+    const itemStart = Number(item.start_time_minutes);
+    const itemEnd = Number(item.end_time_minutes);
+    const range = daypartRange(item.daypart);
+    let timeMatch = false;
+    let timeSpecificity = 0;
+
+    if (Number.isFinite(itemStart)) {
+      const resolvedEnd = Number.isFinite(itemEnd) && itemEnd > itemStart ? itemEnd : itemStart + 60;
+      timeMatch = windowsOverlap(startMinutes, endMinutes, itemStart, resolvedEnd);
+      timeSpecificity = 2;
+    } else if (range) {
+      timeMatch = windowsOverlap(startMinutes, endMinutes, range[0], range[1]);
+      timeSpecificity = 1;
+    } else {
+      timeMatch = true;
+      timeSpecificity = 0;
+    }
+    if (!timeMatch) continue;
+
+    const signal = Number(item.assessment_signal);
+    const strength = Number(item.evidence_strength || 0);
+    const season = text(item.season);
+    const sameSeason = season && season === targetSeason;
+    const seasonNeutral = !season;
+    const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0) + timeSpecificity + Math.min(5, strength) / 10;
+
+    matched.push({
+      signal: Number.isFinite(signal) ? signal : 0,
+      strength,
+      relevance,
+      sourceLabel: text(item.station_name || item.station_code || 'Other station'),
+      text: text(item.summary || item.assessment_raw || ''),
+      tone: signal > 0 ? 'positive' : signal < 0 ? 'negative' : 'neutral'
+    });
+  }
+
+  const positive = matched.filter((item) => item.signal > 0)
+    .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength);
+  const neutral = matched.filter((item) => item.signal === 0)
+    .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength);
+  const negative = matched.filter((item) => item.signal < 0)
+    .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength);
+
+  const chosen = [...positive.slice(0, 3)];
+  if (chosen.length < 3) chosen.push(...neutral.slice(0, 3 - chosen.length));
+  if (negative.length) chosen.push(negative[0]);
+  return chosen.slice(0, 4);
+}
+
+function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerObservations = []) {
   const patterns = hourly || buildHourlyPatterns(schedule, rows);
   const planningPool = seasonPlanningPool(schedule, rows);
   const baseline = summarizeTimeslotRows(planningPool.rows).averageRate;
@@ -444,11 +513,22 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
     || a.startMinutes - b.startMinutes
   );
 
+  const rowsWithEvidence = opportunities.slice(0, 12).map((item) => ({
+    ...item,
+    evidenceItems: [
+      {
+        sourceLabel: 'WNMU history',
+        text: item.rationale,
+        tone: item.kind === 'underused-positive' ? 'positive' : 'neutral'
+      },
+      ...peerEvidenceForWindow(schedule, peerObservations, item.weekday, item.startMinutes, item.endMinutes)
+    ]
+  }));
+
   return {
     season: patterns.season,
     fallback: patterns.fallback,
-    peerEvidenceAvailable: false,
-    rows: opportunities.slice(0, 12)
+    rows: rowsWithEvidence
   };
 }
 
@@ -527,7 +607,6 @@ function compactStrategy(strategy = {}) {
       reasons: item.reasons
     })),
     rights: strategy.rights,
-    peerEvidence: strategy.peerEvidence,
     limitations: strategy.limitations
   };
 }
@@ -545,6 +624,7 @@ self.onmessage = (event) => {
     const rawAirings = Array.isArray(payload.airings) ? payload.airings : [];
     const overrides = Array.isArray(payload.overrides) ? payload.overrides : [];
     const scheduleRows = Array.isArray(payload.scheduleRows) ? payload.scheduleRows : [];
+    const peerObservations = Array.isArray(payload.peerObservations) ? payload.peerObservations : [];
     const schedule = payload.schedule || {};
     const now = payload.now ? new Date(payload.now) : new Date();
 
@@ -578,7 +658,7 @@ self.onmessage = (event) => {
     phase = nowMs();
     const dayOutlook = buildDayOutlook(schedule, analyses);
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
-    const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns);
+    const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns, peerObservations);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 
     phase = nowMs();

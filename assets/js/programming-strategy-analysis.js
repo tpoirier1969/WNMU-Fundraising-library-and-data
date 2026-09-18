@@ -1505,10 +1505,6 @@ return result;}
       local,
       avoid,
       rights,
-      peerEvidence: {
-        available: false,
-        note: 'Peer-station evidence is not yet structured in the report dataset and is not used in these recommendations.'
-      },
       limitations: [
         'Report 5 uses the same schedule-reconciled historical program evidence as Historical Analytics: superseded imports, unmatched program results, out-of-period rows, and rows without a reliable duration do not enter performance rates.',
         'For a future fundraiser, evidence is capped at today. Only completed historical fundraiser schedules are used by the report worker.',
@@ -1520,7 +1516,6 @@ return result;}
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
-        'Peer-station evidence is used only when structured peer results are available; none are currently loaded into this report dataset.',
         'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
         'Islamic-calendar holiday windows are planning approximations and may differ by local moon sighting.',
         'Friday 8–9 PM is protected regular programming and excluded from pledge recommendations.'
