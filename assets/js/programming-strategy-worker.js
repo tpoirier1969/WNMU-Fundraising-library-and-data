@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('programming-strategy-analysis.js?v=0.22.179');
+importScripts('programming-strategy-analysis.js?v=0.22.180');
 
 const S = self.WNMUProgrammingStrategyAnalysis;
 if (!S) throw new Error('Programming strategy analysis module did not load in worker.');

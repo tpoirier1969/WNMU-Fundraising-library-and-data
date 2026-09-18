@@ -1132,7 +1132,10 @@ return result;}
     const groups = new Map();
     const targetSeason = seasonForDate(scheduleStart(context.schedule || {}));
     const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === targetSeason);
-    const seasonTopicSummaryCache = context.seasonTopicSummaryCache || new Map();
+    const reportableSeasonRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) !== 'uncategorized');
+    const seasonBaseline = rowSummary(reportableSeasonRows).averageRate;
+    const fallbackBaseline = Number.isFinite(context.baselineRate) ? context.baselineRate : seasonBaseline;
+    const rankingBaseline = Number.isFinite(seasonBaseline) && seasonBaseline > 0 ? seasonBaseline : fallbackBaseline;
 
     for (const program of (library || [])) {
       const topic = programTopic(program);
@@ -1144,62 +1147,150 @@ return result;}
       if (eligibleSomewhereInFundraiser(program, context.schedule || {})) group.eligiblePrograms.push(program);
     }
 
-    const documentaryKey = lookupKey('Documentary');
+    const detailedTopicKeys = new Set([
+      lookupKey('Documentary'),
+      lookupKey('Music'),
+      lookupKey('Holiday - Christmas')
+    ]);
 
-    return [...groups.entries()].map(([topicKey, group]) => {
-      let history = seasonTopicSummaryCache.get(topicKey);
-      const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
-      if (!history) {
-        history = rowSummary(topicRows);
-        seasonTopicSummaryCache.set(topicKey, history);
-      }
+    const titleKeyForRow = (row) => {
+      const id = rowProgramId(row);
+      if (id) return `id:${id}`;
+      const nola = lookupKey(rowNola(row));
+      if (nola) return `nola:${nola}`;
+      return `title:${lookupKey(rowTitle(row))}`;
+    };
 
-      let documentarySubtopics = [];
-      if (topicKey === documentaryKey) {
-        const subgroups = new Map();
-        for (const program of group.programs) {
-          const label = programSecondary(program) || 'Unassigned';
-          const key = lookupKey(label) || 'unassigned';
-          if (!subgroups.has(key)) subgroups.set(key, { label, programs: [], eligiblePrograms: [] });
-          const sub = subgroups.get(key);
-          sub.programs.push(program);
-          if (eligibleSomewhereInFundraiser(program, context.schedule || {})) sub.eligiblePrograms.push(program);
+    const evidenceMetrics = (rows, summary, baseline = rankingBaseline) => {
+      const testedTitles = new Set();
+      const titleFundraiserGroups = new Map();
+
+      for (const row of (rows || [])) {
+        const titleKey = titleKeyForRow(row);
+        if (titleKey && titleKey !== 'title:') testedTitles.add(titleKey);
+        const fundraiser = fundraiserKey(row);
+        if (!titleKey || !fundraiser) continue;
+        const key = `${titleKey}|${fundraiser}`;
+        if (!titleFundraiserGroups.has(key)) titleFundraiserGroups.set(key, { dollars: 0, minutes: 0 });
+        const group = titleFundraiserGroups.get(key);
+        const minutes = rowMinutes(row);
+        if (minutes > 0) {
+          group.dollars += rowDollars(row);
+          group.minutes += minutes;
         }
-        documentarySubtopics = [...subgroups.entries()].map(([subKey, sub]) => {
-          const rows = topicRows.filter((row) => {
-            const secondary = rowSecondary(row) || 'Unassigned';
-            return (lookupKey(secondary) || 'unassigned') === subKey;
-          });
-          const summary = rowSummary(rows);
-          return {
-            label: sub.label,
-            programCount: sub.programs.length,
-            eligibleProgramCount: sub.eligiblePrograms.length,
-            fundraiserSamples: summary.fundraisers,
-            averageRate: summary.averageRate
-          };
-        }).sort((a, b) => {
-          const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
-          const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
-          return br - ar || b.programCount - a.programCount || a.label.localeCompare(b.label);
-        });
       }
+
+      const tests = [...titleFundraiserGroups.values()]
+        .filter((group) => group.minutes > 0)
+        .map((group) => group.dollars * 60 / group.minutes)
+        .filter(Number.isFinite);
+      const positiveTests = tests.filter((rate) => rate > 0).length;
+      const successRate = tests.length ? positiveTests / tests.length : 0;
+      const testedTitleCount = testedTitles.size;
+      const fundraiserSamples = Number(summary?.fundraisers || 0);
+
+      // The rank should answer "how convincing is this topic's success?" rather
+      // than letting a couple of spectacular titles outrank broad, repeatable evidence.
+      const titleDepth = Math.min(1, testedTitleCount / 10);
+      const fundraiserDepth = Math.min(1, fundraiserSamples / 6);
+      const evidenceReliability = titleDepth * fundraiserDepth;
+      const consistencyFactor = 0.5 + (0.5 * successRate);
+      const averageRate = Number(summary?.averageRate);
+      const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
+        ? averageRate / baseline
+        : null;
+      const planningRankScore = Number.isFinite(ratio)
+        ? ratio * evidenceReliability * consistencyFactor
+        : -1;
 
       return {
-        topic: group.topic,
-        season: targetSeason,
-        historyRows: history.rates.length,
-        fundraiserSamples: history.fundraisers,
-        averageRate: history.averageRate,
-        programCount: group.programs.length,
-        eligibleProgramCount: group.eligiblePrograms.length,
-        documentarySubtopics
+        testedTitleCount,
+        titleFundraiserTests: tests.length,
+        positiveTests,
+        successRate,
+        evidenceReliability,
+        planningRankScore
       };
-    }).sort((a, b) => {
-      const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
-      const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
-      return br - ar || b.fundraiserSamples - a.fundraiserSamples || b.historyRows - a.historyRows || a.topic.localeCompare(b.topic);
-    });
+    };
+
+    return [...groups.entries()]
+      .filter(([, group]) => group.eligiblePrograms.length > 0)
+      .map(([topicKey, group]) => {
+        // Eligibility decides whether the topic belongs in this planning report.
+        // Performance itself uses the full historical topic record, including
+        // expired titles, because this section is measuring topic performance.
+        const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
+        const history = rowSummary(topicRows);
+        const metrics = evidenceMetrics(topicRows, history);
+
+        let subtopicDetails = [];
+        if (detailedTopicKeys.has(topicKey)) {
+          const subgroups = new Map();
+          for (const program of group.programs) {
+            const label = programSecondary(program) || 'Unassigned';
+            const key = lookupKey(label) || 'unassigned';
+            if (!subgroups.has(key)) subgroups.set(key, { label, programs: [], eligiblePrograms: [] });
+            const sub = subgroups.get(key);
+            sub.programs.push(program);
+            if (eligibleSomewhereInFundraiser(program, context.schedule || {})) sub.eligiblePrograms.push(program);
+          }
+
+          const subtopicBaseline = Number.isFinite(history.averageRate) && history.averageRate > 0
+            ? history.averageRate
+            : rankingBaseline;
+
+          subtopicDetails = [...subgroups.entries()]
+            .filter(([, sub]) => sub.eligiblePrograms.length > 0)
+            .map(([subKey, sub]) => {
+              const rows = topicRows.filter((row) => {
+                const secondary = rowSecondary(row) || 'Unassigned';
+                return (lookupKey(secondary) || 'unassigned') === subKey;
+              });
+              const summary = rowSummary(rows);
+              const metrics = evidenceMetrics(rows, summary, subtopicBaseline);
+              return {
+                label: sub.label,
+                programCount: sub.programs.length,
+                eligibleProgramCount: sub.eligiblePrograms.length,
+                testedTitleCount: metrics.testedTitleCount,
+                fundraiserSamples: summary.fundraisers,
+                averageRate: summary.averageRate,
+                titleFundraiserTests: metrics.titleFundraiserTests,
+                successRate: metrics.successRate,
+                evidenceReliability: metrics.evidenceReliability,
+                planningRankScore: metrics.planningRankScore
+              };
+            })
+            .sort((a, b) =>
+              b.planningRankScore - a.planningRankScore
+              || (b.averageRate || 0) - (a.averageRate || 0)
+              || b.fundraiserSamples - a.fundraiserSamples
+              || a.label.localeCompare(b.label)
+            );
+        }
+
+        return {
+          topic: group.topic,
+          season: targetSeason,
+          historyRows: history.rates.length,
+          fundraiserSamples: history.fundraisers,
+          averageRate: history.averageRate,
+          programCount: group.programs.length,
+          eligibleProgramCount: group.eligiblePrograms.length,
+          testedTitleCount: metrics.testedTitleCount,
+          titleFundraiserTests: metrics.titleFundraiserTests,
+          successRate: metrics.successRate,
+          evidenceReliability: metrics.evidenceReliability,
+          planningRankScore: metrics.planningRankScore,
+          subtopicDetails
+        };
+      })
+      .sort((a, b) =>
+        b.planningRankScore - a.planningRankScore
+        || (b.averageRate || 0) - (a.averageRate || 0)
+        || b.fundraiserSamples - a.fundraiserSamples
+        || a.topic.localeCompare(b.topic)
+      );
   }
 
   function experimentalEvidence(slot = {}, evidenceRows = [], baselineRate = null, precomputed = null, allFundraisersValue = null) {

@@ -278,6 +278,7 @@
       const tone = earningsTone(row);
       const toneLabel = earningsToneLabel(tone);
       const topic = derive.topicPrimary(row) || '—';
+      const secondaryTopic = derive.topicSecondary(row) || '';
       const topicTone = topicColor(topic);
       const topicStyle = topicTone
         ? `background:${topicTone.background}; color:${topicTone.text}; box-shadow: inset 3px 0 0 ${topicTone.border};`
@@ -302,7 +303,7 @@
             ${unarchiveButtonHtml}
           </td>
           <td>${utils.escapeHtml(derive.lengthLabel(row))}</td>
-          <td class="topic-color-cell" style="${utils.escapeHtml(topicStyle)}" title="${utils.escapeHtml(`Topic color: ${topic}`)}">${utils.escapeHtml(topic)}</td>
+          <td class="topic-color-cell" style="${utils.escapeHtml(topicStyle)}" title="${utils.escapeHtml(`Topic color: ${topic}${secondaryTopic ? ` · ${secondaryTopic}` : ''}`)}"><div class="topic-primary-label">${utils.escapeHtml(topic)}</div>${secondaryTopic ? `<div class="topic-secondary-label">${utils.escapeHtml(secondaryTopic)}</div>` : ''}</td>
           <td>${utils.escapeHtml(derive.distributor(row) || '—')}</td>
           <td class="total-cell">${utils.escapeHtml(utils.formatMoney(derive.totalRaised(row)))}</td>
           <td class="avg-cell" title="Average fundraiser $ / pledge hour from rate-valid program history">${derive.avgPerPledgeHour(row) == null ? '—' : utils.escapeHtml(utils.formatMoney(derive.avgPerPledgeHour(row)))}</td>
