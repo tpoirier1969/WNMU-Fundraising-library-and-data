@@ -102,10 +102,13 @@ function canonicalNaturalKey(row = {}) {
 }
 
 function snapshotKey(row = {}) {
+  const sourceName = text(row.source_file_name);
+  const sourceKey = text(row.source_file_key);
   const batch = text(row.import_batch_id);
-  const source = text(row.source_file_key || row.source_file_name);
   const range = `${text(row.drive_start_date).slice(0, 10)}|${text(row.drive_end_date).slice(0, 10)}`;
-  if (batch || source) return [`batch:${batch}`, `source:${source}`, `range:${range}`].join('|');
+  if (sourceName) return `source-name:${sourceName}|range:${range}`;
+  if (sourceKey) return `source-key:${sourceKey}|range:${range}`;
+  if (batch) return `batch:${batch}|range:${range}`;
   return `range:${range}`;
 }
 
