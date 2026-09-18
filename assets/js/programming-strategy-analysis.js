@@ -1193,7 +1193,7 @@ return result;}
       // than letting a couple of spectacular titles outrank broad, repeatable evidence.
       const titleDepth = Math.min(1, testedTitleCount / 10);
       const fundraiserDepth = Math.min(1, fundraiserSamples / 6);
-      const evidenceReliability = Math.sqrt(titleDepth * fundraiserDepth);
+      const evidenceReliability = titleDepth * fundraiserDepth;
       const consistencyFactor = 0.5 + (0.5 * successRate);
       const averageRate = Number(summary?.averageRate);
       const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
