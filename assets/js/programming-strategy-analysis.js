@@ -1261,12 +1261,14 @@ return result;}
                 planningRankScore: metrics.planningRankScore
               };
             })
-            .sort((a, b) =>
-              b.planningRankScore - a.planningRankScore
-              || (b.averageRate || 0) - (a.averageRate || 0)
-              || b.fundraiserSamples - a.fundraiserSamples
-              || a.label.localeCompare(b.label)
-            );
+            .sort((a, b) => {
+              const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
+              const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
+              return br - ar
+                || b.fundraiserSamples - a.fundraiserSamples
+                || b.testedTitleCount - a.testedTitleCount
+                || a.label.localeCompare(b.label);
+            });
         }
 
         return {
