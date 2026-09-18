@@ -2141,8 +2141,11 @@
     els.detailEditButton.classList.toggle('hidden', !canEdit() || state.detailEditMode || state.detailCreateMode);
     els.detailDeleteButton?.classList.toggle('hidden', !canDeleteCurrent);
     if (els.detailDeleteButton) els.detailDeleteButton.disabled = Boolean(state.detailDeleteInProgress || state.detailSaveInProgress);
+    if (els.detailSaveButton) {
+      els.detailSaveButton.classList.toggle('hidden', !state.detailEditMode);
+      els.detailSaveButton.textContent = state.detailCreateMode ? 'Create program' : 'Save';
+    }
     if (els.detailFormHeading) els.detailFormHeading.textContent = state.detailCreateMode ? 'Add Program' : 'Edit program';
-    if (els.detailSaveButton) els.detailSaveButton.textContent = state.detailCreateMode ? 'Create program' : 'Save';
     if (!state.detailEditMode) return;
 
     const source = state.currentDetailProgram || blankProgram();
