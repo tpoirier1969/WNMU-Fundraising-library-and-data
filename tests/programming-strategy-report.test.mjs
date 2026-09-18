@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../assets/js/programming-strategy-analysis.js', import.meta.url), 'utf8');
+const oneSheetSource = fs.readFileSync(new URL('../assets/js/one-sheet-analysis.js', import.meta.url), 'utf8');
+const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 const context = { console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl };
 context.globalThis = context;
 vm.runInNewContext(source, context, { filename: 'programming-strategy-analysis.js' });
@@ -31,6 +33,32 @@ const row = (overrides = {}) => ({
   nola_code: overrides.nola_code ?? '',
   ...overrides
 });
+
+const historicalScheduleRow = ({ id, title, startDate, endDate, placements = [] }) => ({
+  id,
+  title,
+  start_date: startDate,
+  end_date: endDate,
+  created_at: `${startDate}T00:00:00Z`,
+  updated_at: `${endDate}T23:59:59Z`,
+  schedule_data: { placements }
+});
+
+function makeWorkerHarness() {
+  const workerMessages = [];
+  const workerContext = {
+    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
+    performance: { now: () => Date.now() }
+  };
+  workerContext.globalThis = workerContext;
+  workerContext.self = workerContext;
+  workerContext.postMessage = (message) => workerMessages.push(message);
+  workerContext.importScripts = () => {};
+  vm.runInNewContext(oneSheetSource, workerContext, { filename: 'one-sheet-analysis.js' });
+  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
+  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+  return { workerContext, workerMessages };
+}
 
 test('evidence cutoff uses today for future drives and day-before-start for historical drives', () => {
   const now = new Date('2026-09-18T12:00:00');
@@ -391,18 +419,7 @@ test('main Program Library list shows secondary topic under primary topic', () =
 });
 
 test('strategy worker returns a complete result without blocking report code paths', () => {
-  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
-  const workerMessages = [];
-  const workerContext = {
-    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
-    performance: { now: () => Date.now() }
-  };
-  workerContext.globalThis = workerContext;
-  workerContext.self = workerContext;
-  workerContext.postMessage = (message) => workerMessages.push(message);
-  workerContext.importScripts = () => {};
-  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
-  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+  const { workerContext, workerMessages } = makeWorkerHarness();
 
   const library = [
     baseProgram({ id: 1, title: 'New Music', nola_code: 'NMUS', rights_start: '2026-01-01', rights_end: '2027-12-31' }),
@@ -479,18 +496,7 @@ test('Report 5 unhides after successful admin access and does not silently disca
 });
 
 test('Saturday 3–5 PM is reported once as a broader-test window when history is narrowly Michigan programming', () => {
-  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
-  const workerMessages = [];
-  const workerContext = {
-    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
-    performance: { now: () => Date.now() }
-  };
-  workerContext.globalThis = workerContext;
-  workerContext.self = workerContext;
-  workerContext.postMessage = (message) => workerMessages.push(message);
-  workerContext.importScripts = () => {};
-  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
-  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+  const { workerContext, workerMessages } = makeWorkerHarness();
 
   workerContext.onmessage({
     data: {
@@ -521,18 +527,7 @@ test('Saturday 3–5 PM is reported once as a broader-test window when history i
 });
 
 test('worker aggregates separate pledge breaks from the same airing instead of dropping one', () => {
-  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
-  const workerMessages = [];
-  const workerContext = {
-    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
-    performance: { now: () => Date.now() }
-  };
-  workerContext.globalThis = workerContext;
-  workerContext.self = workerContext;
-  workerContext.postMessage = (message) => workerMessages.push(message);
-  workerContext.importScripts = () => {};
-  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
-  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+  const { workerContext, workerMessages } = makeWorkerHarness();
 
   workerContext.onmessage({
     data: {
