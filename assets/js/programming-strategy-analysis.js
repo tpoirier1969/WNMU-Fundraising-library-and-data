@@ -816,7 +816,18 @@
     const when = parseDate(airingDate(row));
     const day = dateKey(when);
     const start = rowStartMinutes(row);
-    const baseline = median((allRows || []).map((item) => rowRate(item)).filter(Number.isFinite));
+    const historicalDays = new Map();
+    for (const item of (allRows || [])) {
+      const itemDay = dateKey(parseDate(airingDate(item)));
+      const itemRate = rowRate(item);
+      if (!itemDay || itemDay === day || !Number.isFinite(itemRate)) continue;
+      if (!historicalDays.has(itemDay)) historicalDays.set(itemDay, []);
+      historicalDays.get(itemDay).push(itemRate);
+    }
+    const historicalDayRates = [...historicalDays.values()].map((rates) => median(rates)).filter(Number.isFinite);
+    const baseline = historicalDayRates.length
+      ? median(historicalDayRates)
+      : median((allRows || []).filter((item) => dateKey(parseDate(airingDate(item))) !== day).map((item) => rowRate(item)).filter(Number.isFinite));
     const sameDay = (allRows || []).filter((item) => {
       if (programMatchesRow(program, item)) return false;
       if (dateKey(parseDate(airingDate(item))) !== day) return false;
