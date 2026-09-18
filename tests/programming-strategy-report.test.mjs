@@ -411,6 +411,48 @@ test('Report 5 unhides after successful admin access and does not silently disca
   assert.match(reportUi, /90000/);
 });
 
+test('Saturday 3–5 PM is reported once as a broader-test window when history is narrowly Michigan programming', () => {
+  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
+  const workerMessages = [];
+  const workerContext = {
+    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
+    performance: { now: () => Date.now() }
+  };
+  workerContext.globalThis = workerContext;
+  workerContext.self = workerContext;
+  workerContext.postMessage = (message) => workerMessages.push(message);
+  workerContext.importScripts = () => {};
+  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
+  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+
+  workerContext.onmessage({
+    data: {
+      requestId: 88,
+      schedule,
+      library: [
+        baseProgram({ id: 1, title: 'Michigan Test', topic_primary: 'Michigan', nola_code: 'MICH' }),
+        baseProgram({ id: 2, title: 'Music Anchor', topic_primary: 'Music', nola_code: 'MUSC' })
+      ],
+      airings: [
+        { id: 1, program_id: 1, pledge_program_id: '1', imported_program_title: 'Michigan Test', nola_code: 'MICH', air_date: '2025-12-06', air_time: '15:30', dollars: 0, pledge_count: 0, program_minutes: 30, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'm1', import_batch_id: 'b1', source_file_name: 'dec25.csv' },
+        { id: 2, program_id: 1, pledge_program_id: '1', imported_program_title: 'Michigan Test', nola_code: 'MICH', air_date: '2024-12-07', air_time: '15:30', dollars: 0, pledge_count: 0, program_minutes: 30, drive_start_date: '2024-12-06', drive_end_date: '2024-12-15', fundraiser_label: 'December 2024', station: 'WNMU', row_hash: 'm2', import_batch_id: 'b2', source_file_name: 'dec24.csv' },
+        { id: 3, program_id: 2, pledge_program_id: '2', imported_program_title: 'Music Anchor', nola_code: 'MUSC', air_date: '2025-12-06', air_time: '19:00', dollars: 600, pledge_count: 4, program_minutes: 60, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'a1', import_batch_id: 'b1', source_file_name: 'dec25.csv' },
+        { id: 4, program_id: 2, pledge_program_id: '2', imported_program_title: 'Music Anchor', nola_code: 'MUSC', air_date: '2024-12-07', air_time: '19:00', dollars: 600, pledge_count: 4, program_minutes: 60, drive_start_date: '2024-12-06', drive_end_date: '2024-12-15', fundraiser_label: 'December 2024', station: 'WNMU', row_hash: 'a2', import_batch_id: 'b2', source_file_name: 'dec24.csv' }
+      ],
+      overrides: [],
+      now: '2026-09-18T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  const saturday = result.opportunities.rows.filter((item) => item.weekday === 'Saturday' && item.startMinutes === 15 * 60 && item.endMinutes === 17 * 60);
+  assert.equal(saturday.length, 1);
+  assert.equal(saturday[0].kind, 'narrow-test');
+  assert.equal(saturday[0].dominantTopic, 'Michigan');
+  assert.match(saturday[0].rationale, /not a broad test of normal pledge programming/i);
+});
+
 test('worker aggregates separate pledge breaks from the same airing instead of dropping one', () => {
   const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
   const workerMessages = [];
