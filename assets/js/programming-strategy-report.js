@@ -1,35 +1,100 @@
 (() => {
 'use strict';
-const A=globalThis.WNMUOneSheetAnalysis,S=globalThis.WNMUProgrammingStrategyAnalysis,cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
-const state={client:null,allSchedules:[],schedules:[],airings:[],library:[],indexes:null,overrides:[],selectedScheduleId:'',analysisReady:false};
+const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
+const state={client:null,schedules:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,requestId:0,dataLoadMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-function fmt(v,year=true){const d=S.parseDate(v);return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:year?'numeric':undefined}):esc(v||'—');}
+function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
+function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
+function seasonForDate(value){const d=parseDate(value);if(!d)return'Special';const m=d.getMonth();if(m===0||m>=9)return'December';if(m<=3)return'March';if(m<=5)return'June';if(m<=8)return'August';return'December';}
+function median(values=[]){const sorted=(values||[]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);if(!sorted.length)return null;const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;}
+function fmt(v,year=true){const d=parseDate(v);return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:year?'numeric':undefined}):esc(v||'—');}
 function clock(m){m=Number(m);if(!Number.isFinite(m))return'—';m=((m%1440)+1440)%1440;const h=Math.floor(m/60),mi=m%60;return`${h%12||12}${mi?`:${String(mi).padStart(2,'0')}`:''} ${h>=12?'PM':'AM'}`;}
 function status(msg,tone=''){const n=$('#strategy-status');if(n){n.textContent=msg||'';n.className=`strategy-status${tone?` ${tone}`:''}`;}}
 function makeClient(){if(!globalThis.supabase?.createClient)throw new Error('Supabase library did not load.');if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY)throw new Error('Supabase configuration is missing.');return globalThis.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);}
 async function requireAdmin(){state.client=makeClient();const{data,error}=await state.client.auth.getSession();if(error)throw error;const session=data?.session||null,email=String(session?.user?.email||'').trim().toLowerCase(),admins=Array.isArray(cfg.ADMIN_EMAILS)?cfg.ADMIN_EMAILS.map(x=>String(x).trim().toLowerCase()).filter(Boolean):[],ok=!!(session&&(!admins.length||admins.includes(email)));if(ok){$('#strategy-role').textContent=email?`Admin · ${email}`:'Admin';return true;}$('#strategy-app')?.classList.add('hidden');const gate=$('#strategy-access-gate');if(gate){gate.classList.remove('hidden');gate.innerHTML=`<div class="report-gate-card"><div class="report-kicker">Admin report center</div><h1>Admin access required</h1><p>${esc(session?`${email||'This account'} does not have administrator report access.`:'Sign in as an administrator from the Pledge Program Library, then return to this report.')}</p><a class="report-button primary" href="./">Open Pledge Program Library</a></div>`;}return false;}
-async function fetchAll(table,select='*',order=''){const rows=[];for(let from=0;;from+=1000){let q=state.client.from(table).select(select).range(from,from+999);if(order)q=q.order(order,{ascending:true});const{data,error}=await q;if(error)throw error;const chunk=Array.isArray(data)?data:[];rows.push(...chunk);if(chunk.length<1000)break;}return rows;}
-async function fetchOptional(table){try{return await fetchAll(table);}catch(e){console.warn(`Optional report source ${table} unavailable.`,e);return[];}}
+async function fetchAll(table,select='*',{orders=['id'],apply=null}={}){
+  const pageSize=1000,batchPages=3;
+  const fetchPage=async(page)=>{
+    let q=state.client.from(table).select(select);
+    if(typeof apply==='function')q=apply(q);
+    for(const order of orders||[])q=q.order(order,{ascending:true});
+    const from=page*pageSize;
+    const{data,error}=await q.range(from,from+pageSize-1);
+    if(error)throw error;
+    return Array.isArray(data)?data:[];
+  };
+  const first=await fetchPage(0);
+  const rows=[...first];
+  if(first.length<pageSize)return rows;
+  for(let page=1;;page+=batchPages){
+    const pages=await Promise.all(Array.from({length:batchPages},(_,i)=>fetchPage(page+i)));
+    for(const chunk of pages)rows.push(...chunk);
+    if(pages.some(chunk=>chunk.length<pageSize))break;
+  }
+  return rows;
+}
+async function fetchOptional(table,select='*',options={}){try{return await fetchAll(table,select,options);}catch(e){console.warn(`Optional report source ${table} unavailable.`,e);return[];}}
 function todayStart(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function todayKey(){return dateKey(todayStart());}
 function defaultSchedule(){return state.schedules[0]||null;}
 function scheduleLabel(s){return`${s.title} · ${fmt(s.startDate)}–${fmt(s.endDate,false)}`;}
 async function loadSchedules(){
   status('Loading upcoming fundraiser choices…');
-  const rows=await fetchAll('pledge_fundraiser_schedules','id,title,start_date,end_date,created_at,updated_at,schedule_data','start_date');
-  state.allSchedules=A.prepareSchedules(rows.map(A.normalizeSchedule))
-    .filter(x=>x.startDate&&x.endDate&&!x.reportOnly)
-    .sort((a,b)=>String(a.startDate).localeCompare(String(b.startDate)));
-  const today=todayStart();
-  state.schedules=state.allSchedules.filter(x=>{
-    const start=S.parseDate(x.startDate);
-    return start&&start>=today;
-  });
+  let q=state.client.from('pledge_fundraiser_schedules')
+    .select('id,title,start_date,end_date,updated_at')
+    .gte('start_date',todayKey())
+    .order('start_date',{ascending:true})
+    .order('updated_at',{ascending:false});
+  const{data,error}=await q;
+  if(error)throw error;
+  const byRange=new Map();
+  for(const row of Array.isArray(data)?data:[]){
+    const startDate=String(row.start_date||'').slice(0,10);
+    const endDate=String(row.end_date||'').slice(0,10);
+    if(!startDate||!endDate)continue;
+    const key=`${startDate}|${endDate}`;
+    if(byRange.has(key))continue;
+    byRange.set(key,{
+      id:String(row.id||''),
+      title:String(row.title||'Untitled fundraiser'),
+      startDate,
+      endDate,
+      updatedAt:String(row.updated_at||'')
+    });
+  }
+  state.schedules=[...byRange.values()].sort((a,b)=>a.startDate.localeCompare(b.startDate));
   renderControls();
   status(state.schedules.length
-    ? `${state.schedules.length} upcoming fundraiser${state.schedules.length===1?'':'s'} ready. Loading history and Program Library…`
-    : 'No upcoming fundraiser is saved yet.');
+    ?`${state.schedules.length} upcoming fundraiser${state.schedules.length===1?'':'s'} ready. Loading strategy data…`
+    :'No upcoming fundraiser is saved yet.');
 }
-async function loadAnalysisData(){const[airings,library,overrides]=await Promise.all([fetchAll('pledge_program_airings_v2','*','air_date'),fetchAll('pledge_programs_v2'),fetchOptional('pledge_program_editorial_overrides')]);state.airings=A.canonicalizeImportedAirings?A.canonicalizeImportedAirings(airings):airings;state.library=library;state.indexes=A.buildLibraryIndexes(library);state.overrides=overrides;state.analysisReady=true;status('Data loaded. Calculating strategy…');void renderStrategy();}
+async function loadAnalysisData(){
+  const started=globalThis.performance?.now?.()??Date.now();
+  const cutoff=todayKey();
+  const airingSelect=[
+    'id','program_id','pledge_program_id','manual_match_program_id',
+    'title','program_title','imported_program_title','matched_library_title','nola_code',
+    'air_date','air_time','aired_at','dollars','pledge_count','program_minutes',
+    'fundraiser_label','drive_start_date','drive_end_date','station','updated_at','created_at'
+  ].join(',');
+  const programSelect=[
+    'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
+    'rights_start','rights_end','rights_notes','distributor','premium_summary','actual_runtime_seconds'
+  ].join(',');
+  const overrideSelect='program_id,rating,rated_at,updated_at';
+  const[airings,library,overrides]=await Promise.all([
+    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id'],apply:q=>q.lte('air_date',cutoff)}),
+    fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
+    fetchOptional('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']})
+  ]);
+  state.airings=airings;
+  state.library=library;
+  state.overrides=overrides;
+  state.analysisReady=true;
+  state.dataLoadMs=Math.round((globalThis.performance?.now?.()??Date.now())-started);
+  status(`Strategy data loaded in ${(state.dataLoadMs/1000).toFixed(1)}s. Building report…`);
+  void renderStrategy();
+}
 function renderControls(){
   const select=$('#strategy-fundraiser');
   if(!select)return;
@@ -49,99 +114,11 @@ function renderControls(){
 }
 const selectedSchedule=()=>state.schedules.find(x=>String(x.id)===String(state.selectedScheduleId))||null;
 
-function strategyLibraryRow(row={}){
-  const ids=[row.manual_match_program_id,row.pledge_program_id,row.program_id].map(x=>String(x??'').trim()).filter(Boolean);
-  for(const id of ids){const hit=state.indexes?.byId?.get(id);if(hit)return hit;}
-  const titleKey=A.lookupKey(row.matched_library_title||row.program_title||row.title||row.imported_program_title||'');
-  const nola=String(row.nola_code||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
-  if(nola){
-    const matches=state.indexes?.byNola?.get(nola)||[];
-    if(titleKey){
-      const exact=matches.find(item=>A.lookupKey(item?.title)===titleKey);
-      if(exact)return exact;
-    }
-    if(matches.length===1)return matches[0];
-  }
-  return titleKey?(state.indexes?.byTitle?.get(titleKey)||null):null;
-}
-
-function normalizeStrategyAiring(row={}){
-  const lib=strategyLibraryRow(row)||{};
-  const dateKey=A.importedDateKey(row);
-  const startMinutes=A.importedStartMinutes(row);
-  const directMinutes=Number(row.program_minutes||0);
-  const minutes=directMinutes>0?directMinutes:Number(A.libraryRuntimeMinutes(lib)||0);
-  const programId=String(lib.id??row.manual_match_program_id??row.pledge_program_id??row.program_id??'').trim();
-  const title=String(lib.title||row.matched_library_title||row.program_title||row.title||row.imported_program_title||'Untitled program').trim();
-  const driveStartDate=String(row.drive_start_date||'').slice(0,10);
-  const driveEndDate=String(row.drive_end_date||'').slice(0,10);
-  const fundraiserTitle=String(row.fundraiser_label||'').trim();
-  return {
-    ...row,
-    programId,
-    title,
-    topic:String(lib.topic_primary||'Uncategorized').trim()||'Uncategorized',
-    secondary:String(lib.topic_secondary||'').trim(),
-    nola_code:String(lib.nola_code||row.nola_code||'').trim(),
-    dateKey,
-    startMinutes,
-    endMinutes:Number.isFinite(startMinutes)&&minutes>0?startMinutes+minutes:null,
-    minutes,
-    dollars:Number(row.dollars??row.contribution_amount??0)||0,
-    pledges:Number(row.pledge_count||0)||0,
-    fundraiserId:driveStartDate&&driveEndDate?`${driveStartDate}|${driveEndDate}`:(fundraiserTitle||dateKey),
-    fundraiserTitle,
-    driveStartDate,
-    driveEndDate,
-    known:true,
-    durationMissing:!(minutes>0),
-    countsTowardScheduleMinutes:true
-  };
-}
-
-function strategyDayAnalyses(rows=[]){
-  const groups=new Map();
-  for(const row of rows){
-    const start=row.driveStartDate||row.dateKey;
-    const end=row.driveEndDate||row.dateKey;
-    const key=`${start}|${end}`;
-    if(!groups.has(key))groups.set(key,[]);
-    groups.get(key).push(row);
-  }
-  return[...groups.entries()].map(([key,items])=>{
-    const first=items[0]||{};
-    const dates=items.map(item=>item.dateKey).filter(Boolean).sort();
-    const startDate=first.driveStartDate||dates[0]||'';
-    const endDate=first.driveEndDate||dates.at(-1)||startDate;
-    return{
-      schedule:{
-        id:key,
-        title:first.fundraiserTitle||key,
-        startDate,
-        endDate,
-        season:A.seasonForDate(startDate)
-      },
-      placementRows:items,
-      importedRows:[],
-      scheduledMinutes:items.reduce((sum,item)=>sum+Number(item.minutes||0),0),
-      broadcastDollars:items.reduce((sum,item)=>sum+Number(item.dollars||0),0)
-    };
-  });
-}
-
-function evidenceBundle(schedule){
-  const cutoff=S.evidenceCutoff(schedule,new Date());
-  const cutoffAirings=S.filterEvidenceAirings(state.airings,cutoff);
-  const rows=cutoffAirings.map(normalizeStrategyAiring).filter(row=>row.dateKey);
-  return{cutoff,airings:cutoffAirings,analyses:strategyDayAnalyses(rows),rows};
-}
-function topicPill(x){return`<span class="strategy-pill"><strong>${esc(x.topic)}</strong><small>${esc(x.confidence||'')}</small></span>`;}
-function recommendationHtml(x){const flags=[];if(x.local)flags.push('Local / U.P.');if(x.season?.holidayInWindow)flags.push(x.season.holidayCategory||'Seasonal fit');if(x.drama?.currentCycle)flags.push('Current Drama Doc');if(x.programmer?.rating)flags.push(`Programmer: ${x.programmer.label}`);return`<article class="strategy-title-card"><div class="strategy-title-card-head"><div><strong>${esc(x.title)}</strong><span>${esc(x.topic)}${x.secondary?` · ${esc(x.secondary)}`:''}</span></div><div class="strategy-score"><b>${Math.round(x.score)}</b><small>${esc(x.fit)}</small></div></div><div class="strategy-title-meta">Confidence: ${esc(x.confidence)}${flags.length?` · ${flags.map(esc).join(' · ')}`:''}</div><p>${esc(x.reasons.slice(0,2).join(' '))}</p>${x.cautions.length?`<div class="strategy-caution">${esc(x.cautions.slice(0,2).join(' '))}</div>`:''}</article>`;}
 function topicComparisonSection(strategy){
   const rows=strategy.topicComparison||[];
   if(!rows.length)return'<section class="sheet-section"><h2>Topic performance in selected season</h2><p>No eligible topic data is available.</p></section>';
-  const season=rows[0]?.season||S.seasonForDate(strategy.schedule?.startDate)||'selected';
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Complete list of topics represented by titles eligible for this fundraiser. Performance uses WNMU history from the same fundraiser season, not a strongest-topics shortlist.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div><strong>${esc(x.topic)}</strong><span class="strategy-strength strength-${esc(x.signal.toLowerCase().replace(/\s+/g,'-'))}">${esc(x.signal)}</span></div><div>${x.historyRows?`${x.historyRows} rate-valid ${esc(season)} row${x.historyRows===1?'':'s'}${Number.isFinite(x.medianRate)?` · median $${Math.round(x.medianRate)}/hr`:''}`:`No rate-valid ${esc(season)} history yet`}</div><div>${x.bestWindows.length?`Best supported: ${x.bestWindows.map(w=>`${w.weekday} ${w.label}`).join(' · ')}`:'No established weekday/time fit in this season yet'}</div><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser${x.subtopics.length?` · Current subtopics: ${esc(x.subtopics.join(' · '))}`:''}</small></div>`).join('')}</div></section>`;
+  const season=rows[0]?.season||seasonForDate(strategy.schedule?.startDate)||'selected';
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Complete Program Library topic list. Each row shows selected-season WNMU performance and how many titles are actually eligible for this fundraiser.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div><strong>${esc(x.topic)}</strong><span class="strategy-strength strength-${esc(x.signal.toLowerCase().replace(/\s+/g,'-'))}">${esc(x.signal)}</span></div><div>${x.historyRows?`${x.historyRows} rate-valid ${esc(season)} row${x.historyRows===1?'':'s'}${Number.isFinite(x.medianRate)?` · median $${Math.round(x.medianRate)}/hr`:''}`:`No rate-valid ${esc(season)} history yet`}</div><div>${x.bestWindows.length?`Best supported: ${x.bestWindows.map(w=>`${w.weekday} ${w.label}`).join(' · ')}`:'No established weekday/time fit in this season yet'}</div><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser${x.subtopics.length?` · Current subtopics: ${esc(x.subtopics.join(' · '))}`:''}</small></div>`).join('')}</div></section>`;
 }
 
 function groupedDayparts(strategy){
@@ -155,7 +132,7 @@ function groupedDayparts(strategy){
     }
   }
   const weekdayOrder=new Map(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((d,i)=>[d,i]));
-  return[...groups.values()].map(g=>({...g,median:S.median(g.rates)}))
+  return[...groups.values()].map(g=>({...g,median:median(g.rates)}))
     .sort((a,b)=>(weekdayOrder.get(a.weekday)??9)-(weekdayOrder.get(b.weekday)??9)||a.startMinutes-b.startMinutes);
 }
 
@@ -164,58 +141,9 @@ function daypartSection(strategy){
   return`<section class="sheet-section strategy-two-column"><div><h2>Strongest day/time patterns</h2><p>Listed Monday through Sunday so the week is easy to scan. Historical median and sample size show which windows actually have WNMU support.</p>${strengths.map(x=>`<div class="strategy-line"><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${x.rows?`${x.rows} exact-weekday comparable historical row${x.rows===1?'':'s'}${Number.isFinite(x.median)?` · median about $${Math.round(x.median)}/hr`:''}`:'No exact-weekday evidence'}</span></div>`).join('')||'<p>No normal-window evidence available.</p>'}</div><div><h2>Experimental opportunities</h2>${experiments.map(x=>{const e=x.experimentalEvidence||{};return`<div class="strategy-line experimental"><strong>${esc(x.weekday)} ${fmt(x.date,false)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span><b>${esc(e.verdict||'Hypothesis only')}.</b> ${esc(e.rationale||'No direct WNMU evidence is available.')} ${esc(e.peerEvidence||'')}</span></div>`;}).join('')||'<p>No experimental window identified.</p>'}</div></section>`;
 }
 
-function targetDays(schedule){
-  const out=[],start=S.parseDate(schedule?.startDate),end=S.parseDate(schedule?.endDate);
-  if(!start||!end)return out;
-  for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1))out.push(new Date(d));
-  return out;
-}
-function firstSaturdayForSchedule(schedule){
-  const start=S.parseDate(schedule?.startDate),end=S.parseDate(schedule?.endDate);
-  if(!start)return null;
-  const next=new Date(start);while(next.getDay()!==6)next.setDate(next.getDate()+1);
-  if(!end||next<=end)return next;
-  const previous=new Date(start);while(previous.getDay()!==6)previous.setDate(previous.getDate()-1);
-  return previous;
-}
-function dayOutlook(schedule,analyses){
-  const season=S.seasonForDate(schedule?.startDate);
-  let pool=(analyses||[]).filter(a=>S.seasonForDate(a?.schedule?.startDate)===season);
-  let fallback=false;
-  if(pool.length<2){pool=analyses||[];fallback=true;}
-  const aligned=A.alignedDailyRows(pool);
-  const baselineRates=aligned.flatMap(item=>item.days||[]).filter(Boolean).map(d=>Number(d.dollarsPerHour)).filter(Number.isFinite);
-  const baseline=S.median(baselineRates);
-  const anchor=firstSaturdayForSchedule(schedule);
-  const rows=targetDays(schedule).map(date=>{
-    const offset=anchor?Math.round((date-anchor)/86400000):null;
-    const match=aligned.find(item=>item.offset===offset);
-    const rates=(match?.days||[]).filter(Boolean).map(d=>Number(d.dollarsPerHour)).filter(Number.isFinite);
-    const med=S.median(rates);
-    const ratio=Number.isFinite(med)&&Number.isFinite(baseline)&&baseline>0?med/baseline:null;
-    let outlook='No comparable history';
-    if(rates.length===1)outlook='Thin evidence';
-    else if(rates.length>=2){
-      if(ratio>=1.25)outlook='Usually strong';
-      else if(ratio>=1.05)outlook='Usually good';
-      else if(ratio>=0.85)outlook='Fair / typical';
-      else if(ratio>=0.65)outlook='Usually soft';
-      else outlook='Usually weak';
-    }
-    return{
-      date:S.dateKey(date),
-      label:Number.isFinite(offset)?A.fundraiserDayLabel(offset).title:date.toLocaleDateString(undefined,{weekday:'long'}),
-      outlook,samples:rates.length,medianRate:med,ratio
-    };
-  });
-  const ranked=rows.filter(x=>x.samples>=2&&Number.isFinite(x.ratio)).sort((a,b)=>b.ratio-a.ratio);
-  const best=new Set(ranked.slice(0,2).filter(x=>x.ratio>=1.05).map(x=>x.date));
-  rows.forEach(x=>x.bestBet=best.has(x.date));
-  return{season,fallback,rows};
-}
-function dayOutlookSection(schedule,analyses){
-  const outlook=dayOutlook(schedule,analyses);
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Anticipated day strength</h2><p>Compares each fundraiser-day position with the same position in prior ${esc(outlook.season)} drives${outlook.fallback?' (same-season sample was thin, so all historical drives are used as fallback)':''}. The rating is based on median Broadcast $/pledge hour, not total dollars.</p></div></div><div class="strategy-day-outlook">${outlook.rows.map(x=>`<div class="strategy-day-outlook-row"><strong>${esc(x.label)}</strong><span class="strategy-day-rating">${esc(x.outlook)}${x.bestBet?' · Best bet':''}</span><span>${x.samples?`${x.samples} comparable historical day${x.samples===1?'':'s'}${Number.isFinite(x.medianRate)?` · median about $${Math.round(x.medianRate)}/hr`:''}`:'No corresponding historical day sample'}</span></div>`).join('')}</div></section>`;
+function dayOutlookSection(outlook){
+  const data=outlook||{season:'selected',fallback:false,rows:[]};
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Anticipated day strength</h2><p>Compares each fundraiser-day position with the same position in prior ${esc(data.season||'selected')} drives${data.fallback?' (same-season sample was thin, so all historical drives are used as fallback)':''}. The rating is based on median Broadcast $/pledge hour, not total dollars.</p></div></div><div class="strategy-day-outlook">${(data.rows||[]).map(x=>`<div class="strategy-day-outlook-row"><strong>${esc(x.label)}</strong><span class="strategy-day-rating">${esc(x.outlook)}${x.bestBet?' · Best bet':''}</span><span>${x.samples?`${x.samples} comparable historical day${x.samples===1?'':'s'}${Number.isFinite(x.medianRate)?` · median about $${Math.round(x.medianRate)}/hr`:''}`:'No corresponding historical day sample'}</span></div>`).join('')}</div></section>`;
 }
 
 function dayMapSection(strategy){
@@ -234,9 +162,72 @@ function compact(items,renderer,empty){return items?.length?`<div class="strateg
 function supportingSections(strategy){return`<section class="sheet-section strategy-two-column"><div><h2>Repeat candidates</h2>${compact(strategy.repeats,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · score ${Math.round(x.score)} · supported on ${x.slots.length} separated prime windows.</span></div>`,'No repeat candidate clears the threshold.')}<h2>Seasonal opportunities</h2>${compact(strategy.seasonal,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · ${esc(x.season.notes.join(' ')||`${x.season.targetSeason} seasonal support`)}</span></div>`,'No distinct seasonal opportunity identified.')}</div><div><h2>Local / U.P. opportunities</h2>${compact(strategy.local,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · best-window score ${Math.round(x.score)} · ${esc(x.fit)}</span></div>`,'No eligible Local / U.P. title identified.')}<h2>Titles to avoid / rest</h2>${compact(strategy.avoid,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.reasons.join(' · '))}</span></div>`,'No title needs a prominent rest/avoid caution.')}</div></section>`;}
 function rightsSection(strategy){const desc=x=>`${x.rightsStart?`Starts ${fmt(x.rightsStart)}`:''}${x.rightsStart&&x.rightsEnd?' · ':''}${x.rightsEnd?`Ends ${fmt(x.rightsEnd)}`:''}`;return`<section class="sheet-section strategy-two-column"><div><h2>Rights constraints</h2>${compact(strategy.rights.unavailable.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No fully unavailable title detected.')}</div><div><h2>Partial-drive rights</h2>${compact(strategy.rights.partial.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No partial-drive rights restriction detected.')}</div></section>`;}
 function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}<li>${esc(strategy.peerEvidence.note)}</li></ul></section>`;}
+function stopStrategyWorker(reason='Superseded'){
+  if(state.workerReject){
+    const reject=state.workerReject;
+    state.workerReject=null;
+    reject(new Error(reason));
+  }
+  if(state.worker){
+    state.worker.terminate();
+    state.worker=null;
+  }
+}
+function runStrategyWorker(schedule){
+  stopStrategyWorker('Superseded');
+  const requestId=++state.requestId;
+  return new Promise((resolve,reject)=>{
+    let worker;
+    try{
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.176');
+    }catch(error){
+      reject(error);
+      return;
+    }
+    state.worker=worker;
+    state.workerReject=reject;
+    worker.onmessage=(event)=>{
+      const message=event.data||{};
+      if(message.requestId!==requestId)return;
+      if(message.type==='progress'){
+        status(message.message||'Building strategy…');
+        return;
+      }
+      if(message.type==='error'){
+        state.workerReject=null;
+        worker.terminate();
+        if(state.worker===worker)state.worker=null;
+        reject(new Error(message.message||'Strategy worker failed.'));
+        return;
+      }
+      if(message.type==='result'){
+        state.workerReject=null;
+        worker.terminate();
+        if(state.worker===worker)state.worker=null;
+        resolve(message);
+      }
+    };
+    worker.onerror=(event)=>{
+      state.workerReject=null;
+      worker.terminate();
+      if(state.worker===worker)state.worker=null;
+      reject(new Error(event?.message||'Strategy worker failed to load.'));
+    };
+    worker.postMessage({
+      requestId,
+      schedule,
+      library:state.library,
+      airings:state.airings,
+      overrides:state.overrides,
+      now:new Date().toISOString()
+    });
+  });
+}
+
 async function renderStrategy(){
   const schedule=selectedSchedule(),out=$('#strategy-output');
   if(!schedule||!out){
+    stopStrategyWorker('No fundraiser selected');
     if(out)out.innerHTML='<div class="report-empty">No upcoming fundraiser is available.</div>';
     return;
   }
@@ -244,23 +235,44 @@ async function renderStrategy(){
     out.innerHTML='<div class="report-loading-card"><strong>Fundraiser selected.</strong><span>Loading WNMU history and Program Library data for analysis…</span></div>';
     return;
   }
-  status('Calculating pre-drive strategy…');
-  out.innerHTML='<div class="report-loading-card"><strong>Building strategy…</strong><span>Scoring eligible titles against WNMU history.</span></div>';
+
+  out.innerHTML='<div class="report-loading-card"><strong>Building strategy…</strong><span>The analysis is running off the page’s UI thread, so this screen should remain responsive.</span></div>';
+  status('Starting strategy analysis…');
   await new Promise(resolve=>{
     const raf=globalThis.requestAnimationFrame||((callback)=>globalThis.setTimeout(callback,0));
     raf(()=>resolve());
   });
+
   try{
-    const started=globalThis.performance?.now?.()??Date.now();
-    const evidence=evidenceBundle(schedule);
-    const strategy=S.buildStrategy({schedule,library:state.library,evidenceRows:evidence.rows,overrides:state.overrides,now:new Date()});
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div><div class="sheet-stamp">Evidence through ${fmt(strategy.cutoff)}</div></header><section class="strategy-summary"><div><span>Evidence through</span><strong>${fmt(strategy.cutoff)}</strong><small>Future drives are capped at today; historical drives stop before they began.</small></div></section>${topicComparisonSection(strategy)}${dayOutlookSection(schedule,evidence.analyses)}${daypartSection(strategy)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
-    const finished=globalThis.performance?.now?.()??Date.now();
-    status(`Strategy generated using evidence through ${fmt(strategy.cutoff)} · ${((finished-started)/1000).toFixed(1)}s.`,'good');
+    const result=await runStrategyWorker(schedule);
+    const strategy=result.strategy||{};
+    const dayOutlook=result.dayOutlook||{};
+    const diagnostics=result.diagnostics||{};
+    const renderStarted=globalThis.performance?.now?.()??Date.now();
+
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div><div class="sheet-stamp">Evidence through ${fmt(strategy.cutoff)}</div></header><section class="strategy-summary"><div><span>Evidence through</span><strong>${fmt(strategy.cutoff)}</strong><small>Future drives are capped at today; historical drives stop before they began.</small></div></section>${topicComparisonSection(strategy)}${dayOutlookSection(dayOutlook)}${daypartSection(strategy)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
+
+    const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
+    const perf={
+      dataLoadMs:state.dataLoadMs,
+      workerTotalMs:Number(diagnostics.totalMs||0),
+      prepareMs:Number(diagnostics.prepareMs||0),
+      strategyMs:Number(diagnostics.strategyMs||0),
+      dayOutlookMs:Number(diagnostics.dayOutlookMs||0),
+      renderMs,
+      rawAirings:Number(diagnostics.rawAirings||0),
+      canonicalAirings:Number(diagnostics.canonicalAirings||0),
+      evidenceRows:Number(diagnostics.evidenceRows||0)
+    };
+    console.info('[Fundraiser Programming Strategy performance]',perf);
+    status(`Strategy ready · data ${(perf.dataLoadMs/1000).toFixed(1)}s · analysis ${(perf.workerTotalMs/1000).toFixed(1)}s · render ${(perf.renderMs/1000).toFixed(1)}s.`,'good');
   }catch(e){
-    console.error(e);out.innerHTML=`<div class="report-empty"><strong>Could not generate strategy.</strong><p>${esc(e?.message||e)}</p></div>`;status('Strategy generation failed.','error');
+    if(e?.message==='Superseded'||e?.message==='No fundraiser selected')return;
+    console.error(e);
+    out.innerHTML=`<div class="report-empty"><strong>Could not generate strategy.</strong><p>${esc(e?.message||e)}</p></div>`;
+    status('Strategy generation failed.','error');
   }
 }
-async function init(){try{if(!A||!S)throw new Error('Programming strategy analysis modules did not load.');if(!await requireAdmin())return;await loadSchedules();void renderStrategy();await loadAnalysisData();}catch(e){console.error(e);status(e?.message||String(e),'error');const out=$('#strategy-output');if(out)out.innerHTML=`<div class="report-empty"><strong>Report could not start.</strong><p>${esc(e?.message||e)}</p></div>`;}}
+async function init(){try{if(!await requireAdmin())return;await loadSchedules();void renderStrategy();await loadAnalysisData();}catch(e){console.error(e);status(e?.message||String(e),'error');const out=$('#strategy-output');if(out)out.innerHTML=`<div class="report-empty"><strong>Report could not start.</strong><p>${esc(e?.message||e)}</p></div>`;}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else void init();
 })();
