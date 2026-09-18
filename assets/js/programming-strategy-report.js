@@ -83,7 +83,7 @@ async function loadAnalysisData(){
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const[airings,library,overrides]=await Promise.all([
-    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id'],apply:q=>q.lte('air_date',cutoff)}),
+    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
     fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']})
   ]);
