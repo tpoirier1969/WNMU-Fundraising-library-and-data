@@ -2305,6 +2305,8 @@
       if (!Array.isArray(updateResponse.data) || updateResponse.data.length < 1) {
         throw new Error('Save did not update any program row. Refresh the library and try again; I stopped instead of pretending that saved.');
       }
+      const savedProgramRow = updateResponse.data[0] || {};
+      App.data.applyProgramUpdateLocally?.(resolvedProgramId, savedProgramRow, payload);
       App.data.resetDetailCaches?.();
       syncTimingDraftFromDom();
       const timingResponse = await App.data.saveTimingRows(resolvedProgramId, state.detailTimingDraftRows || []);
@@ -2312,7 +2314,8 @@
       applyCalculatedRuntimeLocally(resolvedProgramId, calculatedRuntimeSeconds);
       App.schedulingUi?.invalidateScheduleDetail?.(resolvedProgramId);
       state.selectedProgramId = resolvedProgramId;
-      await App.app.refreshAll({ workspace: state.activeWorkspace });
+      App.listUi?.applyLibraryView?.();
+      App.workspaceUi?.refreshScaffoldSummary?.();
       await loadProgramDetail(resolvedProgramId, { preserveMode: false, force: true });
       setDetailDirty(false);
       setDetailNotice('Changes saved.');
