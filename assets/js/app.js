@@ -194,7 +194,10 @@
       if (state.detailCreateMode) App.detailUi.closeDetailModal();
       else App.detailUi.setDetailMode('view');
     });
-    els.detailEditForm?.addEventListener('input', () => App.detailUi.handleEditorInput?.());
+    els.detailEditForm?.addEventListener('input', (event) => {
+      if (event.target?.tagName === 'SELECT') return;
+      App.detailUi.handleEditorInput?.();
+    });
     els.detailEditForm?.addEventListener('change', (event) => {
       const target = event.target;
       if (target?.matches?.('select[name="topic_primary"], select[name="topic_secondary"]')) {
