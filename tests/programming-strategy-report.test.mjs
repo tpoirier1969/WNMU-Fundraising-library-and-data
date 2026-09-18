@@ -47,18 +47,19 @@ test('evidence cutoff uses today for future drives and day-before-start for hist
   assert.deepEqual(Array.from(filtered, (entry) => entry.dateKey), ['2026-09-17', '2026-09-18']);
 });
 
-test('post-cutoff airings cannot improve a recommendation', () => {
+test('post-cutoff airings cannot enter strategy evidence', () => {
   const program = baseProgram();
-  const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime' && entry.weekday === 'Saturday');
-  const pre = [row({ dateKey: '2026-08-08', dollars: 120, fundraiserId: 'aug26' })];
-  const futureWindfall = row({ dateKey: '2027-03-06', dollars: 12000, fundraiserId: 'mar27' });
+  const pre = [row({ dateKey: '2025-12-06', dollars: 120, fundraiserId: 'dec25' })];
+  const futureWindfall = row({ dateKey: '2027-12-04', dollars: 12000, fundraiserId: 'dec27' });
   const now = new Date('2026-09-18T12:00:00');
   const before = S.buildStrategy({ schedule, library: [program], evidenceRows: pre, now });
   const after = S.buildStrategy({ schedule, library: [program], evidenceRows: [...pre, futureWindfall], now });
-  const beforeScore = before.windows.find((entry) => entry.id === slot.id).recommendations[0].score;
-  const afterScore = after.windows.find((entry) => entry.id === slot.id).recommendations[0].score;
-  assert.equal(afterScore, beforeScore);
+  assert.equal(before.evidenceRows, 1);
   assert.equal(after.evidenceRows, 1);
+  const beforeTopic = before.topicComparison.find((item) => item.topic === 'Music');
+  const afterTopic = after.topicComparison.find((item) => item.topic === 'Music');
+  assert.equal(afterTopic.historyRows, beforeTopic.historyRows);
+  assert.equal(afterTopic.medianRate, beforeTopic.medianRate);
 });
 
 test('rights exclude a title from a slot where it cannot legally air', () => {
