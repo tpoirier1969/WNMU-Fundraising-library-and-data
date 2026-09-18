@@ -1132,7 +1132,10 @@ return result;}
     const groups = new Map();
     const targetSeason = seasonForDate(scheduleStart(context.schedule || {}));
     const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === targetSeason);
-    const seasonTopicSummaryCache = context.seasonTopicSummaryCache || new Map();
+    const reportableSeasonRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) !== 'uncategorized');
+    const seasonBaseline = rowSummary(reportableSeasonRows).averageRate;
+    const fallbackBaseline = Number.isFinite(context.baselineRate) ? context.baselineRate : seasonBaseline;
+    const rankingBaseline = Number.isFinite(seasonBaseline) && seasonBaseline > 0 ? seasonBaseline : fallbackBaseline;
 
     for (const program of (library || [])) {
       const topic = programTopic(program);
@@ -1150,15 +1153,29 @@ return result;}
       lookupKey('Holiday - Christmas')
     ]);
 
+    const evidenceBreadth = (summary, testedTitleCount, eligibleTitleCount, baseline = rankingBaseline) => {
+      const coverage = eligibleTitleCount > 0 ? testedTitleCount / eligibleTitleCount : 0;
+      const titleDepth = Math.min(1, testedTitleCount / 6);
+      const fundraiserDepth = Math.min(1, Number(summary?.fundraisers || 0) / 4);
+      const coverageDepth = Math.min(1, coverage / 0.4);
+      const reliability = titleDepth * fundraiserDepth * (0.5 + 0.5 * coverageDepth);
+      const averageRate = Number(summary?.averageRate);
+      const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0 ? averageRate / baseline : null;
+      const planningRankScore = Number.isFinite(ratio) ? ratio * (0.2 + 0.8 * reliability) : -1;
+      return { coverage, reliability, planningRankScore };
+    };
+
     return [...groups.entries()]
       .filter(([, group]) => group.eligiblePrograms.length > 0)
       .map(([topicKey, group]) => {
-        let history = seasonTopicSummaryCache.get(topicKey);
-        const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
-        if (!history) {
-          history = rowSummary(topicRows);
-          seasonTopicSummaryCache.set(topicKey, history);
-        }
+        const eligibleIds = new Set(group.eligiblePrograms.map(programId).filter(Boolean));
+        const topicRows = seasonRows.filter((row) =>
+          lookupKey(rowTopic(row)) === topicKey
+          && eligibleIds.has(rowProgramId(row))
+        );
+        const history = rowSummary(topicRows);
+        const testedEligibleTitleCount = new Set(topicRows.map(rowProgramId).filter(Boolean)).size;
+        const breadth = evidenceBreadth(history, testedEligibleTitleCount, group.eligiblePrograms.length);
 
         let subtopicDetails = [];
         if (detailedTopicKeys.has(topicKey)) {
@@ -1172,27 +1189,39 @@ return result;}
             if (eligibleSomewhereInFundraiser(program, context.schedule || {})) sub.eligiblePrograms.push(program);
           }
 
+          const subtopicBaseline = Number.isFinite(history.averageRate) && history.averageRate > 0
+            ? history.averageRate
+            : rankingBaseline;
+
           subtopicDetails = [...subgroups.entries()]
             .filter(([, sub]) => sub.eligiblePrograms.length > 0)
             .map(([subKey, sub]) => {
+              const eligibleSubIds = new Set(sub.eligiblePrograms.map(programId).filter(Boolean));
               const rows = topicRows.filter((row) => {
                 const secondary = rowSecondary(row) || 'Unassigned';
-                return (lookupKey(secondary) || 'unassigned') === subKey;
+                return (lookupKey(secondary) || 'unassigned') === subKey && eligibleSubIds.has(rowProgramId(row));
               });
               const summary = rowSummary(rows);
+              const testedEligibleTitleCount = new Set(rows.map(rowProgramId).filter(Boolean)).size;
+              const breadth = evidenceBreadth(summary, testedEligibleTitleCount, sub.eligiblePrograms.length, subtopicBaseline);
               return {
                 label: sub.label,
                 programCount: sub.programs.length,
                 eligibleProgramCount: sub.eligiblePrograms.length,
+                testedEligibleTitleCount,
                 fundraiserSamples: summary.fundraisers,
-                averageRate: summary.averageRate
+                averageRate: summary.averageRate,
+                evidenceCoverage: breadth.coverage,
+                evidenceReliability: breadth.reliability,
+                planningRankScore: breadth.planningRankScore
               };
             })
-            .sort((a, b) => {
-              const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
-              const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
-              return br - ar || b.eligibleProgramCount - a.eligibleProgramCount || b.programCount - a.programCount || a.label.localeCompare(b.label);
-            });
+            .sort((a, b) =>
+              b.planningRankScore - a.planningRankScore
+              || (b.averageRate || 0) - (a.averageRate || 0)
+              || b.eligibleProgramCount - a.eligibleProgramCount
+              || a.label.localeCompare(b.label)
+            );
         }
 
         return {
@@ -1203,14 +1232,19 @@ return result;}
           averageRate: history.averageRate,
           programCount: group.programs.length,
           eligibleProgramCount: group.eligiblePrograms.length,
+          testedEligibleTitleCount,
+          evidenceCoverage: breadth.coverage,
+          evidenceReliability: breadth.reliability,
+          planningRankScore: breadth.planningRankScore,
           subtopicDetails
         };
       })
-      .sort((a, b) => {
-        const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
-        const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
-        return br - ar || b.fundraiserSamples - a.fundraiserSamples || b.historyRows - a.historyRows || a.topic.localeCompare(b.topic);
-      });
+      .sort((a, b) =>
+        b.planningRankScore - a.planningRankScore
+        || (b.averageRate || 0) - (a.averageRate || 0)
+        || b.fundraiserSamples - a.fundraiserSamples
+        || a.topic.localeCompare(b.topic)
+      );
   }
 
   function experimentalEvidence(slot = {}, evidenceRows = [], baselineRate = null, precomputed = null, allFundraisersValue = null) {
