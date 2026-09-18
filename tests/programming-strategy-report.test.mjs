@@ -217,37 +217,81 @@ test('historical matching does not fall back to title when both program IDs disa
   assert.equal(S.rowsForProgram(program, [nolaOnly]).length, 1);
 });
 
-test('topic comparison includes every Program Library topic, including topics with no drive-eligible title', () => {
+test('Report 5 omits topics with no titles eligible for the selected fundraiser', () => {
   const library = [
     baseProgram({ id: 'music', title: 'Music', topic_primary: 'Music' }),
     baseProgram({ id: 'history-expired', title: 'History', topic_primary: 'History', rights_end: '2026-01-01' })
   ];
   const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows: [] });
-  assert.deepEqual(Array.from(rows, (item) => item.topic).sort(), ['History', 'Music']);
-  assert.equal(rows.find((item) => item.topic === 'History').eligibleProgramCount, 0);
-  assert.equal(rows.find((item) => item.topic === 'Music').eligibleProgramCount, 1);
+  assert.deepEqual(Array.from(rows, (item) => item.topic), ['Music']);
+  assert.equal(rows[0].eligibleProgramCount, 1);
 });
 
-test('topic performance ranks by fundraiser-balanced average, excludes Uncategorized, and breaks out Documentary subtopics', () => {
+test('topic performance uses full historical topic evidence, excludes Uncategorized, and details key subtopics', () => {
   const library = [
-    baseProgram({ id: 'music', title: 'Music', topic_primary: 'Music' }),
+    baseProgram({ id: 'music', title: 'Music', topic_primary: 'Music', topic_secondary: 'Rock / Pop / Soul' }),
+    baseProgram({ id: 'music-expired', title: 'Old Music', topic_primary: 'Music', topic_secondary: 'Rock / Pop / Soul', rights_end: '2026-01-01' }),
     baseProgram({ id: 'doc-hist', title: 'History Doc', topic_primary: 'Documentary', topic_secondary: 'History' }),
     baseProgram({ id: 'doc-blank', title: 'Unassigned Doc', topic_primary: 'Documentary', topic_secondary: '' }),
+    baseProgram({ id: 'xmas', title: 'Christmas Special', topic_primary: 'Holiday - Christmas', topic_secondary: 'Music' }),
     baseProgram({ id: 'junk', title: 'Incidental', topic_primary: 'Uncategorized' })
   ];
   const evidenceRows = [
-    row({ programId: 'music', title: 'Music', topic: 'Music', dateKey: '2025-12-06', startMinutes: 19 * 60, minutes: 60, dollars: 1000, fundraiserId: 'd1' }),
-    row({ programId: 'music', title: 'Music', topic: 'Music', dateKey: '2024-12-07', startMinutes: 19 * 60, minutes: 60, dollars: 100, fundraiserId: 'd2' }),
+    row({ programId: 'music', title: 'Music', topic: 'Music', dateKey: '2025-12-06', startMinutes: 19 * 60, minutes: 60, dollars: 100, fundraiserId: 'd1' }),
+    row({ programId: 'music-expired', title: 'Old Music', topic: 'Music', dateKey: '2024-12-07', startMinutes: 19 * 60, minutes: 60, dollars: 900, fundraiserId: 'd2', secondary: 'Rock / Pop / Soul' }),
     { ...row({ programId: 'doc-hist', title: 'History Doc', topic: 'Documentary', dateKey: '2025-12-07', startMinutes: 20 * 60, minutes: 60, dollars: 300, fundraiserId: 'd1' }), secondary: 'History' },
-    { ...row({ programId: 'doc-hist', title: 'History Doc', topic: 'Documentary', dateKey: '2024-12-08', startMinutes: 20 * 60, minutes: 60, dollars: 300, fundraiserId: 'd2' }), secondary: 'History' }
+    { ...row({ programId: 'doc-blank', title: 'Unassigned Doc', topic: 'Documentary', dateKey: '2024-12-08', startMinutes: 20 * 60, minutes: 60, dollars: 200, fundraiserId: 'd2' }), secondary: '' },
+    { ...row({ programId: 'xmas', title: 'Christmas Special', topic: 'Holiday - Christmas', dateKey: '2025-12-05', startMinutes: 20 * 60, minutes: 60, dollars: 400, fundraiserId: 'd1' }), secondary: 'Music' }
   ];
   const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows, seasonRows: evidenceRows });
-  assert.deepEqual(Array.from(rows, (item) => item.topic), ['Music', 'Documentary']);
-  assert.equal(Math.round(rows[0].averageRate), 550);
+
+  assert.ok(!rows.some((item) => item.topic === 'Uncategorized'));
+  const music = rows.find((item) => item.topic === 'Music');
+  assert.equal(Math.round(music.averageRate), 500, 'expired and current historical Music titles should count equally in the topic average');
+  assert.equal(music.testedTitleCount, 2);
+  assert.ok(music.subtopicDetails.some((item) => item.label === 'Rock / Pop / Soul'));
+
   const documentary = rows.find((item) => item.topic === 'Documentary');
-  assert.equal(Math.round(documentary.averageRate), 300);
-  assert.ok(documentary.documentarySubtopics.some((item) => item.label === 'History'));
-  assert.ok(documentary.documentarySubtopics.some((item) => item.label === 'Unassigned'));
+  assert.ok(documentary.subtopicDetails.some((item) => item.label === 'History'));
+  assert.ok(documentary.subtopicDetails.some((item) => item.label === 'Unassigned'));
+
+  const christmas = rows.find((item) => item.topic === 'Holiday - Christmas');
+  assert.ok(christmas.subtopicDetails.some((item) => item.label === 'Music'));
+});
+
+test('broad repeatable topic evidence outranks spectacular but thin topic evidence', () => {
+  const library = [];
+  const evidenceRows = [];
+
+  for (let i = 0; i < 10; i += 1) {
+    library.push(baseProgram({ id: `music-${i}`, title: `Music ${i}`, topic_primary: 'Music' }));
+  }
+  library.push(baseProgram({ id: 'nature-1', title: 'Nature One', topic_primary: 'Nature' }));
+  library.push(baseProgram({ id: 'nature-2', title: 'Nature Two', topic_primary: 'Nature' }));
+
+  for (let f = 0; f < 6; f += 1) {
+    const year = 2020 + f;
+    for (let i = 0; i < 10; i += 1) {
+      evidenceRows.push(row({
+        programId: `music-${i}`,
+        title: `Music ${i}`,
+        topic: 'Music',
+        dateKey: `${year}-12-05`,
+        minutes: 60,
+        dollars: 300,
+        fundraiserId: `music-drive-${f}`
+      }));
+    }
+  }
+  evidenceRows.push(row({ programId: 'nature-1', title: 'Nature One', topic: 'Nature', dateKey: '2024-12-06', minutes: 60, dollars: 1500, fundraiserId: 'nature-a' }));
+  evidenceRows.push(row({ programId: 'nature-2', title: 'Nature Two', topic: 'Nature', dateKey: '2025-12-06', minutes: 60, dollars: 1500, fundraiserId: 'nature-b' }));
+
+  const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows, seasonRows: evidenceRows });
+  assert.equal(rows[0].topic, 'Music');
+  const nature = rows.find((item) => item.topic === 'Nature');
+  const music = rows.find((item) => item.topic === 'Music');
+  assert.ok(nature.averageRate > music.averageRate, 'Nature should retain its higher raw average');
+  assert.ok(nature.planningRankScore < music.planningRankScore, 'thin evidence should not outrank broad repeatable evidence');
 });
 
 test('overall mix remains qualitative rather than inventing percentage quotas', () => {
@@ -296,7 +340,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.179'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.180'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.match(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -304,7 +348,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.179'\)/);
+  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.180'\)/);
   assert.match(workerUi, /canonicalizeAirings/);
   assert.match(workerUi, /buildDayOutlook/);
 
@@ -319,8 +363,16 @@ test('Report 5 presentation removes visible median language and evidence-through
   assert.doesNotMatch(reportUi, /strategy-summary/);
   assert.doesNotMatch(reportUi, /sheet-stamp">Evidence through/);
   assert.match(reportUi, /Avg \$.*\/pledge hr/);
-  assert.match(reportUi, /Documentary subtopics/);
+  assert.match(reportUi, /subtopics/);
   assert.match(reportUi, /Day\/time performance/);
+});
+
+test('main Program Library list shows secondary topic under primary topic', () => {
+  const listUi = fs.readFileSync(new URL('../assets/js/ui-list.js', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../assets/styles.css', import.meta.url), 'utf8');
+  assert.match(listUi, /derive\.topicSecondary\(row\)/);
+  assert.match(listUi, /topic-secondary-label/);
+  assert.match(styles, /\.topic-secondary-label/);
 });
 
 test('strategy worker returns a complete result without blocking report code paths', () => {
