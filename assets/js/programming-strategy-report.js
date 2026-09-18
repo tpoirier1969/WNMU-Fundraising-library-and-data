@@ -68,17 +68,18 @@ function topicComparisonSection(strategy){
   const rows=strategy.topicComparison||[];
   if(!rows.length)return'<section class="sheet-section"><h2>Topic performance in selected season</h2><p>No eligible topic data is available.</p></section>';
   const season=rows[0]?.season||S.seasonForDate(strategy.schedule?.startDate)||'selected';
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Complete list of topics represented by titles eligible for this fundraiser. Performance uses WNMU history from the same fundraiser season, not a strongest-topics shortlist.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div><strong>${esc(x.topic)}</strong><span class="strategy-strength strength-${esc(x.signal.toLowerCase().replace(/\s+/g,'-'))}">${esc(x.signal)}</span></div><div>${x.historyRows?`${x.historyRows} rate-valid ${esc(season)} row${x.historyRows===1?'':'s'}${Number.isFinite(x.medianRate)?` · median $${Math.round(x.medianRate)}/hr`:''}`:`No rate-valid ${esc(season)} history yet`}</div><div>${x.bestWindows.length?`Best supported: ${x.bestWindows.map(w=>`${w.weekday} ${w.label}`).join(' · ')}`:'No established weekday/time fit in this season yet'}</div><small>${x.programCount} eligible title${x.programCount===1?'':'s'}${x.subtopics.length?` · Current subtopics: ${esc(x.subtopics.join(' · '))}`:''}</small></div>`).join('')}</div></section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Complete list of topics represented by titles eligible for this fundraiser. Performance uses WNMU history from the same fundraiser season, not a strongest-topics shortlist.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div><strong>${esc(x.topic)}</strong><span class="strategy-strength strength-${esc(x.signal.toLowerCase().replace(/\s+/g,'-'))}">${esc(x.signal)}</span></div><div>${x.historyRows?`${x.historyRows} rate-valid ${esc(season)} row${x.historyRows===1?'':'s'}${Number.isFinite(x.medianRate)?` · median $${Math.round(x.medianRate)}/hr`:''}`:`No rate-valid ${esc(season)} history yet`}</div><div>${x.bestWindows.length?`Best supported: ${x.bestWindows.map(w=>`${w.weekday} ${w.label}`).join(' · ')}`:'No established weekday/time fit in this season yet'}</div><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser${x.subtopics.length?` · Current subtopics: ${esc(x.subtopics.join(' · '))}`:''}</small></div>`).join('')}</div></section>`;
 }
 
 function groupedDayparts(strategy){
   const groups=new Map();
   for(const slot of strategy.windows.filter(x=>!x.experimental&&!x.blocked)){
     const key=`${slot.weekday}|${slot.startMinutes}|${slot.endMinutes}`;
-    const g=groups.get(key)||{weekday:slot.weekday,label:slot.label,startMinutes:slot.startMinutes,endMinutes:slot.endMinutes,rows:0,rates:[]};
-    g.rows+=slot.evidenceRows||0;
-    for(const item of slot.recommendations.slice(0,3))if(item.dayHistory?.rates?.length)g.rates.push(...item.dayHistory.rates);
-    groups.set(key,g);
+    const rates=slot.windowHistory?.rates||[];
+    const existing=groups.get(key);
+    if(!existing||rates.length>(existing.rates?.length||0)){
+      groups.set(key,{weekday:slot.weekday,label:slot.label,startMinutes:slot.startMinutes,endMinutes:slot.endMinutes,rows:rates.length,rates:[...rates]});
+    }
   }
   const weekdayOrder=new Map(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((d,i)=>[d,i]));
   return[...groups.values()].map(g=>({...g,median:S.median(g.rates)}))
@@ -151,7 +152,7 @@ function dayMapSection(strategy){
     if(slot.blocked)return`<div class="strategy-window-divider is-blocked"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · Protected regular programming</strong><span>Not pledge inventory.</span></div>`;
     const exp=slot.experimentalEvidence||{};
     const divider=`<div class="strategy-window-divider ${slot.experimental?'is-experimental':''}"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · ${esc(slot.label)}${slot.experimental?' · Experimental':''}</strong><span>${slot.experimental?esc(`${exp.verdict||'Hypothesis only'}: ${exp.rationale||''}`):(slot.evidenceRows?`${slot.evidenceRows} exact-weekday comparable historical row${slot.evidenceRows===1?'':'s'}`:'No exact-weekday slot history')}</span></div>`;
-    const rows=slot.recommendations.slice(0,4).map(x=>`<div class="strategy-program-row"><span class="strategy-program-time">${clock(slot.startMinutes)}</span><span class="strategy-program-title"><strong>${esc(x.title)}</strong><small>${esc(x.topic)}${x.secondary?` · ${esc(x.secondary)}`:''}</small></span><span class="strategy-program-evidence"><b>${esc(x.confidence)}</b> · ${esc(x.reasons[0]||'No direct title history.')}${x.cautions.length?` <em>${esc(x.cautions[0])}</em>`:''}</span><span class="strategy-program-fit"><b>${Math.round(x.score)}</b><small>${esc(x.fit)}</small></span></div>`).join('');
+    const rows=slot.recommendations.slice(0,4).map(x=>`<div class="strategy-program-row"><span class="strategy-program-time">${clock(slot.startMinutes)}</span><span class="strategy-program-title"><strong>${esc(x.title)}${x.newTitle?'<span class="strategy-new-title">NEW</span>':''}</strong><small>${esc(x.topic)}${x.secondary?` · ${esc(x.secondary)}`:''}${x.programmer?.rating?` · Programmer: ${esc(x.programmer.label)}`:''}</small></span><span class="strategy-program-evidence"><b>${esc(x.confidence)}</b> · ${esc((x.newTitle&&x.reviewedNew?x.reasons.find(r=>/^New \/ unaired/i.test(r)):null)||x.reasons[0]||'No direct title history.')}${x.cautions.length?` <em>${esc(x.cautions[0])}</em>`:''}</span><span class="strategy-program-fit"><b>${Math.round(x.score)}</b><small>${esc(x.fit)}</small></span></div>`).join('');
     return divider+(rows||'<div class="strategy-program-empty">No eligible Program Library title for this slot.</div>');
   }).join('')}</div></section>`).join('')}</div></section>`;
 }
