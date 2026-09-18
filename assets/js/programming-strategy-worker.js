@@ -162,7 +162,7 @@ function buildDayOutlook(schedule = {}, analyses = []) {
     const allDays = (A.calendarDays(analysis) || [])
       .map((day) => ({
         ...day,
-        offset: A.fundraiserDayOffset(analysis, day.dateKey)
+        offset: A.fundraiserDayOffset(analysis, day)
       }))
       .filter((day) =>
         Number(day.rateMinutes || 0) > 0
