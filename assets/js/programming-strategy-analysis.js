@@ -638,7 +638,7 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
       item.newTitle &&
       !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
       !item.season?.holidayOutOfSeason &&
-      item.score >= (item.reviewedNew ? 40 : 48)
+      item.score >= 40
     );
     const reviewedNew = acceptableNew.filter((item) => item.reviewedNew);
     const unreviewedNew = acceptableNew.filter((item) => !item.reviewedNew);
