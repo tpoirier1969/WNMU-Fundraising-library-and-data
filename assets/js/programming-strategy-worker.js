@@ -1,8 +1,10 @@
 'use strict';
 
-importScripts('programming-strategy-analysis.js?v=0.22.181');
+importScripts('one-sheet-analysis.js?v=0.22.183', 'programming-strategy-analysis.js?v=0.22.183');
 
+const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
+if (!A) throw new Error('Shared historical analysis module did not load in worker.');
 if (!S) throw new Error('Programming strategy analysis module did not load in worker.');
 
 const text = (value) => String(value ?? '').trim();
@@ -13,234 +15,99 @@ function progress(requestId, stage, message) {
   self.postMessage({ type: 'progress', requestId, stage, message });
 }
 
-function importedDateKey(row = {}) {
-  const direct = text(row.air_date);
-  if (direct) return direct.slice(0, 10);
-  return S.dateKey(S.parseDate(row.aired_at));
+function completedHistoricalAnalyses(scheduleRows = [], canonicalAirings = [], library = [], cutoff = '') {
+  const indexes = A.buildLibraryIndexes(library);
+  const schedules = A.prepareSchedules((scheduleRows || []).map(A.normalizeSchedule))
+    .filter((item) => item?.startDate && item?.endDate && (!cutoff || item.endDate <= cutoff));
+  const analyses = schedules
+    .map((item) => A.analyzeSchedule(item, canonicalAirings, indexes))
+    .filter((analysis) => (analysis?.importedRows || []).length || Number(analysis?.broadcastDollars || 0) > 0);
+  return { schedules, analyses, indexes };
 }
 
-function importedStartMinutes(row = {}) {
-  const raw = text(row.air_time);
-  const match = raw.match(/^(\d{1,2}):(\d{2})/);
-  if (match) return (Number(match[1]) * 60) + Number(match[2]);
-  const date = new Date(row.aired_at || '');
-  return Number.isNaN(date.getTime()) ? null : (date.getHours() * 60) + date.getMinutes();
-}
-
-function libraryRuntimeMinutes(row = {}) {
-  const seconds = Number(row.actual_runtime_seconds);
-  if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds / 60);
-  const bucket = Number(row.length_bucket_minutes);
-  return Number.isFinite(bucket) && bucket > 0 ? bucket : null;
-}
-
-function buildLibraryIndexes(rows = []) {
-  const byId = new Map();
-  const byTitle = new Map();
-  const byNola = new Map();
-  for (const row of rows || []) {
-    const id = text(row?.id);
-    const title = S.lookupKey(row?.title);
-    const nola = nolaKey(row?.nola_code);
-    if (id) byId.set(id, row);
-    if (title) byTitle.set(title, row);
-    if (nola) {
-      if (!byNola.has(nola)) byNola.set(nola, []);
-      byNola.get(nola).push(row);
+function strategyEvidenceRowsFromAnalyses(analyses = []) {
+  const rows = [];
+  for (const analysis of analyses || []) {
+    const schedule = analysis?.schedule || {};
+    const fundraiserId = text(schedule.id || schedule.title);
+    const fundraiserTitle = text(schedule.title);
+    for (const row of analysis?.placementRows || []) {
+      if (row?.countsTowardScheduleMinutes === false || row?.unmatchedImported || !row?.known) continue;
+      const startMinutes = Number(row?.startMinutes);
+      const minutes = Number(row?.minutes || 0);
+      const durationMissing = Boolean(row?.durationMissing) || !(minutes > 0);
+      rows.push({
+        programId: text(row.programId || ''),
+        title: text(row.title || row.plannedTitle || 'Untitled program'),
+        topic: text(row.topic || 'Uncategorized') || 'Uncategorized',
+        secondary: S.lookupKey(row.secondary || '') === 'unspecified' ? '' : text(row.secondary || ''),
+        dateKey: text(row.dateKey || ''),
+        startMinutes: Number.isFinite(startMinutes) ? startMinutes : null,
+        endMinutes: Number.isFinite(Number(row.endMinutes))
+          ? Number(row.endMinutes)
+          : (Number.isFinite(startMinutes) && minutes > 0 ? startMinutes + minutes : null),
+        minutes,
+        dollars: Number(row.dollars || 0),
+        pledges: Number(row.pledges || 0),
+        fundraiserId,
+        fundraiserTitle,
+        driveStartDate: text(schedule.startDate || ''),
+        driveEndDate: text(schedule.endDate || ''),
+        known: true,
+        durationMissing,
+        countsTowardScheduleMinutes: true,
+        durationSource: text(row.durationSource || '')
+      });
     }
   }
-  return { byId, byTitle, byNola };
+  return rows;
 }
 
-function libraryRowForAiring(row = {}, indexes = {}) {
-  const ids = [row.manual_match_program_id, row.pledge_program_id, row.program_id]
-    .map((value) => text(value))
-    .filter(Boolean);
-  for (const id of ids) {
-    const hit = indexes.byId?.get(id);
-    if (hit) return hit;
-  }
-
-  const titleKey = S.lookupKey(
-    row.matched_library_title
-    || row.program_title
-    || row.title
-    || row.imported_program_title
-    || ''
+function seasonAnalysisPool(schedule = {}, analyses = []) {
+  const targetSeason = A.seasonForDate(schedule.startDate || schedule.start_date || '');
+  const seasonal = (analyses || []).filter((analysis) =>
+    text(analysis?.schedule?.season || A.seasonForDate(analysis?.schedule?.startDate || '')) === targetSeason
   );
-  const nola = nolaKey(row.nola_code);
-  if (nola) {
-    const matches = indexes.byNola?.get(nola) || [];
-    if (titleKey) {
-      const exact = matches.find((item) => S.lookupKey(item?.title) === titleKey);
-      if (exact) return exact;
-    }
-    if (matches.length === 1) return matches[0];
-  }
-  return titleKey ? (indexes.byTitle?.get(titleKey) || null) : null;
-}
-
-function canonicalIdentity(row = {}) {
-  const sourceCode = nolaKey(row.nola_code);
-  if (sourceCode) return `code:${sourceCode}`;
-  const title = S.lookupKey(
-    row.imported_program_title
-    || row.program_title
-    || row.title
-    || row.matched_library_title
-    || ''
-  );
-  return title ? `title:${title}` : '';
-}
-
-function canonicalNaturalKey(row = {}) {
-  const station = S.lookupKey(row.station || '');
-  const identity = canonicalIdentity(row);
-  const date = importedDateKey(row);
-  const time = text(row.air_time);
-  return identity && date && time ? [station, identity, date, time].join('|') : '';
-}
-
-function snapshotKey(row = {}) {
-  const sourceName = text(row.source_file_name);
-  const sourceKey = text(row.source_file_key);
-  const batch = text(row.import_batch_id);
-  const range = `${text(row.drive_start_date).slice(0, 10)}|${text(row.drive_end_date).slice(0, 10)}`;
-  if (sourceName) return `source-name:${sourceName}|range:${range}`;
-  if (sourceKey) return `source-key:${sourceKey}|range:${range}`;
-  if (batch) return `batch:${batch}|range:${range}`;
-  return `row:${text(row.row_hash || row.id || airingTimestamp(row))}`;
-}
-
-function airingTimestamp(row = {}) {
-  return Date.parse(row.updated_at || row.created_at || '') || 0;
-}
-
-function aggregateSnapshot(entries = []) {
-  const unique = [];
-  const seen = new Set();
-  for (const entry of entries) {
-    const row = entry.row || {};
-    const identity = text(row.row_hash || row.id || `index:${entry.index}`);
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    unique.push(entry);
-  }
-  if (!unique.length) return {};
-
-  const newest = [...unique].sort((a, b) => airingTimestamp(a.row) - airingTimestamp(b.row) || a.index - b.index).slice(-1)[0].row;
-  const merged = { ...newest };
-  merged.dollars = unique.reduce((sum, entry) => sum + (Number(entry.row?.dollars || 0) || 0), 0);
-  merged.pledge_count = unique.reduce((sum, entry) => sum + (Number(entry.row?.pledge_count || 0) || 0), 0);
-  const minutes = unique.reduce((sum, entry) => {
-    const value = Number(entry.row?.program_minutes || 0);
-    return value > 0 ? sum + value : sum;
-  }, 0);
-  merged.program_minutes = minutes > 0 ? minutes : newest.program_minutes;
-
-  const preferredFields = [
-    'manual_match_program_id','pledge_program_id','program_id','matched_library_title',
-    'program_title','title','imported_program_title','nola_code','fundraiser_label',
-    'drive_start_date','drive_end_date','station'
-  ];
-  for (const field of preferredFields) {
-    const value = unique.map((entry) => entry.row?.[field]).find((candidate) => text(candidate));
-    if (value != null && text(value)) merged[field] = value;
-  }
-  merged.__source_row_count = unique.length;
-  return merged;
-}
-
-function canonicalizeAirings(rows = []) {
-  const naturalGroups = new Map();
-  const passthrough = [];
-
-  (rows || []).forEach((row, index) => {
-    const naturalKey = canonicalNaturalKey(row);
-    if (!naturalKey) {
-      passthrough.push({ index, row });
-      return;
-    }
-    if (!naturalGroups.has(naturalKey)) naturalGroups.set(naturalKey, new Map());
-    const snapshots = naturalGroups.get(naturalKey);
-    const key = snapshotKey(row);
-    if (!snapshots.has(key)) snapshots.set(key, {
-      rows: [],
-      reportEnd: '',
-      timestamp: 0,
-      lastIndex: index
-    });
-    const snapshot = snapshots.get(key);
-    snapshot.rows.push({ row, index });
-    snapshot.reportEnd = [snapshot.reportEnd, text(row.drive_end_date).slice(0, 10)].sort().slice(-1)[0] || '';
-    snapshot.timestamp = Math.max(snapshot.timestamp, airingTimestamp(row));
-    snapshot.lastIndex = Math.max(snapshot.lastIndex, index);
-  });
-
-  const chosen = [...passthrough];
-  naturalGroups.forEach((snapshots) => {
-    const best = [...snapshots.values()].sort((a, b) =>
-      b.reportEnd.localeCompare(a.reportEnd)
-      || b.timestamp - a.timestamp
-      || b.lastIndex - a.lastIndex
-    )[0];
-    if (!best) return;
-    chosen.push({
-      index: Math.min(...best.rows.map((entry) => entry.index)),
-      row: aggregateSnapshot(best.rows)
-    });
-  });
-
-  return chosen.sort((a, b) => a.index - b.index).map((entry) => entry.row);
-}
-
-function normalizeAiring(row = {}, indexes = {}) {
-  const lib = libraryRowForAiring(row, indexes) || {};
-  const dateKey = importedDateKey(row);
-  const startMinutes = importedStartMinutes(row);
-  const directMinutes = Number(row.program_minutes || 0);
-  const minutes = directMinutes > 0 ? directMinutes : Number(libraryRuntimeMinutes(lib) || 0);
-  const programId = text(
-    lib.id
-    ?? row.manual_match_program_id
-    ?? row.pledge_program_id
-    ?? row.program_id
-    ?? ''
-  );
-  const title = text(
-    lib.title
-    || row.matched_library_title
-    || row.program_title
-    || row.title
-    || row.imported_program_title
-    || 'Untitled program'
-  );
-  const driveStartDate = text(row.drive_start_date).slice(0, 10);
-  const driveEndDate = text(row.drive_end_date).slice(0, 10);
-  const fundraiserTitle = text(row.fundraiser_label);
-
   return {
-    programId,
-    title,
-    topic: text(lib.topic_primary || 'Uncategorized') || 'Uncategorized',
-    secondary: text(lib.topic_secondary),
-    nola_code: text(lib.nola_code || row.nola_code),
-    dateKey,
-    startMinutes,
-    endMinutes: Number.isFinite(startMinutes) && minutes > 0 ? startMinutes + minutes : null,
-    minutes,
-    dollars: Number(row.dollars || 0) || 0,
-    pledges: Number(row.pledge_count || 0) || 0,
-    fundraiserId: driveStartDate && driveEndDate
-      ? `${driveStartDate}|${driveEndDate}`
-      : (fundraiserTitle || dateKey),
-    fundraiserTitle,
-    driveStartDate,
-    driveEndDate,
-    known: true,
-    durationMissing: !(minutes > 0),
-    countsTowardScheduleMinutes: true
+    targetSeason: targetSeason || 'Special',
+    fallback: seasonal.length < 2,
+    analyses: seasonal.length < 2 ? analyses : seasonal
   };
+}
+
+function rankingStatsMap(rows = [], { normalizeUnassigned = false } = {}) {
+  return new Map((rows || []).map((row) => {
+    let key = S.lookupKey(row.key);
+    if (normalizeUnassigned && key === 'unspecified') key = 'unassigned';
+    return [key, {
+      key: row.key,
+      historyRows: Number(row.rateAirings || 0),
+      fundraiserSamples: Number(row.fundraisers || 0),
+      testedTitleCount: Number(row.titles || 0),
+      averageRate: Number(row.averageDollarsPerHour),
+      medianRate: Number(row.medianDollarsPerHour)
+    }];
+  }));
+}
+
+function buildHistoricalPerformanceStats(schedule = {}, analyses = []) {
+  const targetSeason = A.seasonForDate(schedule.startDate || schedule.start_date || '');
+  const seasonAnalyses = (analyses || []).filter((analysis) =>
+    text(analysis?.schedule?.season || A.seasonForDate(analysis?.schedule?.startDate || '')) === targetSeason
+  );
+  const minimums = { minAirings: 1, minFundraisers: 1, minTitles: 1 };
+  const topic = rankingStatsMap(A.historicalRanking(seasonAnalyses, 'topic', minimums));
+  const subtopicByTopic = new Map();
+
+  for (const topicKey of ['documentary', 'music', 'holiday christmas']) {
+    const filtered = seasonAnalyses.map((analysis) => ({
+      ...analysis,
+      placementRows: (analysis?.placementRows || []).filter((row) => S.lookupKey(row?.topic || '') === topicKey)
+    }));
+    subtopicByTopic.set(topicKey, rankingStatsMap(A.historicalRanking(filtered, 'subtopic', minimums), { normalizeUnassigned: true }));
+  }
+
+  return { targetSeason: targetSeason || 'Special', topic, subtopicByTopic };
 }
 
 function firstSaturday(startValue, endValue) {
@@ -272,96 +139,91 @@ function fundraiserDayTitle(schedule = {}, date) {
   return `${ordinalWord(Math.max(1, occurrence))} ${weekday}`;
 }
 
-function driveDayRates(rows = []) {
-  const drives = new Map();
-  for (const row of rows) {
-    const startDate = row.driveStartDate || row.dateKey;
-    const endDate = row.driveEndDate || row.dateKey;
-    const driveKey = `${startDate}|${endDate}`;
-    if (!drives.has(driveKey)) {
-      drives.set(driveKey, {
-        startDate,
-        endDate,
-        season: S.seasonForDate(startDate),
-        days: new Map()
-      });
-    }
-    const drive = drives.get(driveKey);
-    if (!drive.days.has(row.dateKey)) drive.days.set(row.dateKey, { dollars: 0, minutes: 0 });
-    const day = drive.days.get(row.dateKey);
-    if (!row.durationMissing && Number(row.minutes) > 0) {
-      day.dollars += Number(row.dollars || 0);
-      day.minutes += Number(row.minutes || 0);
-    }
-  }
-
-  return [...drives.values()].map((drive) => {
-    const anchor = firstSaturday(drive.startDate, drive.endDate);
-    const byOffset = new Map();
-    drive.days.forEach((day, dateKey) => {
-      const date = S.parseDate(dateKey);
-      if (!date || !anchor || !(day.minutes > 0)) return;
-      const offset = Math.round((date - anchor) / 86400000);
-      byOffset.set(offset, (day.dollars * 60) / day.minutes);
-    });
-    return { ...drive, byOffset };
-  });
-}
-
-function buildDayOutlook(schedule = {}, rows = []) {
-  const targetSeason = S.seasonForDate(schedule.startDate);
-  const drives = driveDayRates(rows);
-  let pool = drives.filter((drive) => drive.season === targetSeason);
-  let fallback = false;
-  if (pool.length < 2) {
-    pool = drives;
-    fallback = true;
-  }
-
-  const allRates = pool.flatMap((drive) => [...drive.byOffset.values()]).filter(Number.isFinite);
-  const baseline = S.mean(allRates);
+function buildDayOutlook(schedule = {}, analyses = []) {
+  const pool = seasonAnalysisPool(schedule, analyses);
   const targetAnchor = firstSaturday(schedule.startDate, schedule.endDate);
   const start = S.parseDate(schedule.startDate);
   const end = S.parseDate(schedule.endDate);
-  const resultRows = [];
+  const targetOffsets = [];
+  const targetDates = new Map();
 
-  if (start && end) {
+  if (start && end && targetAnchor) {
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-      const offset = targetAnchor ? Math.round((date - targetAnchor) / 86400000) : null;
-      const rates = Number.isFinite(offset)
-        ? pool.map((drive) => drive.byOffset.get(offset)).filter(Number.isFinite)
-        : [];
-      const averageRate = S.mean(rates);
-      const ratio = rates.length && Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
-        ? averageRate / baseline
-        : null;
-      let outlook = 'No comparable history';
-      if (rates.length === 1) outlook = 'Thin evidence';
-      else if (rates.length >= 2) {
-        if (ratio >= 1.25) outlook = 'Usually strong';
-        else if (ratio >= 1.05) outlook = 'Usually good';
-        else if (ratio >= 0.85) outlook = 'Fair / typical';
-        else if (ratio >= 0.65) outlook = 'Usually soft';
-        else outlook = 'Usually weak';
-      }
-      resultRows.push({
-        date: S.dateKey(date),
-        label: fundraiserDayTitle(schedule, date),
-        outlook,
-        samples: rates.length,
-        averageRate,
-        ratio
+      const key = S.dateKey(date);
+      const offset = Math.round((date - targetAnchor) / 86400000);
+      targetOffsets.push(offset);
+      targetDates.set(offset, { date: key, label: fundraiserDayTitle(schedule, new Date(date)) });
+    }
+  }
+  const targetOffsetSet = new Set(targetOffsets);
+  const observations = new Map(targetOffsets.map((offset) => [offset, []]));
+
+  for (const analysis of pool.analyses || []) {
+    const allDays = (A.calendarDays(analysis) || [])
+      .map((day) => ({
+        ...day,
+        offset: A.fundraiserDayOffset(analysis, day)
+      }))
+      .filter((day) =>
+        Number(day.rateMinutes || 0) > 0
+        && Number.isFinite(Number(day.dollarsPerHour))
+      );
+
+    const baseline = Number(analysis?.rateEligibleMinutes || 0) > 0
+      ? A.dollarsPerHour(Number(analysis?.rateEligibleDollars || 0), Number(analysis?.rateEligibleMinutes || 0))
+      : null;
+    if (!(baseline > 0)) continue;
+
+    for (const day of allDays) {
+      if (!Number.isFinite(Number(day.offset)) || !targetOffsetSet.has(Number(day.offset))) continue;
+      observations.get(Number(day.offset))?.push({
+        rate: Number(day.dollarsPerHour),
+        index: Number(day.dollarsPerHour) / baseline,
+        fundraiserId: text(analysis?.schedule?.id || analysis?.schedule?.title || '')
       });
     }
   }
+
+  const resultRows = targetOffsets.map((offset) => {
+    const items = observations.get(offset) || [];
+    const rates = items.map((item) => item.rate).filter(Number.isFinite);
+    const indexes = items.map((item) => item.index).filter(Number.isFinite);
+    const averageRate = S.mean(rates);
+    const ratio = S.mean(indexes);
+    let outlook = 'No comparable history';
+    if (indexes.length === 1) outlook = 'Thin evidence';
+    else if (indexes.length >= 2) {
+      if (ratio >= 1.30) outlook = 'Usually strong';
+      else if (ratio >= 1.15) outlook = 'Usually good';
+      else if (ratio >= 0.85) outlook = 'Fair / typical';
+      else if (ratio >= 0.70) outlook = 'Usually soft';
+      else outlook = 'Usually weak';
+    }
+    const target = targetDates.get(offset) || {};
+    return {
+      date: target.date || '',
+      label: target.label || 'Fundraiser day',
+      offset,
+      outlook,
+      samples: indexes.length,
+      averageRate,
+      ratio,
+      relativeIndex: ratio
+    };
+  });
 
   const ranked = resultRows
     .filter((row) => row.samples >= 2 && Number.isFinite(row.ratio))
     .sort((a, b) => b.ratio - a.ratio);
-  const best = new Set(ranked.slice(0, 2).filter((row) => row.ratio >= 1.05).map((row) => row.date));
+  const best = new Set(ranked.slice(0, 2).filter((row) => row.ratio >= 1.15).map((row) => row.date));
   resultRows.forEach((row) => { row.bestBet = best.has(row.date); });
 
-  return { season: targetSeason, fallback, rows: resultRows };
+  return {
+    season: pool.targetSeason,
+    fallback: pool.fallback,
+    method: 'within-fundraiser-relative-day',
+    rows: resultRows
+  };
 }
 
 function reportableProgrammingRows(rows = []) {
@@ -375,7 +237,7 @@ function reportableProgrammingRows(rows = []) {
 function seasonPlanningPool(schedule = {}, rows = []) {
   const targetSeason = S.seasonForDate(schedule.startDate);
   const clean = reportableProgrammingRows(rows);
-  const seasonal = clean.filter((row) => S.seasonForDate(row.dateKey) === targetSeason);
+  const seasonal = clean.filter((row) => S.rowSeason(row) === targetSeason);
   const seasonFundraisers = new Set(seasonal.map((row) => row.fundraiserId).filter(Boolean)).size;
   return {
     targetSeason,
@@ -448,8 +310,8 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
 
 function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
   const patterns = hourly || buildHourlyPatterns(schedule, rows);
-  const allRates = patterns.rows.map((row) => row.averageRate).filter(Number.isFinite);
-  const baseline = S.mean(allRates);
+  const planningPool = seasonPlanningPool(schedule, rows);
+  const baseline = summarizeTimeslotRows(planningPool.rows).averageRate;
   const byWeekday = new Map();
   patterns.rows.forEach((row) => {
     if (!byWeekday.has(row.weekday)) byWeekday.set(row.weekday, []);
@@ -462,7 +324,6 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
   // duplicate entry for every Saturday in the upcoming fundraiser. Historical
   // WNMU results here have often reflected a narrow programming mix, so weak
   // results should not be treated as proof that the clock time itself is bad.
-  const planningPool = seasonPlanningPool(schedule, rows);
   const saturdayAfternoonRows = planningPool.rows.filter((row) => {
     const date = S.parseDate(row.dateKey);
     const start = Number(row.startMinutes);
@@ -660,39 +521,39 @@ self.onmessage = (event) => {
     const library = Array.isArray(payload.library) ? payload.library : [];
     const rawAirings = Array.isArray(payload.airings) ? payload.airings : [];
     const overrides = Array.isArray(payload.overrides) ? payload.overrides : [];
+    const scheduleRows = Array.isArray(payload.scheduleRows) ? payload.scheduleRows : [];
     const schedule = payload.schedule || {};
     const now = payload.now ? new Date(payload.now) : new Date();
 
-    const indexes = buildLibraryIndexes(library);
-    const canonical = canonicalizeAirings(rawAirings);
+    const canonical = A.canonicalizeImportedAirings(rawAirings);
     const cutoff = S.evidenceCutoff(schedule, now);
-    const cutoffDate = S.parseDate(cutoff);
-    const rows = canonical
-      .filter((row) => {
-        const when = S.parseDate(importedDateKey(row));
-        return Boolean(when && cutoffDate && when <= cutoffDate);
-      })
-      .map((row) => normalizeAiring(row, indexes))
-      .filter((row) => row.dateKey);
+    const historical = completedHistoricalAnalyses(scheduleRows, canonical, library, cutoff);
+    const analyses = historical.analyses;
+    const rows = strategyEvidenceRowsFromAnalyses(analyses);
+    const performanceStats = buildHistoricalPerformanceStats(schedule, analyses);
+
     diagnostics.prepareMs = Math.round(nowMs() - phase);
     diagnostics.rawAirings = rawAirings.length;
     diagnostics.canonicalAirings = canonical.length;
+    diagnostics.historicalSchedules = historical.schedules.length;
+    diagnostics.historicalAnalyses = analyses.length;
     diagnostics.evidenceRows = rows.length;
 
-    progress(requestId, 'score', 'Scoring eligible titles against WNMU history…');
+    progress(requestId, 'score', 'Scoring eligible titles against reconciled WNMU history…');
     phase = nowMs();
     const strategy = S.buildStrategy({
       schedule,
       library,
       evidenceRows: rows,
       overrides,
+      performanceStats,
       now
     });
     diagnostics.strategyMs = Math.round(nowMs() - phase);
 
     progress(requestId, 'days', 'Calculating fundraiser-day and day/time patterns…');
     phase = nowMs();
-    const dayOutlook = buildDayOutlook(schedule, rows);
+    const dayOutlook = buildDayOutlook(schedule, analyses);
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);

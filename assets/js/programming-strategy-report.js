@@ -1,11 +1,11 @@
 (() => {
 'use strict';
 const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
-const state={client:null,schedules:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
+const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
 function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
-function seasonForDate(value){const d=parseDate(value);if(!d)return'Special';const m=d.getMonth();if(m===0||m>=9)return'December';if(m<=3)return'March';if(m<=5)return'June';if(m<=8)return'August';return'December';}
+function seasonForDate(value){const d=parseDate(value);if(!d)return'Special';const m=d.getMonth()+1;if(m===2||m===3)return'March';if(m===5||m===6)return'June';if(m===8||m===9)return'August';if(m===11||m===12)return'December';return'Special';}
 function median(values=[]){const sorted=(values||[]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);if(!sorted.length)return null;const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;}
 function fmt(v,year=true){const d=parseDate(v);return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:year?'numeric':undefined}):esc(v||'—');}
 function clock(m){m=Number(m);if(!Number.isFinite(m))return'—';m=((m%1440)+1440)%1440;const h=Math.floor(m/60),mi=m%60;return`${h%12||12}${mi?`:${String(mi).padStart(2,'0')}`:''} ${h>=12?'PM':'AM'}`;}
@@ -39,19 +39,19 @@ function todayKey(){return dateKey(todayStart());}
 function defaultSchedule(){return state.schedules[0]||null;}
 function scheduleLabel(s){return`${s.title} · ${fmt(s.startDate)}–${fmt(s.endDate,false)}`;}
 async function loadSchedules(){
-  status('Loading upcoming fundraiser choices…');
+  status('Loading fundraiser history and upcoming choices…');
   let q=state.client.from('pledge_fundraiser_schedules')
-    .select('id,title,start_date,end_date,updated_at')
-    .gte('start_date',todayKey())
+    .select('id,title,start_date,end_date,created_at,updated_at,schedule_data')
     .order('start_date',{ascending:true})
     .order('updated_at',{ascending:false});
   const{data,error}=await q;
   if(error)throw error;
+  state.scheduleRows=Array.isArray(data)?data:[];
   const byRange=new Map();
-  for(const row of Array.isArray(data)?data:[]){
+  for(const row of state.scheduleRows){
     const startDate=String(row.start_date||'').slice(0,10);
     const endDate=String(row.end_date||'').slice(0,10);
-    if(!startDate||!endDate)continue;
+    if(!startDate||!endDate||startDate<todayKey())continue;
     const key=`${startDate}|${endDate}`;
     if(byRange.has(key))continue;
     byRange.set(key,{
@@ -75,7 +75,7 @@ async function loadAnalysisData(){
     'id','program_id','pledge_program_id','manual_match_program_id',
     'title','program_title','imported_program_title','matched_library_title','nola_code',
     'air_date','air_time','aired_at','dollars','pledge_count','program_minutes',
-    'fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','import_batch_id','updated_at','created_at'
+    'fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','import_batch_id','raw_payload','updated_at','created_at'
   ].join(',');
   const programSelect=[
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
@@ -83,7 +83,7 @@ async function loadAnalysisData(){
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const[airings,library,overrides]=await Promise.all([
-    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id'],apply:q=>q.lte('air_date',cutoff)}),
+    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
     fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']})
   ]);
@@ -141,7 +141,7 @@ function dayTone(outlook=''){
 
 function dayOutlookSection(outlook){
   const data=outlook||{season:'selected',fallback:false,rows:[]};
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Anticipated day strength</h2><p>Compares each fundraiser-day position with the same position in prior ${esc(data.season||'selected')} drives${data.fallback?' (same-season sample was thin, so all historical drives are used as fallback)':''}, using Avg $ / Pledge Hour.</p></div></div><div class="strategy-day-outlook">${(data.rows||[]).map(x=>`<div class="strategy-day-outlook-row tone-${dayTone(x.outlook)}"><strong>${esc(x.label)}</strong><span class="strategy-day-rating">${esc(x.outlook)}${x.bestBet?' · Best bet':''}</span><span>${x.samples?`${x.samples} comparable historical day${x.samples===1?'':'s'}${Number.isFinite(x.averageRate)?` · <b class="strategy-rate">Avg $${Math.round(x.averageRate)}/pledge hr</b>`:''}`:'No corresponding historical day sample'}</span></div>`).join('')}</div></section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Anticipated day strength</h2><p>Compares each fundraiser-day position with the same position in prior ${esc(data.season||'selected')} drives${data.fallback?' (same-season sample was thin, so all historical drives are used as fallback)':''}. Strength is normalized to each historical fundraiser’s own typical day; the displayed Avg $ / Pledge Hour is the factual corresponding-day average.</p></div></div><div class="strategy-day-outlook">${(data.rows||[]).map(x=>`<div class="strategy-day-outlook-row tone-${dayTone(x.outlook)}"><strong>${esc(x.label)}</strong><span class="strategy-day-rating">${esc(x.outlook)}${x.bestBet?' · Best bet':''}</span><span>${x.samples?`${x.samples} comparable historical day${x.samples===1?'':'s'}${Number.isFinite(x.averageRate)?` · <b class="strategy-rate">Avg $${Math.round(x.averageRate)}/pledge hr</b>`:''}`:'No corresponding historical day sample'}</span></div>`).join('')}</div></section>`;
 }
 
 function hourlyPatternsSection(hourly){
@@ -196,7 +196,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.181');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.183');
     }catch(error){
       reject(error);
       return;
@@ -248,6 +248,7 @@ function runStrategyWorker(schedule){
         library:state.library,
         airings:state.airings,
         overrides:state.overrides,
+        scheduleRows:state.scheduleRows,
         now:new Date().toISOString()
       });
     }catch(error){
