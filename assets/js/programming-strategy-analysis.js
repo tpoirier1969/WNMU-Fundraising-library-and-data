@@ -478,17 +478,32 @@
   }
 
   function rowSummary(rows = [], program = null) {
-    const rates = rows.map((row) => rowRate(row, program)).filter(Number.isFinite);
-    const dates = rows.map((row) => parseDate(airingDate(row))).filter(Boolean).sort((a, b) => a - b);
+    const rates = [];
+    const fundraisers = new Set();
+    let totalDollars = 0;
+    let earliest = null;
+    let latest = null;
+    for (const row of (rows || [])) {
+      const rate = rowRate(row, program);
+      if (Number.isFinite(rate)) rates.push(rate);
+      totalDollars += rowDollars(row);
+      const fundraiser = text(first(row.fundraiserId, row.fundraiser_id, row.fundraiserTitle, row.fundraiser_label, airingDate(row)));
+      if (fundraiser) fundraisers.add(fundraiser);
+      const when = parseDate(airingDate(row));
+      if (when) {
+        if (!earliest || when < earliest) earliest = when;
+        if (!latest || when > latest) latest = when;
+      }
+    }
     return {
-      rows: rows.length,
-      fundraisers: fundraiserCount(rows),
+      rows: (rows || []).length,
+      fundraisers: fundraisers.size,
       rates,
       medianRate: median(rates),
       averageRate: mean(rates),
-      totalDollars: rows.reduce((sum, row) => sum + rowDollars(row), 0),
-      latest: dates.length ? dates[dates.length - 1] : null,
-      earliest: dates.length ? dates[0] : null
+      totalDollars,
+      latest,
+      earliest
     };
   }
 
@@ -619,11 +634,62 @@
     exactMeta.forEach((meta) => add(exactByTopic, meta));
     broadMeta.forEach((meta) => add(broadByTopic, meta));
 
+    const exactTopicSummaries = new Map();
+    const broadTopicSummaries = new Map();
+    exactByTopic.forEach((topicRows, topicKey) => exactTopicSummaries.set(topicKey, rowSummary(topicRows)));
+    broadByTopic.forEach((topicRows, topicKey) => broadTopicSummaries.set(topicKey, rowSummary(topicRows)));
     const value = {
       exactRows,
       broadRows,
       exactByTopic,
       broadByTopic,
+      exactTopicSummaries,
+      broadTopicSummaries,
+      exactSummary: rowSummary(exactRows),
+      broadSummary: rowSummary(broadRows)
+    };
+    cache?.set(key, value);
+    return value;
+  }
+
+  function cachedSeasonSlotEvidence(slot = {}, context = {}) {
+    const cache = context.seasonSlotEvidenceCache;
+    const key = slotEvidenceCacheKey(slot);
+    if (cache?.has(key)) return cache.get(key);
+
+    const targetDate = parseDate(slot.date);
+    const targetWeekday = targetDate?.getDay();
+    const targetPart = slot.weekpart || (targetWeekday === 6 ? 'Saturday' : targetWeekday === 0 ? 'Sunday' : 'Weekday');
+    const targetDaypart = daypartForMinutes(slot.startMinutes);
+    const indexed = context.seasonSlotEvidenceIndex;
+    const matchesWindow = (meta) => Math.abs(meta.start - slot.startMinutes) <= 90 || meta.daypart === targetDaypart;
+    const exactMeta = indexed && Number.isFinite(targetWeekday)
+      ? (indexed.byWeekday.get(targetWeekday) || []).filter(matchesWindow)
+      : [];
+    const broadMeta = indexed
+      ? (indexed.byWeekpart.get(targetPart) || []).filter(matchesWindow)
+      : [];
+    const exactRows = exactMeta.map((meta) => meta.row);
+    const broadRows = broadMeta.map((meta) => meta.row);
+    const exactByTopic = new Map();
+    const broadByTopic = new Map();
+    const add = (map, meta) => {
+      if (!map.has(meta.topicKey)) map.set(meta.topicKey, []);
+      map.get(meta.topicKey).push(meta.row);
+    };
+    exactMeta.forEach((meta) => add(exactByTopic, meta));
+    broadMeta.forEach((meta) => add(broadByTopic, meta));
+    const exactTopicSummaries = new Map();
+    const broadTopicSummaries = new Map();
+    exactByTopic.forEach((topicRows, topicKey) => exactTopicSummaries.set(topicKey, rowSummary(topicRows)));
+    broadByTopic.forEach((topicRows, topicKey) => broadTopicSummaries.set(topicKey, rowSummary(topicRows)));
+    const value = {
+      exactRows,
+      broadRows,
+      exactByTopic,
+      broadByTopic,
+      exactTopicSummaries,
+      broadTopicSummaries,
       exactSummary: rowSummary(exactRows),
       broadSummary: rowSummary(broadRows)
     };
@@ -764,8 +830,8 @@ const broadTitle = rowSummary(comparableRows(titleRows,slot,{exactWeekday:false}
 const topic = programTopic(program);
 const slotEvidence = cachedSlotEvidence(slot, context);
 const topicKey = lookupKey(topic);
-const exactTopic = rowSummary(slotEvidence.exactByTopic.get(topicKey)||[]);
-const broadTopic = rowSummary(slotEvidence.broadByTopic.get(topicKey)||[]);
+const exactTopic = slotEvidence.exactTopicSummaries.get(topicKey) || rowSummary([]);
+const broadTopic = slotEvidence.broadTopicSummaries.get(topicKey) || rowSummary([]);
 const dayHistory = slotEvidence.exactSummary;
 const season = cachedProgram.season;
 const drama = cachedProgram.drama;
@@ -897,7 +963,9 @@ return result;}
   function topicComparison(library = [], windows = [], context = {}) {
     const groups = new Map();
     const targetSeason = seasonForDate(scheduleStart(context.schedule || {}));
-    const seasonRows = (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === targetSeason);
+    const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === targetSeason);
+    const seasonTopicSummaryCache = context.seasonTopicSummaryCache || new Map();
+
     for (const program of (library || [])) {
       const topic = programTopic(program);
       const key = lookupKey(topic);
@@ -908,18 +976,29 @@ return result;}
       const secondary = programSecondary(program);
       if (secondary) group.subtopics.add(secondary);
     }
-    return [...groups.values()].map((group) => {
-      const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === lookupKey(group.topic));
-      const history = rowSummary(topicRows);
+
+    return [...groups.entries()].map(([topicKey, group]) => {
+      let history = seasonTopicSummaryCache.get(topicKey);
+      if (!history) {
+        const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
+        history = rowSummary(topicRows);
+        seasonTopicSummaryCache.set(topicKey, history);
+      }
+
       const supported = new Map();
-      for (const slot of windows.filter((item) => !item.experimental && !item.blocked)) {
-        const exact = rowSummary(comparableRows(seasonRows, slot, { topic: group.topic, exactWeekday: true }));
+      for (const slot of windows) {
+        if (slot.experimental || slot.blocked) continue;
+        const slotEvidence = cachedSeasonSlotEvidence(slot, context);
+        const exact = slotEvidence.exactTopicSummaries.get(topicKey) || rowSummary([]);
         if (!exact.rates.length) continue;
         const key = `${slot.weekday}|${slot.label}`;
         const item = { weekday: slot.weekday, label: slot.label, rows: exact.rates.length, medianRate: exact.medianRate };
         const current = supported.get(key);
-        if (!current || item.rows > current.rows || (item.rows === current.rows && (item.medianRate || 0) > (current.medianRate || 0))) supported.set(key, item);
+        if (!current || item.rows > current.rows || (item.rows === current.rows && (item.medianRate || 0) > (current.medianRate || 0))) {
+          supported.set(key, item);
+        }
       }
+
       const bestWindows = [...supported.values()]
         .sort((a, b) => b.rows - a.rows || (b.medianRate || 0) - (a.medianRate || 0))
         .slice(0, 3);
@@ -941,11 +1020,11 @@ return result;}
     }).sort((a, b) => b.historyRows - a.historyRows || (b.medianRate || 0) - (a.medianRate || 0) || a.topic.localeCompare(b.topic));
   }
 
-  function experimentalEvidence(slot = {}, evidenceRows = [], baselineRate = null) {
-    const directRows = comparableRows(evidenceRows, slot, { exactWeekday: true });
-    const summary = rowSummary(directRows);
+  function experimentalEvidence(slot = {}, evidenceRows = [], baselineRate = null, precomputed = null, allFundraisersValue = null) {
+    const directRows = precomputed?.exactRows || comparableRows(evidenceRows, slot, { exactWeekday: true });
+    const summary = precomputed?.exactSummary || rowSummary(directRows);
     const fundraiserUses = fundraiserCount(directRows);
-    const allFundraisers = fundraiserCount(evidenceRows);
+    const allFundraisers = Number.isFinite(allFundraisersValue) ? allFundraisersValue : fundraiserCount(evidenceRows);
     const ratio = Number.isFinite(summary.medianRate) && Number.isFinite(baselineRate) && baselineRate > 0
       ? summary.medianRate / baselineRate
       : null;
@@ -954,13 +1033,13 @@ return result;}
     if (summary.rates.length >= 3 && Number.isFinite(ratio) && ratio >= 1.1) {
       const underused = allFundraisers >= 4 && fundraiserUses <= Math.max(2, Math.floor(allFundraisers * 0.35));
       verdict = underused ? 'Productive but underused at WNMU' : 'Historically productive at WNMU';
-      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}, median about ${Math.round(summary.medianRate)}/hr (${Math.round((ratio - 1) * 100)}% above the overall pledge baseline).`;
+      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}, median about $${Math.round(summary.medianRate)}/hr (${Math.round((ratio - 1) * 100)}% above the overall pledge baseline).`;
     } else if (summary.rates.length >= 2) {
       verdict = Number.isFinite(ratio) && ratio >= 1 ? 'Some encouraging WNMU evidence' : 'Mixed WNMU evidence';
-      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}${Number.isFinite(summary.medianRate) ? `, median about ${Math.round(summary.medianRate)}/hr` : ''}.`;
+      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}${Number.isFinite(summary.medianRate) ? `, median about $${Math.round(summary.medianRate)}/hr` : ''}.`;
     } else if (summary.rates.length === 1) {
       verdict = 'Thin WNMU evidence';
-      rationale = `Only one rate-valid WNMU airing exists for this exact weekday/time, so this remains experimental.`;
+      rationale = 'Only one rate-valid WNMU airing exists for this exact weekday/time, so this remains experimental.';
     }
     return {
       verdict,
@@ -1021,24 +1100,31 @@ return result;}
       baselineRate,
       programRowIndex: buildProgramRowIndex(historicalRows),
       slotEvidenceIndex: buildSlotEvidenceIndex(historicalRows),
+      seasonRows: historicalRows.filter((row) => seasonForDate(airingDate(row)) === seasonForDate(scheduleStart(schedule))),
       programRowsCache: new Map(),
       programEvidenceCache: new Map(),
       slotEvidenceCache: new Map(),
-      scoreCache: new Map()
+      scoreCache: new Map(),
+      seasonSlotEvidenceIndex: null,
+      seasonSlotEvidenceCache: new Map(),
+      seasonTopicSummaryCache: new Map(),
+      evidenceFundraiserCount: fundraiserCount(historicalRows)
     };
+    context.seasonSlotEvidenceIndex = buildSlotEvidenceIndex(context.seasonRows);
     const windows = planningWindows(schedule).map((slot) => {
       if (slot.blocked) return { ...slot, recommendations: [], strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
       const ranked = rankProgramsForSlot(viable, slot, context);
       const topics = topicChoicesForSlot(ranked);
-      const exactRows = cachedSlotEvidence(slot, context).exactRows;
+      const slotEvidence = cachedSlotEvidence(slot, context);
+      const exactRows = slotEvidence.exactRows;
       return {
         ...slot,
         recommendations: selectRecommendationsForSlot(ranked, 4),
-        windowHistory: rowSummary(exactRows),
+        windowHistory: slotEvidence.exactSummary,
         strongestTopics: topics.slice(0, 3),
         alternativeTopics: topics.slice(3, 6),
         evidenceRows: exactRows.length,
-        experimentalEvidence: slot.experimental ? experimentalEvidence(slot, historicalRows, baselineRate) : null
+        experimentalEvidence: slot.experimental ? experimentalEvidence(slot, historicalRows, baselineRate, slotEvidence, context.evidenceFundraiserCount) : null
       };
     });
     const rights = rightsConstraints(library, schedule);
