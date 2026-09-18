@@ -612,8 +612,14 @@ test('Anticipated Day Strength is centered within each fundraiser and ignores un
   const result = workerMessages.find((message) => message.type === 'result');
   assert.ok(result);
   assert.equal(result.dayOutlook.rows.length, 2);
-  assert.ok(result.dayOutlook.rows.every((item) => item.outlook === 'Fair / typical'));
-  assert.ok(result.dayOutlook.rows.every((item) => Math.abs(item.relativeIndex - 1) < 0.001));
+  assert.ok(
+    result.dayOutlook.rows.every((item) => item.outlook === 'Fair / typical'),
+    JSON.stringify(result.dayOutlook.rows)
+  );
+  assert.ok(
+    result.dayOutlook.rows.every((item) => Math.abs(item.relativeIndex - 1) < 0.001),
+    JSON.stringify(result.dayOutlook.rows)
+  );
 });
 
 test('strategy scoring caches repeated program and slot evidence scans', () => {
