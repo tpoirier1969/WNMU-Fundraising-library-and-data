@@ -390,7 +390,7 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
   const hubUi = fs.readFileSync(new URL('../assets/js/report-hub-programming-strategy.js', import.meta.url), 'utf8');
   const ratingsUi = fs.readFileSync(new URL('../assets/js/program-editorial-overrides.js', import.meta.url), 'utf8');
   assert.match(hubUi, /card\.className = 'report-card-link'/);
-  assert.match(reportUi, /\.gte\('start_date',todayKey\(\)\)/);
+  assert.match(reportUi, /schedule_data/);
   assert.match(reportUi, /strategy-program-row/);
   assert.match(reportUi, /Anticipated day strength/);
   assert.match(reportUi, /Scheduling opportunities \/ tests/);
@@ -410,6 +410,7 @@ test('Report 5 trimmed airing query contains only live Supabase columns', () => 
   assert.match(block, /source_file_name/);
   assert.match(block, /import_batch_id/);
   assert.match(block, /row_hash/);
+  assert.match(block, /raw_payload/);
 });
 
 test('strategy report keeps heavy analysis off the browser UI thread and trims Supabase payloads', () => {
@@ -419,14 +420,15 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
 
   assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.181'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
-  assert.match(reportUi, /\.lte\('air_date',cutoff\)/);
+  assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
   assert.doesNotMatch(reportUi, /canonicalizeImportedAirings/);
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.181'\)/);
-  assert.match(workerUi, /canonicalizeAirings/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.183', 'programming-strategy-analysis\.js\?v=0\.22\.183'\)/);
+  assert.match(workerUi, /A\.canonicalizeImportedAirings/);
+  assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
 
   assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
