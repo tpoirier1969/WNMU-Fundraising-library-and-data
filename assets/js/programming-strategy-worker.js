@@ -307,8 +307,8 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
 
 function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
   const patterns = hourly || buildHourlyPatterns(schedule, rows);
-  const allRates = patterns.rows.map((row) => row.averageRate).filter(Number.isFinite);
-  const baseline = S.mean(allRates);
+  const planningPool = seasonPlanningPool(schedule, rows);
+  const baseline = summarizeTimeslotRows(planningPool.rows).averageRate;
   const byWeekday = new Map();
   patterns.rows.forEach((row) => {
     if (!byWeekday.has(row.weekday)) byWeekday.set(row.weekday, []);
@@ -321,7 +321,6 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
   // duplicate entry for every Saturday in the upcoming fundraiser. Historical
   // WNMU results here have often reflected a narrow programming mix, so weak
   // results should not be treated as proof that the clock time itself is bad.
-  const planningPool = seasonPlanningPool(schedule, rows);
   const saturdayAfternoonRows = planningPool.rows.filter((row) => {
     const date = S.parseDate(row.dateKey);
     const start = Number(row.startMinutes);
