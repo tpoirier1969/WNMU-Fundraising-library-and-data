@@ -190,7 +190,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.177');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.179');
     }catch(error){
       reject(error);
       return;
