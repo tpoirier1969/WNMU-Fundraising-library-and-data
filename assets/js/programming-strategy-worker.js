@@ -32,18 +32,21 @@ function strategyEvidenceRowsFromAnalyses(analyses = []) {
     const fundraiserId = text(schedule.id || schedule.title);
     const fundraiserTitle = text(schedule.title);
     for (const row of analysis?.placementRows || []) {
-      if (row?.countsTowardScheduleMinutes === false || row?.unmatchedImported) continue;
-      if (!row?.known || row?.durationMissing || !(Number(row?.minutes) > 0)) continue;
-      if (!Number.isFinite(Number(row?.startMinutes))) continue;
+      if (row?.countsTowardScheduleMinutes === false || row?.unmatchedImported || !row?.known) continue;
+      const startMinutes = Number(row?.startMinutes);
+      const minutes = Number(row?.minutes || 0);
+      const durationMissing = Boolean(row?.durationMissing) || !(minutes > 0);
       rows.push({
         programId: text(row.programId || ''),
         title: text(row.title || row.plannedTitle || 'Untitled program'),
         topic: text(row.topic || 'Uncategorized') || 'Uncategorized',
         secondary: S.lookupKey(row.secondary || '') === 'unspecified' ? '' : text(row.secondary || ''),
         dateKey: text(row.dateKey || ''),
-        startMinutes: Number(row.startMinutes),
-        endMinutes: Number.isFinite(Number(row.endMinutes)) ? Number(row.endMinutes) : Number(row.startMinutes) + Number(row.minutes),
-        minutes: Number(row.minutes),
+        startMinutes: Number.isFinite(startMinutes) ? startMinutes : null,
+        endMinutes: Number.isFinite(Number(row.endMinutes))
+          ? Number(row.endMinutes)
+          : (Number.isFinite(startMinutes) && minutes > 0 ? startMinutes + minutes : null),
+        minutes,
         dollars: Number(row.dollars || 0),
         pledges: Number(row.pledges || 0),
         fundraiserId,
@@ -51,7 +54,7 @@ function strategyEvidenceRowsFromAnalyses(analyses = []) {
         driveStartDate: text(schedule.startDate || ''),
         driveEndDate: text(schedule.endDate || ''),
         known: true,
-        durationMissing: false,
+        durationMissing,
         countsTowardScheduleMinutes: true,
         durationSource: text(row.durationSource || '')
       });
