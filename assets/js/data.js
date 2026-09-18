@@ -1560,10 +1560,13 @@
   }
 
   function importedSnapshotKey(row = {}) {
+    const sourceName = utils.normalizeText(row.source_file_name || '');
+    const sourceKey = utils.normalizeText(row.source_file_key || '');
     const batch = utils.normalizeText(row.import_batch_id || '');
-    const source = utils.normalizeText(row.source_file_key || row.source_file_name || '');
     const range = `${utils.normalizeText(row.drive_start_date || '').slice(0, 10)}|${utils.normalizeText(row.drive_end_date || '').slice(0, 10)}`;
-    if (batch || source) return [`batch:${batch}`, `source:${source}`, `range:${range}`].join('|');
+    if (sourceName) return `source-name:${sourceName}|range:${range}`;
+    if (sourceKey) return `source-key:${sourceKey}|range:${range}`;
+    if (batch) return `batch:${batch}|range:${range}`;
     return `range:${range}`;
   }
 
