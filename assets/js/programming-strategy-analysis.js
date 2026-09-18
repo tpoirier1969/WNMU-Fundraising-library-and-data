@@ -663,12 +663,18 @@
     const targetDaypart = daypartForMinutes(slot.startMinutes);
     const indexed = context.seasonSlotEvidenceIndex;
     const matchesWindow = (meta) => Math.abs(meta.start - slot.startMinutes) <= 90 || meta.daypart === targetDaypart;
-    const exactMeta = indexed && Number.isFinite(targetWeekday)
-      ? (indexed.byWeekday.get(targetWeekday) || []).filter(matchesWindow)
-      : [];
-    const broadMeta = indexed
-      ? (indexed.byWeekpart.get(targetPart) || []).filter(matchesWindow)
-      : [];
+    let exactMeta;
+    let broadMeta;
+    if (indexed && Number.isFinite(targetWeekday)) {
+      exactMeta = (indexed.byWeekday.get(targetWeekday) || []).filter(matchesWindow);
+      broadMeta = (indexed.byWeekpart.get(targetPart) || []).filter(matchesWindow);
+    } else {
+      const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === seasonForDate(scheduleStart(context.schedule || {})));
+      const exactRowsFallback = comparableRows(seasonRows, slot, { exactWeekday: true });
+      const broadRowsFallback = comparableRows(seasonRows, slot, { exactWeekday: false });
+      exactMeta = exactRowsFallback.map((row) => ({ row, topicKey: lookupKey(rowTopic(row)) }));
+      broadMeta = broadRowsFallback.map((row) => ({ row, topicKey: lookupKey(rowTopic(row)) }));
+    }
     const exactRows = exactMeta.map((meta) => meta.row);
     const broadRows = broadMeta.map((meta) => meta.row);
     const exactByTopic = new Map();
