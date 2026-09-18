@@ -515,12 +515,41 @@
     return `nola:${lookupKey(programNola(program))}|title:${lookupKey(programTitle(program))}`;
   }
 
+  function buildProgramRowIndex(rows = []) {
+    const byId = new Map();
+    const withoutId = [];
+    for (const row of (rows || [])) {
+      const id = rowProgramId(row);
+      if (!id) {
+        withoutId.push(row);
+        continue;
+      }
+      if (!byId.has(id)) byId.set(id, []);
+      byId.get(id).push(row);
+    }
+    return { byId, withoutId };
+  }
+
   function cachedRowsForProgram(program = {}, context = {}) {
     const cache = context.programRowsCache;
     if (!cache) return rowsForProgram(program, context.evidenceRows || []);
     const key = programEvidenceCacheKey(program);
-    if (!cache.has(key)) cache.set(key, rowsForProgram(program, context.evidenceRows || []));
-    return cache.get(key);
+    if (cache.has(key)) return cache.get(key);
+
+    const id = programId(program);
+    const index = context.programRowIndex;
+    let matches;
+    if (id && index) {
+      const direct = index.byId.get(id) || [];
+      const fallback = index.withoutId.length
+        ? index.withoutId.filter((row) => programMatchesRow(program, row))
+        : [];
+      matches = fallback.length ? [...direct, ...fallback] : direct;
+    } else {
+      matches = rowsForProgram(program, context.evidenceRows || []);
+    }
+    cache.set(key, matches);
+    return matches;
   }
 
   function slotEvidenceCacheKey(slot = {}) {
@@ -945,6 +974,7 @@ return result;}
       evidenceRows: historicalRows,
       overrideByProgramId,
       baselineRate,
+      programRowIndex: buildProgramRowIndex(historicalRows),
       programRowsCache: new Map(),
       programEvidenceCache: new Map(),
       slotEvidenceCache: new Map(),
