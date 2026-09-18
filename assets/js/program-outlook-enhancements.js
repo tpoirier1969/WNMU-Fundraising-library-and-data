@@ -507,6 +507,11 @@
       editorialOverride: {
         ...(sourceResult.editorialOverride || {}),
         override: programmer.override || sourceResult.editorialOverride?.override || null,
+        rating: programmer.rating,
+        storedRating: programmer.storedRating,
+        effectiveRating: programmer.effectiveRating || programmer.rating,
+        secondChance: programmer.secondChance,
+        resolvedAfterAirings: programmer.resolvedAfterAirings || 0,
         underperformances: programmer.weakCount,
         activeProtection: programmer.activeProtection,
         weakCount: programmer.weakCount
