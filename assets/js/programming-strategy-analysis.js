@@ -1210,13 +1210,22 @@ return result;}
       const titleDepth = Math.min(1, confidenceTitleCount / 10);
       const fundraiserDepth = Math.min(1, confidenceFundraiserSamples / 6);
       const evidenceReliability = titleDepth * fundraiserDepth;
+
+      // A strong all-season record should rescue a well-tested topic from being
+      // treated as "thin" just because fewer tests landed in this pledge season.
+      // But the seasonal rate still needs some seasonal support of its own so a
+      // couple of unusually strong seasonal titles cannot represent the whole topic.
+      const seasonalTitleSupport = Math.min(1, seasonalTestedTitleCount / 6);
+      const seasonalFundraiserSupport = Math.min(1, seasonalFundraiserSamples / 4);
+      const seasonalSupport = seasonalTitleSupport * seasonalFundraiserSupport;
+
       const consistencyFactor = 0.5 + (0.5 * successRate);
       const averageRate = Number(seasonalStats?.averageRate ?? summary?.averageRate);
       const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
         ? averageRate / baseline
         : null;
       const planningRankScore = Number.isFinite(ratio)
-        ? ratio * evidenceReliability * consistencyFactor
+        ? ratio * evidenceReliability * seasonalSupport * consistencyFactor
         : -1;
 
       return {
@@ -1228,6 +1237,7 @@ return result;}
         positiveTests,
         successRate,
         evidenceReliability,
+        seasonalSupport,
         planningRankScore
       };
     };
@@ -1293,6 +1303,7 @@ return result;}
                 titleFundraiserTests: metrics.titleFundraiserTests,
                 successRate: metrics.successRate,
                 evidenceReliability: metrics.evidenceReliability,
+                seasonalSupport: metrics.seasonalSupport,
                 planningRankScore: metrics.planningRankScore
               };
             })
@@ -1320,6 +1331,7 @@ return result;}
           titleFundraiserTests: metrics.titleFundraiserTests,
           successRate: metrics.successRate,
           evidenceReliability: metrics.evidenceReliability,
+          seasonalSupport: metrics.seasonalSupport,
           planningRankScore: metrics.planningRankScore,
           subtopicDetails
         };
