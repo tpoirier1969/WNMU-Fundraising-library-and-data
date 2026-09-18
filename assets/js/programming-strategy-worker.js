@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.185', 'programming-strategy-analysis.js?v=0.22.185');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.186');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -377,26 +377,52 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
     const seasonNeutral = !season;
     const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0) + timeSpecificity + Math.min(5, strength) / 10;
 
+    const sourceLabel = text(item.station_name || item.station_code || 'Other station');
     matched.push({
       signal: Number.isFinite(signal) ? signal : 0,
       strength,
       relevance,
-      sourceLabel: text(item.station_name || item.station_code || 'Other station'),
+      stationKey: S.lookupKey(item.station_code || sourceLabel),
+      sourceLabel,
       text: text(item.summary || item.assessment_raw || ''),
       tone: signal > 0 ? 'positive' : signal < 0 ? 'negative' : 'neutral'
     });
   }
 
-  const positive = matched.filter((item) => item.signal > 0)
+  // Reduce each station to its single best-matching observation for this slot so
+  // a station that reports frequently cannot crowd out independent evidence.
+  const bestByStation = new Map();
+  const ranked = [...matched].sort((a, b) =>
+    b.relevance - a.relevance
+    || b.strength - a.strength
+    || Math.abs(b.signal) - Math.abs(a.signal)
+  );
+  for (const item of ranked) {
+    const key = item.stationKey || S.lookupKey(item.sourceLabel);
+    if (!bestByStation.has(key)) bestByStation.set(key, item);
+  }
+
+  const independent = [...bestByStation.values()];
+  const positive = independent.filter((item) => item.signal > 0)
     .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength);
-  const neutral = matched.filter((item) => item.signal === 0)
+  const neutral = independent.filter((item) => item.signal === 0)
     .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength);
-  const negative = matched.filter((item) => item.signal < 0)
+  const negative = independent.filter((item) => item.signal < 0)
     .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength);
 
-  const chosen = [...positive.slice(0, 3)];
+  const chosen = [...positive.slice(0, 2)];
   if (chosen.length < 3) chosen.push(...neutral.slice(0, 3 - chosen.length));
   if (negative.length) chosen.push(negative[0]);
+  if (chosen.length < 4) {
+    const used = new Set(chosen.map((item) => item.stationKey || S.lookupKey(item.sourceLabel)));
+    for (const item of independent) {
+      const key = item.stationKey || S.lookupKey(item.sourceLabel);
+      if (used.has(key)) continue;
+      chosen.push(item);
+      used.add(key);
+      if (chosen.length >= 4) break;
+    }
+  }
   return chosen.slice(0, 4);
 }
 
