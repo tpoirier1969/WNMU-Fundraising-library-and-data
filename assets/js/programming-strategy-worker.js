@@ -132,96 +132,91 @@ function fundraiserDayTitle(schedule = {}, date) {
   return `${ordinalWord(Math.max(1, occurrence))} ${weekday}`;
 }
 
-function driveDayRates(rows = []) {
-  const drives = new Map();
-  for (const row of rows) {
-    const startDate = row.driveStartDate || row.dateKey;
-    const endDate = row.driveEndDate || row.dateKey;
-    const driveKey = `${startDate}|${endDate}`;
-    if (!drives.has(driveKey)) {
-      drives.set(driveKey, {
-        startDate,
-        endDate,
-        season: S.seasonForDate(startDate),
-        days: new Map()
-      });
-    }
-    const drive = drives.get(driveKey);
-    if (!drive.days.has(row.dateKey)) drive.days.set(row.dateKey, { dollars: 0, minutes: 0 });
-    const day = drive.days.get(row.dateKey);
-    if (!row.durationMissing && Number(row.minutes) > 0) {
-      day.dollars += Number(row.dollars || 0);
-      day.minutes += Number(row.minutes || 0);
-    }
-  }
-
-  return [...drives.values()].map((drive) => {
-    const anchor = firstSaturday(drive.startDate, drive.endDate);
-    const byOffset = new Map();
-    drive.days.forEach((day, dateKey) => {
-      const date = S.parseDate(dateKey);
-      if (!date || !anchor || !(day.minutes > 0)) return;
-      const offset = Math.round((date - anchor) / 86400000);
-      byOffset.set(offset, (day.dollars * 60) / day.minutes);
-    });
-    return { ...drive, byOffset };
-  });
-}
-
-function buildDayOutlook(schedule = {}, rows = []) {
-  const targetSeason = S.seasonForDate(schedule.startDate);
-  const drives = driveDayRates(rows);
-  let pool = drives.filter((drive) => drive.season === targetSeason);
-  let fallback = false;
-  if (pool.length < 2) {
-    pool = drives;
-    fallback = true;
-  }
-
-  const allRates = pool.flatMap((drive) => [...drive.byOffset.values()]).filter(Number.isFinite);
-  const baseline = S.mean(allRates);
+function buildDayOutlook(schedule = {}, analyses = []) {
+  const pool = seasonAnalysisPool(schedule, analyses);
   const targetAnchor = firstSaturday(schedule.startDate, schedule.endDate);
   const start = S.parseDate(schedule.startDate);
   const end = S.parseDate(schedule.endDate);
-  const resultRows = [];
+  const targetOffsets = [];
+  const targetDates = new Map();
 
-  if (start && end) {
+  if (start && end && targetAnchor) {
     for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-      const offset = targetAnchor ? Math.round((date - targetAnchor) / 86400000) : null;
-      const rates = Number.isFinite(offset)
-        ? pool.map((drive) => drive.byOffset.get(offset)).filter(Number.isFinite)
-        : [];
-      const averageRate = S.mean(rates);
-      const ratio = rates.length && Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
-        ? averageRate / baseline
-        : null;
-      let outlook = 'No comparable history';
-      if (rates.length === 1) outlook = 'Thin evidence';
-      else if (rates.length >= 2) {
-        if (ratio >= 1.25) outlook = 'Usually strong';
-        else if (ratio >= 1.05) outlook = 'Usually good';
-        else if (ratio >= 0.85) outlook = 'Fair / typical';
-        else if (ratio >= 0.65) outlook = 'Usually soft';
-        else outlook = 'Usually weak';
-      }
-      resultRows.push({
-        date: S.dateKey(date),
-        label: fundraiserDayTitle(schedule, date),
-        outlook,
-        samples: rates.length,
-        averageRate,
-        ratio
+      const key = S.dateKey(date);
+      const offset = Math.round((date - targetAnchor) / 86400000);
+      targetOffsets.push(offset);
+      targetDates.set(offset, { date: key, label: fundraiserDayTitle(schedule, new Date(date)) });
+    }
+  }
+  const targetOffsetSet = new Set(targetOffsets);
+  const observations = new Map(targetOffsets.map((offset) => [offset, []]));
+
+  for (const analysis of pool.analyses || []) {
+    const days = (A.calendarDays(analysis) || [])
+      .map((day) => ({
+        ...day,
+        offset: A.fundraiserDayOffset(analysis, day.dateKey)
+      }))
+      .filter((day) =>
+        Number.isFinite(Number(day.offset))
+        && targetOffsetSet.has(Number(day.offset))
+        && Number(day.rateMinutes || 0) > 0
+        && Number.isFinite(Number(day.dollarsPerHour))
+      );
+
+    if (!days.length) continue;
+    const baseline = S.mean(days.map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite));
+    if (!(baseline > 0)) continue;
+
+    for (const day of days) {
+      observations.get(Number(day.offset))?.push({
+        rate: Number(day.dollarsPerHour),
+        index: Number(day.dollarsPerHour) / baseline,
+        fundraiserId: text(analysis?.schedule?.id || analysis?.schedule?.title || '')
       });
     }
   }
+
+  const resultRows = targetOffsets.map((offset) => {
+    const items = observations.get(offset) || [];
+    const rates = items.map((item) => item.rate).filter(Number.isFinite);
+    const indexes = items.map((item) => item.index).filter(Number.isFinite);
+    const averageRate = S.mean(rates);
+    const ratio = S.mean(indexes);
+    let outlook = 'No comparable history';
+    if (indexes.length === 1) outlook = 'Thin evidence';
+    else if (indexes.length >= 2) {
+      if (ratio >= 1.30) outlook = 'Usually strong';
+      else if (ratio >= 1.15) outlook = 'Usually good';
+      else if (ratio >= 0.85) outlook = 'Fair / typical';
+      else if (ratio >= 0.70) outlook = 'Usually soft';
+      else outlook = 'Usually weak';
+    }
+    const target = targetDates.get(offset) || {};
+    return {
+      date: target.date || '',
+      label: target.label || 'Fundraiser day',
+      offset,
+      outlook,
+      samples: indexes.length,
+      averageRate,
+      ratio,
+      relativeIndex: ratio
+    };
+  });
 
   const ranked = resultRows
     .filter((row) => row.samples >= 2 && Number.isFinite(row.ratio))
     .sort((a, b) => b.ratio - a.ratio);
-  const best = new Set(ranked.slice(0, 2).filter((row) => row.ratio >= 1.05).map((row) => row.date));
+  const best = new Set(ranked.slice(0, 2).filter((row) => row.ratio >= 1.15).map((row) => row.date));
   resultRows.forEach((row) => { row.bestBet = best.has(row.date); });
 
-  return { season: targetSeason, fallback, rows: resultRows };
+  return {
+    season: pool.targetSeason,
+    fallback: pool.fallback,
+    method: 'within-fundraiser-relative-day',
+    rows: resultRows
+  };
 }
 
 function reportableProgrammingRows(rows = []) {
