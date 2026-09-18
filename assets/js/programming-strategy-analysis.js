@@ -1153,29 +1153,75 @@ return result;}
       lookupKey('Holiday - Christmas')
     ]);
 
-    const evidenceBreadth = (summary, testedTitleCount, eligibleTitleCount, baseline = rankingBaseline) => {
-      const coverage = eligibleTitleCount > 0 ? testedTitleCount / eligibleTitleCount : 0;
-      const titleDepth = Math.min(1, testedTitleCount / 6);
-      const fundraiserDepth = Math.min(1, Number(summary?.fundraisers || 0) / 4);
-      const coverageDepth = Math.min(1, coverage / 0.4);
-      const reliability = titleDepth * fundraiserDepth * (0.5 + 0.5 * coverageDepth);
+    const titleKeyForRow = (row) => {
+      const id = rowProgramId(row);
+      if (id) return `id:${id}`;
+      const nola = lookupKey(rowNola(row));
+      if (nola) return `nola:${nola}`;
+      return `title:${lookupKey(rowTitle(row))}`;
+    };
+
+    const evidenceMetrics = (rows, summary, baseline = rankingBaseline) => {
+      const testedTitles = new Set();
+      const titleFundraiserGroups = new Map();
+
+      for (const row of (rows || [])) {
+        const titleKey = titleKeyForRow(row);
+        if (titleKey && titleKey !== 'title:') testedTitles.add(titleKey);
+        const fundraiser = fundraiserKey(row);
+        if (!titleKey || !fundraiser) continue;
+        const key = `${titleKey}|${fundraiser}`;
+        if (!titleFundraiserGroups.has(key)) titleFundraiserGroups.set(key, { dollars: 0, minutes: 0 });
+        const group = titleFundraiserGroups.get(key);
+        const minutes = rowMinutes(row);
+        if (minutes > 0) {
+          group.dollars += rowDollars(row);
+          group.minutes += minutes;
+        }
+      }
+
+      const tests = [...titleFundraiserGroups.values()]
+        .filter((group) => group.minutes > 0)
+        .map((group) => group.dollars * 60 / group.minutes)
+        .filter(Number.isFinite);
+      const positiveTests = tests.filter((rate) => rate > 0).length;
+      const successRate = tests.length ? positiveTests / tests.length : 0;
+      const testedTitleCount = testedTitles.size;
+      const fundraiserSamples = Number(summary?.fundraisers || 0);
+
+      // The rank should answer "how convincing is this topic's success?" rather
+      // than letting a couple of spectacular titles outrank broad, repeatable evidence.
+      const titleDepth = Math.min(1, testedTitleCount / 10);
+      const fundraiserDepth = Math.min(1, fundraiserSamples / 6);
+      const evidenceReliability = Math.sqrt(titleDepth * fundraiserDepth);
+      const consistencyFactor = 0.5 + (0.5 * successRate);
       const averageRate = Number(summary?.averageRate);
-      const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0 ? averageRate / baseline : null;
-      const planningRankScore = Number.isFinite(ratio) ? ratio * (0.2 + 0.8 * reliability) : -1;
-      return { coverage, reliability, planningRankScore };
+      const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
+        ? averageRate / baseline
+        : null;
+      const planningRankScore = Number.isFinite(ratio)
+        ? ratio * evidenceReliability * consistencyFactor
+        : -1;
+
+      return {
+        testedTitleCount,
+        titleFundraiserTests: tests.length,
+        positiveTests,
+        successRate,
+        evidenceReliability,
+        planningRankScore
+      };
     };
 
     return [...groups.entries()]
       .filter(([, group]) => group.eligiblePrograms.length > 0)
       .map(([topicKey, group]) => {
-        const eligibleIds = new Set(group.eligiblePrograms.map(programId).filter(Boolean));
-        const topicRows = seasonRows.filter((row) =>
-          lookupKey(rowTopic(row)) === topicKey
-          && eligibleIds.has(rowProgramId(row))
-        );
+        // Eligibility decides whether the topic belongs in this planning report.
+        // Performance itself uses the full historical topic record, including
+        // expired titles, because this section is measuring topic performance.
+        const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
         const history = rowSummary(topicRows);
-        const testedEligibleTitleCount = new Set(topicRows.map(rowProgramId).filter(Boolean)).size;
-        const breadth = evidenceBreadth(history, testedEligibleTitleCount, group.eligiblePrograms.length);
+        const metrics = evidenceMetrics(topicRows, history);
 
         let subtopicDetails = [];
         if (detailedTopicKeys.has(topicKey)) {
@@ -1196,30 +1242,29 @@ return result;}
           subtopicDetails = [...subgroups.entries()]
             .filter(([, sub]) => sub.eligiblePrograms.length > 0)
             .map(([subKey, sub]) => {
-              const eligibleSubIds = new Set(sub.eligiblePrograms.map(programId).filter(Boolean));
               const rows = topicRows.filter((row) => {
                 const secondary = rowSecondary(row) || 'Unassigned';
-                return (lookupKey(secondary) || 'unassigned') === subKey && eligibleSubIds.has(rowProgramId(row));
+                return (lookupKey(secondary) || 'unassigned') === subKey;
               });
               const summary = rowSummary(rows);
-              const testedEligibleTitleCount = new Set(rows.map(rowProgramId).filter(Boolean)).size;
-              const breadth = evidenceBreadth(summary, testedEligibleTitleCount, sub.eligiblePrograms.length, subtopicBaseline);
+              const metrics = evidenceMetrics(rows, summary, subtopicBaseline);
               return {
                 label: sub.label,
                 programCount: sub.programs.length,
                 eligibleProgramCount: sub.eligiblePrograms.length,
-                testedEligibleTitleCount,
+                testedTitleCount: metrics.testedTitleCount,
                 fundraiserSamples: summary.fundraisers,
                 averageRate: summary.averageRate,
-                evidenceCoverage: breadth.coverage,
-                evidenceReliability: breadth.reliability,
-                planningRankScore: breadth.planningRankScore
+                titleFundraiserTests: metrics.titleFundraiserTests,
+                successRate: metrics.successRate,
+                evidenceReliability: metrics.evidenceReliability,
+                planningRankScore: metrics.planningRankScore
               };
             })
             .sort((a, b) =>
               b.planningRankScore - a.planningRankScore
               || (b.averageRate || 0) - (a.averageRate || 0)
-              || b.eligibleProgramCount - a.eligibleProgramCount
+              || b.fundraiserSamples - a.fundraiserSamples
               || a.label.localeCompare(b.label)
             );
         }
@@ -1232,10 +1277,11 @@ return result;}
           averageRate: history.averageRate,
           programCount: group.programs.length,
           eligibleProgramCount: group.eligiblePrograms.length,
-          testedEligibleTitleCount,
-          evidenceCoverage: breadth.coverage,
-          evidenceReliability: breadth.reliability,
-          planningRankScore: breadth.planningRankScore,
+          testedTitleCount: metrics.testedTitleCount,
+          titleFundraiserTests: metrics.titleFundraiserTests,
+          successRate: metrics.successRate,
+          evidenceReliability: metrics.evidenceReliability,
+          planningRankScore: metrics.planningRankScore,
           subtopicDetails
         };
       })
