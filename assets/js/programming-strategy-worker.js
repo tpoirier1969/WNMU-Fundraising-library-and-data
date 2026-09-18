@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.183', 'programming-strategy-analysis.js?v=0.22.183');
+importScripts('one-sheet-analysis.js?v=0.22.184', 'programming-strategy-analysis.js?v=0.22.184');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -96,18 +96,41 @@ function buildHistoricalPerformanceStats(schedule = {}, analyses = []) {
     text(analysis?.schedule?.season || A.seasonForDate(analysis?.schedule?.startDate || '')) === targetSeason
   );
   const minimums = { minAirings: 1, minFundraisers: 1, minTitles: 1 };
+
+  // Performance remains season-specific. Evidence depth is intentionally all-season:
+  // repeated testing in March/June/August still tells us whether a topic is genuinely
+  // well-tested, even though those other seasons do not set the December performance rate.
   const topic = rankingStatsMap(A.historicalRanking(seasonAnalyses, 'topic', minimums));
+  const topicReliability = rankingStatsMap(A.historicalRanking(analyses, 'topic', minimums));
   const subtopicByTopic = new Map();
+  const subtopicReliabilityByTopic = new Map();
 
   for (const topicKey of ['documentary', 'music', 'holiday christmas']) {
-    const filtered = seasonAnalyses.map((analysis) => ({
+    const seasonalFiltered = seasonAnalyses.map((analysis) => ({
       ...analysis,
       placementRows: (analysis?.placementRows || []).filter((row) => S.lookupKey(row?.topic || '') === topicKey)
     }));
-    subtopicByTopic.set(topicKey, rankingStatsMap(A.historicalRanking(filtered, 'subtopic', minimums), { normalizeUnassigned: true }));
+    const allSeasonFiltered = (analyses || []).map((analysis) => ({
+      ...analysis,
+      placementRows: (analysis?.placementRows || []).filter((row) => S.lookupKey(row?.topic || '') === topicKey)
+    }));
+    subtopicByTopic.set(
+      topicKey,
+      rankingStatsMap(A.historicalRanking(seasonalFiltered, 'subtopic', minimums), { normalizeUnassigned: true })
+    );
+    subtopicReliabilityByTopic.set(
+      topicKey,
+      rankingStatsMap(A.historicalRanking(allSeasonFiltered, 'subtopic', minimums), { normalizeUnassigned: true })
+    );
   }
 
-  return { targetSeason: targetSeason || 'Special', topic, subtopicByTopic };
+  return {
+    targetSeason: targetSeason || 'Special',
+    topic,
+    topicReliability,
+    subtopicByTopic,
+    subtopicReliabilityByTopic
+  };
 }
 
 function firstSaturday(startValue, endValue) {

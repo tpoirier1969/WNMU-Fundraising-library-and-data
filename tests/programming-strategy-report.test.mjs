@@ -336,6 +336,52 @@ test('Report 5 subtopics are ordered by best raw average performance', () => {
   assert.deepEqual(Array.from(music.subtopicDetails, (item) => item.label), ['Classical', 'Rock / Pop / Soul', 'Folk']);
 });
 
+test('topic ranking uses seasonal performance but all-season evidence depth for confidence', () => {
+  const library = [
+    baseProgram({ id: 'xmas', title: 'Christmas', topic_primary: 'Holiday - Christmas' }),
+    baseProgram({ id: 'loukinen', title: 'Loukinen', topic_primary: 'Loukinen' }),
+    baseProgram({ id: 'bio', title: 'Biography', topic_primary: 'Biography' })
+  ];
+  const seasonRows = [
+    row({ programId: 'xmas', title: 'Christmas', topic: 'Holiday - Christmas', dateKey: '2025-12-06', dollars: 123, fundraiserId: 'xmas-dec' }),
+    row({ programId: 'loukinen', title: 'Loukinen', topic: 'Loukinen', dateKey: '2025-12-07', dollars: 241, fundraiserId: 'loukinen-dec' }),
+    row({ programId: 'bio', title: 'Biography', topic: 'Biography', dateKey: '2025-12-08', dollars: 460, fundraiserId: 'bio-dec' })
+  ];
+  const performanceStats = {
+    topic: new Map([
+      ['holiday christmas', { averageRate: 123, testedTitleCount: 8, fundraiserSamples: 6, historyRows: 18 }],
+      ['loukinen', { averageRate: 241, testedTitleCount: 5, fundraiserSamples: 4, historyRows: 9 }],
+      ['biography', { averageRate: 460, testedTitleCount: 2, fundraiserSamples: 3, historyRows: 3 }]
+    ]),
+    topicReliability: new Map([
+      ['holiday christmas', { testedTitleCount: 9, fundraiserSamples: 8 }],
+      ['loukinen', { testedTitleCount: 9, fundraiserSamples: 15 }],
+      ['biography', { testedTitleCount: 14, fundraiserSamples: 19 }]
+    ]),
+    subtopicByTopic: new Map(),
+    subtopicReliabilityByTopic: new Map()
+  };
+
+  const rows = S.topicComparison(library, S.planningWindows(schedule), {
+    schedule,
+    evidenceRows: seasonRows,
+    seasonRows,
+    performanceStats
+  });
+
+  assert.equal(rows[0].topic, 'Loukinen');
+  assert.ok(
+    rows.findIndex((item) => item.topic === 'Biography') > rows.findIndex((item) => item.topic === 'Loukinen'),
+    'a high seasonal average backed by only a couple of seasonal titles should retain a seasonal-support penalty'
+  );
+  const loukinen = rows.find((item) => item.topic === 'Loukinen');
+  assert.equal(loukinen.averageRate, 241, 'performance should remain December-specific');
+  assert.equal(loukinen.testedTitleCount, 5, 'seasonal tested-title count should remain visible');
+  assert.equal(loukinen.fundraiserSamples, 4, 'seasonal fundraiser count should remain visible');
+  assert.equal(loukinen.confidenceTitleCount, 9, 'ranking confidence should use all-season title depth');
+  assert.equal(loukinen.confidenceFundraiserSamples, 15, 'ranking confidence should use all-season fundraiser depth');
+});
+
 test('broad repeatable topic evidence outranks spectacular but thin topic evidence', () => {
   const library = [];
   const evidenceRows = [];
@@ -418,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.183'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.184'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -426,7 +472,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.183', 'programming-strategy-analysis\.js\?v=0\.22\.183'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.184', 'programming-strategy-analysis\.js\?v=0\.22\.184'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -442,6 +488,7 @@ test('Report 5 presentation removes visible median language and evidence-through
   assert.doesNotMatch(reportUi, /strategy-summary/);
   assert.doesNotMatch(reportUi, /sheet-stamp">Evidence through/);
   assert.match(reportUi, /Avg \$.*\/pledge hr/);
+  assert.match(reportUi, /All-season depth/);
   assert.match(reportUi, /subtopics/);
   assert.match(reportUi, /Day\/time performance/);
 });

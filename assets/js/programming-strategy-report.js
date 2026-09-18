@@ -119,16 +119,19 @@ function topicComparisonSection(strategy){
   if(!rows.length)return'<section class="sheet-section"><h2>Topic performance in selected season</h2><p>No eligible topic data is available.</p></section>';
   const season=rows[0]?.season||seasonForDate(strategy.schedule?.startDate)||'selected';
   const evidenceLine=(item)=>{
-    if(!item.fundraiserSamples)return'No rate-valid fundraiser sample yet';
-    const tested=Number(item.testedTitleCount||0);
+    if(!item.fundraiserSamples)return'No rate-valid seasonal fundraiser sample yet';
+    const seasonalTitles=Number(item.testedTitleCount||0);
+    const seasonalFundraisers=Number(item.fundraiserSamples||0);
+    const confidenceTitles=Number(item.confidenceTitleCount||seasonalTitles);
+    const confidenceFundraisers=Number(item.confidenceFundraiserSamples||seasonalFundraisers);
     const success=Number.isFinite(item.successRate)?Math.round(item.successRate*100):null;
-    return `${tested} historical title${tested===1?'':'s'} · ${item.fundraiserSamples} fundraiser${item.fundraiserSamples===1?'':'s'}${success!=null?` · ${success}% non-zero tests`:''}`;
+    return `Season: ${seasonalTitles} title${seasonalTitles===1?'':'s'} · ${seasonalFundraisers} fundraiser${seasonalFundraisers===1?'':'s'}${success!=null?` · ${success}% non-zero tests`:''} · All-season depth: ${confidenceTitles} title${confidenceTitles===1?'':'s'} / ${confidenceFundraisers} fundraiser${confidenceFundraisers===1?'':'s'}`;
   };
   const subtopicBreakdown=(topic,items=[])=>{
     if(!items.length)return'';
     return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg $${Math.round(item.averageRate)}/pledge hr`:'No seasonal performance history'}</span>${item.fundraiserSamples?` · ${esc(evidenceLine(item))}`:''}</span></div>`).join('')}</div>`;
   };
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Only topics with at least one title eligible for this fundraiser are shown. Raw Avg $ / Pledge Hour uses the full historical topic record; ranking also considers how broad and repeatable that evidence is.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${esc(evidenceLine(x))}</span></div>${subtopicBreakdown(x.topic,x.subtopicDetails||[])}</div>`).join('')}</div></section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Only topics with at least one title eligible for this fundraiser are shown. Ranking combines this season’s Avg $ / Pledge Hour, seasonal consistency and sample support, plus the topic’s full all-season WNMU testing depth.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${esc(evidenceLine(x))}</span></div>${subtopicBreakdown(x.topic,x.subtopicDetails||[])}</div>`).join('')}</div></section>`;
 }
 
 function dayTone(outlook=''){
@@ -196,7 +199,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.183');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.184');
     }catch(error){
       reject(error);
       return;

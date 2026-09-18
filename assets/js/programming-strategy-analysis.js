@@ -1174,7 +1174,7 @@ return result;}
       return `title:${lookupKey(rowTitle(row))}`;
     };
 
-    const evidenceMetrics = (rows, summary, baseline = rankingBaseline, sharedStats = null) => {
+    const evidenceMetrics = (rows, summary, baseline = rankingBaseline, seasonalStats = null, reliabilityStats = null) => {
       const testedTitles = new Set();
       const titleFundraiserGroups = new Map();
 
@@ -1199,29 +1199,45 @@ return result;}
         .filter(Number.isFinite);
       const positiveTests = tests.filter((rate) => rate > 0).length;
       const successRate = tests.length ? positiveTests / tests.length : 0;
-      const testedTitleCount = Number(sharedStats?.testedTitleCount ?? testedTitles.size);
-      const fundraiserSamples = Number(sharedStats?.fundraiserSamples ?? summary?.fundraisers ?? 0);
+      const seasonalTestedTitleCount = Number(seasonalStats?.testedTitleCount ?? testedTitles.size);
+      const seasonalFundraiserSamples = Number(seasonalStats?.fundraiserSamples ?? summary?.fundraisers ?? 0);
+      const confidenceTitleCount = Number(reliabilityStats?.testedTitleCount ?? seasonalTestedTitleCount);
+      const confidenceFundraiserSamples = Number(reliabilityStats?.fundraiserSamples ?? seasonalFundraiserSamples);
 
-      // The rank should answer "how convincing is this topic's success?" rather
-      // than letting a couple of spectacular titles outrank broad, repeatable evidence.
-      const titleDepth = Math.min(1, testedTitleCount / 10);
-      const fundraiserDepth = Math.min(1, fundraiserSamples / 6);
+      // Performance and consistency remain season-specific. Reliability asks a
+      // different question: has this topic been tested broadly enough anywhere
+      // in WNMU pledge history to trust the seasonal result?
+      const titleDepth = Math.min(1, confidenceTitleCount / 10);
+      const fundraiserDepth = Math.min(1, confidenceFundraiserSamples / 6);
       const evidenceReliability = titleDepth * fundraiserDepth;
+
+      // A strong all-season record should rescue a well-tested topic from being
+      // treated as "thin" just because fewer tests landed in this pledge season.
+      // But the seasonal rate still needs some seasonal support of its own so a
+      // couple of unusually strong seasonal titles cannot represent the whole topic.
+      const seasonalTitleSupport = Math.min(1, seasonalTestedTitleCount / 6);
+      const seasonalFundraiserSupport = Math.min(1, seasonalFundraiserSamples / 4);
+      const seasonalSupport = seasonalTitleSupport * seasonalFundraiserSupport;
+
       const consistencyFactor = 0.5 + (0.5 * successRate);
-      const averageRate = Number(sharedStats?.averageRate ?? summary?.averageRate);
+      const averageRate = Number(seasonalStats?.averageRate ?? summary?.averageRate);
       const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
         ? averageRate / baseline
         : null;
       const planningRankScore = Number.isFinite(ratio)
-        ? ratio * evidenceReliability * consistencyFactor
+        ? ratio * evidenceReliability * seasonalSupport * consistencyFactor
         : -1;
 
       return {
-        testedTitleCount,
+        testedTitleCount: seasonalTestedTitleCount,
+        seasonalFundraiserSamples,
+        confidenceTitleCount,
+        confidenceFundraiserSamples,
         titleFundraiserTests: tests.length,
         positiveTests,
         successRate,
         evidenceReliability,
+        seasonalSupport,
         planningRankScore
       };
     };
@@ -1240,7 +1256,8 @@ return result;}
           averageRate: Number.isFinite(Number(sharedTopicStats?.averageRate)) ? Number(sharedTopicStats.averageRate) : rawHistory.averageRate,
           fundraisers: Number(sharedTopicStats?.fundraiserSamples ?? rawHistory.fundraisers)
         };
-        const metrics = evidenceMetrics(topicRows, history, rankingBaseline, sharedTopicStats);
+        const sharedReliabilityStats = context.performanceStats?.topicReliability?.get?.(topicKey) || sharedTopicStats;
+        const metrics = evidenceMetrics(topicRows, history, rankingBaseline, sharedTopicStats, sharedReliabilityStats);
 
         let subtopicDetails = [];
         if (detailedTopicKeys.has(topicKey)) {
@@ -1272,17 +1289,21 @@ return result;}
                 averageRate: Number.isFinite(Number(sharedSubtopicStats?.averageRate)) ? Number(sharedSubtopicStats.averageRate) : rawSummary.averageRate,
                 fundraisers: Number(sharedSubtopicStats?.fundraiserSamples ?? rawSummary.fundraisers)
               };
-              const metrics = evidenceMetrics(rows, summary, subtopicBaseline, sharedSubtopicStats);
+              const sharedSubtopicReliabilityStats = context.performanceStats?.subtopicReliabilityByTopic?.get?.(topicKey)?.get?.(subKey) || sharedSubtopicStats;
+              const metrics = evidenceMetrics(rows, summary, subtopicBaseline, sharedSubtopicStats, sharedSubtopicReliabilityStats);
               return {
                 label: sub.label,
                 programCount: sub.programs.length,
                 eligibleProgramCount: sub.eligiblePrograms.length,
                 testedTitleCount: metrics.testedTitleCount,
+                confidenceTitleCount: metrics.confidenceTitleCount,
+                confidenceFundraiserSamples: metrics.confidenceFundraiserSamples,
                 fundraiserSamples: summary.fundraisers,
                 averageRate: summary.averageRate,
                 titleFundraiserTests: metrics.titleFundraiserTests,
                 successRate: metrics.successRate,
                 evidenceReliability: metrics.evidenceReliability,
+                seasonalSupport: metrics.seasonalSupport,
                 planningRankScore: metrics.planningRankScore
               };
             })
@@ -1305,9 +1326,12 @@ return result;}
           programCount: group.programs.length,
           eligibleProgramCount: group.eligiblePrograms.length,
           testedTitleCount: metrics.testedTitleCount,
+          confidenceTitleCount: metrics.confidenceTitleCount,
+          confidenceFundraiserSamples: metrics.confidenceFundraiserSamples,
           titleFundraiserTests: metrics.titleFundraiserTests,
           successRate: metrics.successRate,
           evidenceReliability: metrics.evidenceReliability,
+          seasonalSupport: metrics.seasonalSupport,
           planningRankScore: metrics.planningRankScore,
           subtopicDetails
         };
