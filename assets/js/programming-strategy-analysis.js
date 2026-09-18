@@ -1377,20 +1377,27 @@ return result;}
     return { unavailable, partial };
   }
 
-  function buildStrategy({ schedule = {}, library = [], evidenceRows = [], overrides = [], now = new Date() } = {}) {
+  function buildStrategy({ schedule = {}, library = [], evidenceRows = [], overrides = [], performanceStats = null, now = new Date() } = {}) {
     const cutoff = evidenceCutoff(schedule, now);
     const historicalRows = filterEvidenceAirings(evidenceRows, cutoff);
     const overrideByProgramId = overrideIndex(overrides);
-    const baselineRate = baseHistoricalRate(historicalRows);
+    const targetSeason = seasonForDate(scheduleStart(schedule));
+    const seasonRows = historicalRows.filter((row) => seasonForDate(airingDate(row)) === targetSeason);
+    const seasonFundraiserCount = fundraiserCount(seasonRows);
+    const baselineRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
+    const baselineRate = baseHistoricalRate(baselineRows);
     const viable = (library || []).filter((program) => eligibleSomewhereInFundraiser(program, schedule));
     const context = {
       schedule,
       evidenceRows: historicalRows,
       overrideByProgramId,
       baselineRate,
+      performanceStats,
+      targetSeason,
+      seasonFundraiserCount,
       programRowIndex: buildProgramRowIndex(historicalRows),
       slotEvidenceIndex: buildSlotEvidenceIndex(historicalRows),
-      seasonRows: historicalRows.filter((row) => seasonForDate(airingDate(row)) === seasonForDate(scheduleStart(schedule))),
+      seasonRows,
       programRowsCache: new Map(),
       programEvidenceCache: new Map(),
       slotEvidenceCache: new Map(),
@@ -1405,8 +1412,11 @@ return result;}
       if (slot.blocked) return { ...slot, recommendations: [], strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
       const ranked = rankProgramsForSlot(viable, slot, context);
       const topics = topicChoicesForSlot(ranked);
-      const slotEvidence = cachedSlotEvidence(slot, context);
+      const slotEvidence = seasonFundraiserCount >= 2
+        ? cachedSeasonSlotEvidence(slot, context)
+        : cachedSlotEvidence(slot, context);
       const exactRows = slotEvidence.exactRows;
+      const experimentalRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
       return {
         ...slot,
         recommendations: selectRecommendationsForSlot(ranked, 4),
@@ -1414,7 +1424,7 @@ return result;}
         strongestTopics: topics.slice(0, 3),
         alternativeTopics: topics.slice(3, 6),
         evidenceRows: exactRows.length,
-        experimentalEvidence: slot.experimental ? experimentalEvidence(slot, historicalRows, baselineRate, slotEvidence, context.evidenceFundraiserCount) : null
+        experimentalEvidence: slot.experimental ? experimentalEvidence(slot, experimentalRows, baselineRate, slotEvidence, fundraiserCount(experimentalRows)) : null
       };
     });
     const rights = rightsConstraints(library, schedule);
@@ -1466,10 +1476,12 @@ return result;}
         note: 'Peer-station evidence is not yet structured in the report dataset and is not used in these recommendations.'
       },
       limitations: [
-        'For a future fundraiser, evidence is capped at today. For a historical fundraiser, evidence stops the day before that fundraiser began.',
+        'Report 5 uses the same schedule-reconciled historical program evidence as Historical Analytics: superseded imports, unmatched program results, out-of-period rows, and rows without a reliable duration do not enter performance rates.',
+        'For a future fundraiser, evidence is capped at today. Only completed historical fundraiser schedules are used by the report worker.',
         'Visible performance rates use fundraiser-balanced Avg $ / Pledge Hour so one heavily scheduled drive does not dominate the history.',
-        'Topic performance is season-specific and excludes Uncategorized / incidental pledge activity from programming rankings.',
-        'Day/time performance uses hourly program-start buckets from noon onward; half-hour starts are included in the hour they begin.',
+        'Topic performance is season-specific and its displayed average matches the Historical Analytics fundraiser-balanced average for that topic; Uncategorized / incidental pledge activity is excluded from programming rankings.',
+        'Day/time performance uses the same reconciled history in hourly program-start buckets from noon onward; half-hour starts are included in the hour they begin.',
+        'Time-window recommendation evidence uses starts inside the actual planning window rather than the former ±90-minute / broad-daypart approximation.',
         'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
