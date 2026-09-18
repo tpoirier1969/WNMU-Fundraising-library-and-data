@@ -283,24 +283,90 @@
     return 0;
   }
 
+  function importedSnapshotKey(row = {}) {
+    const sourceName = text(row?.source_file_name || '');
+    const sourceKey = text(row?.source_file_key || '');
+    const batch = text(row?.import_batch_id || '');
+    const range = `${text(row?.drive_start_date || '').slice(0, 10)}|${text(row?.drive_end_date || '').slice(0, 10)}`;
+    if (sourceName) return `source-name:${sourceName}|range:${range}`;
+    if (sourceKey) return `source-key:${sourceKey}|range:${range}`;
+    if (batch) return `batch:${batch}|range:${range}`;
+    return `row:${text(row?.row_hash || row?.id || importedAiringTimestamp(row))}`;
+  }
+
+  function aggregateImportedSnapshot(entries = []) {
+    const unique = [];
+    const seen = new Set();
+    for (const entry of entries) {
+      const row = entry.row || {};
+      const key = text(row?.row_hash || row?.id || `index:${entry.index}`);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(entry);
+    }
+    if (!unique.length) return {};
+
+    const newest = [...unique].sort((a, b) =>
+      importedAiringTimestamp(a.row) - importedAiringTimestamp(b.row)
+      || a.index - b.index
+    ).slice(-1)[0].row;
+    const merged = { ...newest };
+    merged.dollars = unique.reduce((sum, entry) => sum + (Number(entry.row?.dollars ?? entry.row?.contribution_amount ?? 0) || 0), 0);
+    merged.pledge_count = unique.reduce((sum, entry) => sum + (Number(entry.row?.pledge_count || 0) || 0), 0);
+    const minutes = unique.reduce((sum, entry) => {
+      const value = Number(entry.row?.program_minutes || 0);
+      return value > 0 ? sum + value : sum;
+    }, 0);
+    merged.program_minutes = minutes > 0 ? minutes : newest.program_minutes;
+
+    const preferredFields = [
+      'manual_match_program_id','pledge_program_id','program_id','matched_library_title',
+      'program_title','title','imported_program_title','nola_code','fundraiser_label',
+      'drive_start_date','drive_end_date','station','source_file_name','source_file_key','import_batch_id'
+    ];
+    for (const field of preferredFields) {
+      const value = unique.map((entry) => entry.row?.[field]).find((candidate) => text(candidate));
+      if (value != null && text(value)) merged[field] = value;
+    }
+    merged.__source_row_count = unique.length;
+    return merged;
+  }
+
   function canonicalizeImportedAirings(rows = []) {
-    const chosen = new Map();
+    const naturalGroups = new Map();
+    const chosen = [];
+
     (Array.isArray(rows) ? rows : []).forEach((row, index) => {
-      const naturalKey = importedNaturalKey(row) || `raw:${text(row?.id || row?.row_hash || index)}`;
-      const candidate = {
-        row,
-        index,
-        reportEnd: importedReportCoverageEnd(row),
-        timestamp: importedAiringTimestamp(row)
-      };
-      const current = chosen.get(naturalKey);
-      const wins = !current
-        || candidate.reportEnd > current.reportEnd
-        || (candidate.reportEnd === current.reportEnd && candidate.timestamp > current.timestamp)
-        || (candidate.reportEnd === current.reportEnd && candidate.timestamp === current.timestamp && candidate.index > current.index);
-      if (wins) chosen.set(naturalKey, candidate);
+      const naturalKey = importedNaturalKey(row);
+      if (!naturalKey) {
+        chosen.push({ index, row });
+        return;
+      }
+      if (!naturalGroups.has(naturalKey)) naturalGroups.set(naturalKey, new Map());
+      const snapshots = naturalGroups.get(naturalKey);
+      const snapshotKey = importedSnapshotKey(row);
+      if (!snapshots.has(snapshotKey)) snapshots.set(snapshotKey, { rows: [], reportEnd: '', timestamp: 0, lastIndex: index });
+      const snapshot = snapshots.get(snapshotKey);
+      snapshot.rows.push({ row, index });
+      snapshot.reportEnd = [snapshot.reportEnd, importedReportCoverageEnd(row)].sort().slice(-1)[0] || '';
+      snapshot.timestamp = Math.max(snapshot.timestamp, importedAiringTimestamp(row));
+      snapshot.lastIndex = Math.max(snapshot.lastIndex, index);
     });
-    return [...chosen.values()].sort((a, b) => a.index - b.index).map((entry) => entry.row);
+
+    naturalGroups.forEach((snapshots) => {
+      const best = [...snapshots.values()].sort((a, b) =>
+        b.reportEnd.localeCompare(a.reportEnd)
+        || b.timestamp - a.timestamp
+        || b.lastIndex - a.lastIndex
+      )[0];
+      if (!best) return;
+      chosen.push({
+        index: Math.min(...best.rows.map((entry) => entry.index)),
+        row: aggregateImportedSnapshot(best.rows)
+      });
+    });
+
+    return chosen.sort((a, b) => a.index - b.index).map((entry) => entry.row);
   }
 
   function importedDateKey(row = {}) {

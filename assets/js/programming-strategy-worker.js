@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('programming-strategy-analysis.js?v=0.22.176');
+importScripts('programming-strategy-analysis.js?v=0.22.177');
 
 const S = self.WNMUProgrammingStrategyAnalysis;
 if (!S) throw new Error('Programming strategy analysis module did not load in worker.');
@@ -80,38 +80,118 @@ function libraryRowForAiring(row = {}, indexes = {}) {
   return titleKey ? (indexes.byTitle?.get(titleKey) || null) : null;
 }
 
-function canonicalNaturalKey(row = {}) {
-  const station = S.lookupKey(row.station || '');
-  const identity = S.lookupKey(
+function canonicalIdentity(row = {}) {
+  const sourceCode = nolaKey(row.nola_code);
+  if (sourceCode) return `code:${sourceCode}`;
+  const title = S.lookupKey(
     row.imported_program_title
     || row.program_title
     || row.title
     || row.matched_library_title
     || ''
   );
+  return title ? `title:${title}` : '';
+}
+
+function canonicalNaturalKey(row = {}) {
+  const station = S.lookupKey(row.station || '');
+  const identity = canonicalIdentity(row);
   const date = importedDateKey(row);
   const time = text(row.air_time);
-  return identity ? [station, identity, date, time].join('|') : '';
+  return identity && date && time ? [station, identity, date, time].join('|') : '';
+}
+
+function snapshotKey(row = {}) {
+  const sourceName = text(row.source_file_name);
+  const sourceKey = text(row.source_file_key);
+  const batch = text(row.import_batch_id);
+  const range = `${text(row.drive_start_date).slice(0, 10)}|${text(row.drive_end_date).slice(0, 10)}`;
+  if (sourceName) return `source-name:${sourceName}|range:${range}`;
+  if (sourceKey) return `source-key:${sourceKey}|range:${range}`;
+  if (batch) return `batch:${batch}|range:${range}`;
+  return `row:${text(row.row_hash || row.id || airingTimestamp(row))}`;
+}
+
+function airingTimestamp(row = {}) {
+  return Date.parse(row.updated_at || row.created_at || '') || 0;
+}
+
+function aggregateSnapshot(entries = []) {
+  const unique = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    const row = entry.row || {};
+    const identity = text(row.row_hash || row.id || `index:${entry.index}`);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    unique.push(entry);
+  }
+  if (!unique.length) return {};
+
+  const newest = [...unique].sort((a, b) => airingTimestamp(a.row) - airingTimestamp(b.row) || a.index - b.index).slice(-1)[0].row;
+  const merged = { ...newest };
+  merged.dollars = unique.reduce((sum, entry) => sum + (Number(entry.row?.dollars || 0) || 0), 0);
+  merged.pledge_count = unique.reduce((sum, entry) => sum + (Number(entry.row?.pledge_count || 0) || 0), 0);
+  const minutes = unique.reduce((sum, entry) => {
+    const value = Number(entry.row?.program_minutes || 0);
+    return value > 0 ? sum + value : sum;
+  }, 0);
+  merged.program_minutes = minutes > 0 ? minutes : newest.program_minutes;
+
+  const preferredFields = [
+    'manual_match_program_id','pledge_program_id','program_id','matched_library_title',
+    'program_title','title','imported_program_title','nola_code','fundraiser_label',
+    'drive_start_date','drive_end_date','station'
+  ];
+  for (const field of preferredFields) {
+    const value = unique.map((entry) => entry.row?.[field]).find((candidate) => text(candidate));
+    if (value != null && text(value)) merged[field] = value;
+  }
+  merged.__source_row_count = unique.length;
+  return merged;
 }
 
 function canonicalizeAirings(rows = []) {
-  const chosen = new Map();
+  const naturalGroups = new Map();
+  const passthrough = [];
+
   (rows || []).forEach((row, index) => {
-    const key = canonicalNaturalKey(row) || `raw:${text(row.id || index)}`;
-    const candidate = {
-      row,
-      index,
-      reportEnd: text(row.drive_end_date).slice(0, 10),
-      timestamp: Date.parse(row.updated_at || row.created_at || '') || 0
-    };
-    const current = chosen.get(key);
-    const wins = !current
-      || candidate.reportEnd > current.reportEnd
-      || (candidate.reportEnd === current.reportEnd && candidate.timestamp > current.timestamp)
-      || (candidate.reportEnd === current.reportEnd && candidate.timestamp === current.timestamp && candidate.index > current.index);
-    if (wins) chosen.set(key, candidate);
+    const naturalKey = canonicalNaturalKey(row);
+    if (!naturalKey) {
+      passthrough.push({ index, row });
+      return;
+    }
+    if (!naturalGroups.has(naturalKey)) naturalGroups.set(naturalKey, new Map());
+    const snapshots = naturalGroups.get(naturalKey);
+    const key = snapshotKey(row);
+    if (!snapshots.has(key)) snapshots.set(key, {
+      rows: [],
+      reportEnd: '',
+      timestamp: 0,
+      lastIndex: index
+    });
+    const snapshot = snapshots.get(key);
+    snapshot.rows.push({ row, index });
+    snapshot.reportEnd = [snapshot.reportEnd, text(row.drive_end_date).slice(0, 10)].sort().slice(-1)[0] || '';
+    snapshot.timestamp = Math.max(snapshot.timestamp, airingTimestamp(row));
+    snapshot.lastIndex = Math.max(snapshot.lastIndex, index);
   });
-  return [...chosen.values()].sort((a, b) => a.index - b.index).map((entry) => entry.row);
+
+  const chosen = [...passthrough];
+  naturalGroups.forEach((snapshots) => {
+    const best = [...snapshots.values()].sort((a, b) =>
+      b.reportEnd.localeCompare(a.reportEnd)
+      || b.timestamp - a.timestamp
+      || b.lastIndex - a.lastIndex
+    )[0];
+    if (!best) return;
+    chosen.push({
+      index: Math.min(...best.rows.map((entry) => entry.index)),
+      row: aggregateSnapshot(best.rows)
+    });
+  });
+
+  return chosen.sort((a, b) => a.index - b.index).map((entry) => entry.row);
 }
 
 function normalizeAiring(row = {}, indexes = {}) {

@@ -258,3 +258,26 @@ assert.match(reportSource, /not tied to a specific program/);
 assert.match(reportSource, /unknown results and airings with missing duration/);
 
 console.log('one-sheet analytics hardening tests passed');
+
+
+{
+  const canonical = A.canonicalizeImportedAirings([
+    {
+      id: 1, row_hash: 'break-a', import_batch_id: 'batch-x', source_file_name: 'report.csv',
+      station: 'WNMU', imported_program_title: 'Multi Break Program', nola_code: 'MBRK',
+      air_date: '2025-12-06', air_time: '19:00', dollars: 100, pledge_count: 1, program_minutes: 10,
+      drive_start_date: '2025-12-05', drive_end_date: '2025-12-14'
+    },
+    {
+      id: 2, row_hash: 'break-b', import_batch_id: 'batch-x', source_file_name: 'report.csv',
+      station: 'WNMU', imported_program_title: 'Multi Break Program', nola_code: 'MBRK',
+      air_date: '2025-12-06', air_time: '19:00', dollars: 50, pledge_count: 2, program_minutes: 20,
+      drive_start_date: '2025-12-05', drive_end_date: '2025-12-14'
+    }
+  ]);
+  assert.equal(canonical.length, 1, 'separate pledge breaks for one airing should aggregate into one historical airing');
+  assert.equal(Number(canonical[0].dollars), 150);
+  assert.equal(Number(canonical[0].pledge_count), 3);
+  assert.equal(Number(canonical[0].program_minutes), 30);
+  assert.equal(Number(canonical[0].__source_row_count), 2);
+}

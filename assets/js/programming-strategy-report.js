@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
-const state={client:null,schedules:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,requestId:0,dataLoadMs:0};
+const state={client:null,schedules:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
 function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
@@ -11,7 +11,7 @@ function fmt(v,year=true){const d=parseDate(v);return d?d.toLocaleDateString(und
 function clock(m){m=Number(m);if(!Number.isFinite(m))return'—';m=((m%1440)+1440)%1440;const h=Math.floor(m/60),mi=m%60;return`${h%12||12}${mi?`:${String(mi).padStart(2,'0')}`:''} ${h>=12?'PM':'AM'}`;}
 function status(msg,tone=''){const n=$('#strategy-status');if(n){n.textContent=msg||'';n.className=`strategy-status${tone?` ${tone}`:''}`;}}
 function makeClient(){if(!globalThis.supabase?.createClient)throw new Error('Supabase library did not load.');if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY)throw new Error('Supabase configuration is missing.');return globalThis.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);}
-async function requireAdmin(){state.client=makeClient();const{data,error}=await state.client.auth.getSession();if(error)throw error;const session=data?.session||null,email=String(session?.user?.email||'').trim().toLowerCase(),admins=Array.isArray(cfg.ADMIN_EMAILS)?cfg.ADMIN_EMAILS.map(x=>String(x).trim().toLowerCase()).filter(Boolean):[],ok=!!(session&&(!admins.length||admins.includes(email)));if(ok){$('#strategy-role').textContent=email?`Admin · ${email}`:'Admin';return true;}$('#strategy-app')?.classList.add('hidden');const gate=$('#strategy-access-gate');if(gate){gate.classList.remove('hidden');gate.innerHTML=`<div class="report-gate-card"><div class="report-kicker">Admin report center</div><h1>Admin access required</h1><p>${esc(session?`${email||'This account'} does not have administrator report access.`:'Sign in as an administrator from the Pledge Program Library, then return to this report.')}</p><a class="report-button primary" href="./">Open Pledge Program Library</a></div>`;}return false;}
+async function requireAdmin(){state.client=makeClient();const{data,error}=await state.client.auth.getSession();if(error)throw error;const session=data?.session||null,email=String(session?.user?.email||'').trim().toLowerCase(),admins=Array.isArray(cfg.ADMIN_EMAILS)?cfg.ADMIN_EMAILS.map(x=>String(x).trim().toLowerCase()).filter(Boolean):[],ok=!!(session&&(!admins.length||admins.includes(email)));if(ok){$('#strategy-access-gate')?.classList.add('hidden');$('#strategy-app')?.classList.remove('hidden');const role=$('#strategy-role');if(role)role.textContent=email?`Admin · ${email}`:'Admin';return true;}$('#strategy-app')?.classList.add('hidden');const gate=$('#strategy-access-gate');if(gate){gate.classList.remove('hidden');gate.innerHTML=`<div class="report-gate-card"><div class="report-kicker">Admin report center</div><h1>Admin access required</h1><p>${esc(session?`${email||'This account'} does not have administrator report access.`:'Sign in as an administrator from the Pledge Program Library, then return to this report.')}</p><a class="report-button primary" href="./">Open Pledge Program Library</a></div>`;}return false;}
 async function fetchAll(table,select='*',{orders=['id'],apply=null}={}){
   const pageSize=1000,batchPages=3;
   const fetchPage=async(page)=>{
@@ -75,7 +75,7 @@ async function loadAnalysisData(){
     'id','program_id','pledge_program_id','manual_match_program_id',
     'title','program_title','imported_program_title','matched_library_title','nola_code',
     'air_date','air_time','aired_at','dollars','pledge_count','program_minutes',
-    'fundraiser_label','drive_start_date','drive_end_date','station','updated_at','created_at'
+    'fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','source_file_key','import_batch_id','updated_at','created_at'
   ].join(',');
   const programSelect=[
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
@@ -85,7 +85,7 @@ async function loadAnalysisData(){
   const[airings,library,overrides]=await Promise.all([
     fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id'],apply:q=>q.lte('air_date',cutoff)}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
-    fetchOptional('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']})
+    fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']})
   ]);
   state.airings=airings;
   state.library=library;
@@ -162,7 +162,9 @@ function compact(items,renderer,empty){return items?.length?`<div class="strateg
 function supportingSections(strategy){return`<section class="sheet-section strategy-two-column"><div><h2>Repeat candidates</h2>${compact(strategy.repeats,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · score ${Math.round(x.score)} · supported on ${x.slots.length} separated prime windows.</span></div>`,'No repeat candidate clears the threshold.')}<h2>Seasonal opportunities</h2>${compact(strategy.seasonal,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · ${esc(x.season.notes.join(' ')||`${x.season.targetSeason} seasonal support`)}</span></div>`,'No distinct seasonal opportunity identified.')}</div><div><h2>Local / U.P. opportunities</h2>${compact(strategy.local,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · best-window score ${Math.round(x.score)} · ${esc(x.fit)}</span></div>`,'No eligible Local / U.P. title identified.')}<h2>Titles to avoid / rest</h2>${compact(strategy.avoid,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.reasons.join(' · '))}</span></div>`,'No title needs a prominent rest/avoid caution.')}</div></section>`;}
 function rightsSection(strategy){const desc=x=>`${x.rightsStart?`Starts ${fmt(x.rightsStart)}`:''}${x.rightsStart&&x.rightsEnd?' · ':''}${x.rightsEnd?`Ends ${fmt(x.rightsEnd)}`:''}`;return`<section class="sheet-section strategy-two-column"><div><h2>Rights constraints</h2>${compact(strategy.rights.unavailable.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No fully unavailable title detected.')}</div><div><h2>Partial-drive rights</h2>${compact(strategy.rights.partial.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No partial-drive rights restriction detected.')}</div></section>`;}
 function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}<li>${esc(strategy.peerEvidence.note)}</li></ul></section>`;}
+function clearStrategyWorkerTimer(){if(state.workerTimer){globalThis.clearTimeout(state.workerTimer);state.workerTimer=null;}}
 function stopStrategyWorker(reason='Superseded'){
+  clearStrategyWorkerTimer();
   if(state.workerReject){
     const reject=state.workerReject;
     state.workerReject=null;
@@ -179,13 +181,21 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.176');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.177');
     }catch(error){
       reject(error);
       return;
     }
     state.worker=worker;
     state.workerReject=reject;
+    state.workerTimer=globalThis.setTimeout(()=>{
+      if(state.worker!==worker)return;
+      state.workerReject=null;
+      state.workerTimer=null;
+      worker.terminate();
+      state.worker=null;
+      reject(new Error('Strategy analysis exceeded 90 seconds and was stopped. Reload the report and try again.'));
+    },90000);
     worker.onmessage=(event)=>{
       const message=event.data||{};
       if(message.requestId!==requestId)return;
@@ -194,6 +204,7 @@ function runStrategyWorker(schedule){
         return;
       }
       if(message.type==='error'){
+        clearStrategyWorkerTimer();
         state.workerReject=null;
         worker.terminate();
         if(state.worker===worker)state.worker=null;
@@ -201,6 +212,7 @@ function runStrategyWorker(schedule){
         return;
       }
       if(message.type==='result'){
+        clearStrategyWorkerTimer();
         state.workerReject=null;
         worker.terminate();
         if(state.worker===worker)state.worker=null;
@@ -208,19 +220,28 @@ function runStrategyWorker(schedule){
       }
     };
     worker.onerror=(event)=>{
+      clearStrategyWorkerTimer();
       state.workerReject=null;
       worker.terminate();
       if(state.worker===worker)state.worker=null;
       reject(new Error(event?.message||'Strategy worker failed to load.'));
     };
-    worker.postMessage({
-      requestId,
-      schedule,
-      library:state.library,
-      airings:state.airings,
-      overrides:state.overrides,
-      now:new Date().toISOString()
-    });
+    try{
+      worker.postMessage({
+        requestId,
+        schedule,
+        library:state.library,
+        airings:state.airings,
+        overrides:state.overrides,
+        now:new Date().toISOString()
+      });
+    }catch(error){
+      clearStrategyWorkerTimer();
+      state.workerReject=null;
+      worker.terminate();
+      if(state.worker===worker)state.worker=null;
+      reject(error);
+    }
   });
 }
 

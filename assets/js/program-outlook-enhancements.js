@@ -34,6 +34,13 @@
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
+  function median(values = []) {
+    const sorted = (values || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    if (!sorted.length) return null;
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
   function clampScore(value) {
     return Math.max(0, Math.min(100, number(value, 50)));
   }
@@ -190,35 +197,154 @@
     return imported > 0 ? imported : null;
   }
 
+  function contextRowRate(row = {}) {
+    const minutes = number(row?.program_minutes, 0);
+    return minutes > 0 ? (rowContribution(row) * 60) / minutes : null;
+  }
+
+  function postRatingAirings(program = {}, override = null, exactAirings = null) {
+    const ratedAt = override?.rated_at || override?.updated_at ? new Date(override.rated_at || override.updated_at) : null;
+    if (!(ratedAt instanceof Date) || Number.isNaN(ratedAt.getTime())) return [];
+    const seen = new Set();
+    return rowsForProgram(program, exactAirings)
+      .map((row) => ({ row, when: airingWhen(row) }))
+      .filter((entry) => entry.when && entry.when > ratedAt)
+      .sort((a, b) => a.when - b.when)
+      .filter((entry) => {
+        const start = entry.when.getHours() * 60 + entry.when.getMinutes();
+        const key = `${utils.dateKeyFromDate?.(entry.when) || entry.when.toISOString().slice(0, 10)}|${start}|${text(entry.row.fundraiser_label || entry.row.drive_start_date || '')}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((entry) => entry.row);
+  }
+
+  function mustAirTestContext(program = {}, row = {}) {
+    const rateMinutes = durationMinutes(program, row);
+    const rate = rateMinutes > 0 ? (rowContribution(row) * 60) / rateMinutes : null;
+    const when = airingWhen(row);
+    const dayKey = when ? (utils.dateKeyFromDate?.(when) || when.toISOString().slice(0, 10)) : '';
+    const start = when ? when.getHours() * 60 + when.getMinutes() : null;
+    const programId = text(derive.programId?.(program));
+    const allRows = Array.isArray(state.scorecardAiringRows) ? state.scorecardAiringRows : [];
+    const historicalDays = new Map();
+    allRows.forEach((candidate) => {
+      const candidateWhen = airingWhen(candidate);
+      if (!candidateWhen) return;
+      const candidateDay = utils.dateKeyFromDate?.(candidateWhen) || candidateWhen.toISOString().slice(0, 10);
+      const candidateRate = contextRowRate(candidate);
+      if (!candidateDay || candidateDay === dayKey || !Number.isFinite(candidateRate)) return;
+      if (!historicalDays.has(candidateDay)) historicalDays.set(candidateDay, []);
+      historicalDays.get(candidateDay).push(candidateRate);
+    });
+    const historicalDayRates = [...historicalDays.values()].map((rates) => median(rates)).filter(Number.isFinite);
+    const baseline = historicalDayRates.length ? median(historicalDayRates) : null;
+    const sameDay = allRows.filter((candidate) => {
+      const candidateWhen = airingWhen(candidate);
+      if (!candidateWhen) return false;
+      const candidateDay = utils.dateKeyFromDate?.(candidateWhen) || candidateWhen.toISOString().slice(0, 10);
+      if (candidateDay !== dayKey) return false;
+      const linked = text(utils.firstNonEmpty?.(candidate?.manual_match_program_id, candidate?.pledge_program_id, candidate?.program_id, ''));
+      if (programId && linked === programId) return false;
+      return Number.isFinite(contextRowRate(candidate));
+    });
+    const nearby = Number.isFinite(start)
+      ? sameDay.filter((candidate) => {
+        const candidateWhen = airingWhen(candidate);
+        if (!candidateWhen) return false;
+        const candidateStart = candidateWhen.getHours() * 60 + candidateWhen.getMinutes();
+        return Math.abs(candidateStart - start) <= 180;
+      })
+      : [];
+    const contextRows = nearby.length >= 2 ? nearby : sameDay;
+    const contextRate = median(contextRows.map(contextRowRate).filter(Number.isFinite));
+    const baselineRatio = Number.isFinite(rate) && Number.isFinite(baseline) && baseline > 0 ? rate / baseline : null;
+    const contextRatio = Number.isFinite(contextRate) && Number.isFinite(baseline) && baseline > 0 ? contextRate / baseline : null;
+    const relativeRatio = Number.isFinite(rate) && Number.isFinite(contextRate) && contextRate > 0 ? rate / contextRate : null;
+    const badNight = contextRows.length >= 2 && Number.isFinite(contextRatio) && contextRatio < 0.75;
+    let qualityRatio = baselineRatio;
+    if (badNight && Number.isFinite(relativeRatio)) qualityRatio = Math.max(Number.isFinite(qualityRatio) ? qualityRatio : 0, relativeRatio * 0.9);
+    let outcome = 'inconclusive';
+    if (Number.isFinite(qualityRatio)) {
+      if (qualityRatio >= 1.1) outcome = 'promising';
+      else if (qualityRatio >= 0.78) outcome = 'viable';
+      else if (qualityRatio >= 0.55) outcome = 'neutral';
+      else outcome = 'low_confidence';
+    }
+    return { row, rate, baseline, contextRate, contextSamples: contextRows.length, baselineRatio, contextRatio, relativeRatio, qualityRatio, badNight, outcome };
+  }
+
+  function resolvedMustAirRating(tests = []) {
+    const usable = (tests || []).map((test) => test.qualityRatio).filter(Number.isFinite);
+    if (!usable.length) return 'neutral';
+    const combined = median(usable);
+    if (combined >= 1.1) return 'promising';
+    if (combined >= 0.78) return 'viable';
+    if (combined >= 0.55) return 'neutral';
+    return 'low_confidence';
+  }
+
   function programmerEvidence(program = {}, exactAirings = null) {
     const override = App.programEditorialOverrides?.get?.(program) || null;
-    const rating = App.programEditorialOverrides?.normalizeRating?.(override?.rating) || '';
-    if (!rating) return { rating: '', adjustment: 0, weakCount: 0, activeProtection: false, ratedAt: null };
-
+    const storedRating = App.programEditorialOverrides?.normalizeRating?.(override?.rating) || '';
+    if (!storedRating) return { rating: '', storedRating: '', label: 'Neutral', adjustment: 0, weakCount: 0, activeProtection: false, secondChance: false, ratedAt: null, tests: [] };
     const ratedAt = override?.rated_at || override?.updated_at ? new Date(override.rated_at || override.updated_at) : null;
-    let weakCount = 0;
-    const tests = [];
-    if (rating === 'must_air' && ratedAt instanceof Date && !Number.isNaN(ratedAt.getTime())) {
-      const seen = new Set();
-      rowsForProgram(program, exactAirings).forEach((row) => {
-        const when = airingWhen(row);
-        if (!when || when <= ratedAt || !isPrimeRow(row)) return;
-        const key = `${utils.dateKeyFromDate?.(when) || when.toISOString().slice(0, 10)}|${text(row.air_time || when.toTimeString().slice(0, 5))}|${text(row.fundraiser_label || row.drive_start_date || '')}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        const dollars = rowContribution(row);
-        const minutes = durationMinutes(program, row);
-        const rate = minutes > 0 ? (dollars * 60) / minutes : null;
-        const weak = dollars <= 0 || (Number.isFinite(rate) && rate < WEAK_PRIME_RATE);
-        tests.push({ when, dollars, rate, weak });
-      });
-      weakCount = tests.filter((test) => test.weak).length;
+
+    if (storedRating !== 'must_air') {
+      return {
+        override,
+        rating: storedRating,
+        storedRating,
+        label: App.programEditorialOverrides?.ratingLabel?.(storedRating) || storedRating,
+        adjustment: PROGRAMMER_WEIGHTS[storedRating] || 0,
+        weakCount: 0,
+        activeProtection: false,
+        secondChance: false,
+        ratedAt,
+        tests: []
+      };
     }
 
-    let adjustment = PROGRAMMER_WEIGHTS[rating] || 0;
-    const activeProtection = rating === 'must_air' && weakCount < 2;
-    if (rating === 'must_air' && weakCount >= 2) adjustment = 8;
-    return { override, rating, adjustment, weakCount, activeProtection, ratedAt, tests };
+    const tests = postRatingAirings(program, override, exactAirings).map((row) => mustAirTestContext(program, row));
+    if (!tests.length) {
+      return { override, rating: 'must_air', storedRating, label: 'Must Air', adjustment: PROGRAMMER_WEIGHTS.must_air, weakCount: 0, activeProtection: true, secondChance: false, ratedAt, tests };
+    }
+
+    const firstTest = tests[0];
+    const deservesSecondChance = tests.length === 1
+      && (firstTest.outcome === 'inconclusive' || (firstTest.badNight && !['promising', 'viable'].includes(firstTest.outcome)));
+
+    if (deservesSecondChance) {
+      return {
+        override,
+        rating: 'must_air',
+        storedRating,
+        label: 'Must Air · second chance',
+        adjustment: PROGRAMMER_WEIGHTS.promising,
+        weakCount: firstTest.outcome === 'low_confidence' ? 1 : 0,
+        activeProtection: true,
+        secondChance: true,
+        ratedAt,
+        tests
+      };
+    }
+
+    const effectiveRating = resolvedMustAirRating(tests.slice(0, 2));
+    return {
+      override,
+      rating: effectiveRating,
+      storedRating,
+      effectiveRating,
+      label: `Must Air → ${App.programEditorialOverrides?.ratingLabel?.(effectiveRating) || effectiveRating}`,
+      adjustment: PROGRAMMER_WEIGHTS[effectiveRating] || 0,
+      weakCount: tests.filter((test) => test.outcome === 'low_confidence').length,
+      activeProtection: false,
+      secondChance: false,
+      resolvedAfterAirings: Math.min(2, tests.length),
+      ratedAt,
+      tests
+    };
   }
 
   function seasonalEvidence(program = {}, exactAirings = null) {
@@ -302,7 +428,7 @@
     let outlook = result.outlook || 'Situational option';
     let tone = 'neutral';
 
-    if (season.christmas && season.targetSeason && season.targetSeason !== 'December' && programmer.rating !== 'must_air') {
+    if (season.christmas && season.targetSeason && season.targetSeason !== 'December') {
       outlook = 'Save for December';
       tone = 'caution';
     } else if (result.drama?.olderCycle && !['promising', 'must_air'].includes(programmer.rating)) {
@@ -358,12 +484,12 @@
     const badges = cleanLegacyBadges(sourceResult.badges || []);
     const cautions = [...(sourceResult.cautions || [])];
     if (correctLocal) badges.push('Local / U.P.');
-    if (programmer.rating) badges.unshift(`Programmer: ${App.programEditorialOverrides?.ratingLabel?.(programmer.rating) || programmer.rating}`);
+    if (programmer.rating) badges.unshift(`Programmer: ${programmer.label || App.programEditorialOverrides?.ratingLabel?.(programmer.rating) || programmer.rating}`);
     if (seasonEvidence.target?.title) badges.push(`Focus: ${seasonEvidence.target.title}`);
     if (seasonEvidence.christmas && seasonEvidence.targetSeason === 'December') badges.push('Seasonal fit');
     if (seasonEvidence.christmas && seasonEvidence.targetSeason && seasonEvidence.targetSeason !== 'December') cautions.push('Christmas / holiday programming is out of season for the selected fundraiser.');
-    if (programmer.rating === 'must_air' && programmer.weakCount === 1) cautions.unshift('One weak prime test since the Must air rating; one more will restore automated Low Confidence if warranted.');
-    if (programmer.rating === 'must_air' && programmer.weakCount >= 2) cautions.unshift('Must air rating has two weak prime tests; its formula boost has been reduced and automated confidence is back in control.');
+    if (programmer.secondChance) cautions.unshift('The first Must Air test occurred in a weak surrounding window or lacked usable performance data. One reduced-priority second chance remains.');
+    if (programmer.storedRating === 'must_air' && programmer.rating !== 'must_air') cautions.unshift(`Must Air resolved to ${programmer.label.replace(/^Must Air → /,'')} from post-rating performance.`);
 
     const next = {
       ...sourceResult,
@@ -381,6 +507,11 @@
       editorialOverride: {
         ...(sourceResult.editorialOverride || {}),
         override: programmer.override || sourceResult.editorialOverride?.override || null,
+        rating: programmer.rating,
+        storedRating: programmer.storedRating,
+        effectiveRating: programmer.effectiveRating || programmer.rating,
+        secondChance: programmer.secondChance,
+        resolvedAfterAirings: programmer.resolvedAfterAirings || 0,
         underperformances: programmer.weakCount,
         activeProtection: programmer.activeProtection,
         weakCount: programmer.weakCount
@@ -426,7 +557,7 @@
     }
     if (season.comparison) parts.push(season.comparison);
     if (programmer.rating) {
-      const label = App.programEditorialOverrides?.ratingLabel?.(programmer.rating) || programmer.rating;
+      const label = programmer.label || App.programEditorialOverrides?.ratingLabel?.(programmer.rating) || programmer.rating;
       const sign = programmer.adjustment >= 0 ? '+' : '';
       parts.push(`Programmer rating ${label} contributes ${sign}${programmer.adjustment} points to the model.`);
     }
@@ -470,7 +601,7 @@
       ? App.programEditorialOverrides?.ratingLabel?.(programmer.rating) || programmer.rating
       : 'Neutral';
     const programmerNote = programmer.rating
-      ? `Formula adjustment ${programmer.adjustment >= 0 ? '+' : ''}${programmer.adjustment}${programmer.rating === 'must_air' ? ` · weak prime tests since rating ${programmer.weakCount}/2` : ''}`
+      ? `Formula adjustment ${programmer.adjustment >= 0 ? '+' : ''}${programmer.adjustment}${programmer.secondChance ? ' · one context-based second chance remains' : programmer.storedRating === 'must_air' && programmer.rating !== 'must_air' ? ' · Must Air has resolved from post-rating performance' : ''}`
       : 'No programmer weighting is being added.';
 
     const cautions = result.cautions?.length
