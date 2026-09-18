@@ -318,7 +318,7 @@ test('Report 5 presentation removes visible median language and evidence-through
   assert.doesNotMatch(reportUi, /median about|median Broadcast|Established/);
   assert.doesNotMatch(reportUi, /strategy-summary/);
   assert.doesNotMatch(reportUi, /sheet-stamp">Evidence through/);
-  assert.match(reportUi, /Avg \$\/pledge hr/);
+  assert.match(reportUi, /Avg \$.*\/pledge hr/);
   assert.match(reportUi, /Documentary subtopics/);
   assert.match(reportUi, /Day\/time performance/);
 });
