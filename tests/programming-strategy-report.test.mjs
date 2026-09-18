@@ -355,3 +355,111 @@ test('strategy scoring caches repeated program and slot evidence scans', () => {
   assert.match(source, /seasonSlotEvidenceIndex/);
   assert.match(source, /seasonTopicSummaryCache/);
 });
+
+
+test('Report 5 unhides after successful admin access and does not silently discard programmer ratings', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  assert.match(reportUi, /#strategy-app'\)\?\.classList\.remove\('hidden'\)/);
+  assert.match(reportUi, /fetchAll\('pledge_program_editorial_overrides'/);
+  assert.doesNotMatch(reportUi, /fetchOptional\('pledge_program_editorial_overrides'/);
+  assert.match(reportUi, /Strategy analysis exceeded 90 seconds/);
+  assert.match(reportUi, /90000/);
+});
+
+test('worker aggregates separate pledge breaks from the same airing instead of dropping one', () => {
+  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
+  const workerMessages = [];
+  const workerContext = {
+    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
+    performance: { now: () => Date.now() }
+  };
+  workerContext.globalThis = workerContext;
+  workerContext.self = workerContext;
+  workerContext.postMessage = (message) => workerMessages.push(message);
+  workerContext.importScripts = () => {};
+  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
+  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+
+  workerContext.onmessage({
+    data: {
+      requestId: 8,
+      schedule,
+      library: [baseProgram({ id: 1, title: 'Break Test', nola_code: 'BRKT' })],
+      airings: [
+        {
+          id: 101, row_hash: 'a', import_batch_id: 'batch-1', source_file_name: 'breaks.csv',
+          program_id: 1, pledge_program_id: '1', imported_program_title: 'Break Test', nola_code: 'BRKT',
+          air_date: '2025-12-06', air_time: '19:00', dollars: 100, pledge_count: 1, program_minutes: 10,
+          drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', station: 'WNMU'
+        },
+        {
+          id: 102, row_hash: 'b', import_batch_id: 'batch-1', source_file_name: 'breaks.csv',
+          program_id: 1, pledge_program_id: '1', imported_program_title: 'Break Test', nola_code: 'BRKT',
+          air_date: '2025-12-06', air_time: '19:00', dollars: 50, pledge_count: 1, program_minutes: 20,
+          drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', station: 'WNMU'
+        }
+      ],
+      overrides: [],
+      now: '2026-09-18T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  assert.equal(result.diagnostics.rawAirings, 2);
+  assert.equal(result.diagnostics.canonicalAirings, 1);
+  assert.equal(result.diagnostics.evidenceRows, 1);
+  const music = result.strategy.topicComparison.find((item) => item.topic === 'Music');
+  assert.ok(music);
+  assert.equal(Math.round(music.medianRate), 300, '100 + 50 dollars over 10 + 20 pledge minutes must equal $300/hr');
+});
+
+test('Must Air waits for a suitable placement and can earn one bad-night second chance', () => {
+  const program = baseProgram({ id: 'must', title: 'Must Test', topic_primary: 'Music' });
+  const slot = S.planningWindows(schedule).find((entry) => entry.date === '2026-12-05' && entry.label === 'Prime');
+  const override = { program_id: 'must', rating: 'must_air', rated_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z' };
+  const history = [
+    row({ programId: 'must', title: 'Must Test', dateKey: '2026-08-08', startMinutes: 19 * 60, minutes: 60, dollars: 50, fundraiserId: 'aug26' }),
+    row({ programId: 'other-a', title: 'Other A', dateKey: '2026-08-08', startMinutes: 18 * 60, minutes: 60, dollars: 60, fundraiserId: 'aug26' }),
+    row({ programId: 'other-b', title: 'Other B', dateKey: '2026-08-08', startMinutes: 20 * 60, minutes: 60, dollars: 70, fundraiserId: 'aug26' }),
+    row({ programId: 'normal-a', title: 'Normal A', dateKey: '2026-03-07', startMinutes: 19 * 60, minutes: 60, dollars: 600, fundraiserId: 'mar26' }),
+    row({ programId: 'normal-b', title: 'Normal B', dateKey: '2026-03-08', startMinutes: 19 * 60, minutes: 60, dollars: 650, fundraiserId: 'mar26' })
+  ];
+  const first = S.scoreProgramForSlot(program, slot, {
+    schedule,
+    evidenceRows: history,
+    overrideByProgramId: new Map([['must', override]])
+  });
+  assert.equal(first.programmer.rating, 'must_air');
+  assert.equal(first.programmer.secondChance, true);
+  assert.equal(first.programmer.adjustment, 14, 'second-chance Must Air should carry reduced priority, not the full +28');
+  assert.match(first.programmer.label, /second chance/i);
+
+  const secondHistory = [
+    ...history,
+    row({ programId: 'must', title: 'Must Test', dateKey: '2026-09-12', startMinutes: 19 * 60, minutes: 60, dollars: 40, fundraiserId: 'sep26' }),
+    row({ programId: 'normal-c', title: 'Normal C', dateKey: '2026-09-12', startMinutes: 18 * 60, minutes: 60, dollars: 620, fundraiserId: 'sep26' }),
+    row({ programId: 'normal-d', title: 'Normal D', dateKey: '2026-09-12', startMinutes: 20 * 60, minutes: 60, dollars: 610, fundraiserId: 'sep26' })
+  ];
+  const resolved = S.scoreProgramForSlot(program, slot, {
+    schedule,
+    evidenceRows: secondHistory,
+    overrideByProgramId: new Map([['must', override]])
+  });
+  assert.equal(resolved.programmer.storedRating, 'must_air');
+  assert.equal(resolved.programmer.rating, 'low_confidence');
+  assert.equal(resolved.programmer.secondChance, false);
+});
+
+test('Must Air does not override an obviously wrong seasonal placement', () => {
+  const holiday = baseProgram({ id: 'holiday-must', title: 'A Classic Christmas', topic_primary: 'Holiday - Christmas' });
+  const juneSchedule = { id: 'june27', title: 'June 2027', startDate: '2027-06-05', endDate: '2027-06-13' };
+  const slot = S.planningWindows(juneSchedule).find((entry) => entry.label === 'Prime');
+  const scored = S.scoreProgramForSlot(holiday, slot, {
+    schedule: juneSchedule,
+    evidenceRows: [],
+    overrideByProgramId: new Map([['holiday-must', { program_id: 'holiday-must', rating: 'must_air', rated_at: '2026-09-18T00:00:00Z' }]])
+  });
+  assert.equal(scored.fit, 'Save for Christmas season');
+  assert.ok(scored.cautions.some((item) => /does not override seasonal fit/i.test(item)));
+});
