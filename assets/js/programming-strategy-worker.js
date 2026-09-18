@@ -234,7 +234,7 @@ function reportableProgrammingRows(rows = []) {
 function seasonPlanningPool(schedule = {}, rows = []) {
   const targetSeason = S.seasonForDate(schedule.startDate);
   const clean = reportableProgrammingRows(rows);
-  const seasonal = clean.filter((row) => S.seasonForDate(row.dateKey) === targetSeason);
+  const seasonal = clean.filter((row) => S.rowSeason(row) === targetSeason);
   const seasonFundraisers = new Set(seasonal.map((row) => row.fundraiserId).filter(Boolean)).size;
   return {
     targetSeason,
