@@ -1866,6 +1866,87 @@
     }
   }
 
+  async function autoSaveSelectChange(event) {
+    const target = event?.target;
+    const form = els.detailEditForm;
+    if (!target || !form?.contains(target) || target.tagName !== 'SELECT') return false;
+
+    if (!state.detailEditMode || state.detailHydratingForm || state.detailCreateMode || !canEdit()) {
+      handleEditorInput();
+      return false;
+    }
+
+    const fieldName = utils.normalizeText(target.name || '');
+    if (!fieldName || !constants.EDITABLE_FIELDS.includes(fieldName)) {
+      handleEditorInput();
+      return false;
+    }
+
+    if ((fieldName === 'topic_primary' || fieldName === 'topic_secondary') && target.value === NEW_TOPIC_OPTION_VALUE) {
+      handleEditorInput();
+      return false;
+    }
+
+    const formProgramId = currentDetailFormId();
+    const programId = formProgramId || state.selectedProgramId;
+    const resolvedProgramId = App.data.resolveDatabaseProgramId?.(programId) || App.programLinks?.resolveId?.(programId) || programId;
+    if (!resolvedProgramId) {
+      handleEditorInput();
+      return false;
+    }
+
+    const payload = {};
+    let label = fieldName.replace(/_/g, ' ');
+    if (fieldName === 'topic_primary') {
+      payload.topic_primary = selectedTopicValue(form.elements.topic_primary, form.elements.topic_primary_new) || null;
+      payload.topic_secondary = selectedTopicValue(form.elements.topic_secondary, form.elements.topic_secondary_new) || null;
+      label = 'Primary topic';
+    } else if (fieldName === 'topic_secondary') {
+      payload.topic_secondary = selectedTopicValue(form.elements.topic_secondary, form.elements.topic_secondary_new) || null;
+      label = 'Secondary topic';
+    } else {
+      payload[fieldName] = utils.normalizeText(target.value || '') || null;
+      if (fieldName === 'source_format') label = 'Source';
+    }
+
+    const hadUnsavedChanges = Boolean(state.detailDirty);
+    const runSave = async () => {
+      setDetailNotice(`Saving ${label}…`);
+      const response = await App.data.updateProgram(resolvedProgramId, payload);
+      if (response.error) throw response.error;
+      if (!Array.isArray(response.data) || response.data.length < 1) {
+        throw new Error(`${label} save did not update any program row.`);
+      }
+
+      App.data.applyProgramUpdateLocally?.(resolvedProgramId, response.data[0] || {}, payload);
+      App.data.resetDetailCaches?.();
+      state.selectedProgramId = resolvedProgramId;
+      App.listUi?.applyLibraryView?.();
+      App.workspaceUi?.refreshScaffoldSummary?.();
+
+      setDetailDirty(hadUnsavedChanges);
+      setDetailNotice(hadUnsavedChanges
+        ? `${label} saved. Other edits are still unsaved.`
+        : `${label} saved.`);
+      App.dom.setNotice?.(`${label} saved.`);
+      return true;
+    };
+
+    const prior = state.detailSelectSaveQueue || Promise.resolve();
+    const next = prior.catch(() => {}).then(runSave);
+    state.detailSelectSaveQueue = next.finally(() => {
+      if (state.detailSelectSaveQueue === next) state.detailSelectSaveQueue = null;
+    });
+
+    try {
+      return await next;
+    } catch (error) {
+      setDetailDirty(true);
+      setDetailNotice(`${label} could not be saved: ${error?.message || error}`, 'bad');
+      throw error;
+    }
+  }
+
   function ensureSelectOption(select, value) {
     if (!select) return;
     const normalized = utils.normalizeText(value);
@@ -2401,6 +2482,7 @@
     deleteCurrentProgram,
     handleEditorInput,
     handleTopicSelectChange,
+    autoSaveSelectChange,
     renderDetailTopicSelectors,
     showDetailFailure,
     addTimingDraftRow,
