@@ -59,3 +59,19 @@ test('program editor dropdowns autosave without making dropdown-only changes dir
   assert.match(appSource, /if \(event\.target\?\.tagName === 'SELECT'\) return;/);
   assert.match(appSource, /autoSaveSelectChange\?\.\(event\)/);
 });
+
+
+test('program Save button lives in the Program Detail header and still submits the edit form', () => {
+  const shell = fs.readFileSync('app-shell.html', 'utf8');
+  const detailStart = shell.indexOf('id="detail-modal"');
+  const detailEnd = shell.indexOf('id="schedule-modal"', detailStart);
+  const detailBlock = shell.slice(detailStart, detailEnd > detailStart ? detailEnd : undefined);
+  const saveIndex = detailBlock.indexOf('id="detail-save-button"');
+  const formIndex = detailBlock.indexOf('id="detail-edit-form"');
+  assert.ok(saveIndex >= 0, 'Program Detail Save button should exist');
+  assert.ok(saveIndex < formIndex, 'Save button should be in the top detail header before the edit form');
+  assert.match(detailBlock.slice(Math.max(0, saveIndex - 140), saveIndex + 160), /type="submit"[\s\S]*form="detail-edit-form"|form="detail-edit-form"[\s\S]*type="submit"/);
+  const formActions = detailBlock.match(/<div class="toolbar-actions detail-form-actions">[\s\S]*?<\/div>/)?.[0] || '';
+  assert.doesNotMatch(formActions, /detail-save-button/);
+  assert.match(detailSource, /detailSaveButton\.classList\.toggle\('hidden', !state\.detailEditMode\)/);
+});
