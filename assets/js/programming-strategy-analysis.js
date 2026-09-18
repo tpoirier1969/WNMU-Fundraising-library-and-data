@@ -615,7 +615,7 @@ score+=programmer.adjustment;adjustments.push(['programmer',programmer.adjustmen
 const newTitle=titleHistory.rows===0;
 const reviewedNew=newTitle&&['neutral','viable','promising','must_air'].includes(programmer.rating);
 if(reviewedNew){
-  const a=programmer.rating==='neutral'?5:4;
+  const a=5;
   score+=a;
   adjustments.push(['reviewedNewTitle',a]);
   reasons.push(`New / unaired title with programmer review: ${programmer.label}. Prioritize for a first WNMU pledge test.`);
@@ -728,12 +728,13 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
     const groups = new Map();
     const targetSeason = seasonForDate(scheduleStart(context.schedule || {}));
     const seasonRows = (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === targetSeason);
-    for (const program of (library || []).filter((item) => eligibleSomewhereInFundraiser(item, context.schedule || {}))) {
+    for (const program of (library || [])) {
       const topic = programTopic(program);
       const key = lookupKey(topic);
-      if (!groups.has(key)) groups.set(key, { topic, programs: [], subtopics: new Set() });
+      if (!groups.has(key)) groups.set(key, { topic, programs: [], eligiblePrograms: [], subtopics: new Set() });
       const group = groups.get(key);
       group.programs.push(program);
+      if (eligibleSomewhereInFundraiser(program, context.schedule || {})) group.eligiblePrograms.push(program);
       const secondary = programSecondary(program);
       if (secondary) group.subtopics.add(secondary);
     }
@@ -764,7 +765,8 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
         medianRate: history.medianRate,
         bestWindows,
         subtopics: [...group.subtopics].sort(),
-        programCount: group.programs.length
+        programCount: group.programs.length,
+        eligibleProgramCount: group.eligiblePrograms.length
       };
     }).sort((a, b) => b.historyRows - a.historyRows || (b.medianRate || 0) - (a.medianRate || 0) || a.topic.localeCompare(b.topic));
   }
@@ -850,6 +852,7 @@ return{program,programId:programId(program),title:programTitle(program),topic,se
       return {
         ...slot,
         recommendations: selectRecommendationsForSlot(ranked, 4),
+        windowHistory: rowSummary(exactRows),
         strongestTopics: topics.slice(0, 3),
         alternativeTopics: topics.slice(3, 6),
         evidenceRows: exactRows.length,
