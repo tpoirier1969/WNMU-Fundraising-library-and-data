@@ -59,7 +59,7 @@ test('post-cutoff airings cannot enter strategy evidence', () => {
   const beforeTopic = before.topicComparison.find((item) => item.topic === 'Music');
   const afterTopic = after.topicComparison.find((item) => item.topic === 'Music');
   assert.equal(afterTopic.historyRows, beforeTopic.historyRows);
-  assert.equal(afterTopic.medianRate, beforeTopic.medianRate);
+  assert.equal(afterTopic.averageRate, beforeTopic.averageRate);
 });
 
 test('rights exclude a title from a slot where it cannot legally air', () => {
@@ -228,6 +228,28 @@ test('topic comparison includes every Program Library topic, including topics wi
   assert.equal(rows.find((item) => item.topic === 'Music').eligibleProgramCount, 1);
 });
 
+test('topic performance ranks by fundraiser-balanced average, excludes Uncategorized, and breaks out Documentary subtopics', () => {
+  const library = [
+    baseProgram({ id: 'music', title: 'Music', topic_primary: 'Music' }),
+    baseProgram({ id: 'doc-hist', title: 'History Doc', topic_primary: 'Documentary', topic_secondary: 'History' }),
+    baseProgram({ id: 'doc-blank', title: 'Unassigned Doc', topic_primary: 'Documentary', topic_secondary: '' }),
+    baseProgram({ id: 'junk', title: 'Incidental', topic_primary: 'Uncategorized' })
+  ];
+  const evidenceRows = [
+    row({ programId: 'music', title: 'Music', topic: 'Music', dateKey: '2025-12-06', startMinutes: 19 * 60, minutes: 60, dollars: 1000, fundraiserId: 'd1' }),
+    row({ programId: 'music', title: 'Music', topic: 'Music', dateKey: '2024-12-07', startMinutes: 19 * 60, minutes: 60, dollars: 100, fundraiserId: 'd2' }),
+    { ...row({ programId: 'doc-hist', title: 'History Doc', topic: 'Documentary', dateKey: '2025-12-07', startMinutes: 20 * 60, minutes: 60, dollars: 300, fundraiserId: 'd1' }), secondary: 'History' },
+    { ...row({ programId: 'doc-hist', title: 'History Doc', topic: 'Documentary', dateKey: '2024-12-08', startMinutes: 20 * 60, minutes: 60, dollars: 300, fundraiserId: 'd2' }), secondary: 'History' }
+  ];
+  const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows, seasonRows: evidenceRows });
+  assert.deepEqual(Array.from(rows, (item) => item.topic), ['Music', 'Documentary']);
+  assert.equal(Math.round(rows[0].averageRate), 550);
+  const documentary = rows.find((item) => item.topic === 'Documentary');
+  assert.equal(Math.round(documentary.averageRate), 300);
+  assert.ok(documentary.documentarySubtopics.some((item) => item.label === 'History'));
+  assert.ok(documentary.documentarySubtopics.some((item) => item.label === 'Unassigned'));
+});
+
 test('overall mix remains qualitative rather than inventing percentage quotas', () => {
   const strategy = S.buildStrategy({
     schedule,
@@ -250,7 +272,7 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
   assert.match(reportUi, /\.gte\('start_date',todayKey\(\)\)/);
   assert.match(reportUi, /strategy-program-row/);
   assert.match(reportUi, /Anticipated day strength/);
-  assert.match(reportUi, /Experimental opportunities/);
+  assert.match(reportUi, /Scheduling opportunities \/ tests/);
   assert.match(ratingsUi, />Unrated</);
   assert.match(ratingsUi, /value="neutral"[^>]*>Neutral</);
   assert.match(ratingsUi, /value="viable"[^>]*>Viable</);
@@ -274,7 +296,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.177'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.179'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.match(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -282,13 +304,23 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.177'\)/);
+  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.179'\)/);
   assert.match(workerUi, /canonicalizeAirings/);
   assert.match(workerUi, /buildDayOutlook/);
 
   assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
+});
+
+test('Report 5 presentation removes visible median language and evidence-through card', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(reportUi, /median about|median Broadcast|Established/);
+  assert.doesNotMatch(reportUi, /strategy-summary/);
+  assert.doesNotMatch(reportUi, /sheet-stamp">Evidence through/);
+  assert.match(reportUi, /Avg \$.*\/pledge hr/);
+  assert.match(reportUi, /Documentary subtopics/);
+  assert.match(reportUi, /Day\/time performance/);
 });
 
 test('strategy worker returns a complete result without blocking report code paths', () => {
@@ -349,6 +381,9 @@ test('strategy worker returns a complete result without blocking report code pat
   assert.ok(Array.isArray(result.strategy.windows));
   assert.ok(Array.isArray(result.strategy.topicComparison));
   assert.ok(Array.isArray(result.dayOutlook.rows));
+  assert.ok(Array.isArray(result.hourlyPatterns.rows));
+  assert.ok(Array.isArray(result.opportunities.rows));
+  assert.ok(result.hourlyPatterns.rows.some((item) => item.weekday === 'Saturday' && item.startMinutes === 19 * 60));
   assert.equal(result.diagnostics.rawAirings, 1);
   assert.equal(result.diagnostics.evidenceRows, 1);
   assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'score'));
@@ -374,6 +409,48 @@ test('Report 5 unhides after successful admin access and does not silently disca
   assert.doesNotMatch(reportUi, /fetchOptional\('pledge_program_editorial_overrides'/);
   assert.match(reportUi, /Strategy analysis exceeded 90 seconds/);
   assert.match(reportUi, /90000/);
+});
+
+test('Saturday 3–5 PM is reported once as a broader-test window when history is narrowly Michigan programming', () => {
+  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
+  const workerMessages = [];
+  const workerContext = {
+    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
+    performance: { now: () => Date.now() }
+  };
+  workerContext.globalThis = workerContext;
+  workerContext.self = workerContext;
+  workerContext.postMessage = (message) => workerMessages.push(message);
+  workerContext.importScripts = () => {};
+  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
+  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+
+  workerContext.onmessage({
+    data: {
+      requestId: 88,
+      schedule,
+      library: [
+        baseProgram({ id: 1, title: 'Michigan Test', topic_primary: 'Michigan', nola_code: 'MICH' }),
+        baseProgram({ id: 2, title: 'Music Anchor', topic_primary: 'Music', nola_code: 'MUSC' })
+      ],
+      airings: [
+        { id: 1, program_id: 1, pledge_program_id: '1', imported_program_title: 'Michigan Test', nola_code: 'MICH', air_date: '2025-12-06', air_time: '15:30', dollars: 0, pledge_count: 0, program_minutes: 30, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'm1', import_batch_id: 'b1', source_file_name: 'dec25.csv' },
+        { id: 2, program_id: 1, pledge_program_id: '1', imported_program_title: 'Michigan Test', nola_code: 'MICH', air_date: '2024-12-07', air_time: '15:30', dollars: 0, pledge_count: 0, program_minutes: 30, drive_start_date: '2024-12-06', drive_end_date: '2024-12-15', fundraiser_label: 'December 2024', station: 'WNMU', row_hash: 'm2', import_batch_id: 'b2', source_file_name: 'dec24.csv' },
+        { id: 3, program_id: 2, pledge_program_id: '2', imported_program_title: 'Music Anchor', nola_code: 'MUSC', air_date: '2025-12-06', air_time: '19:00', dollars: 600, pledge_count: 4, program_minutes: 60, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'a1', import_batch_id: 'b1', source_file_name: 'dec25.csv' },
+        { id: 4, program_id: 2, pledge_program_id: '2', imported_program_title: 'Music Anchor', nola_code: 'MUSC', air_date: '2024-12-07', air_time: '19:00', dollars: 600, pledge_count: 4, program_minutes: 60, drive_start_date: '2024-12-06', drive_end_date: '2024-12-15', fundraiser_label: 'December 2024', station: 'WNMU', row_hash: 'a2', import_batch_id: 'b2', source_file_name: 'dec24.csv' }
+      ],
+      overrides: [],
+      now: '2026-09-18T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  const saturday = result.opportunities.rows.filter((item) => item.weekday === 'Saturday' && item.startMinutes === 15 * 60 && item.endMinutes === 17 * 60);
+  assert.equal(saturday.length, 1);
+  assert.equal(saturday[0].kind, 'narrow-test');
+  assert.equal(saturday[0].dominantTopic, 'Michigan');
+  assert.match(saturday[0].rationale, /not a broad test of normal pledge programming/i);
 });
 
 test('worker aggregates separate pledge breaks from the same airing instead of dropping one', () => {
@@ -421,7 +498,7 @@ test('worker aggregates separate pledge breaks from the same airing instead of d
   assert.equal(result.diagnostics.evidenceRows, 1);
   const music = result.strategy.topicComparison.find((item) => item.topic === 'Music');
   assert.ok(music);
-  assert.equal(Math.round(music.medianRate), 300, '100 + 50 dollars over 10 + 20 pledge minutes must equal $300/hr');
+  assert.equal(Math.round(music.averageRate), 300, '100 + 50 dollars over 10 + 20 pledge minutes must equal $300/hr');
 });
 
 test('Must Air waits for a suitable placement and can earn one bad-night second chance', () => {

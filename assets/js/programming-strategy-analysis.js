@@ -362,6 +362,10 @@
     return text(first(row.topic, row.topic_primary, row.__resolved_topic_primary, 'Uncategorized'));
   }
 
+  function rowSecondary(row = {}) {
+    return text(first(row.secondary, row.topic_secondary, row.__resolved_topic_secondary, ''));
+  }
+
   function rowMinutes(row = {}, program = null) {
     const direct = number(first(row.minutes, row.program_minutes, row.lengthMinutes, row.length_minutes), 0);
     if (direct > 0) return direct;
@@ -473,34 +477,65 @@
     return (evidenceRows || []).filter((row) => programMatchesRow(program, row));
   }
 
+  function fundraiserKey(row = {}) {
+    const direct = text(first(row.fundraiserId, row.fundraiser_id, row.drive_id, ''));
+    if (direct) return direct;
+    const start = text(first(row.driveStartDate, row.drive_start_date, row.fundraiser_start_date, '')).slice(0, 10);
+    const end = text(first(row.driveEndDate, row.drive_end_date, row.fundraiser_end_date, '')).slice(0, 10);
+    if (start || end) return `range:${start}|${end}`;
+    const label = text(first(row.fundraiserTitle, row.fundraiser_label, row.fundraiser_name, ''));
+    if (label) return `label:${lookupKey(label)}`;
+    const when = parseDate(airingDate(row));
+    return when ? `month:${dateKey(when).slice(0, 7)}` : '';
+  }
+
   function fundraiserCount(rows = []) {
-    return new Set(rows.map((row) => text(first(row.fundraiserId, row.fundraiser_id, row.fundraiserTitle, row.fundraiser_label, airingDate(row)))).filter(Boolean)).size;
+    return new Set((rows || []).map(fundraiserKey).filter(Boolean)).size;
   }
 
   function rowSummary(rows = [], program = null) {
     const rates = [];
-    const fundraisers = new Set();
+    const byFundraiser = new Map();
     let totalDollars = 0;
     let earliest = null;
     let latest = null;
+
     for (const row of (rows || [])) {
       const rate = rowRate(row, program);
       if (Number.isFinite(rate)) rates.push(rate);
       totalDollars += rowDollars(row);
-      const fundraiser = text(first(row.fundraiserId, row.fundraiser_id, row.fundraiserTitle, row.fundraiser_label, airingDate(row)));
-      if (fundraiser) fundraisers.add(fundraiser);
+
+      const key = fundraiserKey(row);
+      if (key) {
+        if (!byFundraiser.has(key)) byFundraiser.set(key, { dollars: 0, minutes: 0, valid: true });
+        const group = byFundraiser.get(key);
+        const minutes = rowMinutes(row, program);
+        if (!(minutes > 0)) group.valid = false;
+        else {
+          group.dollars += rowDollars(row);
+          group.minutes += minutes;
+        }
+      }
+
       const when = parseDate(airingDate(row));
       if (when) {
         if (!earliest || when < earliest) earliest = when;
         if (!latest || when > latest) latest = when;
       }
     }
+
+    const fundraiserRates = [...byFundraiser.values()]
+      .filter((group) => group.valid && group.minutes > 0)
+      .map((group) => group.dollars * 60 / group.minutes)
+      .filter(Number.isFinite);
+
     return {
       rows: (rows || []).length,
-      fundraisers: fundraisers.size,
+      fundraisers: fundraiserRates.length,
       rates,
+      fundraiserRates,
       medianRate: median(rates),
-      averageRate: mean(rates),
+      averageRate: mean(fundraiserRates),
       totalDollars,
       latest,
       earliest
@@ -737,13 +772,13 @@
   }
 
   function topicWindowAdjustment(summary, baselineRate) {
-    if (!summary || summary.rates.length < 3 || !Number.isFinite(summary.medianRate)) return 0;
+    if (!summary || summary.fundraisers < 2 || !Number.isFinite(summary.averageRate)) return 0;
     if (!Number.isFinite(baselineRate) || baselineRate <= 0) {
-      if (summary.medianRate >= 500) return 6;
-      if (summary.medianRate < 150) return -4;
+      if (summary.averageRate >= 500) return 6;
+      if (summary.averageRate < 150) return -4;
       return 0;
     }
-    const ratio = summary.medianRate / baselineRate;
+    const ratio = summary.averageRate / baselineRate;
     if (ratio >= 1.35) return 8;
     if (ratio >= 1.1) return 4;
     if (ratio <= 0.65) return -8;
@@ -752,8 +787,8 @@
   }
 
   function ratioAdjustment(summary, baseline, strong = 8, weak = -10) {
-    if (!summary || summary.rates.length < 2 || !Number.isFinite(summary.medianRate) || !Number.isFinite(baseline) || baseline <= 0) return 0;
-    const ratio = summary.medianRate / baseline;
+    if (!summary || summary.fundraisers < 2 || !Number.isFinite(summary.averageRate) || !Number.isFinite(baseline) || baseline <= 0) return 0;
+    const ratio = summary.averageRate / baseline;
     if (ratio >= 1.35) return strong;
     if (ratio >= 1.1) return Math.round(strong / 2);
     if (ratio <= 0.55) return weak;
@@ -770,19 +805,19 @@
     const otherSummary = rowSummary(other, program);
     let adjustment = 0;
     const notes = [];
-    if (sameSummary.rates.length >= 2 && otherSummary.rates.length >= 2 && Number.isFinite(otherSummary.medianRate) && otherSummary.medianRate > 0) {
-      const ratio = sameSummary.medianRate / otherSummary.medianRate;
+    if (sameSummary.fundraisers >= 2 && otherSummary.fundraisers >= 2 && Number.isFinite(otherSummary.averageRate) && otherSummary.averageRate > 0) {
+      const ratio = sameSummary.averageRate / otherSummary.averageRate;
       if (ratio >= 1.35) adjustment += 6;
       else if (ratio <= 0.65) adjustment -= 6;
-      notes.push(`${targetSeason} title history: ${sameSummary.rates.length} rate-valid airings, median ${Math.round(sameSummary.medianRate)}/hr.`);
-    } else if (sameSummary.rates.length >= 2) {
-      if (sameSummary.medianRate >= 600) adjustment += 4;
-      else if (sameSummary.medianRate === 0) adjustment -= 5;
-      else if (sameSummary.medianRate < 150) adjustment -= 3;
-      notes.push(`${targetSeason} title history: ${sameSummary.rates.length} rate-valid airings.`);
-    } else if (sameSummary.rates.length === 1) {
-      if (sameSummary.medianRate >= 500) adjustment += 2;
-      notes.push(`Only one ${targetSeason} title airing is available; it is not used as negative evidence by itself.`);
+      notes.push(`${targetSeason} title history: ${sameSummary.fundraisers} fundraiser samples, average ${Math.round(sameSummary.averageRate)}/pledge hr.`);
+    } else if (sameSummary.fundraisers >= 2) {
+      if (sameSummary.averageRate >= 600) adjustment += 4;
+      else if (sameSummary.averageRate === 0) adjustment -= 5;
+      else if (sameSummary.averageRate < 150) adjustment -= 3;
+      notes.push(`${targetSeason} title history: ${sameSummary.fundraisers} fundraiser samples.`);
+    } else if (sameSummary.fundraisers === 1) {
+      if (sameSummary.averageRate >= 500) adjustment += 2;
+      notes.push(`Only one ${targetSeason} fundraiser sample is available; it is not used as negative evidence by itself.`);
     }
     const holidayInfo = holidaySeasonAdjustment(program, schedule);
     const holiday = Boolean(holidayInfo.category);
@@ -943,7 +978,7 @@
   }
 
   function baseHistoricalRate(evidenceRows = []) {
-    return median((evidenceRows || []).map((row) => rowRate(row)).filter(Number.isFinite));
+    return rowSummary(evidenceRows).averageRate;
   }
 
   function scoreProgramForSlot(program = {}, slot = {}, context = {}){
@@ -970,10 +1005,10 @@ const drama = cachedProgram.drama;
 const override = cachedProgram.override;
 const programmer = cachedProgram.programmer;
 const baseline = Number.isFinite(context.baselineRate)?context.baselineRate:baseHistoricalRate(rows);let score=50;const reasons=[],cautions=[],adjustments=[];
-if(titleHistory.rows){const a=rateAdjustment(titleHistory.medianRate);score+=a;adjustments.push(['titleHistory',a]);reasons.push(`WNMU title history: ${titleHistory.rows} airing${titleHistory.rows===1?'':'s'}${Number.isFinite(titleHistory.medianRate)?`, median $${Math.round(titleHistory.medianRate)}/hr`:''}.`);}else reasons.push('No prior WNMU title airing before the evidence cutoff.');
-if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.medianRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} on this weekday/time.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none on this exact weekday/time.`);
-const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustments.push(['weekdayWindow',dayAdj]);if(dayHistory.rates.length>=2&&Number.isFinite(dayHistory.medianRate))reasons.push(`${slot.weekday} ${slot.label.toLowerCase()} history: ${dayHistory.rates.length} rows, median $${Math.round(dayHistory.medianRate)}/hr.`);if(dayAdj<=-6)cautions.push(`${slot.weekday} ${slot.label.toLowerCase()} is historically weaker than WNMU's overall pledge baseline.`);
-let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);reasons.push(`${topic} has ${exactTopic.rates.length} rate-valid airing${exactTopic.rates.length===1?'':'s'} on this weekday/time${Number.isFinite(exactTopic.medianRate)?`, median $${Math.round(exactTopic.medianRate)}/hr`:''}.`);}else if(!slot.experimental){topicAdj=exactTopic.rates.length===1?-4:-9;cautions.push(exactTopic.rates.length?`Only one ${topic} result exists on this weekday/time.`:`No WNMU ${topic} evidence exists on this weekday/time; treat this as exploratory.`);if(broadTopic.rates.length)reasons.push(`${topic} has ${broadTopic.rates.length} comparable results elsewhere, but not enough here.`);}score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
+if(titleHistory.rows){const a=rateAdjustment(titleHistory.averageRate);score+=a;adjustments.push(['titleHistory',a]);reasons.push(`WNMU title history: ${titleHistory.rows} airing${titleHistory.rows===1?'':'s'}${Number.isFinite(titleHistory.averageRate)?`, Avg ${Math.round(titleHistory.averageRate)}/pledge hr`:''}.`);}else reasons.push('No prior WNMU title airing before the evidence cutoff.');
+if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.averageRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} on this weekday/time.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none on this exact weekday/time.`);
+const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustments.push(['weekdayWindow',dayAdj]);if(dayHistory.fundraisers>=2&&Number.isFinite(dayHistory.averageRate))reasons.push(`${slot.weekday} ${slot.label.toLowerCase()} history: ${dayHistory.fundraisers} fundraiser samples, Avg ${Math.round(dayHistory.averageRate)}/pledge hr.`);if(dayAdj<=-6)cautions.push(`${slot.weekday} ${slot.label.toLowerCase()} is historically weaker than WNMU's overall pledge baseline.`);
+let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);reasons.push(`${topic} has ${exactTopic.rates.length} rate-valid airing${exactTopic.rates.length===1?'':'s'} on this weekday/time${Number.isFinite(exactTopic.averageRate)?`, Avg ${Math.round(exactTopic.averageRate)}/pledge hr`:''}.`);}else if(!slot.experimental){topicAdj=exactTopic.rates.length===1?-4:-9;cautions.push(exactTopic.rates.length?`Only one ${topic} result exists on this weekday/time.`:`No WNMU ${topic} evidence exists on this weekday/time; treat this as exploratory.`);if(broadTopic.rates.length)reasons.push(`${topic} has ${broadTopic.rates.length} comparable results elsewhere, but not enough here.`);}score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
 if(titleHistory.latest){const d=daysBetween(titleHistory.latest,scheduleStart(schedule));let a=0;if(d>=730)a=8;else if(d>=365)a=6;else if(d>=180)a=2;else if(d<90)a=-10;else if(d<180)a=-5;score+=a;adjustments.push(['rest',a]);if(a>0)reasons.push(`Rested ${d} days since the latest known airing.`);if(a<0)cautions.push(`Short rest: ${d} days since the latest known airing.`);}
 let fatigue=0;if(titleHistory.rows>=12)fatigue=-8;else if(titleHistory.rows>=8)fatigue=-5;else if(titleHistory.rows>=5)fatigue=-2;else if(titleHistory.rows>0&&titleHistory.rows<=2)fatigue=3;score+=fatigue;adjustments.push(['lifetimeExposure',fatigue]);if(titleHistory.rows>=8)cautions.push(`Heavy lifetime exposure: ${titleHistory.rows} known airings.`);
 score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push('Current-cycle Drama Doc proxy based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push('Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc cycle is unknown because rights-start timing is unavailable.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
@@ -1102,55 +1137,69 @@ return result;}
     for (const program of (library || [])) {
       const topic = programTopic(program);
       const key = lookupKey(topic);
-      if (!groups.has(key)) groups.set(key, { topic, programs: [], eligiblePrograms: [], subtopics: new Set() });
+      if (!key || key === 'uncategorized') continue;
+      if (!groups.has(key)) groups.set(key, { topic, programs: [], eligiblePrograms: [] });
       const group = groups.get(key);
       group.programs.push(program);
       if (eligibleSomewhereInFundraiser(program, context.schedule || {})) group.eligiblePrograms.push(program);
-      const secondary = programSecondary(program);
-      if (secondary) group.subtopics.add(secondary);
     }
+
+    const documentaryKey = lookupKey('Documentary');
 
     return [...groups.entries()].map(([topicKey, group]) => {
       let history = seasonTopicSummaryCache.get(topicKey);
+      const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
       if (!history) {
-        const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
         history = rowSummary(topicRows);
         seasonTopicSummaryCache.set(topicKey, history);
       }
 
-      const supported = new Map();
-      for (const slot of windows) {
-        if (slot.experimental || slot.blocked) continue;
-        const slotEvidence = cachedSeasonSlotEvidence(slot, context);
-        const exact = slotEvidence.exactTopicSummaries.get(topicKey) || rowSummary([]);
-        if (!exact.rates.length) continue;
-        const key = `${slot.weekday}|${slot.label}`;
-        const item = { weekday: slot.weekday, label: slot.label, rows: exact.rates.length, medianRate: exact.medianRate };
-        const current = supported.get(key);
-        if (!current || item.rows > current.rows || (item.rows === current.rows && (item.medianRate || 0) > (current.medianRate || 0))) {
-          supported.set(key, item);
+      let documentarySubtopics = [];
+      if (topicKey === documentaryKey) {
+        const subgroups = new Map();
+        for (const program of group.programs) {
+          const label = programSecondary(program) || 'Unassigned';
+          const key = lookupKey(label) || 'unassigned';
+          if (!subgroups.has(key)) subgroups.set(key, { label, programs: [], eligiblePrograms: [] });
+          const sub = subgroups.get(key);
+          sub.programs.push(program);
+          if (eligibleSomewhereInFundraiser(program, context.schedule || {})) sub.eligiblePrograms.push(program);
         }
+        documentarySubtopics = [...subgroups.entries()].map(([subKey, sub]) => {
+          const rows = topicRows.filter((row) => {
+            const secondary = rowSecondary(row) || 'Unassigned';
+            return (lookupKey(secondary) || 'unassigned') === subKey;
+          });
+          const summary = rowSummary(rows);
+          return {
+            label: sub.label,
+            programCount: sub.programs.length,
+            eligibleProgramCount: sub.eligiblePrograms.length,
+            fundraiserSamples: summary.fundraisers,
+            averageRate: summary.averageRate
+          };
+        }).sort((a, b) => {
+          const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
+          const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
+          return br - ar || b.programCount - a.programCount || a.label.localeCompare(b.label);
+        });
       }
 
-      const bestWindows = [...supported.values()]
-        .sort((a, b) => b.rows - a.rows || (b.medianRate || 0) - (a.medianRate || 0))
-        .slice(0, 3);
-      const signal = history.rates.length >= 6 ? 'Established'
-        : history.rates.length >= 2 ? 'Some history'
-        : history.rates.length === 1 ? 'Very thin'
-        : 'No WNMU history';
       return {
         topic: group.topic,
         season: targetSeason,
-        signal,
         historyRows: history.rates.length,
-        medianRate: history.medianRate,
-        bestWindows,
-        subtopics: [...group.subtopics].sort(),
+        fundraiserSamples: history.fundraisers,
+        averageRate: history.averageRate,
         programCount: group.programs.length,
-        eligibleProgramCount: group.eligiblePrograms.length
+        eligibleProgramCount: group.eligiblePrograms.length,
+        documentarySubtopics
       };
-    }).sort((a, b) => b.historyRows - a.historyRows || (b.medianRate || 0) - (a.medianRate || 0) || a.topic.localeCompare(b.topic));
+    }).sort((a, b) => {
+      const ar = Number.isFinite(a.averageRate) ? a.averageRate : -1;
+      const br = Number.isFinite(b.averageRate) ? b.averageRate : -1;
+      return br - ar || b.fundraiserSamples - a.fundraiserSamples || b.historyRows - a.historyRows || a.topic.localeCompare(b.topic);
+    });
   }
 
   function experimentalEvidence(slot = {}, evidenceRows = [], baselineRate = null, precomputed = null, allFundraisersValue = null) {
@@ -1158,18 +1207,18 @@ return result;}
     const summary = precomputed?.exactSummary || rowSummary(directRows);
     const fundraiserUses = fundraiserCount(directRows);
     const allFundraisers = Number.isFinite(allFundraisersValue) ? allFundraisersValue : fundraiserCount(evidenceRows);
-    const ratio = Number.isFinite(summary.medianRate) && Number.isFinite(baselineRate) && baselineRate > 0
-      ? summary.medianRate / baselineRate
+    const ratio = Number.isFinite(summary.averageRate) && Number.isFinite(baselineRate) && baselineRate > 0
+      ? summary.averageRate / baselineRate
       : null;
     let verdict = 'Hypothesis only';
     let rationale = 'WNMU has no direct rate-valid history in this exact weekday/time window.';
     if (summary.rates.length >= 3 && Number.isFinite(ratio) && ratio >= 1.1) {
       const underused = allFundraisers >= 4 && fundraiserUses <= Math.max(2, Math.floor(allFundraisers * 0.35));
       verdict = underused ? 'Productive but underused at WNMU' : 'Historically productive at WNMU';
-      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}, median about $${Math.round(summary.medianRate)}/hr (${Math.round((ratio - 1) * 100)}% above the overall pledge baseline).`;
+      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}, average $${Math.round(summary.averageRate)}/hr (${Math.round((ratio - 1) * 100)}% above the overall pledge baseline).`;
     } else if (summary.rates.length >= 2) {
       verdict = Number.isFinite(ratio) && ratio >= 1 ? 'Some encouraging WNMU evidence' : 'Mixed WNMU evidence';
-      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}${Number.isFinite(summary.medianRate) ? `, median about $${Math.round(summary.medianRate)}/hr` : ''}.`;
+      rationale = `${summary.rates.length} rate-valid WNMU airings across ${fundraiserUses} fundraiser${fundraiserUses === 1 ? '' : 's'}${Number.isFinite(summary.averageRate) ? `, average $${Math.round(summary.averageRate)}/hr` : ''}.`;
     } else if (summary.rates.length === 1) {
       verdict = 'Thin WNMU evidence';
       rationale = 'Only one rate-valid WNMU airing exists for this exact weekday/time, so this remains experimental.';
@@ -1178,7 +1227,7 @@ return result;}
       verdict,
       rationale,
       rows: summary.rates.length,
-      medianRate: summary.medianRate,
+      averageRate: summary.averageRate,
       fundraiserUses,
       allFundraisers,
       peerEvidence: 'No structured peer-station day/time evidence is currently loaded, so no peer-station claim is used.'
@@ -1310,12 +1359,14 @@ return result;}
       },
       limitations: [
         'For a future fundraiser, evidence is capped at today. For a historical fundraiser, evidence stops the day before that fundraiser began.',
-        'Topic performance at the top of the report uses the selected fundraiser season and includes every eligible Library topic.',
-        'Exact weekday/time evidence is required before a topic is presented as an established fit.',
+        'Visible performance rates use fundraiser-balanced Avg $ / Pledge Hour so one heavily scheduled drive does not dominate the history.',
+        'Topic performance is season-specific and excludes Uncategorized / incidental pledge activity from programming rankings.',
+        'Day/time performance uses hourly program-start buckets from noon onward; half-hour starts are included in the hour they begin.',
         'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
-        'Experimental windows are labeled separately and explain whether WNMU evidence supports the experiment; no peer-station claim is made without structured peer evidence.',
+        'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
+        'Peer-station evidence is used only when structured peer results are available; none are currently loaded into this report dataset.',
         'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
         'Islamic-calendar holiday windows are planning approximations and may differ by local moon sighting.',
         'Friday 8–9 PM is protected regular programming and excluded from pledge recommendations.'
@@ -1358,6 +1409,8 @@ return result;}
     rowWeekpart,
     daypartForMinutes,
     median,
+    mean,
+    fundraiserKey,
     planningWindows,
     rowsForProgram,
     rowSummary,

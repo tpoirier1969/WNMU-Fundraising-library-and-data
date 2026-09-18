@@ -53,3 +53,59 @@
 
 .strategy-new-title{display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;background:#e6f1e9;color:#315c3d;font-size:.62rem;font-weight:900;letter-spacing:.05em;vertical-align:1px}
 @media print{.strategy-new-title{padding:0 3px;font-size:5.8pt}}
+
+
+/* v0.22.179 Report 5 usability pass */
+.strategy-rate{white-space:nowrap}
+.strategy-topic-list-row{grid-template-columns:minmax(240px,1.2fr) minmax(260px,.8fr);align-items:start}
+.strategy-topic-main{display:grid!important;gap:3px;align-items:start!important}
+.strategy-topic-main>small{grid-column:auto!important;font-size:.78rem;color:#617580}
+.strategy-topic-performance{display:grid;gap:3px;justify-items:end;text-align:right}
+.strategy-topic-performance>strong{font-size:.98rem;color:#17384a}
+.strategy-topic-performance>span{font-size:.8rem;color:#617580}
+.strategy-documentary-subtopics{grid-column:1/-1;border-top:1px solid #e3eaee;margin-top:2px;padding-top:8px;display:grid;gap:4px}
+.strategy-documentary-subtopics-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.045em;font-weight:850;color:#607682;margin-bottom:2px}
+.strategy-documentary-subtopic{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(160px,.8fr) minmax(220px,1fr);gap:10px;align-items:center;padding:4px 0 4px 12px;border-left:3px solid #d9e5ea;font-size:.8rem}
+.strategy-documentary-subtopic strong{color:#294f62}
+.strategy-documentary-subtopic span{color:#607682}
+
+.strategy-day-outlook-row.tone-good{background:#edf7ef}
+.strategy-day-outlook-row.tone-fair{background:#fff9e8}
+.strategy-day-outlook-row.tone-weak{background:#fff0ee}
+.strategy-day-outlook-row.tone-neutral{background:#f7f9fa}
+.strategy-day-outlook-row:nth-child(even).tone-good{background:#e7f3ea}
+.strategy-day-outlook-row:nth-child(even).tone-fair{background:#fff5d9}
+.strategy-day-outlook-row:nth-child(even).tone-weak{background:#fde8e5}
+.strategy-day-outlook-row:nth-child(even).tone-neutral{background:#f2f5f6}
+
+.strategy-hourly-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.strategy-hourly-day{border:1px solid #d8e3e8;border-radius:8px;overflow:hidden;background:#fff}
+.strategy-hourly-day h3{margin:0;padding:7px 10px;background:#edf4f7;color:#17384a;font-size:.95rem;border-bottom:1px solid #d8e3e8}
+.strategy-hourly-row{display:grid;grid-template-columns:130px minmax(150px,.9fr) minmax(150px,1fr);gap:10px;align-items:center;padding:5px 10px 5px 22px;border-bottom:1px solid #edf1f3;font-size:.8rem}
+.strategy-hourly-row:last-child{border-bottom:0}
+.strategy-hourly-time{font-weight:750;color:#385a6c;white-space:nowrap}
+.strategy-hourly-row small{color:#6b7f89}
+
+.strategy-opportunity-list{display:grid;gap:8px}
+.strategy-opportunity-row{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(220px,.7fr) minmax(300px,1.5fr);gap:14px;align-items:start;padding:9px 11px;border:1px solid #d8e3e8;border-left:4px solid #a7bdc8;border-radius:7px;background:#fafcfd}
+.strategy-opportunity-row.opportunity-underused-positive{border-left-color:#6ea77a;background:#f3faf4}
+.strategy-opportunity-row.opportunity-narrow-test{border-left-color:#c89a39;background:#fffaf0}
+.strategy-opportunity-row>div{display:grid;gap:2px}
+.strategy-opportunity-row strong{color:#17384a}
+.strategy-opportunity-row span{color:#4f6a77}
+.strategy-opportunity-row small{color:#6c7e88}
+.strategy-opportunity-row p{margin:0;color:#405d6a;line-height:1.4}
+.strategy-peer-note{font-size:.8rem;color:#6b7e88;margin-top:8px!important}
+
+@media(max-width:900px){
+  .strategy-hourly-grid{grid-template-columns:1fr}
+  .strategy-topic-list-row{grid-template-columns:1fr}
+  .strategy-topic-performance{justify-items:start;text-align:left}
+  .strategy-documentary-subtopic{grid-template-columns:1fr}
+  .strategy-opportunity-row{grid-template-columns:1fr}
+}
+@media print{
+  .strategy-hourly-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .strategy-hourly-day,.strategy-opportunity-row,.strategy-documentary-subtopic{break-inside:avoid}
+  .strategy-hourly-row{padding:3px 6px 3px 14px;font-size:7.5pt}
+}
