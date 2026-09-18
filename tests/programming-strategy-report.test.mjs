@@ -339,20 +339,24 @@ test('Report 5 subtopics are ordered by best raw average performance', () => {
 test('topic ranking uses seasonal performance but all-season evidence depth for confidence', () => {
   const library = [
     baseProgram({ id: 'xmas', title: 'Christmas', topic_primary: 'Holiday - Christmas' }),
-    baseProgram({ id: 'loukinen', title: 'Loukinen', topic_primary: 'Loukinen' })
+    baseProgram({ id: 'loukinen', title: 'Loukinen', topic_primary: 'Loukinen' }),
+    baseProgram({ id: 'bio', title: 'Biography', topic_primary: 'Biography' })
   ];
   const seasonRows = [
     row({ programId: 'xmas', title: 'Christmas', topic: 'Holiday - Christmas', dateKey: '2025-12-06', dollars: 123, fundraiserId: 'xmas-dec' }),
-    row({ programId: 'loukinen', title: 'Loukinen', topic: 'Loukinen', dateKey: '2025-12-07', dollars: 241, fundraiserId: 'loukinen-dec' })
+    row({ programId: 'loukinen', title: 'Loukinen', topic: 'Loukinen', dateKey: '2025-12-07', dollars: 241, fundraiserId: 'loukinen-dec' }),
+    row({ programId: 'bio', title: 'Biography', topic: 'Biography', dateKey: '2025-12-08', dollars: 460, fundraiserId: 'bio-dec' })
   ];
   const performanceStats = {
     topic: new Map([
       ['holiday christmas', { averageRate: 123, testedTitleCount: 8, fundraiserSamples: 6, historyRows: 18 }],
-      ['loukinen', { averageRate: 241, testedTitleCount: 5, fundraiserSamples: 4, historyRows: 9 }]
+      ['loukinen', { averageRate: 241, testedTitleCount: 5, fundraiserSamples: 4, historyRows: 9 }],
+      ['biography', { averageRate: 460, testedTitleCount: 2, fundraiserSamples: 3, historyRows: 3 }]
     ]),
     topicReliability: new Map([
       ['holiday christmas', { testedTitleCount: 9, fundraiserSamples: 8 }],
-      ['loukinen', { testedTitleCount: 9, fundraiserSamples: 15 }]
+      ['loukinen', { testedTitleCount: 9, fundraiserSamples: 15 }],
+      ['biography', { testedTitleCount: 14, fundraiserSamples: 19 }]
     ]),
     subtopicByTopic: new Map(),
     subtopicReliabilityByTopic: new Map()
@@ -366,6 +370,10 @@ test('topic ranking uses seasonal performance but all-season evidence depth for 
   });
 
   assert.equal(rows[0].topic, 'Loukinen');
+  assert.ok(
+    rows.findIndex((item) => item.topic === 'Biography') > rows.findIndex((item) => item.topic === 'Loukinen'),
+    'a high seasonal average backed by only a couple of seasonal titles should retain a seasonal-support penalty'
+  );
   const loukinen = rows.find((item) => item.topic === 'Loukinen');
   assert.equal(loukinen.averageRate, 241, 'performance should remain December-specific');
   assert.equal(loukinen.testedTitleCount, 5, 'seasonal tested-title count should remain visible');
