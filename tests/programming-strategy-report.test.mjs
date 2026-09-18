@@ -90,6 +90,40 @@ test('post-cutoff airings cannot enter strategy evidence', () => {
   assert.equal(afterTopic.averageRate, beforeTopic.averageRate);
 });
 
+test('Report 5 season buckets match Historical Analytics pledge seasons', () => {
+  assert.equal(S.seasonForDate('2026-02-01'), 'March');
+  assert.equal(S.seasonForDate('2026-03-31'), 'March');
+  assert.equal(S.seasonForDate('2026-05-01'), 'June');
+  assert.equal(S.seasonForDate('2026-06-30'), 'June');
+  assert.equal(S.seasonForDate('2026-08-01'), 'August');
+  assert.equal(S.seasonForDate('2026-09-30'), 'August');
+  assert.equal(S.seasonForDate('2026-11-01'), 'December');
+  assert.equal(S.seasonForDate('2026-12-31'), 'December');
+  assert.equal(S.seasonForDate('2026-01-15'), 'Special');
+  assert.equal(S.seasonForDate('2026-04-15'), 'Special');
+  assert.equal(S.seasonForDate('2026-07-15'), 'Special');
+  assert.equal(S.seasonForDate('2026-10-15'), 'Special');
+});
+
+test('planning-window evidence uses the actual window instead of broad daypart leakage', () => {
+  const slot = {
+    date: '2026-12-05',
+    weekpart: 'Saturday',
+    startMinutes: 19 * 60,
+    endMinutes: 22 * 60 + 30
+  };
+  const rows = [
+    row({ title: 'Too Early', dateKey: '2025-12-06', startMinutes: 17 * 60 }),
+    row({ title: 'Seven', dateKey: '2025-12-06', startMinutes: 19 * 60 }),
+    row({ title: 'Ten', dateKey: '2025-12-06', startMinutes: 22 * 60 }),
+    row({ title: 'Boundary', dateKey: '2025-12-06', startMinutes: 22 * 60 + 30 })
+  ];
+  assert.deepEqual(
+    Array.from(S.comparableRows(rows, slot, { exactWeekday: true }), (item) => item.title),
+    ['Seven', 'Ten']
+  );
+});
+
 test('rights exclude a title from a slot where it cannot legally air', () => {
   const expired = baseProgram({ id: 'expired', title: 'Expired', rights_end: '2026-12-01' });
   const future = baseProgram({ id: 'future', title: 'Future Rights', rights_start: '2026-12-10' });
@@ -478,6 +512,106 @@ test('strategy worker returns a complete result without blocking report code pat
   assert.equal(result.diagnostics.rawAirings, 1);
   assert.equal(result.diagnostics.evidenceRows, 1);
   assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'score'));
+});
+
+test('Report 5 uses reconciled schedule duration and excludes unmatched or out-of-period rows', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  const localSchedule = { id: 'dec26-local', title: 'December 2026', startDate: '2026-12-05', endDate: '2026-12-13' };
+  const library = [baseProgram({
+    id: 352,
+    title: 'Linked to Legends',
+    nola_code: 'LTLG',
+    topic_primary: 'Music',
+    length_bucket_minutes: 90,
+    actual_runtime_seconds: null
+  })];
+  const airings = [
+    {
+      id: 1, program_id: 352, pledge_program_id: '352', imported_program_title: 'Linked to Legends',
+      nola_code: 'LTLG', air_date: '2025-12-06', air_time: '19:00', dollars: 200, pledge_count: 1,
+      program_minutes: 1, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14',
+      fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'linked', source_file_name: 'dec25.csv'
+    },
+    {
+      id: 2, imported_program_title: 'Mystery Pledge', air_date: '2025-12-06', air_time: '20:00',
+      dollars: 5000, pledge_count: 10, program_minutes: 60, drive_start_date: '2025-12-05',
+      drive_end_date: '2025-12-14', fundraiser_label: 'December 2025', station: 'WNMU',
+      row_hash: 'unmatched', source_file_name: 'dec25.csv'
+    },
+    {
+      id: 3, program_id: 352, pledge_program_id: '352', imported_program_title: 'Linked to Legends',
+      nola_code: 'LTLG', air_date: '2025-12-20', air_time: '19:00', dollars: 9000, pledge_count: 20,
+      program_minutes: 1, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14',
+      fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'outside', source_file_name: 'dec25.csv'
+    }
+  ];
+  const scheduleRows = [historicalScheduleRow({
+    id: 'dec25-reconciled',
+    title: 'December 2025',
+    startDate: '2025-12-05',
+    endDate: '2025-12-14',
+    placements: [{
+      programId: '352', programTitle: 'Linked to Legends', nolaCode: 'LTLG',
+      dateKey: '2025-12-06', startMinutes: 19 * 60, lengthMinutes: 90
+    }]
+  })];
+
+  workerContext.onmessage({
+    data: { requestId: 701, schedule: localSchedule, library, airings, scheduleRows, overrides: [], now: '2026-09-18T12:00:00Z' }
+  });
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  assert.equal(result.diagnostics.rawAirings, 3);
+  assert.equal(result.diagnostics.evidenceRows, 1);
+  const music = result.strategy.topicComparison.find((item) => item.topic === 'Music');
+  assert.ok(music);
+  assert.equal(Math.round(music.averageRate), 133, '$200 over the reconciled 90-minute placement should be about $133/hr, not $12,000/hr');
+  const saturdaySeven = result.hourlyPatterns.rows.find((item) => item.weekday === 'Saturday' && item.startMinutes === 19 * 60);
+  assert.equal(Math.round(saturdaySeven.averageRate), 133);
+  const saturdayEight = result.hourlyPatterns.rows.find((item) => item.weekday === 'Saturday' && item.startMinutes === 20 * 60);
+  assert.equal(saturdayEight.fundraiserSamples, 0, 'unmatched imported dollars must not become start-time performance evidence');
+});
+
+test('Anticipated Day Strength is centered within each fundraiser and ignores unrelated extra day positions', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  const selected = { id: 'short-dec26', title: 'Short December 2026', startDate: '2026-12-05', endDate: '2026-12-06' };
+  const library = [baseProgram({ id: 1, title: 'Anchor', nola_code: 'ANCH', length_bucket_minutes: 60 })];
+
+  const makeDrive = (id, startDate, dates) => historicalScheduleRow({
+    id,
+    title: id,
+    startDate,
+    endDate: dates[2],
+    placements: dates.map((dateKey, index) => ({
+      programId: '1', programTitle: 'Anchor', nolaCode: 'ANCH', dateKey,
+      startMinutes: 19 * 60, lengthMinutes: 60, id: `${id}-p${index}`
+    }))
+  });
+  const scheduleRows = [
+    makeDrive('December 2024', '2024-12-07', ['2024-12-07', '2024-12-08', '2024-12-09']),
+    makeDrive('December 2025', '2025-12-06', ['2025-12-06', '2025-12-07', '2025-12-08'])
+  ];
+  const dollarsByDate = new Map([
+    ['2024-12-07', 100], ['2024-12-08', 100], ['2024-12-09', 10000],
+    ['2025-12-06', 100], ['2025-12-07', 100], ['2025-12-08', 10000]
+  ]);
+  const airings = [...dollarsByDate.entries()].map(([dateKey, dollars], index) => ({
+    id: index + 1, program_id: 1, pledge_program_id: '1', imported_program_title: 'Anchor',
+    nola_code: 'ANCH', air_date: dateKey, air_time: '19:00', dollars, pledge_count: 1,
+    program_minutes: 60, drive_start_date: dateKey.startsWith('2024') ? '2024-12-07' : '2025-12-06',
+    drive_end_date: dateKey.startsWith('2024') ? '2024-12-09' : '2025-12-08',
+    fundraiser_label: dateKey.startsWith('2024') ? 'December 2024' : 'December 2025',
+    station: 'WNMU', row_hash: `day-${index}`, source_file_name: `drive-${dateKey.slice(0,4)}.csv`
+  }));
+
+  workerContext.onmessage({
+    data: { requestId: 702, schedule: selected, library, airings, scheduleRows, overrides: [], now: '2026-09-18T12:00:00Z' }
+  });
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  assert.equal(result.dayOutlook.rows.length, 2);
+  assert.ok(result.dayOutlook.rows.every((item) => item.outlook === 'Fair / typical'));
+  assert.ok(result.dayOutlook.rows.every((item) => Math.abs(item.relativeIndex - 1) < 0.001));
 });
 
 test('strategy scoring caches repeated program and slot evidence scans', () => {
