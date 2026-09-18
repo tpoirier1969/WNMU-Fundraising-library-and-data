@@ -109,6 +109,10 @@
     return text(first(row.dateKey, row.air_date, row.drive_date, row.date_key, row.aired_at, row.drive_start_date, ''));
   }
 
+  function rowSeason(row = {}) {
+    return seasonForDate(first(row.driveStartDate, row.drive_start_date, row.fundraiserStartDate, row.fundraiser_start_date, airingDate(row)));
+  }
+
   function filterEvidenceAirings(rows = [], cutoffValue = '') {
     const cutoff = parseDate(cutoffValue);
     if (!cutoff) return [];
@@ -707,7 +711,7 @@
       exactMeta = (indexed.byWeekday.get(targetWeekday) || []).filter(matchesWindow);
       broadMeta = (indexed.byWeekpart.get(targetPart) || []).filter(matchesWindow);
     } else {
-      const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === seasonForDate(scheduleStart(context.schedule || {})));
+      const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => rowSeason(row) === seasonForDate(scheduleStart(context.schedule || {})));
       const exactRowsFallback = comparableRows(seasonRows, slot, { exactWeekday: true });
       const broadRowsFallback = comparableRows(seasonRows, slot, { exactWeekday: false });
       exactMeta = exactRowsFallback.map((row) => ({ row, topicKey: lookupKey(rowTopic(row)) }));
@@ -802,8 +806,8 @@
 
   function seasonEvidence(program = {}, historyRows = [], schedule = {}) {
     const targetSeason = seasonForDate(scheduleStart(schedule));
-    const same = historyRows.filter((row) => seasonForDate(airingDate(row)) === targetSeason);
-    const other = historyRows.filter((row) => seasonForDate(airingDate(row)) !== targetSeason);
+    const same = historyRows.filter((row) => rowSeason(row) === targetSeason);
+    const other = historyRows.filter((row) => rowSeason(row) !== targetSeason);
     const sameSummary = rowSummary(same, program);
     const otherSummary = rowSummary(other, program);
     let adjustment = 0;
@@ -997,7 +1001,7 @@ const titleRows = cachedProgram.titleRows;
 const titleHistory = cachedProgram.titleHistory;
 const useSeasonWindowEvidence = Number(context.seasonFundraiserCount || 0) >= 2;
 const windowTitleRows = useSeasonWindowEvidence
-  ? titleRows.filter((row) => seasonForDate(airingDate(row)) === context.targetSeason)
+  ? titleRows.filter((row) => rowSeason(row) === context.targetSeason)
   : titleRows;
 const exactTitle = rowSummary(comparableRows(windowTitleRows,slot,{exactWeekday:true}),program);
 const broadTitle = rowSummary(comparableRows(windowTitleRows,slot,{exactWeekday:false}),program);
@@ -1140,7 +1144,7 @@ return result;}
   function topicComparison(library = [], windows = [], context = {}) {
     const groups = new Map();
     const targetSeason = seasonForDate(scheduleStart(context.schedule || {}));
-    const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => seasonForDate(airingDate(row)) === targetSeason);
+    const seasonRows = context.seasonRows || (context.evidenceRows || []).filter((row) => rowSeason(row) === targetSeason);
     const reportableSeasonRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) !== 'uncategorized');
     const seasonBaseline = rowSummary(reportableSeasonRows).averageRate;
     const fallbackBaseline = Number.isFinite(context.baselineRate) ? context.baselineRate : seasonBaseline;
@@ -1388,7 +1392,7 @@ return result;}
     const historicalRows = filterEvidenceAirings(evidenceRows, cutoff);
     const overrideByProgramId = overrideIndex(overrides);
     const targetSeason = seasonForDate(scheduleStart(schedule));
-    const seasonRows = historicalRows.filter((row) => seasonForDate(airingDate(row)) === targetSeason);
+    const seasonRows = historicalRows.filter((row) => rowSeason(row) === targetSeason);
     const seasonFundraiserCount = fundraiserCount(seasonRows);
     const baselineRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
     const baselineRate = baseHistoricalRate(baselineRows);
@@ -1512,6 +1516,7 @@ return result;}
     evidenceCutoff,
     filterEvidenceAirings,
     seasonForDate,
+    rowSeason,
     programId,
     programTitle,
     programNola,
