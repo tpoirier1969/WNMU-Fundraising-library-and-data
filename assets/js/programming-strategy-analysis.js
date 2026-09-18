@@ -1164,7 +1164,7 @@ return result;}
       return `title:${lookupKey(rowTitle(row))}`;
     };
 
-    const evidenceMetrics = (rows, summary, baseline = rankingBaseline) => {
+    const evidenceMetrics = (rows, summary, baseline = rankingBaseline, sharedStats = null) => {
       const testedTitles = new Set();
       const titleFundraiserGroups = new Map();
 
@@ -1189,8 +1189,8 @@ return result;}
         .filter(Number.isFinite);
       const positiveTests = tests.filter((rate) => rate > 0).length;
       const successRate = tests.length ? positiveTests / tests.length : 0;
-      const testedTitleCount = testedTitles.size;
-      const fundraiserSamples = Number(summary?.fundraisers || 0);
+      const testedTitleCount = Number(sharedStats?.testedTitleCount ?? testedTitles.size);
+      const fundraiserSamples = Number(sharedStats?.fundraiserSamples ?? summary?.fundraisers ?? 0);
 
       // The rank should answer "how convincing is this topic's success?" rather
       // than letting a couple of spectacular titles outrank broad, repeatable evidence.
@@ -1198,7 +1198,7 @@ return result;}
       const fundraiserDepth = Math.min(1, fundraiserSamples / 6);
       const evidenceReliability = titleDepth * fundraiserDepth;
       const consistencyFactor = 0.5 + (0.5 * successRate);
-      const averageRate = Number(summary?.averageRate);
+      const averageRate = Number(sharedStats?.averageRate ?? summary?.averageRate);
       const ratio = Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
         ? averageRate / baseline
         : null;
@@ -1223,8 +1223,14 @@ return result;}
         // Performance itself uses the full historical topic record, including
         // expired titles, because this section is measuring topic performance.
         const topicRows = seasonRows.filter((row) => lookupKey(rowTopic(row)) === topicKey);
-        const history = rowSummary(topicRows);
-        const metrics = evidenceMetrics(topicRows, history);
+        const rawHistory = rowSummary(topicRows);
+        const sharedTopicStats = context.performanceStats?.topic?.get?.(topicKey) || null;
+        const history = {
+          ...rawHistory,
+          averageRate: Number.isFinite(Number(sharedTopicStats?.averageRate)) ? Number(sharedTopicStats.averageRate) : rawHistory.averageRate,
+          fundraisers: Number(sharedTopicStats?.fundraiserSamples ?? rawHistory.fundraisers)
+        };
+        const metrics = evidenceMetrics(topicRows, history, rankingBaseline, sharedTopicStats);
 
         let subtopicDetails = [];
         if (detailedTopicKeys.has(topicKey)) {
@@ -1249,8 +1255,14 @@ return result;}
                 const secondary = rowSecondary(row) || 'Unassigned';
                 return (lookupKey(secondary) || 'unassigned') === subKey;
               });
-              const summary = rowSummary(rows);
-              const metrics = evidenceMetrics(rows, summary, subtopicBaseline);
+              const rawSummary = rowSummary(rows);
+              const sharedSubtopicStats = context.performanceStats?.subtopicByTopic?.get?.(topicKey)?.get?.(subKey) || null;
+              const summary = {
+                ...rawSummary,
+                averageRate: Number.isFinite(Number(sharedSubtopicStats?.averageRate)) ? Number(sharedSubtopicStats.averageRate) : rawSummary.averageRate,
+                fundraisers: Number(sharedSubtopicStats?.fundraiserSamples ?? rawSummary.fundraisers)
+              };
+              const metrics = evidenceMetrics(rows, summary, subtopicBaseline, sharedSubtopicStats);
               return {
                 label: sub.label,
                 programCount: sub.programs.length,
@@ -1277,7 +1289,7 @@ return result;}
         return {
           topic: group.topic,
           season: targetSeason,
-          historyRows: history.rates.length,
+          historyRows: Number(sharedTopicStats?.historyRows ?? history.rates.length),
           fundraiserSamples: history.fundraisers,
           averageRate: history.averageRate,
           programCount: group.programs.length,
