@@ -247,7 +247,7 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
   const hubUi = fs.readFileSync(new URL('../assets/js/report-hub-programming-strategy.js', import.meta.url), 'utf8');
   const ratingsUi = fs.readFileSync(new URL('../assets/js/program-editorial-overrides.js', import.meta.url), 'utf8');
   assert.match(hubUi, /card\.className = 'report-card-link'/);
-  assert.match(reportUi, /start&&start>=today/);
+  assert.match(reportUi, /\.gte\('start_date',todayKey\(\)\)/);
   assert.match(reportUi, /strategy-program-row/);
   assert.match(reportUi, /Anticipated day strength/);
   assert.match(reportUi, /Experimental opportunities/);
@@ -259,16 +259,89 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
 });
 
 
-test('strategy report builds historical evidence directly from canonical airing rows', () => {
+test('strategy report keeps heavy analysis off the browser UI thread and trims Supabase payloads', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
-  const start = reportUi.indexOf('function evidenceBundle');
-  const end = reportUi.indexOf('function topicPill', start);
-  assert.ok(start >= 0 && end > start);
-  const evidenceBlock = reportUi.slice(start, end);
-  assert.match(evidenceBlock, /normalizeStrategyAiring/);
-  assert.match(evidenceBlock, /strategyDayAnalyses/);
-  assert.doesNotMatch(evidenceBlock, /analyzeSchedule/);
-  assert.match(reportUi, /Building strategy/);
+  const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
+  const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
+
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.176'\)/);
+  assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
+  assert.match(reportUi, /\.lte\('air_date',cutoff\)/);
+  assert.match(reportUi, /const airingSelect=\[/);
+  assert.doesNotMatch(reportUi, /canonicalizeImportedAirings/);
+  assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
+  assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
+
+  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.176'\)/);
+  assert.match(workerUi, /canonicalizeAirings/);
+  assert.match(workerUi, /buildDayOutlook/);
+
+  assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
+  assert.doesNotMatch(page, /one-sheet-analysis\.js/);
+  assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
+});
+
+test('strategy worker returns a complete result without blocking report code paths', () => {
+  const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
+  const workerMessages = [];
+  const workerContext = {
+    console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl,
+    performance: { now: () => Date.now() }
+  };
+  workerContext.globalThis = workerContext;
+  workerContext.self = workerContext;
+  workerContext.postMessage = (message) => workerMessages.push(message);
+  workerContext.importScripts = () => {};
+  vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
+  vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
+
+  const library = [
+    baseProgram({ id: 1, title: 'New Music', nola_code: 'NMUS', rights_start: '2026-01-01', rights_end: '2027-12-31' }),
+    baseProgram({ id: 2, title: 'Old Music', nola_code: 'OMUS', rights_start: '2026-01-01', rights_end: '2027-12-31' })
+  ];
+  const airings = [{
+    id: 1,
+    program_id: 2,
+    pledge_program_id: '2',
+    title: 'Old Music',
+    program_title: 'Old Music',
+    imported_program_title: 'Old Music',
+    matched_library_title: 'Old Music',
+    nola_code: 'OMUS',
+    air_date: '2025-12-06',
+    air_time: '19:00',
+    aired_at: '2025-12-07T00:00:00Z',
+    dollars: 600,
+    pledge_count: 4,
+    program_minutes: 60,
+    fundraiser_label: 'December 2025',
+    drive_start_date: '2025-12-05',
+    drive_end_date: '2025-12-14',
+    station: 'WNMU',
+    updated_at: '2025-12-15T00:00:00Z',
+    created_at: '2025-12-15T00:00:00Z'
+  }];
+
+  workerContext.onmessage({
+    data: {
+      requestId: 7,
+      schedule,
+      library,
+      airings,
+      overrides: [{ program_id: 1, rating: 'viable', rated_at: '2026-09-18T00:00:00Z', updated_at: '2026-09-18T00:00:00Z' }],
+      now: '2026-09-18T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  assert.equal(result.requestId, 7);
+  assert.ok(Array.isArray(result.strategy.windows));
+  assert.ok(Array.isArray(result.strategy.topicComparison));
+  assert.ok(Array.isArray(result.dayOutlook.rows));
+  assert.equal(result.diagnostics.rawAirings, 1);
+  assert.equal(result.diagnostics.evidenceRows, 1);
+  assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'score'));
 });
 
 test('strategy scoring caches repeated program and slot evidence scans', () => {
@@ -278,4 +351,7 @@ test('strategy scoring caches repeated program and slot evidence scans', () => {
   assert.match(source, /slotEvidenceIndex: buildSlotEvidenceIndex\(historicalRows\)/);
   assert.match(source, /rankProgramsForSlot\(viable, slot, context\)/);
   assert.match(source, /scoreCache: new Map\(\)/);
+  assert.match(source, /exactTopicSummaries/);
+  assert.match(source, /seasonSlotEvidenceIndex/);
+  assert.match(source, /seasonTopicSummaryCache/);
 });
