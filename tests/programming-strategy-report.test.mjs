@@ -257,3 +257,25 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
   assert.match(ratingsUi, /value="promising"[^>]*>Promising</);
   assert.match(ratingsUi, /value="must_air"[^>]*>Must Air</);
 });
+
+
+test('strategy report builds historical evidence directly from canonical airing rows', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const start = reportUi.indexOf('function evidenceBundle');
+  const end = reportUi.indexOf('function topicPill', start);
+  assert.ok(start >= 0 && end > start);
+  const evidenceBlock = reportUi.slice(start, end);
+  assert.match(evidenceBlock, /normalizeStrategyAiring/);
+  assert.match(evidenceBlock, /strategyDayAnalyses/);
+  assert.doesNotMatch(evidenceBlock, /analyzeSchedule/);
+  assert.match(reportUi, /Building strategy/);
+});
+
+test('strategy scoring caches repeated program and slot evidence scans', () => {
+  assert.match(source, /function buildProgramRowIndex/);
+  assert.match(source, /function buildSlotEvidenceIndex/);
+  assert.match(source, /programRowIndex: buildProgramRowIndex\(historicalRows\)/);
+  assert.match(source, /slotEvidenceIndex: buildSlotEvidenceIndex\(historicalRows\)/);
+  assert.match(source, /rankProgramsForSlot\(viable, slot, context\)/);
+  assert.match(source, /scoreCache: new Map\(\)/);
+});
