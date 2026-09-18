@@ -750,6 +750,17 @@ test('Saturday 3–5 PM is reported once as a broader-test window when history i
           summary: 'A Saturday-afternoon Peter, Paul and Mary airing doubled its goal.'
         },
         {
+          station_code: 'PBSUTAH',
+          station_name: 'PBS Utah',
+          season: 'December',
+          evidence_scope: 'title',
+          day_of_week: 'Saturday',
+          daypart: 'Afternoon',
+          assessment_signal: 2,
+          evidence_strength: 4,
+          summary: 'A Saturday-afternoon food program also doubled its goal.'
+        },
+        {
           station_code: 'ARPBS',
           station_name: 'Arkansas PBS',
           season: 'March',
@@ -775,6 +786,7 @@ test('Saturday 3–5 PM is reported once as a broader-test window when history i
   assert.match(saturday[0].rationale, /not a broad test of normal pledge programming/i);
   assert.ok(saturday[0].evidenceItems.some((item) => item.sourceLabel === 'WNMU history'));
   assert.ok(saturday[0].evidenceItems.some((item) => item.sourceLabel === 'PBS Utah' && /doubled its goal/i.test(item.text)));
+  assert.equal(saturday[0].evidenceItems.filter((item) => item.sourceLabel === 'PBS Utah').length, 1, 'one station should contribute at most one displayed evidence item');
   assert.ok(saturday[0].evidenceItems.some((item) => item.sourceLabel === 'Arkansas PBS'));
 });
 
