@@ -75,7 +75,7 @@ async function loadAnalysisData(){
     'id','program_id','pledge_program_id','manual_match_program_id',
     'title','program_title','imported_program_title','matched_library_title','nola_code',
     'air_date','air_time','aired_at','dollars','pledge_count','program_minutes',
-    'fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','source_file_key','import_batch_id','updated_at','created_at'
+    'fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','import_batch_id','updated_at','created_at'
   ].join(',');
   const programSelect=[
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
