@@ -336,6 +336,44 @@ test('Report 5 subtopics are ordered by best raw average performance', () => {
   assert.deepEqual(Array.from(music.subtopicDetails, (item) => item.label), ['Classical', 'Rock / Pop / Soul', 'Folk']);
 });
 
+test('topic ranking uses seasonal performance but all-season evidence depth for confidence', () => {
+  const library = [
+    baseProgram({ id: 'xmas', title: 'Christmas', topic_primary: 'Holiday - Christmas' }),
+    baseProgram({ id: 'loukinen', title: 'Loukinen', topic_primary: 'Loukinen' })
+  ];
+  const seasonRows = [
+    row({ programId: 'xmas', title: 'Christmas', topic: 'Holiday - Christmas', dateKey: '2025-12-06', dollars: 123, fundraiserId: 'xmas-dec' }),
+    row({ programId: 'loukinen', title: 'Loukinen', topic: 'Loukinen', dateKey: '2025-12-07', dollars: 241, fundraiserId: 'loukinen-dec' })
+  ];
+  const performanceStats = {
+    topic: new Map([
+      ['holiday christmas', { averageRate: 123, testedTitleCount: 8, fundraiserSamples: 6, historyRows: 18 }],
+      ['loukinen', { averageRate: 241, testedTitleCount: 5, fundraiserSamples: 4, historyRows: 9 }]
+    ]),
+    topicReliability: new Map([
+      ['holiday christmas', { testedTitleCount: 9, fundraiserSamples: 8 }],
+      ['loukinen', { testedTitleCount: 9, fundraiserSamples: 15 }]
+    ]),
+    subtopicByTopic: new Map(),
+    subtopicReliabilityByTopic: new Map()
+  };
+
+  const rows = S.topicComparison(library, S.planningWindows(schedule), {
+    schedule,
+    evidenceRows: seasonRows,
+    seasonRows,
+    performanceStats
+  });
+
+  assert.equal(rows[0].topic, 'Loukinen');
+  const loukinen = rows.find((item) => item.topic === 'Loukinen');
+  assert.equal(loukinen.averageRate, 241, 'performance should remain December-specific');
+  assert.equal(loukinen.testedTitleCount, 5, 'seasonal tested-title count should remain visible');
+  assert.equal(loukinen.fundraiserSamples, 4, 'seasonal fundraiser count should remain visible');
+  assert.equal(loukinen.confidenceTitleCount, 9, 'ranking confidence should use all-season title depth');
+  assert.equal(loukinen.confidenceFundraiserSamples, 15, 'ranking confidence should use all-season fundraiser depth');
+});
+
 test('broad repeatable topic evidence outranks spectacular but thin topic evidence', () => {
   const library = [];
   const evidenceRows = [];
@@ -442,6 +480,7 @@ test('Report 5 presentation removes visible median language and evidence-through
   assert.doesNotMatch(reportUi, /strategy-summary/);
   assert.doesNotMatch(reportUi, /sheet-stamp">Evidence through/);
   assert.match(reportUi, /Avg \$.*\/pledge hr/);
+  assert.match(reportUi, /All-season depth/);
   assert.match(reportUi, /subtopics/);
   assert.match(reportUi, /Day\/time performance/);
 });
