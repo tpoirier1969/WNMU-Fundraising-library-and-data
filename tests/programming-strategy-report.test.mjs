@@ -259,6 +259,21 @@ test('topic performance uses full historical topic evidence, excludes Uncategori
   assert.ok(christmas.subtopicDetails.some((item) => item.label === 'Music'));
 });
 
+test('Report 5 subtopics are ordered by best raw average performance', () => {
+  const library = [
+    baseProgram({ id: 'rock', title: 'Rock', topic_primary: 'Music', topic_secondary: 'Rock / Pop / Soul' }),
+    baseProgram({ id: 'classical', title: 'Classical', topic_primary: 'Music', topic_secondary: 'Classical' }),
+    baseProgram({ id: 'folk', title: 'Folk', topic_primary: 'Music', topic_secondary: 'Folk' })
+  ];
+  const evidenceRows = [
+    { ...row({ programId: 'rock', title: 'Rock', topic: 'Music', dateKey: '2025-12-06', minutes: 60, dollars: 200, fundraiserId: 'r1' }), secondary: 'Rock / Pop / Soul' },
+    { ...row({ programId: 'classical', title: 'Classical', topic: 'Music', dateKey: '2025-12-07', minutes: 60, dollars: 600, fundraiserId: 'c1' }), secondary: 'Classical' }
+  ];
+  const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows, seasonRows: evidenceRows });
+  const music = rows.find((item) => item.topic === 'Music');
+  assert.deepEqual(Array.from(music.subtopicDetails, (item) => item.label), ['Classical', 'Rock / Pop / Soul', 'Folk']);
+});
+
 test('broad repeatable topic evidence outranks spectacular but thin topic evidence', () => {
   const library = [];
   const evidenceRows = [];
@@ -340,7 +355,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.180'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.181'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.match(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -348,7 +363,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.180'\)/);
+  assert.match(workerUi, /importScripts\('programming-strategy-analysis\.js\?v=0\.22\.181'\)/);
   assert.match(workerUi, /canonicalizeAirings/);
   assert.match(workerUi, /buildDayOutlook/);
 

@@ -194,10 +194,21 @@
       if (state.detailCreateMode) App.detailUi.closeDetailModal();
       else App.detailUi.setDetailMode('view');
     });
-    els.detailEditForm?.addEventListener('input', () => App.detailUi.handleEditorInput?.());
+    els.detailEditForm?.addEventListener('input', (event) => {
+      if (event.target?.tagName === 'SELECT') return;
+      App.detailUi.handleEditorInput?.();
+    });
     els.detailEditForm?.addEventListener('change', (event) => {
-      if (event.target?.matches?.('select[name="topic_primary"], select[name="topic_secondary"]')) {
+      const target = event.target;
+      if (target?.matches?.('select[name="topic_primary"], select[name="topic_secondary"]')) {
         App.detailUi.handleTopicSelectChange?.(event);
+      }
+      if (target?.tagName === 'SELECT' && target?.name) {
+        void App.detailUi.autoSaveSelectChange?.(event).catch((error) => {
+          console.error(error);
+          setNotice(error?.message || 'Dropdown save failed.', 'warn');
+        });
+        return;
       }
       App.detailUi.handleEditorInput?.();
     });

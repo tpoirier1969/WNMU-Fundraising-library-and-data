@@ -943,7 +943,7 @@
         } else {
           query = query.eq(attempt.label, attempt.value);
         }
-        const response = await query.select('id').limit(2);
+        const response = await query.select('*').limit(2);
         lastResponse = response;
         if (response.error) {
           const message = String(response.error.message || '').toLowerCase();
@@ -973,6 +973,37 @@
       nola_code: utils.firstNonEmpty(resolvedRow?.nola_code, resolvedRow?.nola),
       title: utils.firstNonEmpty(resolvedRow?.title, resolvedRow?.program_title)
     }, payload);
+  }
+
+
+  function applyProgramUpdateLocally(programId, savedRow = {}, requestedPayload = {}) {
+    const key = String(programId || derive.programId(savedRow) || '').trim();
+    if (!key) return null;
+
+    const patch = { ...savedRow, ...requestedPayload };
+    if (Object.prototype.hasOwnProperty.call(patch, 'topic_primary')) {
+      patch.__resolved_topic_primary = patch.topic_primary || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'topic_secondary')) {
+      patch.__resolved_topic_secondary = patch.topic_secondary || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'distributor')) {
+      patch.__resolved_distributor = patch.distributor || null;
+    }
+
+    const matches = (row) => String(derive.programId(row) || row?.id || row?.program_id || '').trim() === key;
+    const applyPatch = (row) => {
+      if (!row || typeof row !== 'object') return;
+      Object.assign(row, patch);
+    };
+
+    (state.baseRows || []).forEach((row) => { if (matches(row)) applyPatch(row); });
+    (state.rawRows || []).forEach((row) => { if (matches(row)) applyPatch(row); });
+    (state.rows || []).forEach((row) => { if (matches(row)) applyPatch(row); });
+    if (state.currentDetailProgram && matches(state.currentDetailProgram)) applyPatch(state.currentDetailProgram);
+
+    state.fieldAudit = buildFieldAudit(state.rawRows || []);
+    return patch;
   }
 
   function isSchemaColumnError(error) {
@@ -1920,6 +1951,7 @@
     resolveProgramSnapshot,
     resetDetailCaches,
     updateProgram,
+    applyProgramUpdateLocally,
     deleteProgram,
     unarchiveProgram,
     saveTimingRows,
