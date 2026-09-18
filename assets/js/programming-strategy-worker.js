@@ -39,7 +39,7 @@ function strategyEvidenceRowsFromAnalyses(analyses = []) {
         programId: text(row.programId || ''),
         title: text(row.title || row.plannedTitle || 'Untitled program'),
         topic: text(row.topic || 'Uncategorized') || 'Uncategorized',
-        secondary: text(row.secondary || ''),
+        secondary: S.lookupKey(row.secondary || '') === 'unspecified' ? '' : text(row.secondary || ''),
         dateKey: text(row.dateKey || ''),
         startMinutes: Number(row.startMinutes),
         endMinutes: Number.isFinite(Number(row.endMinutes)) ? Number(row.endMinutes) : Number(row.startMinutes) + Number(row.minutes),
@@ -72,15 +72,19 @@ function seasonAnalysisPool(schedule = {}, analyses = []) {
   };
 }
 
-function rankingStatsMap(rows = []) {
-  return new Map((rows || []).map((row) => [S.lookupKey(row.key), {
-    key: row.key,
-    historyRows: Number(row.rateAirings || 0),
-    fundraiserSamples: Number(row.fundraisers || 0),
-    testedTitleCount: Number(row.titles || 0),
-    averageRate: Number(row.averageDollarsPerHour),
-    medianRate: Number(row.medianDollarsPerHour)
-  }]));
+function rankingStatsMap(rows = [], { normalizeUnassigned = false } = {}) {
+  return new Map((rows || []).map((row) => {
+    let key = S.lookupKey(row.key);
+    if (normalizeUnassigned && key === 'unspecified') key = 'unassigned';
+    return [key, {
+      key: row.key,
+      historyRows: Number(row.rateAirings || 0),
+      fundraiserSamples: Number(row.fundraisers || 0),
+      testedTitleCount: Number(row.titles || 0),
+      averageRate: Number(row.averageDollarsPerHour),
+      medianRate: Number(row.medianDollarsPerHour)
+    }];
+  }));
 }
 
 function buildHistoricalPerformanceStats(schedule = {}, analyses = []) {
@@ -97,7 +101,7 @@ function buildHistoricalPerformanceStats(schedule = {}, analyses = []) {
       ...analysis,
       placementRows: (analysis?.placementRows || []).filter((row) => S.lookupKey(row?.topic || '') === topicKey)
     }));
-    subtopicByTopic.set(topicKey, rankingStatsMap(A.historicalRanking(filtered, 'subtopic', minimums)));
+    subtopicByTopic.set(topicKey, rankingStatsMap(A.historicalRanking(filtered, 'subtopic', minimums), { normalizeUnassigned: true }));
   }
 
   return { targetSeason: targetSeason || 'Special', topic, subtopicByTopic };
