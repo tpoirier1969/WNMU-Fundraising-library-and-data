@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
-const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
+const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],peerObservations:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
 function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
@@ -82,14 +82,17 @@ async function loadAnalysisData(){
     'rights_start','rights_end','rights_notes','distributor','premium_summary','actual_runtime_seconds'
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
-  const[airings,library,overrides]=await Promise.all([
+  const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
+  const[airings,library,overrides,peerObservations]=await Promise.all([
     fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
-    fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']})
+    fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']}),
+    fetchOptional('pledge_peer_evidence_observations',peerSelect,{orders:['id']})
   ]);
   state.airings=airings;
   state.library=library;
   state.overrides=overrides;
+  state.peerObservations=peerObservations;
   state.analysisReady=true;
   state.dataLoadMs=Math.round((globalThis.performance?.now?.()??Date.now())-started);
   status(`Strategy data loaded in ${(state.dataLoadMs/1000).toFixed(1)}s. Building report…`);
@@ -161,7 +164,12 @@ function hourlyPatternsSection(hourly){
 function opportunitiesSection(opportunities){
   const data=opportunities||{rows:[]};
   const rows=data.rows||[];
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. These flags look for either encouraging but lightly used periods or times that have only been tested with a narrow programming mix.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}</small></div><p>${esc(x.rationale)}</p></div>`).join('')}</div>`:'<p>No distinct underused or narrowly tested timeslot cleared the current evidence threshold.</p>'}${data.peerEvidenceAvailable?'':'<p class="strategy-peer-note">Structured peer-station results are not yet loaded into Report 5, so no peer-station performance claim is shown here.</p>'}</section>`;
+  const evidenceList=(x)=>{
+    const items=Array.isArray(x.evidenceItems)?x.evidenceItems:[];
+    if(!items.length)return'';
+    return`<div class="strategy-opportunity-evidence"><strong>Why explore this?</strong><ul>${items.map(item=>`<li class="evidence-${esc(item.tone||'neutral')}"><b>${esc(item.sourceLabel||'Evidence')}:</b> ${esc(item.text||'')}</li>`).join('')}</ul></div>`;
+  };
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}</small></div><p>${esc(x.rationale)}</p>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
 }
 
 function dayMapSection(strategy){
@@ -179,7 +187,7 @@ function dayMapSection(strategy){
 function compact(items,renderer,empty){return items?.length?`<div class="strategy-compact-list">${items.map(renderer).join('')}</div>`:`<p>${esc(empty)}</p>`;}
 function supportingSections(strategy){return`<section class="sheet-section strategy-two-column"><div><h2>Repeat candidates</h2>${compact(strategy.repeats,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · score ${Math.round(x.score)} · supported on ${x.slots.length} separated prime windows.</span></div>`,'No repeat candidate clears the threshold.')}<h2>Seasonal opportunities</h2>${compact(strategy.seasonal,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · ${esc(x.season.notes.join(' ')||`${x.season.targetSeason} seasonal support`)}</span></div>`,'No distinct seasonal opportunity identified.')}</div><div><h2>Local / U.P. opportunities</h2>${compact(strategy.local,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · best-window score ${Math.round(x.score)} · ${esc(x.fit)}</span></div>`,'No eligible Local / U.P. title identified.')}<h2>Titles to avoid / rest</h2>${compact(strategy.avoid,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.reasons.join(' · '))}</span></div>`,'No title needs a prominent rest/avoid caution.')}</div></section>`;}
 function rightsSection(strategy){const desc=x=>`${x.rightsStart?`Starts ${fmt(x.rightsStart)}`:''}${x.rightsStart&&x.rightsEnd?' · ':''}${x.rightsEnd?`Ends ${fmt(x.rightsEnd)}`:''}`;return`<section class="sheet-section strategy-two-column"><div><h2>Rights constraints</h2>${compact(strategy.rights.unavailable.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No fully unavailable title detected.')}</div><div><h2>Partial-drive rights</h2>${compact(strategy.rights.partial.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No partial-drive rights restriction detected.')}</div></section>`;}
-function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}<li>${esc(strategy.peerEvidence.note)}</li></ul></section>`;}
+function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`;}
 function clearStrategyWorkerTimer(){if(state.workerTimer){globalThis.clearTimeout(state.workerTimer);state.workerTimer=null;}}
 function stopStrategyWorker(reason='Superseded'){
   clearStrategyWorkerTimer();
@@ -199,7 +207,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.184');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.185');
     }catch(error){
       reject(error);
       return;
@@ -252,6 +260,7 @@ function runStrategyWorker(schedule){
         airings:state.airings,
         overrides:state.overrides,
         scheduleRows:state.scheduleRows,
+        peerObservations:state.peerObservations,
         now:new Date().toISOString()
       });
     }catch(error){
