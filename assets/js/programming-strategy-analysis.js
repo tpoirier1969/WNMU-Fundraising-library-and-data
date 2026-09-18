@@ -717,7 +717,7 @@
       season: seasonEvidence(program, titleRows, schedule),
       drama: dramaInfo(program, schedule),
       override,
-      programmer: programmerEvidence(program, titleRows, override),
+      programmer: programmerEvidence(program, titleRows, override, context.evidenceRows || []),
       local: isLocal(program),
       biography: isBiography(program),
       corePbs: isCorePbs(program)
@@ -793,27 +793,142 @@
     return { targetSeason, holiday, holidayCategory: holidayInfo.category, holidayInWindow: holidayInfo.inWindow, holidayOutOfSeason: holidayInfo.outOfSeason, same: sameSummary, other: otherSummary, adjustment, notes };
   }
 
-  function weakPrimeTestsSinceRating(program = {}, historyRows = [], override = null) {
-    if (!override || normalizeRating(override.rating) !== 'must_air') return 0;
+  function postRatingAirings(program = {}, historyRows = [], override = null) {
+    if (!override || normalizeRating(override.rating) !== 'must_air') return [];
     const ratedAt = parseDate(first(override.rated_at, override.updated_at, ''));
-    if (!ratedAt) return 0;
-    return historyRows.filter((row) => {
-      const when = parseDate(airingDate(row));
-      const start = rowStartMinutes(row);
-      const rate = rowRate(row, program);
-      if (!when || when <= ratedAt || !Number.isFinite(start) || start < 19 * 60 || start >= 23 * 60) return false;
-      return rowDollars(row) <= 0 || (Number.isFinite(rate) && rate < 150);
-    }).length;
+    if (!ratedAt) return [];
+    const seen = new Set();
+    return (historyRows || [])
+      .map((row) => ({ row, when: parseDate(airingDate(row)), start: rowStartMinutes(row) }))
+      .filter((entry) => entry.when && entry.when > ratedAt)
+      .sort((a, b) => a.when - b.when || number(a.start, 99999) - number(b.start, 99999))
+      .filter((entry) => {
+        const key = `${dateKey(entry.when)}|${Number.isFinite(entry.start) ? entry.start : ''}|${text(first(entry.row.fundraiserId, entry.row.drive_start_date, entry.row.fundraiserTitle, ''))}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((entry) => entry.row);
   }
 
-  function programmerEvidence(program = {}, historyRows = [], override = null) {
-    const rating = normalizeRating(override?.rating);
-    if (!rating) return { rating: '', label: 'Neutral', adjustment: 0, weakCount: 0, activeProtection: false };
-    const weakCount = weakPrimeTestsSinceRating(program, historyRows, override);
-    let adjustment = PROGRAMMER_WEIGHTS[rating] || 0;
-    const activeProtection = rating === 'must_air' && weakCount < 2;
-    if (rating === 'must_air' && weakCount >= 2) adjustment = 8;
-    return { rating, label: PROGRAMMER_LABELS[rating], adjustment, weakCount, activeProtection };
+  function mustAirTestContext(program = {}, row = {}, allRows = []) {
+    const rate = rowRate(row, program);
+    const when = parseDate(airingDate(row));
+    const day = dateKey(when);
+    const start = rowStartMinutes(row);
+    const baseline = median((allRows || []).map((item) => rowRate(item)).filter(Number.isFinite));
+    const sameDay = (allRows || []).filter((item) => {
+      if (programMatchesRow(program, item)) return false;
+      if (dateKey(parseDate(airingDate(item))) !== day) return false;
+      return Number.isFinite(rowRate(item));
+    });
+    const nearby = Number.isFinite(start)
+      ? sameDay.filter((item) => {
+        const candidateStart = rowStartMinutes(item);
+        return Number.isFinite(candidateStart) && Math.abs(candidateStart - start) <= 180;
+      })
+      : [];
+    const contextRows = nearby.length >= 2 ? nearby : sameDay;
+    const contextRate = median(contextRows.map((item) => rowRate(item)).filter(Number.isFinite));
+    const baselineRatio = Number.isFinite(rate) && Number.isFinite(baseline) && baseline > 0 ? rate / baseline : null;
+    const contextRatio = Number.isFinite(contextRate) && Number.isFinite(baseline) && baseline > 0 ? contextRate / baseline : null;
+    const relativeRatio = Number.isFinite(rate) && Number.isFinite(contextRate) && contextRate > 0 ? rate / contextRate : null;
+    const badNight = contextRows.length >= 2 && Number.isFinite(contextRatio) && contextRatio < 0.75;
+    let qualityRatio = baselineRatio;
+    if (badNight && Number.isFinite(relativeRatio)) qualityRatio = Math.max(Number.isFinite(qualityRatio) ? qualityRatio : 0, relativeRatio * 0.9);
+    let outcome = 'inconclusive';
+    if (Number.isFinite(qualityRatio)) {
+      if (qualityRatio >= 1.1) outcome = 'promising';
+      else if (qualityRatio >= 0.78) outcome = 'viable';
+      else if (qualityRatio >= 0.55) outcome = 'neutral';
+      else outcome = 'low_confidence';
+    }
+    return {
+      row,
+      rate,
+      baseline,
+      contextRate,
+      contextSamples: contextRows.length,
+      baselineRatio,
+      contextRatio,
+      relativeRatio,
+      qualityRatio,
+      badNight,
+      outcome
+    };
+  }
+
+  function resolvedMustAirRating(testContexts = []) {
+    const usable = (testContexts || []).map((test) => test.qualityRatio).filter(Number.isFinite);
+    if (!usable.length) return 'neutral';
+    const combined = median(usable);
+    if (combined >= 1.1) return 'promising';
+    if (combined >= 0.78) return 'viable';
+    if (combined >= 0.55) return 'neutral';
+    return 'low_confidence';
+  }
+
+  function programmerEvidence(program = {}, historyRows = [], override = null, allRows = []) {
+    const storedRating = normalizeRating(override?.rating);
+    if (!storedRating) return { rating: '', storedRating: '', label: 'Neutral', adjustment: 0, weakCount: 0, activeProtection: false, secondChance: false, tests: [] };
+    if (storedRating !== 'must_air') {
+      return {
+        rating: storedRating,
+        storedRating,
+        label: PROGRAMMER_LABELS[storedRating],
+        adjustment: PROGRAMMER_WEIGHTS[storedRating] || 0,
+        weakCount: 0,
+        activeProtection: false,
+        secondChance: false,
+        tests: []
+      };
+    }
+
+    const postAirings = postRatingAirings(program, historyRows, override);
+    const tests = postAirings.map((row) => mustAirTestContext(program, row, allRows));
+    if (!tests.length) {
+      return {
+        rating: 'must_air',
+        storedRating,
+        label: 'Must Air',
+        adjustment: PROGRAMMER_WEIGHTS.must_air,
+        weakCount: 0,
+        activeProtection: true,
+        secondChance: false,
+        tests
+      };
+    }
+
+    const firstTest = tests[0];
+    const deservesSecondChance = tests.length === 1
+      && (firstTest.outcome === 'inconclusive' || (firstTest.badNight && !['promising', 'viable'].includes(firstTest.outcome)));
+
+    if (deservesSecondChance) {
+      return {
+        rating: 'must_air',
+        storedRating,
+        label: 'Must Air · second chance',
+        adjustment: PROGRAMMER_WEIGHTS.promising,
+        weakCount: firstTest.outcome === 'low_confidence' ? 1 : 0,
+        activeProtection: true,
+        secondChance: true,
+        tests
+      };
+    }
+
+    const effectiveRating = resolvedMustAirRating(tests.slice(0, 2));
+    return {
+      rating: effectiveRating,
+      storedRating,
+      effectiveRating,
+      label: `Must Air → ${PROGRAMMER_LABELS[effectiveRating]}`,
+      adjustment: PROGRAMMER_WEIGHTS[effectiveRating] || 0,
+      weakCount: tests.filter((test) => test.outcome === 'low_confidence').length,
+      activeProtection: false,
+      secondChance: false,
+      resolvedAfterAirings: Math.min(2, tests.length),
+      tests
+    };
   }
 
   function baseHistoricalRate(evidenceRows = []) {
@@ -862,8 +977,9 @@ if(reviewedNew){
 }
 const finish=parseDate(rightsEnd(program)),slotDate=parseDate(slot.date);if(finish&&slotDate){const d=daysBetween(slotDate,finish);if(d!=null&&d<=90){const a=titleHistory.rows?3:1;score+=a;adjustments.push(['rightsUrgency',a]);}}
 if(!slot.experimental&&exactTopic.rates.length===0)score=Math.min(score,64);else if(!slot.experimental&&exactTopic.rates.length===1)score=Math.min(score,70);if(programmer.rating==='low_confidence')score=Math.min(score,58);if(programmer.rating==='dont_air')score=Math.min(score,35);score=clamp(score);
-let confidence='Low';if(exactTopic.rates.length>=4&&titleHistory.fundraisers>=3&&titleHistory.rates.length>=5)confidence='High';else if(exactTopic.rates.length>=2||exactTitle.rates.length>=2)confidence='Medium';if(programmer.activeProtection&&confidence==='Low')confidence='Editorial';let fit='Situational';if(score>=78)fit='Strong fit';else if(score>=65)fit='Good candidate';else if(score>=56)fit='Supported option';else if(score<40)fit='Rest / caution';else if(score<48)fit='Mixed evidence';if(programmer.rating==='low_confidence'&&score>=48)fit='Programmer caution';if(programmer.rating==='dont_air')fit="Don't air / caution";if (season.holidayOutOfSeason && programmer.rating !== 'must_air') {
+let confidence='Low';if(exactTopic.rates.length>=4&&titleHistory.fundraisers>=3&&titleHistory.rates.length>=5)confidence='High';else if(exactTopic.rates.length>=2||exactTitle.rates.length>=2)confidence='Medium';if(programmer.activeProtection&&confidence==='Low')confidence='Editorial';let fit='Situational';if(score>=78)fit='Strong fit';else if(score>=65)fit='Good candidate';else if(score>=56)fit='Supported option';else if(score<40)fit='Rest / caution';else if(score<48)fit='Mixed evidence';if(programmer.rating==='low_confidence'&&score>=48)fit='Programmer caution';if(programmer.rating==='dont_air')fit="Don't air / caution";if (season.holidayOutOfSeason) {
   fit = season.holidayCategory === 'Holiday - Christmas' ? 'Save for Christmas season' : 'Out of seasonal window';
+  if (programmer.storedRating === 'must_air') cautions.push('Must Air is an editorial priority for a suitable placement; it does not override seasonal fit.');
 }
 const result={program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};
 context.scoreCache?.set(scoreKey,result);
