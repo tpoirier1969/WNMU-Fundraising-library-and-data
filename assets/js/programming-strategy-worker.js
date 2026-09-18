@@ -319,7 +319,7 @@ function buildDayOutlook(schedule = {}, rows = []) {
   }
 
   const allRates = pool.flatMap((drive) => [...drive.byOffset.values()]).filter(Number.isFinite);
-  const baseline = S.median(allRates);
+  const baseline = S.mean(allRates);
   const targetAnchor = firstSaturday(schedule.startDate, schedule.endDate);
   const start = S.parseDate(schedule.startDate);
   const end = S.parseDate(schedule.endDate);
@@ -331,9 +331,9 @@ function buildDayOutlook(schedule = {}, rows = []) {
       const rates = Number.isFinite(offset)
         ? pool.map((drive) => drive.byOffset.get(offset)).filter(Number.isFinite)
         : [];
-      const medianRate = S.median(rates);
-      const ratio = rates.length && Number.isFinite(medianRate) && Number.isFinite(baseline) && baseline > 0
-        ? medianRate / baseline
+      const averageRate = S.mean(rates);
+      const ratio = rates.length && Number.isFinite(averageRate) && Number.isFinite(baseline) && baseline > 0
+        ? averageRate / baseline
         : null;
       let outlook = 'No comparable history';
       if (rates.length === 1) outlook = 'Thin evidence';
@@ -349,7 +349,7 @@ function buildDayOutlook(schedule = {}, rows = []) {
         label: fundraiserDayTitle(schedule, date),
         outlook,
         samples: rates.length,
-        medianRate,
+        averageRate,
         ratio
       });
     }
@@ -362,6 +362,182 @@ function buildDayOutlook(schedule = {}, rows = []) {
   resultRows.forEach((row) => { row.bestBet = best.has(row.date); });
 
   return { season: targetSeason, fallback, rows: resultRows };
+}
+
+function reportableProgrammingRows(rows = []) {
+  return (rows || []).filter((row) =>
+    Number(row.minutes) > 0
+    && Number.isFinite(Number(row.startMinutes))
+    && S.lookupKey(row.topic) !== 'uncategorized'
+  );
+}
+
+function seasonPlanningPool(schedule = {}, rows = []) {
+  const targetSeason = S.seasonForDate(schedule.startDate);
+  const clean = reportableProgrammingRows(rows);
+  const seasonal = clean.filter((row) => S.seasonForDate(row.dateKey) === targetSeason);
+  const seasonFundraisers = new Set(seasonal.map((row) => row.fundraiserId).filter(Boolean)).size;
+  return {
+    targetSeason,
+    fallback: seasonFundraisers < 2,
+    rows: seasonFundraisers < 2 ? clean : seasonal
+  };
+}
+
+function summarizeTimeslotRows(rows = []) {
+  const byFundraiser = new Map();
+  const topicCounts = new Map();
+  for (const row of rows) {
+    const key = row.fundraiserId || row.dateKey;
+    if (!byFundraiser.has(key)) byFundraiser.set(key, { dollars: 0, minutes: 0 });
+    const group = byFundraiser.get(key);
+    group.dollars += Number(row.dollars || 0);
+    group.minutes += Number(row.minutes || 0);
+    const topic = text(row.topic || 'Uncategorized');
+    topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+  }
+  const rates = [...byFundraiser.values()]
+    .filter((group) => group.minutes > 0)
+    .map((group) => group.dollars * 60 / group.minutes)
+    .filter(Number.isFinite);
+  const sortedTopics = [...topicCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const dominant = sortedTopics[0] || ['', 0];
+  return {
+    airings: rows.length,
+    fundraiserSamples: rates.length,
+    averageRate: S.mean(rates),
+    dominantTopic: dominant[0],
+    dominantShare: rows.length ? dominant[1] / rows.length : 0
+  };
+}
+
+function buildHourlyPatterns(schedule = {}, rows = []) {
+  const pool = seasonPlanningPool(schedule, rows);
+  const weekdays = [
+    { day: 1, weekday: 'Monday' },
+    { day: 2, weekday: 'Tuesday' },
+    { day: 3, weekday: 'Wednesday' },
+    { day: 4, weekday: 'Thursday' },
+    { day: 5, weekday: 'Friday' },
+    { day: 6, weekday: 'Saturday' },
+    { day: 0, weekday: 'Sunday' }
+  ];
+  const resultRows = [];
+  for (const item of weekdays) {
+    for (let hour = 12; hour <= 22; hour += 1) {
+      const matched = pool.rows.filter((row) => {
+        const date = S.parseDate(row.dateKey);
+        const start = Number(row.startMinutes);
+        return date && date.getDay() === item.day && start >= hour * 60 && start < (hour + 1) * 60;
+      });
+      resultRows.push({
+        weekday: item.weekday,
+        weekdayIndex: item.day,
+        startMinutes: hour * 60,
+        endMinutes: (hour + 1) * 60,
+        ...summarizeTimeslotRows(matched)
+      });
+    }
+  }
+  return {
+    season: pool.targetSeason,
+    fallback: pool.fallback,
+    rows: resultRows
+  };
+}
+
+function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
+  const patterns = hourly || buildHourlyPatterns(schedule, rows);
+  const allRates = patterns.rows.map((row) => row.averageRate).filter(Number.isFinite);
+  const baseline = S.mean(allRates);
+  const byWeekday = new Map();
+  patterns.rows.forEach((row) => {
+    if (!byWeekday.has(row.weekday)) byWeekday.set(row.weekday, []);
+    byWeekday.get(row.weekday).push(row);
+  });
+
+  const opportunities = [];
+  byWeekday.forEach((dayRows, weekday) => {
+    dayRows.sort((a, b) => a.startMinutes - b.startMinutes);
+    const maxSamples = Math.max(0, ...dayRows.map((row) => row.fundraiserSamples || 0));
+
+    for (let index = 0; index < dayRows.length; index += 1) {
+      const row = dayRows[index];
+      if (row.startMinutes < 12 * 60 || row.startMinutes > 21 * 60) continue;
+
+      const underused = row.fundraiserSamples > 0
+        && row.fundraiserSamples <= Math.max(2, Math.floor(maxSamples * 0.45));
+      const productive = underused
+        && Number.isFinite(row.averageRate)
+        && Number.isFinite(baseline)
+        && baseline > 0
+        && row.averageRate >= baseline * 1.05;
+      const narrowTest = row.airings >= 2
+        && row.dominantShare >= 0.65
+        && Number.isFinite(row.averageRate)
+        && Number.isFinite(baseline)
+        && baseline > 0
+        && row.averageRate < baseline * 0.9;
+
+      if (!productive && !narrowTest) continue;
+
+      let endMinutes = row.endMinutes;
+      const next = dayRows[index + 1];
+      if (narrowTest && next && next.startMinutes === row.endMinutes && next.fundraiserSamples === 0) {
+        endMinutes = next.endMinutes;
+      }
+
+      if (opportunities.some((item) =>
+        item.weekday === weekday
+        && Math.max(item.startMinutes, row.startMinutes) < Math.min(item.endMinutes, endMinutes)
+      )) continue;
+
+      if (narrowTest) {
+        opportunities.push({
+          weekday,
+          startMinutes: row.startMinutes,
+          endMinutes,
+          kind: 'narrow-test',
+          label: 'Needs a broader test',
+          averageRate: row.averageRate,
+          fundraiserSamples: row.fundraiserSamples,
+          airings: row.airings,
+          dominantTopic: row.dominantTopic,
+          dominantShare: row.dominantShare,
+          rationale: `WNMU has ${row.airings} historical start${row.airings === 1 ? '' : 's'} here, but ${Math.round(row.dominantShare * 100)}% were ${row.dominantTopic || 'one programming type'}. Weak results may reflect what was scheduled more than the timeslot itself.`
+        });
+      } else {
+        opportunities.push({
+          weekday,
+          startMinutes: row.startMinutes,
+          endMinutes,
+          kind: 'underused-positive',
+          label: 'Underused with encouraging results',
+          averageRate: row.averageRate,
+          fundraiserSamples: row.fundraiserSamples,
+          airings: row.airings,
+          dominantTopic: row.dominantTopic,
+          dominantShare: row.dominantShare,
+          rationale: `Average ${Math.round(row.averageRate)}/pledge hr across ${row.fundraiserSamples} fundraiser sample${row.fundraiserSamples === 1 ? '' : 's'}, but this hour has been used relatively infrequently.`
+        });
+      }
+    }
+  });
+
+  const kindOrder = { 'underused-positive': 0, 'narrow-test': 1 };
+  opportunities.sort((a, b) =>
+    (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9)
+    || (b.averageRate || 0) - (a.averageRate || 0)
+    || a.weekday.localeCompare(b.weekday)
+    || a.startMinutes - b.startMinutes
+  );
+
+  return {
+    season: patterns.season,
+    fallback: patterns.fallback,
+    peerEvidenceAvailable: false,
+    rows: opportunities.slice(0, 12)
+  };
 }
 
 function compactRecommendation(item = {}) {
@@ -486,9 +662,11 @@ self.onmessage = (event) => {
     });
     diagnostics.strategyMs = Math.round(nowMs() - phase);
 
-    progress(requestId, 'days', 'Calculating fundraiser-day outlook…');
+    progress(requestId, 'days', 'Calculating fundraiser-day and day/time patterns…');
     phase = nowMs();
     const dayOutlook = buildDayOutlook(schedule, rows);
+    const hourlyPatterns = buildHourlyPatterns(schedule, rows);
+    const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 
     phase = nowMs();
@@ -501,6 +679,8 @@ self.onmessage = (event) => {
       requestId,
       strategy: compact,
       dayOutlook,
+      hourlyPatterns,
+      opportunities,
       diagnostics
     });
   } catch (error) {
