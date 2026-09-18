@@ -457,6 +457,34 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null) {
   });
 
   const opportunities = [];
+
+  // Keep the known Saturday 3–5 PM question as one weekly test window, not one
+  // duplicate entry for every Saturday in the upcoming fundraiser. Historical
+  // WNMU results here have often reflected a narrow programming mix, so weak
+  // results should not be treated as proof that the clock time itself is bad.
+  const planningPool = seasonPlanningPool(schedule, rows);
+  const saturdayAfternoonRows = planningPool.rows.filter((row) => {
+    const date = S.parseDate(row.dateKey);
+    const start = Number(row.startMinutes);
+    return date && date.getDay() === 6 && start >= 15 * 60 && start < 17 * 60;
+  });
+  const saturdayAfternoon = summarizeTimeslotRows(saturdayAfternoonRows);
+  if (saturdayAfternoon.airings >= 2 && saturdayAfternoon.dominantShare >= 0.5) {
+    opportunities.push({
+      weekday: 'Saturday',
+      startMinutes: 15 * 60,
+      endMinutes: 17 * 60,
+      kind: 'narrow-test',
+      label: 'Needs a broader test',
+      averageRate: saturdayAfternoon.averageRate,
+      fundraiserSamples: saturdayAfternoon.fundraiserSamples,
+      airings: saturdayAfternoon.airings,
+      dominantTopic: saturdayAfternoon.dominantTopic,
+      dominantShare: saturdayAfternoon.dominantShare,
+      rationale: `WNMU has ${saturdayAfternoon.airings} historical starts from 3–5 PM, but ${Math.round(saturdayAfternoon.dominantShare * 100)}% were ${saturdayAfternoon.dominantTopic || 'one programming type'}. That is not a broad test of normal pledge programming, so weak local results should not disqualify the timeslot.`
+    });
+  }
+
   byWeekday.forEach((dayRows, weekday) => {
     dayRows.sort((a, b) => a.startMinutes - b.startMinutes);
     const maxSamples = Math.max(0, ...dayRows.map((row) => row.fundraiserSamples || 0));
