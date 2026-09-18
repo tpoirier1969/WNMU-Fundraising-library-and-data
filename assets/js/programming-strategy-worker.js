@@ -515,39 +515,39 @@ self.onmessage = (event) => {
     const library = Array.isArray(payload.library) ? payload.library : [];
     const rawAirings = Array.isArray(payload.airings) ? payload.airings : [];
     const overrides = Array.isArray(payload.overrides) ? payload.overrides : [];
+    const scheduleRows = Array.isArray(payload.scheduleRows) ? payload.scheduleRows : [];
     const schedule = payload.schedule || {};
     const now = payload.now ? new Date(payload.now) : new Date();
 
-    const indexes = buildLibraryIndexes(library);
-    const canonical = canonicalizeAirings(rawAirings);
+    const canonical = A.canonicalizeImportedAirings(rawAirings);
     const cutoff = S.evidenceCutoff(schedule, now);
-    const cutoffDate = S.parseDate(cutoff);
-    const rows = canonical
-      .filter((row) => {
-        const when = S.parseDate(importedDateKey(row));
-        return Boolean(when && cutoffDate && when <= cutoffDate);
-      })
-      .map((row) => normalizeAiring(row, indexes))
-      .filter((row) => row.dateKey);
+    const historical = completedHistoricalAnalyses(scheduleRows, canonical, library, cutoff);
+    const analyses = historical.analyses;
+    const rows = strategyEvidenceRowsFromAnalyses(analyses);
+    const performanceStats = buildHistoricalPerformanceStats(schedule, analyses);
+
     diagnostics.prepareMs = Math.round(nowMs() - phase);
     diagnostics.rawAirings = rawAirings.length;
     diagnostics.canonicalAirings = canonical.length;
+    diagnostics.historicalSchedules = historical.schedules.length;
+    diagnostics.historicalAnalyses = analyses.length;
     diagnostics.evidenceRows = rows.length;
 
-    progress(requestId, 'score', 'Scoring eligible titles against WNMU history…');
+    progress(requestId, 'score', 'Scoring eligible titles against reconciled WNMU history…');
     phase = nowMs();
     const strategy = S.buildStrategy({
       schedule,
       library,
       evidenceRows: rows,
       overrides,
+      performanceStats,
       now
     });
     diagnostics.strategyMs = Math.round(nowMs() - phase);
 
     progress(requestId, 'days', 'Calculating fundraiser-day and day/time patterns…');
     phase = nowMs();
-    const dayOutlook = buildDayOutlook(schedule, rows);
+    const dayOutlook = buildDayOutlook(schedule, analyses);
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
