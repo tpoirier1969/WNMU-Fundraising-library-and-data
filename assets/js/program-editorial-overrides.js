@@ -9,8 +9,10 @@
   const LABELS = {
     dont_air: "Don't air",
     low_confidence: 'Low confidence',
+    neutral: 'Neutral',
+    viable: 'Viable',
     promising: 'Promising',
-    must_air: 'Must air'
+    must_air: 'Must Air'
   };
   let loadPromise = null;
   let loaded = false;
@@ -25,7 +27,7 @@
     if (rating === 'high') return 'must_air';
     if (rating === 'medium') return 'promising';
     if (rating === 'low') return 'low_confidence';
-    return ['dont_air', 'low_confidence', 'promising', 'must_air'].includes(rating) ? rating : '';
+    return ['dont_air', 'low_confidence', 'neutral', 'viable', 'promising', 'must_air'].includes(rating) ? rating : '';
   }
 
   function ratingLabel(value) {
@@ -143,9 +145,11 @@
     return `
       <option value="dont_air" ${current === 'dont_air' ? 'selected' : ''}>Don't air</option>
       <option value="low_confidence" ${current === 'low_confidence' ? 'selected' : ''}>Low confidence</option>
-      <option value="" ${!current ? 'selected' : ''}>Neutral</option>
+      <option value="" ${!current ? 'selected' : ''}>Unrated</option>
+      <option value="neutral" ${current === 'neutral' ? 'selected' : ''}>Neutral</option>
+      <option value="viable" ${current === 'viable' ? 'selected' : ''}>Viable</option>
       <option value="promising" ${current === 'promising' ? 'selected' : ''}>Promising</option>
-      <option value="must_air" ${current === 'must_air' ? 'selected' : ''}>Must air</option>`;
+      <option value="must_air" ${current === 'must_air' ? 'selected' : ''}>Must Air</option>`;
   }
 
   function ratingNote(current = '', overrideInfo = null) {
@@ -154,7 +158,9 @@
       if (weakCount >= 2) return 'Two weak prime tests since this rating have reduced its protection; automated confidence can show again.';
       return `Heavily boosts the formula and suppresses Low Confidence until two weak prime tests. Weak tests: ${weakCount}/2.`;
     }
-    if (current === 'promising') return 'Adds a strong positive programmer signal to the formula.';
+    if (current === 'neutral') return 'Reviewed without a positive or negative programmer adjustment.';
+    if (current === 'viable') return 'Worth considering for pledge, but audience response is still uncertain; adds a modest positive signal.';
+    if (current === 'promising') return 'Adds a strong positive programmer signal because the title looks likely to connect with the WNMU pledge audience.';
     if (current === 'low_confidence') return 'Adds a meaningful caution to the formula.';
     if (current === 'dont_air') return 'Adds a very strong negative programmer signal, but does not replace hard evidence or rights rules.';
     return 'No programmer weighting is being added.';

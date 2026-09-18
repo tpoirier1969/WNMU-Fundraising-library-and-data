@@ -15,6 +15,8 @@
   const PROGRAMMER_WEIGHTS = {
     dont_air: -30,
     low_confidence: -14,
+    neutral: 0,
+    viable: 8,
     promising: 14,
     must_air: 28
   };

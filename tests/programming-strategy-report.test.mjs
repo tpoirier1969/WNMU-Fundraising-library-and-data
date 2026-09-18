@@ -32,27 +32,34 @@ const row = (overrides = {}) => ({
   ...overrides
 });
 
-test('selected fundraiser start is the historical evidence cutoff', () => {
-  assert.equal(S.evidenceCutoff(schedule), '2026-12-05');
+test('evidence cutoff uses today for future drives and day-before-start for historical drives', () => {
+  const now = new Date('2026-09-18T12:00:00');
+  assert.equal(S.evidenceCutoff(schedule, now), '2026-09-18');
+  assert.equal(
+    S.evidenceCutoff({ startDate: '2026-08-08', endDate: '2026-08-16' }, now),
+    '2026-08-07'
+  );
   const filtered = S.filterEvidenceAirings([
-    row({ dateKey: '2026-12-04' }),
-    row({ dateKey: '2026-12-05' }),
-    row({ dateKey: '2027-03-01' })
-  ], S.evidenceCutoff(schedule));
-  assert.deepEqual(Array.from(filtered, (entry) => entry.dateKey), ['2026-12-04']);
+    row({ dateKey: '2026-09-17' }),
+    row({ dateKey: '2026-09-18' }),
+    row({ dateKey: '2026-09-19' })
+  ], S.evidenceCutoff(schedule, now));
+  assert.deepEqual(Array.from(filtered, (entry) => entry.dateKey), ['2026-09-17', '2026-09-18']);
 });
 
-test('post-cutoff airings cannot improve a recommendation', () => {
+test('post-cutoff airings cannot enter strategy evidence', () => {
   const program = baseProgram();
-  const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime' && entry.weekday === 'Saturday');
-  const pre = [row({ dateKey: '2026-08-08', dollars: 120, fundraiserId: 'aug26' })];
-  const futureWindfall = row({ dateKey: '2027-03-06', dollars: 12000, fundraiserId: 'mar27' });
-  const before = S.buildStrategy({ schedule, library: [program], evidenceRows: pre });
-  const after = S.buildStrategy({ schedule, library: [program], evidenceRows: [...pre, futureWindfall] });
-  const beforeScore = before.windows.find((entry) => entry.id === slot.id).recommendations[0].score;
-  const afterScore = after.windows.find((entry) => entry.id === slot.id).recommendations[0].score;
-  assert.equal(afterScore, beforeScore);
+  const pre = [row({ dateKey: '2025-12-06', dollars: 120, fundraiserId: 'dec25' })];
+  const futureWindfall = row({ dateKey: '2027-12-04', dollars: 12000, fundraiserId: 'dec27' });
+  const now = new Date('2026-09-18T12:00:00');
+  const before = S.buildStrategy({ schedule, library: [program], evidenceRows: pre, now });
+  const after = S.buildStrategy({ schedule, library: [program], evidenceRows: [...pre, futureWindfall], now });
+  assert.equal(before.evidenceRows, 1);
   assert.equal(after.evidenceRows, 1);
+  const beforeTopic = before.topicComparison.find((item) => item.topic === 'Music');
+  const afterTopic = after.topicComparison.find((item) => item.topic === 'Music');
+  assert.equal(afterTopic.historyRows, beforeTopic.historyRows);
+  assert.equal(afterTopic.medianRate, beforeTopic.medianRate);
 });
 
 test('rights exclude a title from a slot where it cannot legally air', () => {
@@ -113,20 +120,45 @@ test('holiday season fit rewards December and strongly penalizes out-of-season u
   assert.ok(december.adjustment > june.adjustment);
 });
 
-test('programmer ratings materially affect score but are not absolute overrides', () => {
+test('programmer ratings include explicit Neutral and Viable between Neutral and Promising', () => {
   const program = baseProgram();
   const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime');
-  const evidenceRows = [
-    row({ dateKey: '2024-12-07', dollars: 900, fundraiserId: 'dec24' }),
-    row({ dateKey: '2025-12-06', dollars: 950, fundraiserId: 'dec25' }),
-    row({ dateKey: '2026-08-08', dollars: 800, fundraiserId: 'aug26' })
-  ];
-  const neutral = S.scoreProgramForSlot(program, slot, { schedule, evidenceRows, overrideByProgramId: new Map(), baselineRate: 500 });
+  const evidenceRows = [];
+  const unrated = S.scoreProgramForSlot(program, slot, { schedule, evidenceRows, overrideByProgramId: new Map(), baselineRate: 500 });
+  const neutral = S.scoreProgramForSlot(program, slot, { schedule, evidenceRows, overrideByProgramId: new Map([['1', { program_id: '1', rating: 'neutral' }]]), baselineRate: 500 });
+  const viable = S.scoreProgramForSlot(program, slot, { schedule, evidenceRows, overrideByProgramId: new Map([['1', { program_id: '1', rating: 'viable' }]]), baselineRate: 500 });
   const promising = S.scoreProgramForSlot(program, slot, { schedule, evidenceRows, overrideByProgramId: new Map([['1', { program_id: '1', rating: 'promising' }]]), baselineRate: 500 });
   const dont = S.scoreProgramForSlot(program, slot, { schedule, evidenceRows, overrideByProgramId: new Map([['1', { program_id: '1', rating: 'dont_air' }]]), baselineRate: 500 });
-  assert.ok(promising.score > neutral.score);
-  assert.ok(dont.score < neutral.score);
-  assert.ok(dont.score > 0, 'Don\'t air should strongly demote rather than create a hard exclusion');
+  assert.equal(S.normalizeRating('neutral'), 'neutral');
+  assert.equal(S.normalizeRating('viable'), 'viable');
+  assert.ok(neutral.score > unrated.score, 'explicit Neutral should mark a reviewed new title for first-test priority');
+  assert.ok(viable.score > neutral.score);
+  assert.ok(promising.score > viable.score);
+  assert.ok(dont.score < unrated.score);
+});
+
+test('day-map selector favors new titles and keeps previously aired anchors at one-third or less', () => {
+  const make = (id, score, newTitle, rating = '') => ({
+    programId: id,
+    title: id,
+    score,
+    newTitle,
+    reviewedNew: newTitle && ['neutral', 'viable', 'promising', 'must_air'].includes(rating),
+    programmer: { rating },
+    season: { holidayOutOfSeason: false }
+  });
+  const ranked = [
+    make('old-anchor', 92, false),
+    make('new-promising', 76, true, 'promising'),
+    make('new-viable', 70, true, 'viable'),
+    make('new-neutral', 64, true, 'neutral'),
+    make('old-two', 88, false)
+  ];
+  const selected = S.selectRecommendationsForSlot(ranked, 4);
+  assert.equal(selected.length, 4);
+  assert.equal(selected.filter((item) => !item.newTitle).length, 1);
+  assert.equal(selected[0].programId, 'new-promising');
+  assert.ok(selected.some((item) => item.programId === 'old-anchor'));
 });
 
 test('lowercase ordinary "up" does not create Local / U.P. relevance', () => {
@@ -185,6 +217,17 @@ test('historical matching does not fall back to title when both program IDs disa
   assert.equal(S.rowsForProgram(program, [nolaOnly]).length, 1);
 });
 
+test('topic comparison includes every Program Library topic, including topics with no drive-eligible title', () => {
+  const library = [
+    baseProgram({ id: 'music', title: 'Music', topic_primary: 'Music' }),
+    baseProgram({ id: 'history-expired', title: 'History', topic_primary: 'History', rights_end: '2026-01-01' })
+  ];
+  const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows: [] });
+  assert.deepEqual(Array.from(rows, (item) => item.topic).sort(), ['History', 'Music']);
+  assert.equal(rows.find((item) => item.topic === 'History').eligibleProgramCount, 0);
+  assert.equal(rows.find((item) => item.topic === 'Music').eligibleProgramCount, 1);
+});
+
 test('overall mix remains qualitative rather than inventing percentage quotas', () => {
   const strategy = S.buildStrategy({
     schedule,
@@ -196,4 +239,21 @@ test('overall mix remains qualitative rather than inventing percentage quotas', 
   });
   assert.ok(strategy.mix.length > 0);
   assert.ok(strategy.mix.every((item) => item.approximateShare === null));
+});
+
+
+test('strategy UI keeps the Report Hub card, future-only picker, compact map, and six rating levels', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const hubUi = fs.readFileSync(new URL('../assets/js/report-hub-programming-strategy.js', import.meta.url), 'utf8');
+  const ratingsUi = fs.readFileSync(new URL('../assets/js/program-editorial-overrides.js', import.meta.url), 'utf8');
+  assert.match(hubUi, /card\.className = 'report-card-link'/);
+  assert.match(reportUi, /start&&start>=today/);
+  assert.match(reportUi, /strategy-program-row/);
+  assert.match(reportUi, /Anticipated day strength/);
+  assert.match(reportUi, /Experimental opportunities/);
+  assert.match(ratingsUi, />Unrated</);
+  assert.match(ratingsUi, /value="neutral"[^>]*>Neutral</);
+  assert.match(ratingsUi, /value="viable"[^>]*>Viable</);
+  assert.match(ratingsUi, /value="promising"[^>]*>Promising</);
+  assert.match(ratingsUi, /value="must_air"[^>]*>Must Air</);
 });
