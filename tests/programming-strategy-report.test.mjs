@@ -259,6 +259,16 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
 });
 
 
+test('Report 5 trimmed airing query contains only live Supabase columns', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const block = reportUi.match(/const airingSelect=\[([\s\S]*?)\]\.join\(','\);/)?.[1] || '';
+  assert.ok(block, 'airingSelect block should be present');
+  assert.doesNotMatch(block, /source_file_key/);
+  assert.match(block, /source_file_name/);
+  assert.match(block, /import_batch_id/);
+  assert.match(block, /row_hash/);
+});
+
 test('strategy report keeps heavy analysis off the browser UI thread and trims Supabase payloads', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
