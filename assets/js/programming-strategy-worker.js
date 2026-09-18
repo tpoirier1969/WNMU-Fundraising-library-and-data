@@ -159,23 +159,23 @@ function buildDayOutlook(schedule = {}, analyses = []) {
   const observations = new Map(targetOffsets.map((offset) => [offset, []]));
 
   for (const analysis of pool.analyses || []) {
-    const days = (A.calendarDays(analysis) || [])
+    const allDays = (A.calendarDays(analysis) || [])
       .map((day) => ({
         ...day,
         offset: A.fundraiserDayOffset(analysis, day.dateKey)
       }))
       .filter((day) =>
-        Number.isFinite(Number(day.offset))
-        && targetOffsetSet.has(Number(day.offset))
-        && Number(day.rateMinutes || 0) > 0
+        Number(day.rateMinutes || 0) > 0
         && Number.isFinite(Number(day.dollarsPerHour))
       );
 
-    if (!days.length) continue;
-    const baseline = S.mean(days.map((day) => Number(day.dollarsPerHour)).filter(Number.isFinite));
+    const baseline = Number(analysis?.rateEligibleMinutes || 0) > 0
+      ? A.dollarsPerHour(Number(analysis?.rateEligibleDollars || 0), Number(analysis?.rateEligibleMinutes || 0))
+      : null;
     if (!(baseline > 0)) continue;
 
-    for (const day of days) {
+    for (const day of allDays) {
+      if (!Number.isFinite(Number(day.offset)) || !targetOffsetSet.has(Number(day.offset))) continue;
       observations.get(Number(day.offset))?.push({
         rate: Number(day.dollarsPerHour),
         index: Number(day.dollarsPerHour) / baseline,
