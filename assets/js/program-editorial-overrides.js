@@ -153,10 +153,11 @@
   }
 
   function ratingNote(current = '', overrideInfo = null) {
-    const weakCount = Number(overrideInfo?.underperformances || overrideInfo?.weakCount || 0);
     if (current === 'must_air') {
-      if (weakCount >= 2) return 'Two weak prime tests since this rating have reduced its protection; automated confidence can show again.';
-      return `Heavily boosts the formula and suppresses Low Confidence until two weak prime tests. Weak tests: ${weakCount}/2.`;
+      if (overrideInfo?.secondChance) return 'Editorial priority for an appropriate placement. The first post-rating airing landed in a weak surrounding window or lacked usable performance data, so one reduced-priority second chance remains.';
+      const effective = String(overrideInfo?.effectiveRating || overrideInfo?.rating || '').trim();
+      if (effective && effective !== 'must_air') return `Must Air has already been resolved by post-rating performance and is currently treated as ${ratingLabel(effective)}.`;
+      return 'Editorial priority for an appropriate placement, not a command to force the title into the next fundraiser. After it airs, performance and surrounding-night context determine the next effective rating; a clearly bad night may earn one second chance.';
     }
     if (current === 'neutral') return 'Reviewed without a positive or negative programmer adjustment.';
     if (current === 'viable') return 'Worth considering for pledge, but audience response is still uncertain; adds a modest positive signal.';
