@@ -1,9 +1,13 @@
 (() => {
 'use strict';
-const S=globalThis.WNMUProgrammingStrategyAnalysis,cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
+const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
 const state={client:null,schedules:[],airings:[],library:[],overrides:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,requestId:0,dataLoadMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-function fmt(v,year=true){const d=S.parseDate(v);return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:year?'numeric':undefined}):esc(v||'—');}
+function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
+function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
+function seasonForDate(value){const d=parseDate(value);if(!d)return'Special';const m=d.getMonth();if(m===0||m>=9)return'December';if(m<=3)return'March';if(m<=5)return'June';if(m<=8)return'August';return'December';}
+function median(values=[]){const sorted=(values||[]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);if(!sorted.length)return null;const mid=Math.floor(sorted.length/2);return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2;}
+function fmt(v,year=true){const d=parseDate(v);return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:year?'numeric':undefined}):esc(v||'—');}
 function clock(m){m=Number(m);if(!Number.isFinite(m))return'—';m=((m%1440)+1440)%1440;const h=Math.floor(m/60),mi=m%60;return`${h%12||12}${mi?`:${String(mi).padStart(2,'0')}`:''} ${h>=12?'PM':'AM'}`;}
 function status(msg,tone=''){const n=$('#strategy-status');if(n){n.textContent=msg||'';n.className=`strategy-status${tone?` ${tone}`:''}`;}}
 function makeClient(){if(!globalThis.supabase?.createClient)throw new Error('Supabase library did not load.');if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY)throw new Error('Supabase configuration is missing.');return globalThis.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);}
@@ -31,7 +35,7 @@ async function fetchAll(table,select='*',{orders=['id'],apply=null}={}){
 }
 async function fetchOptional(table,select='*',options={}){try{return await fetchAll(table,select,options);}catch(e){console.warn(`Optional report source ${table} unavailable.`,e);return[];}}
 function todayStart(){const d=new Date();d.setHours(0,0,0,0);return d;}
-function todayKey(){return S.dateKey(todayStart());}
+function todayKey(){return dateKey(todayStart());}
 function defaultSchedule(){return state.schedules[0]||null;}
 function scheduleLabel(s){return`${s.title} · ${fmt(s.startDate)}–${fmt(s.endDate,false)}`;}
 async function loadSchedules(){
@@ -113,7 +117,7 @@ const selectedSchedule=()=>state.schedules.find(x=>String(x.id)===String(state.s
 function topicComparisonSection(strategy){
   const rows=strategy.topicComparison||[];
   if(!rows.length)return'<section class="sheet-section"><h2>Topic performance in selected season</h2><p>No eligible topic data is available.</p></section>';
-  const season=rows[0]?.season||S.seasonForDate(strategy.schedule?.startDate)||'selected';
+  const season=rows[0]?.season||seasonForDate(strategy.schedule?.startDate)||'selected';
   return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Complete Program Library topic list. Each row shows selected-season WNMU performance and how many titles are actually eligible for this fundraiser.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div><strong>${esc(x.topic)}</strong><span class="strategy-strength strength-${esc(x.signal.toLowerCase().replace(/\s+/g,'-'))}">${esc(x.signal)}</span></div><div>${x.historyRows?`${x.historyRows} rate-valid ${esc(season)} row${x.historyRows===1?'':'s'}${Number.isFinite(x.medianRate)?` · median $${Math.round(x.medianRate)}/hr`:''}`:`No rate-valid ${esc(season)} history yet`}</div><div>${x.bestWindows.length?`Best supported: ${x.bestWindows.map(w=>`${w.weekday} ${w.label}`).join(' · ')}`:'No established weekday/time fit in this season yet'}</div><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser${x.subtopics.length?` · Current subtopics: ${esc(x.subtopics.join(' · '))}`:''}</small></div>`).join('')}</div></section>`;
 }
 
@@ -128,7 +132,7 @@ function groupedDayparts(strategy){
     }
   }
   const weekdayOrder=new Map(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((d,i)=>[d,i]));
-  return[...groups.values()].map(g=>({...g,median:S.median(g.rates)}))
+  return[...groups.values()].map(g=>({...g,median:median(g.rates)}))
     .sort((a,b)=>(weekdayOrder.get(a.weekday)??9)-(weekdayOrder.get(b.weekday)??9)||a.startMinutes-b.startMinutes);
 }
 
@@ -269,6 +273,6 @@ async function renderStrategy(){
     status('Strategy generation failed.','error');
   }
 }
-async function init(){try{if(!S)throw new Error('Programming strategy analysis module did not load.');if(!await requireAdmin())return;await loadSchedules();void renderStrategy();await loadAnalysisData();}catch(e){console.error(e);status(e?.message||String(e),'error');const out=$('#strategy-output');if(out)out.innerHTML=`<div class="report-empty"><strong>Report could not start.</strong><p>${esc(e?.message||e)}</p></div>`;}}
+async function init(){try{if(!await requireAdmin())return;await loadSchedules();void renderStrategy();await loadAnalysisData();}catch(e){console.error(e);status(e?.message||String(e),'error');const out=$('#strategy-output');if(out)out.innerHTML=`<div class="report-empty"><strong>Report could not start.</strong><p>${esc(e?.message||e)}</p></div>`;}}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else void init();
 })();
