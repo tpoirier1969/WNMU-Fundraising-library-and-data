@@ -1934,12 +1934,13 @@
 
     const prior = state.detailSelectSaveQueue || Promise.resolve();
     const next = prior.catch(() => {}).then(runSave);
-    state.detailSelectSaveQueue = next.finally(() => {
-      if (state.detailSelectSaveQueue === next) state.detailSelectSaveQueue = null;
+    const tracked = next.finally(() => {
+      if (state.detailSelectSaveQueue === tracked) state.detailSelectSaveQueue = null;
     });
+    state.detailSelectSaveQueue = tracked;
 
     try {
-      return await next;
+      return await tracked;
     } catch (error) {
       setDetailDirty(true);
       setDetailNotice(`${label} could not be saved: ${error?.message || error}`, 'bad');
