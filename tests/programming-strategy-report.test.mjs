@@ -454,6 +454,13 @@ test('strategy worker returns a complete result without blocking report code pat
       schedule,
       library,
       airings,
+      scheduleRows: [historicalScheduleRow({
+        id: 'dec25',
+        title: 'December 2025',
+        startDate: '2025-12-05',
+        endDate: '2025-12-14',
+        placements: [{ programId: '2', programTitle: 'Old Music', nolaCode: 'OMUS', dateKey: '2025-12-06', startMinutes: 19 * 60, lengthMinutes: 60 }]
+      })],
       overrides: [{ program_id: 1, rating: 'viable', rated_at: '2026-09-18T00:00:00Z', updated_at: '2026-09-18T00:00:00Z' }],
       now: '2026-09-18T12:00:00Z'
     }
@@ -512,6 +519,28 @@ test('Saturday 3–5 PM is reported once as a broader-test window when history i
         { id: 3, program_id: 2, pledge_program_id: '2', imported_program_title: 'Music Anchor', nola_code: 'MUSC', air_date: '2025-12-06', air_time: '19:00', dollars: 600, pledge_count: 4, program_minutes: 60, drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', fundraiser_label: 'December 2025', station: 'WNMU', row_hash: 'a1', import_batch_id: 'b1', source_file_name: 'dec25.csv' },
         { id: 4, program_id: 2, pledge_program_id: '2', imported_program_title: 'Music Anchor', nola_code: 'MUSC', air_date: '2024-12-07', air_time: '19:00', dollars: 600, pledge_count: 4, program_minutes: 60, drive_start_date: '2024-12-06', drive_end_date: '2024-12-15', fundraiser_label: 'December 2024', station: 'WNMU', row_hash: 'a2', import_batch_id: 'b2', source_file_name: 'dec24.csv' }
       ],
+      scheduleRows: [
+        historicalScheduleRow({
+          id: 'dec25',
+          title: 'December 2025',
+          startDate: '2025-12-05',
+          endDate: '2025-12-14',
+          placements: [
+            { programId: '1', programTitle: 'Michigan Test', nolaCode: 'MICH', dateKey: '2025-12-06', startMinutes: 15 * 60 + 30, lengthMinutes: 60 },
+            { programId: '2', programTitle: 'Music Anchor', nolaCode: 'MUSC', dateKey: '2025-12-06', startMinutes: 19 * 60, lengthMinutes: 60 }
+          ]
+        }),
+        historicalScheduleRow({
+          id: 'dec24',
+          title: 'December 2024',
+          startDate: '2024-12-06',
+          endDate: '2024-12-15',
+          placements: [
+            { programId: '1', programTitle: 'Michigan Test', nolaCode: 'MICH', dateKey: '2024-12-07', startMinutes: 15 * 60 + 30, lengthMinutes: 60 },
+            { programId: '2', programTitle: 'Music Anchor', nolaCode: 'MUSC', dateKey: '2024-12-07', startMinutes: 19 * 60, lengthMinutes: 60 }
+          ]
+        })
+      ],
       overrides: [],
       now: '2026-09-18T12:00:00Z'
     }
@@ -548,6 +577,13 @@ test('worker aggregates separate pledge breaks from the same airing instead of d
           drive_start_date: '2025-12-05', drive_end_date: '2025-12-14', station: 'WNMU'
         }
       ],
+      scheduleRows: [historicalScheduleRow({
+        id: 'dec25-breaks',
+        title: 'December 2025',
+        startDate: '2025-12-05',
+        endDate: '2025-12-14',
+        placements: [{ programId: '1', programTitle: 'Break Test', nolaCode: 'BRKT', dateKey: '2025-12-06', startMinutes: 19 * 60, lengthMinutes: 30 }]
+      })],
       overrides: [],
       now: '2026-09-18T12:00:00Z'
     }
