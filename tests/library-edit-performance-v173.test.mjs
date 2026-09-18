@@ -59,3 +59,15 @@ test('program editor dropdowns autosave without making dropdown-only changes dir
   assert.match(appSource, /if \(event\.target\?\.tagName === 'SELECT'\) return;/);
   assert.match(appSource, /autoSaveSelectChange\?\.\(event\)/);
 });
+
+
+test('program Save button lives in the detail header and still submits the edit form', () => {
+  const shell = fs.readFileSync('app-shell.html', 'utf8');
+  const headerBlock = shell.match(/<div class="detail-header sticky">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || '';
+  assert.match(headerBlock, /id="detail-save-button"/);
+  assert.match(headerBlock, /form="detail-edit-form"/);
+  assert.match(headerBlock, /type="submit"/);
+  const formActions = shell.match(/<div class="toolbar-actions detail-form-actions">[\s\S]*?<\/div>/)?.[0] || '';
+  assert.doesNotMatch(formActions, /detail-save-button/);
+  assert.match(detailSource, /detailSaveButton\.classList\.toggle\('hidden', !state\.detailEditMode\)/);
+});
