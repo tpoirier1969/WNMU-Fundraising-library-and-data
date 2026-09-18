@@ -6,6 +6,9 @@ const libraryLoadSource = fs.readFileSync('assets/js/library-load.js', 'utf8');
 const controlsSource = fs.readFileSync('assets/js/program-library-controls.js', 'utf8');
 const outlookSource = fs.readFileSync('assets/js/program-outlook-enhancements.js', 'utf8');
 const scoreUiSource = fs.readFileSync('assets/js/program-scorecard-ui.js', 'utf8');
+const detailSource = fs.readFileSync('assets/js/ui-detail.js', 'utf8');
+const dataSource = fs.readFileSync('assets/js/data.js', 'utf8');
+const appSource = fs.readFileSync('assets/js/app.js', 'utf8');
 
 test('metadata saves do not restart full airing-history enrichment', () => {
   assert.match(libraryLoadSource, /options\.refreshAiringHistory !== false && !state\.detailSaveInProgress/);
@@ -35,4 +38,24 @@ test('scorecard UI coalesces redraws and does not observe its own subtree mutati
   assert.match(scoreUiSource, /requestAnimationFrame\(\(\) => \{/);
   assert.match(scoreUiSource, /rowObserver\.observe\(body, \{ childList: true, subtree: false \}\)/);
   assert.doesNotMatch(scoreUiSource, /rowObserver\.observe\(body, \{ childList: true, subtree: true \}\)/);
+});
+
+
+test('ordinary program edits patch saved rows locally instead of reloading the whole library', () => {
+  const saveBlock = detailSource.match(/const updateResponse = await App\.data\.updateProgram[\s\S]*?setDetailMode\('view'\);/)?.[0] || '';
+  assert.ok(saveBlock, 'normal update save block should be present');
+  assert.match(saveBlock, /applyProgramUpdateLocally/);
+  assert.match(saveBlock, /App\.listUi\?\.applyLibraryView/);
+  assert.doesNotMatch(saveBlock, /App\.app\.refreshAll/);
+  assert.match(dataSource, /\.update\(attemptPayload\)[\s\S]*?query\.select\('\*'\)\.limit\(2\)/);
+});
+
+test('program editor dropdowns autosave without making dropdown-only changes dirty', () => {
+  assert.match(detailSource, /async function autoSaveSelectChange\(event\)/);
+  assert.match(detailSource, /target\.tagName !== 'SELECT'/);
+  assert.match(detailSource, /constants\.EDITABLE_FIELDS\.includes\(fieldName\)/);
+  assert.match(detailSource, /payload\.topic_primary/);
+  assert.match(detailSource, /payload\.topic_secondary/);
+  assert.match(appSource, /if \(event\.target\?\.tagName === 'SELECT'\) return;/);
+  assert.match(appSource, /autoSaveSelectChange\?\.\(event\)/);
 });
