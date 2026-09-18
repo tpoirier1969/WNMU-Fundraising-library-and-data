@@ -574,7 +574,7 @@ test('Report 5 uses reconciled schedule duration and excludes unmatched or out-o
   assert.equal(saturdayEight.fundraiserSamples, 0, 'unmatched imported dollars must not become start-time performance evidence');
 });
 
-test('Anticipated Day Strength is centered within each fundraiser and ignores unrelated extra day positions', () => {
+test('Anticipated Day Strength normalizes against the full accepted historical fundraiser schedule', () => {
   const { workerContext, workerMessages } = makeWorkerHarness();
   const selected = { id: 'short-dec26', title: 'Short December 2026', startDate: '2026-12-05', endDate: '2026-12-06' };
   const library = [baseProgram({ id: 1, title: 'Anchor', nola_code: 'ANCH', length_bucket_minutes: 60 })];
@@ -613,11 +613,11 @@ test('Anticipated Day Strength is centered within each fundraiser and ignores un
   assert.ok(result);
   assert.equal(result.dayOutlook.rows.length, 2);
   assert.ok(
-    result.dayOutlook.rows.every((item) => item.outlook === 'Fair / typical'),
+    result.dayOutlook.rows.every((item) => item.outlook === 'Usually weak'),
     JSON.stringify(result.dayOutlook.rows)
   );
   assert.ok(
-    result.dayOutlook.rows.every((item) => Math.abs(item.relativeIndex - 1) < 0.001),
+    result.dayOutlook.rows.every((item) => item.relativeIndex < 0.1),
     JSON.stringify(result.dayOutlook.rows)
   );
 });
