@@ -82,13 +82,15 @@ function libraryRowForAiring(row = {}, indexes = {}) {
 
 function canonicalNaturalKey(row = {}) {
   const station = S.lookupKey(row.station || '');
-  const identity = S.lookupKey(
+  const sourceNola = nolaKey(row.nola_code);
+  const titleIdentity = S.lookupKey(
     row.imported_program_title
     || row.program_title
     || row.title
     || row.matched_library_title
     || ''
   );
+  const identity = sourceNola ? `nola:${sourceNola}` : (titleIdentity ? `title:${titleIdentity}` : '');
   const date = importedDateKey(row);
   const time = text(row.air_time);
   return identity ? [station, identity, date, time].join('|') : '';
