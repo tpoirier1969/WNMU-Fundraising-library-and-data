@@ -92,8 +92,8 @@
 
   function renderPackages(s) {
     $('#premium-package-table').innerHTML = table(
-      ['Exact premium / package','Categories','Fundraisers','Pledges','Pledged','Avg pledge','Reported cost','Cost %','Est. net'],
-      s.packages.map((r)=>`<tr><td><strong>${esc(r.description)}</strong>${r.isBundle ? '<span class="premium-inline-flag">Bundle</span>' : ''}${r.stationBranded ? '<span class="premium-inline-flag">WNMU</span>' : ''}</td><td>${esc((r.componentCategories||[]).join(', '))}</td><td>${num(r.fundraiserCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost,2)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
+      ['Fundraiser','Exact premium / package','Categories','Pledges','Pledged','Avg pledge','Reported cost','Cost %','Est. net'],
+      s.packages.map((r)=>`<tr><td>${esc(r.fundraiserLabel)}</td><td><strong>${esc(r.description)}</strong>${r.isBundle ? '<span class="premium-inline-flag">Bundle</span>' : ''}${r.stationBranded ? '<span class="premium-inline-flag">WNMU</span>' : ''}</td><td>${esc((r.componentCategories||[]).join(', '))}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost,2)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
       { minWidth: 1150 }
     );
   }
