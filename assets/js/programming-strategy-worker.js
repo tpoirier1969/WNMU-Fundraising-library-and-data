@@ -284,6 +284,18 @@ function buildDayOutlook(schedule = {}, rows = []) {
   return { season: targetSeason, fallback, rows: resultRows };
 }
 
+function compactSeason(season = {}) {
+  return {
+    targetSeason: season.targetSeason,
+    holiday: season.holiday,
+    holidayCategory: season.holidayCategory,
+    holidayInWindow: season.holidayInWindow,
+    holidayOutOfSeason: season.holidayOutOfSeason,
+    adjustment: season.adjustment,
+    notes: Array.isArray(season.notes) ? season.notes : []
+  };
+}
+
 function compactRecommendation(item = {}) {
   return {
     programId: item.programId,
@@ -293,14 +305,22 @@ function compactRecommendation(item = {}) {
     score: item.score,
     fit: item.fit,
     confidence: item.confidence,
-    reasons: item.reasons,
-    cautions: item.cautions,
-    season: item.season,
-    local: item.local,
-    drama: item.drama,
-    programmer: item.programmer,
-    newTitle: item.newTitle,
-    reviewedNew: item.reviewedNew
+    reasons: Array.isArray(item.reasons) ? item.reasons.slice(0, 4) : [],
+    cautions: Array.isArray(item.cautions) ? item.cautions.slice(0, 3) : [],
+    season: compactSeason(item.season),
+    local: Boolean(item.local),
+    drama: {
+      isDramaDoc: Boolean(item.drama?.isDramaDoc),
+      currentCycle: Boolean(item.drama?.currentCycle),
+      olderCycle: Boolean(item.drama?.olderCycle),
+      cycleUnknown: Boolean(item.drama?.cycleUnknown)
+    },
+    programmer: {
+      rating: item.programmer?.rating || '',
+      label: item.programmer?.label || ''
+    },
+    newTitle: Boolean(item.newTitle),
+    reviewedNew: Boolean(item.reviewedNew)
   };
 }
 
@@ -325,7 +345,10 @@ function compactStrategy(strategy = {}) {
       blocked: slot.blocked,
       reason: slot.reason,
       evidenceRows: slot.evidenceRows,
-      windowHistory: slot.windowHistory,
+      windowHistory: {
+        rows: Number(slot.windowHistory?.rates?.length || slot.windowHistory?.rows || 0),
+        medianRate: Number.isFinite(slot.windowHistory?.medianRate) ? slot.windowHistory.medianRate : null
+      },
       experimentalEvidence: slot.experimentalEvidence,
       recommendations: (slot.recommendations || []).map(compactRecommendation)
     })),
@@ -346,7 +369,7 @@ function compactStrategy(strategy = {}) {
     seasonal: (strategy.seasonal || []).map((item) => ({
       title: item.title,
       topic: item.topic,
-      season: item.season
+      season: compactSeason(item.season)
     })),
     local: (strategy.local || []).map((item) => ({
       title: item.title,
@@ -358,7 +381,10 @@ function compactStrategy(strategy = {}) {
       title: item.title,
       reasons: item.reasons
     })),
-    rights: strategy.rights,
+    rights: {
+      unavailable: (strategy.rights?.unavailable || []).slice(0, 20),
+      partial: (strategy.rights?.partial || []).slice(0, 20)
+    },
     peerEvidence: strategy.peerEvidence,
     limitations: strategy.limitations
   };
