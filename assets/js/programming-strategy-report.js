@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
-const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],peerObservations:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
+const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],peerObservations:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReady:false,workerInitPromise:null,workerPending:new Map(),requestId:0,renderGeneration:0,dataLoadMs:0,workerInitMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
 function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
@@ -13,7 +13,7 @@ function status(msg,tone=''){const n=$('#strategy-status');if(n){n.textContent=m
 function makeClient(){if(!globalThis.supabase?.createClient)throw new Error('Supabase library did not load.');if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY)throw new Error('Supabase configuration is missing.');return globalThis.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);}
 async function requireAdmin(){state.client=makeClient();const{data,error}=await state.client.auth.getSession();if(error)throw error;const session=data?.session||null,email=String(session?.user?.email||'').trim().toLowerCase(),admins=Array.isArray(cfg.ADMIN_EMAILS)?cfg.ADMIN_EMAILS.map(x=>String(x).trim().toLowerCase()).filter(Boolean):[],ok=!!(session&&(!admins.length||admins.includes(email)));if(ok){$('#strategy-access-gate')?.classList.add('hidden');$('#strategy-app')?.classList.remove('hidden');const role=$('#strategy-role');if(role)role.textContent=email?`Admin · ${email}`:'Admin';return true;}$('#strategy-app')?.classList.add('hidden');const gate=$('#strategy-access-gate');if(gate){gate.classList.remove('hidden');gate.innerHTML=`<div class="report-gate-card"><div class="report-kicker">Admin report center</div><h1>Admin access required</h1><p>${esc(session?`${email||'This account'} does not have administrator report access.`:'Sign in as an administrator from the Pledge Program Library, then return to this report.')}</p><a class="report-button primary" href="./">Open Pledge Program Library</a></div>`;}return false;}
 async function fetchAll(table,select='*',{orders=['id'],apply=null}={}){
-  const pageSize=1000,batchPages=3;
+  const pageSize=1000,batchPages=2;
   const fetchPage=async(page)=>{
     let q=state.client.from(table).select(select);
     if(typeof apply==='function')q=apply(q);
@@ -39,19 +39,18 @@ function todayKey(){return dateKey(todayStart());}
 function defaultSchedule(){return state.schedules[0]||null;}
 function scheduleLabel(s){return`${s.title} · ${fmt(s.startDate)}–${fmt(s.endDate,false)}`;}
 async function loadSchedules(){
-  status('Loading fundraiser history and upcoming choices…');
-  let q=state.client.from('pledge_fundraiser_schedules')
-    .select('id,title,start_date,end_date,created_at,updated_at,schedule_data')
+  status('Loading upcoming fundraiser choices…');
+  const{data,error}=await state.client.from('pledge_fundraiser_schedules')
+    .select('id,title,start_date,end_date,updated_at')
+    .gte('start_date',todayKey())
     .order('start_date',{ascending:true})
     .order('updated_at',{ascending:false});
-  const{data,error}=await q;
   if(error)throw error;
-  state.scheduleRows=Array.isArray(data)?data:[];
   const byRange=new Map();
-  for(const row of state.scheduleRows){
+  for(const row of Array.isArray(data)?data:[]){
     const startDate=String(row.start_date||'').slice(0,10);
     const endDate=String(row.end_date||'').slice(0,10);
-    if(!startDate||!endDate||startDate<todayKey())continue;
+    if(!startDate||!endDate)continue;
     const key=`${startDate}|${endDate}`;
     if(byRange.has(key))continue;
     byRange.set(key,{
@@ -65,7 +64,7 @@ async function loadSchedules(){
   state.schedules=[...byRange.values()].sort((a,b)=>a.startDate.localeCompare(b.startDate));
   renderControls();
   status(state.schedules.length
-    ?`${state.schedules.length} upcoming fundraiser${state.schedules.length===1?'':'s'} ready. Loading strategy data…`
+    ?`${state.schedules.length} upcoming fundraiser${state.schedules.length===1?'':'s'} ready. Loading strategy history…`
     :'No upcoming fundraiser is saved yet.');
 }
 async function loadAnalysisData(){
@@ -81,21 +80,28 @@ async function loadAnalysisData(){
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
     'rights_start','rights_end','rights_notes','distributor','premium_summary','actual_runtime_seconds'
   ].join(',');
+  const scheduleSelect='id,title,start_date,end_date,created_at,updated_at,schedule_data';
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
-  const[airings,library,overrides,peerObservations]=await Promise.all([
-    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
+  const[airings,library,scheduleRows,overrides,peerObservations]=await Promise.all([
+    fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id'],apply:q=>q.lte('air_date',cutoff)}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
+    fetchAll('pledge_fundraiser_schedules',scheduleSelect,{orders:['start_date','updated_at'],apply:q=>q.lte('end_date',cutoff)}),
     fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']}),
     fetchOptional('pledge_peer_evidence_observations',peerSelect,{orders:['id']})
   ]);
   state.airings=airings;
   state.library=library;
+  state.scheduleRows=scheduleRows;
   state.overrides=overrides;
   state.peerObservations=peerObservations;
-  state.analysisReady=true;
   state.dataLoadMs=Math.round((globalThis.performance?.now?.()??Date.now())-started);
-  status(`Strategy data loaded in ${(state.dataLoadMs/1000).toFixed(1)}s. Building report…`);
+  status(`Strategy data loaded in ${(state.dataLoadMs/1000).toFixed(1)}s. Preparing reconciled history…`);
+  const workerStarted=globalThis.performance?.now?.()??Date.now();
+  await ensureStrategyWorker();
+  state.workerInitMs=Math.round((globalThis.performance?.now?.()??Date.now())-workerStarted);
+  state.analysisReady=true;
+  status(`History ready in ${(state.workerInitMs/1000).toFixed(1)}s. Building report…`);
   void renderStrategy();
 }
 function renderControls(){
@@ -188,95 +194,97 @@ function compact(items,renderer,empty){return items?.length?`<div class="strateg
 function supportingSections(strategy){return`<section class="sheet-section strategy-two-column"><div><h2>Repeat candidates</h2>${compact(strategy.repeats,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · score ${Math.round(x.score)} · supported on ${x.slots.length} separated prime windows.</span></div>`,'No repeat candidate clears the threshold.')}<h2>Seasonal opportunities</h2>${compact(strategy.seasonal,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · ${esc(x.season.notes.join(' ')||`${x.season.targetSeason} seasonal support`)}</span></div>`,'No distinct seasonal opportunity identified.')}</div><div><h2>Local / U.P. opportunities</h2>${compact(strategy.local,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · best-window score ${Math.round(x.score)} · ${esc(x.fit)}</span></div>`,'No eligible Local / U.P. title identified.')}<h2>Titles to avoid / rest</h2>${compact(strategy.avoid,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.reasons.join(' · '))}</span></div>`,'No title needs a prominent rest/avoid caution.')}</div></section>`;}
 function rightsSection(strategy){const desc=x=>`${x.rightsStart?`Starts ${fmt(x.rightsStart)}`:''}${x.rightsStart&&x.rightsEnd?' · ':''}${x.rightsEnd?`Ends ${fmt(x.rightsEnd)}`:''}`;return`<section class="sheet-section strategy-two-column"><div><h2>Rights constraints</h2>${compact(strategy.rights.unavailable.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No fully unavailable title detected.')}</div><div><h2>Partial-drive rights</h2>${compact(strategy.rights.partial.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No partial-drive rights restriction detected.')}</div></section>`;}
 function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`;}
-function clearStrategyWorkerTimer(){if(state.workerTimer){globalThis.clearTimeout(state.workerTimer);state.workerTimer=null;}}
-function stopStrategyWorker(reason='Superseded'){
-  clearStrategyWorkerTimer();
-  if(state.workerReject){
-    const reject=state.workerReject;
-    state.workerReject=null;
-    reject(new Error(reason));
+function rejectWorkerPending(message='Strategy worker stopped.'){
+  for(const pending of state.workerPending.values()){
+    if(pending.timer)globalThis.clearTimeout(pending.timer);
+    pending.reject(new Error(message));
   }
-  if(state.worker){
-    state.worker.terminate();
-    state.worker=null;
-  }
+  state.workerPending.clear();
 }
-function runStrategyWorker(schedule){
-  stopStrategyWorker('Superseded');
-  const requestId=++state.requestId;
-  return new Promise((resolve,reject)=>{
-    let worker;
-    try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.186');
-    }catch(error){
-      reject(error);
+function resetStrategyWorker(message='Strategy worker reset.'){
+  rejectWorkerPending(message);
+  if(state.worker)state.worker.terminate();
+  state.worker=null;
+  state.workerReady=false;
+  state.workerInitPromise=null;
+}
+function createStrategyWorker(){
+  if(state.worker)return state.worker;
+  const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.188');
+  state.worker=worker;
+  worker.onmessage=(event)=>{
+    const message=event.data||{};
+    if(message.type==='progress'){
+      if(message.requestId===state.requestId||message.stage==='init')status(message.message||'Building strategy…');
       return;
     }
-    state.worker=worker;
-    state.workerReject=reject;
-    state.workerTimer=globalThis.setTimeout(()=>{
-      if(state.worker!==worker)return;
-      state.workerReject=null;
-      state.workerTimer=null;
-      worker.terminate();
-      state.worker=null;
-      reject(new Error('Strategy analysis exceeded 90 seconds and was stopped. Reload the report and try again.'));
-    },90000);
-    worker.onmessage=(event)=>{
-      const message=event.data||{};
-      if(message.requestId!==requestId)return;
-      if(message.type==='progress'){
-        status(message.message||'Building strategy…');
-        return;
-      }
-      if(message.type==='error'){
-        clearStrategyWorkerTimer();
-        state.workerReject=null;
-        worker.terminate();
-        if(state.worker===worker)state.worker=null;
-        reject(new Error(message.message||'Strategy worker failed.'));
-        return;
-      }
-      if(message.type==='result'){
-        clearStrategyWorkerTimer();
-        state.workerReject=null;
-        worker.terminate();
-        if(state.worker===worker)state.worker=null;
-        resolve(message);
-      }
-    };
-    worker.onerror=(event)=>{
-      clearStrategyWorkerTimer();
-      state.workerReject=null;
-      worker.terminate();
-      if(state.worker===worker)state.worker=null;
-      reject(new Error(event?.message||'Strategy worker failed to load.'));
-    };
+    const pending=state.workerPending.get(message.requestId);
+    if(!pending)return;
+    if(pending.timer)globalThis.clearTimeout(pending.timer);
+    state.workerPending.delete(message.requestId);
+    if(message.type==='error'){
+      pending.reject(new Error(message.message||'Strategy worker failed.'));
+      return;
+    }
+    if(message.type==='ready')state.workerReady=true;
+    pending.resolve(message);
+  };
+  worker.onerror=(event)=>{
+    const message=event?.message||'Strategy worker failed to load.';
+    resetStrategyWorker(message);
+  };
+  return worker;
+}
+function postWorkerRequest(type,payload={},timeoutMs=90000){
+  const worker=createStrategyWorker();
+  const requestId=++state.requestId;
+  return new Promise((resolve,reject)=>{
+    const timer=globalThis.setTimeout(()=>{
+      state.workerPending.delete(requestId);
+      reject(new Error(`Strategy ${type} exceeded ${Math.round(timeoutMs/1000)} seconds and was stopped.`));
+      resetStrategyWorker('Strategy worker timed out.');
+    },timeoutMs);
+    state.workerPending.set(requestId,{resolve,reject,timer});
     try{
-      worker.postMessage({
-        requestId,
-        schedule,
-        library:state.library,
-        airings:state.airings,
-        overrides:state.overrides,
-        scheduleRows:state.scheduleRows,
-        peerObservations:state.peerObservations,
-        now:new Date().toISOString()
-      });
+      worker.postMessage({type,requestId,...payload});
     }catch(error){
-      clearStrategyWorkerTimer();
-      state.workerReject=null;
-      worker.terminate();
-      if(state.worker===worker)state.worker=null;
+      globalThis.clearTimeout(timer);
+      state.workerPending.delete(requestId);
       reject(error);
     }
   });
 }
+function ensureStrategyWorker(){
+  if(state.workerReady&&state.worker)return Promise.resolve({type:'ready'});
+  if(state.workerInitPromise)return state.workerInitPromise;
+  state.workerInitPromise=postWorkerRequest('init',{
+    library:state.library,
+    airings:state.airings,
+    overrides:state.overrides,
+    scheduleRows:state.scheduleRows,
+    peerObservations:state.peerObservations,
+    cutoff:todayKey()
+  },90000).then((message)=>{
+    state.workerReady=true;
+    return message;
+  }).catch((error)=>{
+    state.workerInitPromise=null;
+    throw error;
+  });
+  return state.workerInitPromise;
+}
+async function runStrategyWorker(schedule){
+  await ensureStrategyWorker();
+  return postWorkerRequest('analyze',{
+    schedule,
+    now:new Date().toISOString()
+  },90000);
+}
 
 async function renderStrategy(){
+  const generation=++state.renderGeneration;
   const schedule=selectedSchedule(),out=$('#strategy-output');
   if(!schedule||!out){
-    stopStrategyWorker('No fundraiser selected');
     if(out)out.innerHTML='<div class="report-empty">No upcoming fundraiser is available.</div>';
     return;
   }
@@ -294,6 +302,7 @@ async function renderStrategy(){
 
   try{
     const result=await runStrategyWorker(schedule);
+    if(generation!==state.renderGeneration||String(schedule.id)!==String(state.selectedScheduleId))return;
     const strategy=result.strategy||{};
     const dayOutlook=result.dayOutlook||{};
     const hourlyPatterns=result.hourlyPatterns||{};
@@ -306,6 +315,7 @@ async function renderStrategy(){
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
     const perf={
       dataLoadMs:state.dataLoadMs,
+      workerInitMs:state.workerInitMs,
       workerTotalMs:Number(diagnostics.totalMs||0),
       prepareMs:Number(diagnostics.prepareMs||0),
       strategyMs:Number(diagnostics.strategyMs||0),
@@ -316,7 +326,7 @@ async function renderStrategy(){
       evidenceRows:Number(diagnostics.evidenceRows||0)
     };
     console.info('[Fundraiser Programming Strategy performance]',perf);
-    status(`Strategy ready · data ${(perf.dataLoadMs/1000).toFixed(1)}s · analysis ${(perf.workerTotalMs/1000).toFixed(1)}s · render ${(perf.renderMs/1000).toFixed(1)}s.`,'good');
+    status(`Strategy ready · data ${(perf.dataLoadMs/1000).toFixed(1)}s · history ${(perf.workerInitMs/1000).toFixed(1)}s · analysis ${(perf.workerTotalMs/1000).toFixed(1)}s · render ${(perf.renderMs/1000).toFixed(1)}s.`,'good');
   }catch(e){
     if(e?.message==='Superseded'||e?.message==='No fundraiser selected')return;
     console.error(e);
