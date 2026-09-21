@@ -490,18 +490,20 @@
   }
 
   function packageAnalysis(rows = []) {
-    const groups = groupBy(rows, (row) => normalize(row.description));
+    const groups = groupBy(rows, (row) => `${text(row.fundraiserKey)}|${normalize(row.description)}`);
     return [...groups.values()].map((packageRows) => ({
+      fundraiserKey: packageRows[0]?.fundraiserKey || '',
+      fundraiserLabel: packageRows[0]?.fundraiserLabel || packageRows[0]?.fundraiserKey || '',
       description: packageRows[0]?.description || 'Unknown premium',
       code: packageRows[0]?.code || '',
       codes: [...new Set(packageRows.map((row) => text(row.code)).filter(Boolean))],
       componentCategories: [...new Set(packageRows.flatMap((row) => row.componentCategories || []))],
       stationBranded: packageRows.some((row) => row.stationBranded),
       isBundle: packageRows.some((row) => row.isBundle),
-      fundraiserCount: new Set(packageRows.map((row) => row.fundraiserKey)).size,
+      fundraiserCount: 1,
       ...metricSummary(packageRows),
       rowsDetail: packageRows
-    })).sort((a, b) => b.pledgedDollars - a.pledgedDollars);
+    })).sort((a, b) => b.fundraiserKey.localeCompare(a.fundraiserKey) || b.pledgedDollars - a.pledgedDollars);
   }
 
   function mappedGroupAnalysis(rows = [], field = 'programTitle') {
