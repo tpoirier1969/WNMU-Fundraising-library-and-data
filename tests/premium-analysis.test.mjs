@@ -144,3 +144,14 @@ test('generic combo can borrow component categories from current offer while pre
   assert.equal(mapped.componentCategorySource, 'Current-offer proxy');
   assert.ok(mapped.componentCategories.includes('DVD / Blu-ray') || mapped.componentCategories.includes('CD / Vinyl') || mapped.componentCategories.includes('Book'));
 });
+
+
+test('the same exact premium description remains separate history in different fundraisers', () => {
+  const rows = [
+    { fundraiserKey:'2025-12', fundraiserLabel:'December 2025', description:'Example DVD', componentCategories:['DVD / Blu-ray'], pledgeCount:2, pledgedDollars:240, sentCost:20, outstandingCost:0 },
+    { fundraiserKey:'2026-06', fundraiserLabel:'June 2026', description:'Example DVD', componentCategories:['DVD / Blu-ray'], pledgeCount:3, pledgedDollars:450, sentCost:45, outstandingCost:0 }
+  ];
+  const packages = A.packageAnalysis(rows);
+  assert.equal(packages.length, 2);
+  assert.deepEqual(new Set(packages.map((item) => item.fundraiserKey)), new Set(['2025-12','2026-06']));
+});
