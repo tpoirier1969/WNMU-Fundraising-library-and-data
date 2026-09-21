@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Premium Analytics · WNMU-TV PBS</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
+  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.187">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="config.js"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.187"></script>
+  <script defer src="assets/js/premium-analysis.js?v=0.22.187"></script>
+  <script defer src="assets/js/premium-data.js?v=0.22.187"></script>
+  <script defer src="assets/js/premium-analytics.js?v=0.22.187"></script>
+</head>
+<body>
+  <div id="premium-access-gate" class="report-access-gate hidden"></div>
+  <div id="premium-app" class="premium-shell hidden">
+    <header class="premium-topbar">
+      <div class="premium-brand"><img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo"><div><h1>Premium Analytics</h1><p>Exact premium packages, costs, category patterns, and program/topic relationships</p></div></div>
+      <div class="premium-actions"><span id="premium-role" class="premium-role">Checking access…</span><a class="premium-button" href="premium-report.html">Premium report</a><a class="premium-button" href="reports.html">Report Center</a><a class="premium-button" href="./">Program Library</a></div>
+    </header>
+    <main class="premium-main">
+      <section class="premium-toolbar">
+        <label class="premium-field"><span>Import premium-cost reports (.xls/.xlsx)</span><input id="premium-file-input" type="file" multiple accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
+        <label class="premium-field"><span>View</span><select id="premium-fundraiser-filter"><option value="all">All imported fundraisers</option></select></label>
+        <button id="premium-refresh-library" class="premium-button" type="button">Refresh Program Library</button>
+        <button id="premium-clear" class="premium-button" type="button">Clear browser premium data</button>
+        <div><div id="premium-import-count" class="premium-role">0 fundraiser reports stored</div></div>
+        <div id="premium-status" class="premium-status">Checking administrator access…</div>
+      </section>
+
+      <section class="premium-section"><h2>Overview</h2><p>The exact selectable package is the accounting unit. Components such as DVD, book, mug or blanket are analytical tags and never receive duplicated revenue.</p><div id="premium-overview"></div></section>
+      <section class="premium-section"><h2>Fundraiser premium economics</h2><p>Compares premium-taking behavior and premium expense drive by drive.</p><div id="premium-fundraiser-table"></div></section>
+      <section class="premium-section"><h2>Category trends</h2><p>Looks for useful patterns across package attributes while preserving the exact bundle as the actual premium.</p><div class="premium-grid-two"><div id="premium-category-chart"></div><div id="premium-category-table"></div></div></section>
+      <section class="premium-section"><h2>Exact premium packages</h2><p>One row per actual premium/package identity across the selected fundraiser history.</p><div id="premium-package-table"></div></section>
+      <section class="premium-section"><h2>Program + premium</h2><p>Current Program Library premium text is used as a historical proxy when it provides a credible match.</p><div id="premium-program-table"></div></section>
+      <section class="premium-section"><h2>Topic + premium</h2><p>Premium economics rolled up through the mapped Program Library topic.</p><div id="premium-topic-table"></div></section>
+      <section class="premium-section"><h2>Combined program / topic / premium context</h2><p id="premium-combined-status">Loading existing fundraiser analytics...</p><h3>Program context</h3><div id="premium-combined-program-table"></div><h3>Topic context</h3><div id="premium-combined-topic-table"></div></section>
+      <section class="premium-section"><h2>Data quality and mapping</h2><p>Separates documented facts, current-offer proxies, text inference, and unknowns rather than silently converting guesses into history.</p><div id="premium-quality"></div></section>
+    </main>
+  </div>
+</body>
+</html>

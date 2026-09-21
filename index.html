@@ -131,6 +131,17 @@
       link.style.alignItems='center';
       link.style.justifyContent='center';
       actions.insertBefore(link,doc.getElementById('refresh-button')||null);
+      const premiumLink=doc.createElement('a');
+      premiumLink.id='premium-analytics-link';
+      premiumLink.href=`premium-analytics.html?v=${VERSION}`;
+      premiumLink.className='ghost hidden';
+      premiumLink.dataset.adminOnly='true';
+      premiumLink.textContent='Premium Analytics';
+      premiumLink.style.textDecoration='none';
+      premiumLink.style.display='inline-flex';
+      premiumLink.style.alignItems='center';
+      premiumLink.style.justifyContent='center';
+      actions.insertBefore(premiumLink,doc.getElementById('refresh-button')||null);
     }
     function injectAssets(doc){
       const css=doc.createElement('link');css.rel='stylesheet';css.href=`assets/library-split-default.css?v=${VERSION}`;doc.head.append(css);
