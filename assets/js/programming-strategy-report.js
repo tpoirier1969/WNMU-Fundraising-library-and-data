@@ -125,14 +125,15 @@ function groupedDayparts(strategy){
   const groups=new Map();
   for(const slot of strategy.windows.filter(x=>!x.experimental&&!x.blocked)){
     const key=`${slot.weekday}|${slot.startMinutes}|${slot.endMinutes}`;
-    const rates=slot.windowHistory?.rates||[];
+    const rows=Number(slot.windowHistory?.rows||0);
+    const medianRate=Number.isFinite(slot.windowHistory?.medianRate)?slot.windowHistory.medianRate:null;
     const existing=groups.get(key);
-    if(!existing||rates.length>(existing.rates?.length||0)){
-      groups.set(key,{weekday:slot.weekday,label:slot.label,startMinutes:slot.startMinutes,endMinutes:slot.endMinutes,rows:rates.length,rates:[...rates]});
+    if(!existing||rows>existing.rows){
+      groups.set(key,{weekday:slot.weekday,label:slot.label,startMinutes:slot.startMinutes,endMinutes:slot.endMinutes,rows,median:medianRate});
     }
   }
   const weekdayOrder=new Map(['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((d,i)=>[d,i]));
-  return[...groups.values()].map(g=>({...g,median:median(g.rates)}))
+  return[...groups.values()]
     .sort((a,b)=>(weekdayOrder.get(a.weekday)??9)-(weekdayOrder.get(b.weekday)??9)||a.startMinutes-b.startMinutes);
 }
 
