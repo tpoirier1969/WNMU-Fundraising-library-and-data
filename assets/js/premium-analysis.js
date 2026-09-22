@@ -14,7 +14,7 @@
     ['Drinkware', /\b(?:mugs?|tumblers?|water bottles?|bottles?|tankards?|travel cups?|glassware|glasses?)\b/i],
     ['Tote / Bag', /\b(?:totes?|bags?|backpacks?)\b/i],
     ['Home / Lifestyle', /\b(?:blanke(?:t)?s?|throws?|pillows?|ornaments?|thermometers?|umbrellas?|home goods?|wall art|posters?|prints?)\b/i],
-    ['Experience / Event', /\b(?:classes?|workshops?|tickets?|tours?|experiences?|meet and greet|events?)\b/i],
+    ['Experience / Event', /\b(?:class(?:es)?|workshops?|tickets?|tours?|experiences?|meet and greet|events?)\b/i],
     ['Sponsorship / Recognition', /\b(?:day sponsor|question spon(?:sor)?|program patron|prog patron|station sponsor|sponsors?|recognition)\b/i],
     ['Electronics / Radio', /\b(?:radios?|headphones?|speakers?|electronics?)\b/i],
     ['Specialty / Collectible', /\b(?:mini guitar|guitars?|bridge cards?|playing cards?|card set|collectibles?)\b/i],
