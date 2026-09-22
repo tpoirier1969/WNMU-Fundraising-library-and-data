@@ -179,7 +179,7 @@ test('generic historical combo is treated as a bundle instead of Other', () => {
   assert.equal(combo.isBundle, true);
   assert.equal(combo.primaryCategory, 'Bundle / Multi-item');
   assert.equal(combo.componentCategories.includes('Other'), false);
-  const categories = A.categoryAnalysis([{
+  const row = {
     fundraiserKey:'2025-03',
     description:'ALL CREATURES WISDOM COMBO',
     ...combo,
@@ -187,9 +187,17 @@ test('generic historical combo is treated as a bundle instead of Other', () => {
     pledgedDollars:300,
     sentCost:77.25,
     outstandingCost:0
+  };
+  const categories = A.categoryAnalysis([row]);
+  const compositions = A.compositionAnalysis([{
+    ...row,
+    packageCompositionKey:'bundle-composition-unknown',
+    packageCompositionLabel:'Bundle · composition unknown',
+    packageCompositionComplete:false
   }]);
-  assert.ok(categories.some((item) => item.category === 'Bundle / Multi-item'));
+  assert.equal(categories.some((item) => item.category === 'Bundle / Multi-item'), false);
   assert.equal(categories.some((item) => item.category === 'Other'), false);
+  assert.ok(compositions.some((item) => item.label === 'Bundle · composition unknown'));
 });
 
 test('stored legacy Other labels are reclassified on load without requiring reimport', () => {
@@ -236,8 +244,74 @@ test('March 2025 problem premiums no longer collapse into Other', () => {
   }));
   const categories = A.categoryAnalysis(rows);
   assert.equal(categories.some((item) => item.category === 'Other'), false);
-  assert.ok(categories.some((item) => item.category === 'Bundle / Multi-item'));
+  assert.equal(categories.some((item) => item.category === 'Bundle / Multi-item'), false);
+  assert.ok(rows.some((row) => row.isBundle));
   assert.ok(categories.some((item) => item.category === 'DVD / Blu-ray'));
   assert.ok(categories.some((item) => item.category === 'CD / Vinyl'));
   assert.ok(categories.some((item) => item.category === 'Experience / Event'));
+});
+
+
+test('package composition creates a stable recipe instead of using Bundle as the analytic category', () => {
+  const recipe = A.packageComposition(['Book','CD / Vinyl','DVD / Blu-ray'], true);
+  assert.equal(recipe.label, 'DVD / Blu-ray + CD / Vinyl + Book');
+  assert.equal(recipe.complete, true);
+  assert.deepEqual([...recipe.parts], ['DVD / Blu-ray','CD / Vinyl','Book']);
+});
+
+test('package composition identifies partially known bundles without pretending the recipe is complete', () => {
+  const recipe = A.packageComposition(['DVD / Blu-ray'], true);
+  assert.equal(recipe.label, 'DVD / Blu-ray + unknown component(s)');
+  assert.equal(recipe.complete, false);
+});
+
+test('different titles with the same component recipe roll up into one composition trend', () => {
+  const rows = [
+    {
+      fundraiserKey:'2025-03', fundraiserLabel:'March 2025', description:'PROGRAM A COMBO', programTitle:'Program A',
+      componentCategories:['DVD / Blu-ray','CD / Vinyl','Book'], isBundle:true,
+      packageCompositionKey:'dvd-blu-ray+cd-vinyl+book', packageCompositionLabel:'DVD / Blu-ray + CD / Vinyl + Book',
+      packageCompositionComplete:true, pledgeCount:2, pledgedDollars:300, sentCost:50, outstandingCost:0
+    },
+    {
+      fundraiserKey:'2026-03', fundraiserLabel:'March 2026', description:'PROGRAM B COMBO', programTitle:'Program B',
+      componentCategories:['Book','DVD / Blu-ray','CD / Vinyl'], isBundle:true,
+      packageCompositionKey:'dvd-blu-ray+cd-vinyl+book', packageCompositionLabel:'DVD / Blu-ray + CD / Vinyl + Book',
+      packageCompositionComplete:true, pledgeCount:3, pledgedDollars:540, sentCost:90, outstandingCost:0
+    }
+  ];
+  const compositions = A.compositionAnalysis(rows);
+  assert.equal(compositions.length, 1);
+  assert.equal(compositions[0].distinctPackages, 2);
+  assert.equal(compositions[0].distinctTitles, 2);
+  assert.equal(compositions[0].fundraiserCount, 2);
+  assert.equal(compositions[0].pledgeCount, 5);
+  assert.equal(compositions[0].pledgedDollars, 840);
+});
+
+test('current-offer proxy can supply the package recipe for a generic historical combo', () => {
+  const rows = [{ description:'BILLY JOEL 100TH COMBO', code:'BJ100CMB', componentCategories:[], isBundle:true }];
+  const programs = [{ id:'bj', title:'Billy Joel: Live at the Garden', premium_summary:'Billy Joel 100th Combo: DVD + 2-CD Set + Book' }];
+  const mapped = A.addMappings(rows, [programs[0]])[0];
+  assert.equal(mapped.packageCompositionLabel, 'DVD / Blu-ray + CD / Vinyl + Book');
+  assert.equal(mapped.packageCompositionSource, 'Current-offer proxy');
+});
+
+
+test('brand scope conservatively separates WNMU, PBS national, program-title, and unknown premiums', () => {
+  assert.equal(A.premiumBrandScope({description:'WNMU GREEN WATER BOTTLE',code:'WNMUGWB'}).scope, 'WNMU / local');
+  assert.equal(A.premiumBrandScope({description:'PBS EMERGENCY RADIO',code:'PBSRADIO'}).scope, 'PBS / national');
+  assert.equal(A.premiumBrandScope({description:'ALL CREATURES SEASON 6 DVDS',code:'ACGS6DVD'}, {id:'acgs'}, {confidence:'Current-offer proxy'}).scope, 'Program / title');
+  assert.equal(A.premiumBrandScope({description:'MYSTERY ITEM',code:'XYZ'}).scope, 'Unclassified');
+});
+
+test('brand scope analysis includes net after premium cost', () => {
+  const rows = [
+    {brandScope:'WNMU / local',fundraiserKey:'2026-06',description:'WNMU TOTE',programTitle:'',pledgeCount:2,pledgedDollars:240,sentCost:30,outstandingCost:0},
+    {brandScope:'WNMU / local',fundraiserKey:'2026-08',description:'WNMU BOTTLE',programTitle:'',pledgeCount:1,pledgedDollars:120,sentCost:10,outstandingCost:0}
+  ];
+  const item = A.brandScopeAnalysis(rows)[0];
+  assert.equal(item.pledgedDollars, 360);
+  assert.equal(item.totalPremiumCost, 40);
+  assert.equal(item.estimatedNetAfterPremium, 320);
 });
