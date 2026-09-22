@@ -239,6 +239,32 @@
     };
   }
 
+  const WNMU_LOCAL_RE = /\bwnmu\b|\btv\s*20\d{2}\b|\bpub(?:lic)? media matters\b/i;
+  const WNMU_LOCAL_CODE_RE = /^(?:WNMU|TV\d{2}|PMM)/i;
+  const PBS_NATIONAL_RE = /\bpbs\b/i;
+  const PBS_NATIONAL_CODE_RE = /^PBS/i;
+
+  function premiumBrandScope(premium = {}, program = null, mapping = {}) {
+    const description = text(premium.description);
+    const code = text(premium.code);
+    if (WNMU_LOCAL_RE.test(description) || WNMU_LOCAL_CODE_RE.test(code)) {
+      return { scope: 'WNMU / local', evidence: 'Explicit/local station label' };
+    }
+    if (PBS_NATIONAL_RE.test(description) || PBS_NATIONAL_CODE_RE.test(code)) {
+      return { scope: 'PBS / national', evidence: 'Explicit PBS/national label' };
+    }
+    if (program || text(premium.programTitle)) {
+      return {
+        scope: 'Program / title',
+        evidence: mapping.confidence || premium.mappingConfidence || 'Program mapping'
+      };
+    }
+    if (premium.stationGeneric && /\b(?:day sponsor|station sponsor)\b/i.test(description)) {
+      return { scope: 'WNMU / local', evidence: 'Station-specific offer' };
+    }
+    return { scope: 'Unclassified', evidence: 'Insufficient branding evidence' };
+  }
+
   function dataQualityIssues(row) {
     const issues = [];
     if (row.rowType !== 'premium') return issues;
@@ -381,10 +407,13 @@
         ? proxyCategories
         : (reportCategories.length ? reportCategories : (refreshedClass.isBundle ? [] : ['Unspecified program premium']));
       const composition = packageComposition(componentCategories, refreshedClass.isBundle);
+      const brand = premiumBrandScope({ ...row, ...refreshedClass }, program, mapping);
       return {
         ...row,
         ...refreshedClass,
         componentCategories,
+        brandScope: brand.scope,
+        brandScopeEvidence: brand.evidence,
         packageCompositionKey: composition.key,
         packageCompositionLabel: composition.label,
         packageCompositionParts: composition.parts,
@@ -482,6 +511,19 @@
         rowsDetail: compositionRows
       };
     }).sort((a, b) => b.distinctPackages - a.distinctPackages || b.pledgedDollars - a.pledgedDollars);
+  }
+
+  function brandScopeAnalysis(rows = []) {
+    const groups = groupBy(rows, (row) => row.brandScope || premiumBrandScope(row).scope);
+    return [...groups.entries()].map(([scope, scopeRows]) => ({
+      scope,
+      ...metricSummary(scopeRows),
+      distinctPackages: new Set(scopeRows.map((row) => `${row.fundraiserKey}|${normalize(row.description)}`)).size,
+      distinctTitles: new Set(scopeRows.map((row) => normalize(row.programTitle)).filter(Boolean)).size,
+      fundraiserCount: new Set(scopeRows.map((row) => row.fundraiserKey)).size,
+      evidenceTypes: [...new Set(scopeRows.map((row) => row.brandScopeEvidence || 'Insufficient branding evidence'))],
+      rowsDetail: scopeRows
+    })).sort((a, b) => b.pledgedDollars - a.pledgedDollars);
   }
 
   function fundraiserAnalysis(rows = [], summaries = []) {
@@ -587,6 +629,8 @@
       componentCategories: [...new Set(packageRows.flatMap((row) => row.componentCategories || []))],
       packageCompositionLabel: packageRows[0]?.packageCompositionLabel || packageComposition(packageRows[0]?.componentCategories, packageRows[0]?.isBundle).label,
       packageCompositionComplete: packageRows.every((row) => row.packageCompositionComplete !== false),
+      brandScope: packageRows[0]?.brandScope || premiumBrandScope(packageRows[0] || {}).scope,
+      brandScopeEvidence: packageRows[0]?.brandScopeEvidence || premiumBrandScope(packageRows[0] || {}).evidence,
       stationBranded: packageRows.some((row) => row.stationBranded),
       isBundle: packageRows.some((row) => row.isBundle),
       fundraiserCount: 1,
@@ -754,6 +798,7 @@
     mapColumns,
     classifyPackage,
     packageComposition,
+    premiumBrandScope,
     parseMatrix,
     splitPremiumSummary,
     bestPremiumSummaryLine,
@@ -762,6 +807,7 @@
     metricSummary,
     categoryAnalysis,
     compositionAnalysis,
+    brandScopeAnalysis,
     fundraiserAnalysis,
     portfolioSummary,
     packageAnalysis,
