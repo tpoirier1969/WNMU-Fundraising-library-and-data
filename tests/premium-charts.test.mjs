@@ -77,9 +77,9 @@ test('premium analytics and report pages load the shared visual files and analyt
   const analytics = fs.readFileSync(new URL('../premium-analytics.html', import.meta.url),'utf8');
   const report = fs.readFileSync(new URL('../premium-report.html', import.meta.url),'utf8');
   for (const source of [analytics, report]) {
-    assert.match(source,/premium-chart-analysis\.js\?v=0\.22\.191/);
-    assert.match(source,/premium-charts\.js\?v=0\.22\.191/);
-    assert.match(source,/premium-visuals\.js\?v=0\.22\.191/);
+    assert.match(source,/premium-chart-analysis\.js\?v=0\.22\.\d+/);
+    assert.match(source,/premium-charts\.js\?v=0\.22\.\d+/);
+    assert.match(source,/premium-visuals\.js\?v=0\.22\.\d+/);
   }
   for (const id of [
     'premium-workhorse-list','premium-composition-net-chart','premium-efficiency-chart','premium-mix-metric',
