@@ -19,7 +19,7 @@ test('fundraiser filename maps PMMYY to fundraiser season and year', () => {
 test('bundle remains one premium while components become analytical tags', () => {
   const item = A.classifyPackage('All Creatures Season 6 2 DVD Set + James Herriot Paperback + Blanket');
   assert.equal(item.isBundle, true);
-  assert.deepEqual([...item.componentCategories].sort(), ['Blanket / Home','Book','DVD / Blu-ray'].sort());
+  assert.deepEqual([...item.componentCategories].sort(), ['Home / Lifestyle','Book','DVD / Blu-ray'].sort());
 });
 
 test('category analytics do not split package accounting rows', () => {
@@ -154,4 +154,58 @@ test('the same exact premium description remains separate history in different f
   const packages = A.packageAnalysis(rows);
   assert.equal(packages.length, 2);
   assert.deepEqual(new Set(packages.map((item) => item.fundraiserKey)), new Set(['2025-12','2026-06']));
+});
+
+
+test('historical Allegiance abbreviations and plurals classify into useful categories', () => {
+  const dvd = A.classifyPackage('ALL CREATURES SEASON 5 DVDS', 'ACGS5DVD');
+  assert.ok(dvd.componentCategories.includes('DVD / Blu-ray'));
+
+  const vinyl = A.classifyPackage('BOCELLI IL MARE CALMO VNL', 'BOCVNL');
+  assert.ok(vinyl.componentCategories.includes('CD / Vinyl'));
+
+  const event = A.classifyPackage('PAINTING CLASS SATURDAY, 11/7', 'PAINTSAT');
+  assert.ok(event.componentCategories.includes('Experience / Event'));
+
+  const home = A.classifyPackage('MYSTERY GOREY UMBRELLA', 'MMUMB');
+  assert.ok(home.componentCategories.includes('Home / Lifestyle'));
+
+  const sponsor = A.classifyPackage('HIGH SCHOOL BOWL QUESTION SPON', 'HSBQST');
+  assert.ok(sponsor.componentCategories.includes('Sponsorship / Recognition'));
+});
+
+test('generic historical combo is treated as a bundle instead of Other', () => {
+  const combo = A.classifyPackage('ALL CREATURES WISDOM COMBO', 'ACWDCMB');
+  assert.equal(combo.isBundle, true);
+  assert.equal(combo.primaryCategory, 'Bundle / Multi-item');
+  assert.equal(combo.componentCategories.includes('Other'), false);
+  const categories = A.categoryAnalysis([{
+    fundraiserKey:'2025-03',
+    description:'ALL CREATURES WISDOM COMBO',
+    ...combo,
+    pledgeCount:1,
+    pledgedDollars:300,
+    sentCost:77.25,
+    outstandingCost:0
+  }]);
+  assert.ok(categories.some((item) => item.category === 'Bundle / Multi-item'));
+  assert.equal(categories.some((item) => item.category === 'Other'), false);
+});
+
+test('stored legacy Other labels are reclassified on load without requiring reimport', () => {
+  const rows = [
+    { description:'ALL CREATURES SEASON 5 DVDS', code:'ACGS5DVD', componentCategories:['Other'], isBundle:false },
+    { description:'TONY BENNET VIVA DUETS COMBO', code:'TBCOMBO', componentCategories:['Other'], isBundle:true }
+  ];
+  const mapped = A.addMappings(rows, []);
+  assert.ok(mapped[0].componentCategories.includes('DVD / Blu-ray'));
+  assert.equal(mapped[0].componentCategories.includes('Other'), false);
+  assert.equal(mapped[1].isBundle, true);
+  assert.equal(mapped[1].componentCategories.includes('Other'), false);
+});
+
+test('truly unspecified format is labeled explicitly instead of being dumped into Other', () => {
+  const item = A.classifyPackage('60S AND 70S SOUL CELEBRATION', '6070SOUL');
+  assert.deepEqual([...item.componentCategories], ['Unspecified program premium']);
+  assert.equal(item.primaryCategory, 'Unspecified program premium');
 });
