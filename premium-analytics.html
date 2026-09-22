@@ -5,14 +5,17 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Premium Analytics · WNMU-TV PBS</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.190">
+  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.191">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.190"></script>
-  <script defer src="assets/js/premium-analysis.js?v=0.22.190"></script>
-  <script defer src="assets/js/premium-data.js?v=0.22.190"></script>
-  <script defer src="assets/js/premium-analytics.js?v=0.22.190"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.191"></script>
+  <script defer src="assets/js/premium-analysis.js?v=0.22.191"></script>
+  <script defer src="assets/js/premium-data.js?v=0.22.191"></script>
+  <script defer src="assets/js/premium-chart-analysis.js?v=0.22.191"></script>
+  <script defer src="assets/js/premium-charts.js?v=0.22.191"></script>
+  <script defer src="assets/js/premium-analytics.js?v=0.22.191"></script>
+  <script defer src="assets/js/premium-visuals.js?v=0.22.191"></script>
 </head>
 <body>
   <div id="premium-access-gate" class="report-access-gate hidden"></div>
@@ -32,6 +35,74 @@
       </section>
 
       <section class="premium-section"><h2>Overview</h2><p>The exact selectable package is the accounting unit. Components such as DVD, book, mug or blanket are analytical tags and never receive duplicated revenue.</p><div id="premium-overview"></div></section>
+      <section id="premium-visual-dashboard" class="premium-section">
+        <h2>Visual analytics</h2>
+        <p>These graphs use the same fundraiser filter as the tables below. Exact premiums remain fundraiser-specific; package recipes can be compared across titles.</p>
+        <div class="premium-visual-grid">
+          <article class="premium-chart-card premium-chart-card-wide">
+            <div class="premium-chart-card-head"><div><h3>Premium Workhorses · Top 5</h3><p>Which exact premiums combine strong net dollars with broad donor response?</p></div></div>
+            <div id="premium-workhorse-list"></div>
+          </article>
+
+          <article class="premium-chart-card">
+            <div class="premium-chart-card-head"><div><h3>Net after premium by package composition</h3><p>Compares recurring recipes such as DVD + CD + Book.</p></div></div>
+            <div id="premium-composition-net-chart"></div>
+          </article>
+
+          <article class="premium-chart-card">
+            <div class="premium-chart-card-head"><div><h3>Net with premium-cost burden</h3><p>High net is good; the cost percentage beside each bar shows how expensive that result was to generate.</p></div></div>
+            <div id="premium-efficiency-chart"></div>
+          </article>
+
+          <article class="premium-chart-card premium-chart-card-wide">
+            <div class="premium-chart-card-head">
+              <div><h3>Fundraiser premium mix over time</h3><p>Stacked by normalized package composition.</p></div>
+              <label class="premium-chart-control"><span>Value</span><select id="premium-mix-metric"><option value="net">Net after premium</option><option value="pledged">Pledged dollars</option><option value="pledges">Pledge count</option><option value="cost">Premium cost</option></select></label>
+            </div>
+            <div id="premium-mix-chart"></div>
+          </article>
+
+          <article class="premium-chart-card">
+            <div class="premium-chart-card-head"><div><h3>Average pledge · premium vs no premium</h3><p>Shows whether premium-taking donors are actually giving more.</p></div></div>
+            <div id="premium-average-pledge-chart"></div>
+          </article>
+
+          <article class="premium-chart-card">
+            <div class="premium-chart-card-head"><div><h3>Premium take rate vs cost %</h3><p>More premium takers are only helpful if premium expense stays under control.</p></div></div>
+            <div id="premium-take-rate-chart"></div>
+          </article>
+
+          <article class="premium-chart-card premium-chart-card-wide">
+            <div class="premium-chart-card-head">
+              <div><h3>Exact premium ranking</h3><p>Rank the actual fundraiser-specific premium offers, not just their component categories.</p></div>
+              <div class="premium-chart-control-row">
+                <label class="premium-chart-control"><span>Rank by</span><select id="premium-rank-metric"><option value="net">Net after premium</option><option value="workhorse">Workhorse score</option><option value="pledges">Pledge count</option><option value="average">Average pledge</option><option value="costPercent">Premium cost %</option><option value="pledged">Pledged dollars</option></select></label>
+                <label class="premium-chart-control"><span>Show</span><select id="premium-rank-direction"><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+              </div>
+            </div>
+            <div id="premium-exact-ranking-chart"></div>
+          </article>
+
+          <article class="premium-chart-card">
+            <div class="premium-chart-card-head"><div><h3>Brand / source economics</h3><p>WNMU/local vs PBS/national vs program/title premiums.</p></div></div>
+            <div id="premium-brand-grouped-chart"></div>
+          </article>
+
+          <article class="premium-chart-card">
+            <div class="premium-chart-card-head"><div><h3>Share of premium pledges by brand / source</h3><p>A pie is useful here because these buckets are mutually exclusive.</p></div></div>
+            <div id="premium-brand-pie-chart"></div>
+          </article>
+
+          <article class="premium-chart-card premium-chart-card-wide">
+            <div class="premium-chart-card-head">
+              <div><h3>Topic × package composition heat map</h3><p>Looks for combinations that repeatedly produce strong results.</p></div>
+              <label class="premium-chart-control"><span>Value</span><select id="premium-heatmap-metric"><option value="net">Net after premium</option><option value="pledged">Pledged dollars</option><option value="pledges">Pledge count</option><option value="average">Average pledge</option><option value="costPercent">Premium cost %</option></select></label>
+            </div>
+            <div id="premium-topic-composition-heatmap"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="premium-section"><h2>Fundraiser premium economics</h2><p>Compares premium-taking behavior and premium expense drive by drive.</p><div id="premium-fundraiser-table"></div></section>
       <section class="premium-section"><h2>Category trends</h2><p>Looks at the component types inside premiums, such as DVD, CD, book, drinkware, or apparel. Bundle is not treated as a category here.</p><div class="premium-grid-two"><div id="premium-category-chart"></div><div id="premium-category-table"></div></div></section>
       <section class="premium-section"><h2>Package composition trends</h2><p>Groups different titles that use the same package recipe, such as DVD + CD + Book, while keeping each named premium separate for accounting.</p><div id="premium-composition-table"></div></section>
