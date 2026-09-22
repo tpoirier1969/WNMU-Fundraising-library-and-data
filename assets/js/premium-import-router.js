@@ -33,13 +33,17 @@
   async function workbookLooksPremium(file) {
     if (!isSpreadsheet(file) || !window.XLSX?.read) return false;
     if (filenameLooksPremium(file)) return true;
-    const bytes = await file.arrayBuffer();
-    const workbook = window.XLSX.read(bytes, { type: 'array', cellDates: false, raw: true });
-    for (const sheetName of (workbook.SheetNames || []).slice(0, 6)) {
-      const worksheet = workbook.Sheets[sheetName];
-      if (!worksheet) continue;
-      const matrix = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
-      if (matrixLooksPremium(matrix)) return true;
+    try {
+      const bytes = await file.arrayBuffer();
+      const workbook = window.XLSX.read(bytes, { type: 'array', cellDates: false, raw: true });
+      for (const sheetName of (workbook.SheetNames || []).slice(0, 6)) {
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) continue;
+        const matrix = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
+        if (matrixLooksPremium(matrix)) return true;
+      }
+    } catch (error) {
+      console.warn('Automatic premium-report detection could not inspect this workbook. Falling back to the normal pledge importer.', error);
     }
     return false;
   }
@@ -111,6 +115,7 @@
     if (!files.length) return;
     clearOrdinaryImportBatch();
     setMode('premium');
+    window.PledgeLib?.importsUi?.renderAll?.();
     setMessage(`Importing ${files.length} premium-cost report${files.length === 1 ? '' : 's'}…`);
 
     const parsed = [];
