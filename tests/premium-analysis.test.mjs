@@ -296,3 +296,22 @@ test('current-offer proxy can supply the package recipe for a generic historical
   assert.equal(mapped.packageCompositionLabel, 'DVD / Blu-ray + CD / Vinyl + Book');
   assert.equal(mapped.packageCompositionSource, 'Current-offer proxy');
 });
+
+
+test('brand scope conservatively separates WNMU, PBS national, program-title, and unknown premiums', () => {
+  assert.equal(A.premiumBrandScope({description:'WNMU GREEN WATER BOTTLE',code:'WNMUGWB'}).scope, 'WNMU / local');
+  assert.equal(A.premiumBrandScope({description:'PBS EMERGENCY RADIO',code:'PBSRADIO'}).scope, 'PBS / national');
+  assert.equal(A.premiumBrandScope({description:'ALL CREATURES SEASON 6 DVDS',code:'ACGS6DVD'}, {id:'acgs'}, {confidence:'Current-offer proxy'}).scope, 'Program / title');
+  assert.equal(A.premiumBrandScope({description:'MYSTERY ITEM',code:'XYZ'}).scope, 'Unclassified');
+});
+
+test('brand scope analysis includes net after premium cost', () => {
+  const rows = [
+    {brandScope:'WNMU / local',fundraiserKey:'2026-06',description:'WNMU TOTE',programTitle:'',pledgeCount:2,pledgedDollars:240,sentCost:30,outstandingCost:0},
+    {brandScope:'WNMU / local',fundraiserKey:'2026-08',description:'WNMU BOTTLE',programTitle:'',pledgeCount:1,pledgedDollars:120,sentCost:10,outstandingCost:0}
+  ];
+  const item = A.brandScopeAnalysis(rows)[0];
+  assert.equal(item.pledgedDollars, 360);
+  assert.equal(item.totalPremiumCost, 40);
+  assert.equal(item.estimatedNetAfterPremium, 320);
+});
