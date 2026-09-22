@@ -162,7 +162,9 @@
       const seasonFocus=doc.createElement('script');seasonFocus.defer=true;seasonFocus.src=`assets/js/program-fundraiser-season-focus.js?v=${VERSION}`;
       const scoreUi=doc.createElement('script');scoreUi.defer=true;scoreUi.src=`assets/js/program-scorecard-ui.js?v=${VERSION}`;
       const airingIntegrity=doc.createElement('script');airingIntegrity.defer=true;airingIntegrity.src=`assets/js/airing-link-integrity.js?v=${VERSION}`;
-      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreRules);appInit.before(editorialOverrides);appInit.before(outlookEnhancements);appInit.before(seasonFocus);appInit.before(scoreUi);appInit.before(airingIntegrity)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreRules,editorialOverrides,outlookEnhancements,seasonFocus,scoreUi,airingIntegrity)}
+      const premiumAnalysis=doc.createElement('script');premiumAnalysis.defer=true;premiumAnalysis.src=`assets/js/premium-analysis.js?v=${VERSION}`;
+      const premiumImportRouter=doc.createElement('script');premiumImportRouter.defer=true;premiumImportRouter.src=`assets/js/premium-import-router.js?v=${VERSION}`;
+      if(appInit){appInit.before(controller);appInit.before(workspaceFix);appInit.before(timingFast);appInit.before(scoreLogic);appInit.before(scoreRules);appInit.before(editorialOverrides);appInit.before(outlookEnhancements);appInit.before(seasonFocus);appInit.before(scoreUi);appInit.before(airingIntegrity);appInit.before(premiumAnalysis);appInit.before(premiumImportRouter)}else{doc.head.append(controller,workspaceFix,timingFast,scoreLogic,scoreRules,editorialOverrides,outlookEnhancements,seasonFocus,scoreUi,airingIntegrity,premiumAnalysis,premiumImportRouter)}
     }
     try{
       setStatus('Loading the application shell…');
