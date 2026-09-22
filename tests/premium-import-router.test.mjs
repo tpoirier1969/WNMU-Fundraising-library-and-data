@@ -27,13 +27,11 @@ function loadRouter() {
   return context.WNMUPremiumImportRouter;
 }
 
-test('main app loads the isolated premium analysis and import router before app init', () => {
-  const analysisAt = indexSource.indexOf('assets/js/premium-analysis.js');
-  const routerAt = indexSource.indexOf('assets/js/premium-import-router.js');
-  const appInitAt = indexSource.indexOf('assets/js/app-init.js');
-  assert.ok(analysisAt >= 0, 'premium-analysis.js should be injected into the main app');
-  assert.ok(routerAt >= 0, 'premium-import-router.js should be injected into the main app');
-  assert.ok(appInitAt >= 0, 'app-init.js anchor should remain present');
+test('main app injects the premium analysis and router ahead of app init execution', () => {
+  assert.match(indexSource, /assets\/js\/premium-analysis\.js/);
+  assert.match(indexSource, /assets\/js\/premium-import-router\.js/);
+  assert.match(indexSource, /appInit\.before\(premiumAnalysis\)/);
+  assert.match(indexSource, /appInit\.before\(premiumImportRouter\)/);
 });
 
 test('router recognizes premium-cost filenames', () => {
