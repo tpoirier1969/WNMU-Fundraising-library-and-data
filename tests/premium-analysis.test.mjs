@@ -209,3 +209,35 @@ test('truly unspecified format is labeled explicitly instead of being dumped int
   assert.deepEqual([...item.componentCategories], ['Unspecified program premium']);
   assert.equal(item.primaryCategory, 'Unspecified program premium');
 });
+
+
+test('March 2025 problem premiums no longer collapse into Other', () => {
+  const samples = [
+    ['ACGS5DVD','ALL CREATURES SEASON 5 DVDS'],
+    ['ACWDCMB','ALL CREATURES WISDOM COMBO'],
+    ['BOCVNL','BOCELLI IL MARE CALMO VNL'],
+    ['KKCOMBO','KRIS KRISTOFFERSON COMBO'],
+    ['MA1CMB','MARIE ANTOINETTE COMBO'],
+    ['MM60CMB','MY MUSIC BEST OF 60S COMBO'],
+    ['NALJCMB','NATURE ATTENBOROUGH JNY COMBO'],
+    ['PAINTSAT','PAINTING CLASS SATURDAY, 11/7'],
+    ['TBCOMBO','TONY BENNET VIVA DUETS COMBO']
+  ];
+  const rows = samples.map(([code, description], index) => ({
+    code,
+    description,
+    fundraiserKey:'2025-03',
+    fundraiserLabel:'March 2025',
+    pledgeCount:1,
+    pledgedDollars:100 + index,
+    sentCost:10,
+    outstandingCost:0,
+    ...A.classifyPackage(description, code)
+  }));
+  const categories = A.categoryAnalysis(rows);
+  assert.equal(categories.some((item) => item.category === 'Other'), false);
+  assert.ok(categories.some((item) => item.category === 'Bundle / Multi-item'));
+  assert.ok(categories.some((item) => item.category === 'DVD / Blu-ray'));
+  assert.ok(categories.some((item) => item.category === 'CD / Vinyl'));
+  assert.ok(categories.some((item) => item.category === 'Experience / Event'));
+});
