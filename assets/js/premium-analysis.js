@@ -196,6 +196,49 @@
     };
   }
 
+  const COMPOSITION_ORDER = [
+    'DVD / Blu-ray',
+    'CD / Vinyl',
+    'Book',
+    'Apparel',
+    'Drinkware',
+    'Tote / Bag',
+    'Home / Lifestyle',
+    'Electronics / Radio',
+    'Food / Beverage',
+    'Specialty / Collectible',
+    'Accessories / Small Goods',
+    'Experience / Event',
+    'Sponsorship / Recognition'
+  ];
+
+  function orderedCompositionCategories(categories = []) {
+    const clean = [...new Set((categories || []).filter((category) => category && !['Other', 'Unspecified program premium'].includes(category)))];
+    const order = new Map(COMPOSITION_ORDER.map((label, index) => [label, index]));
+    return clean.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b));
+  }
+
+  function packageComposition(categories = [], isBundle = false) {
+    const parts = orderedCompositionCategories(categories);
+    if (!parts.length) {
+      return {
+        key: isBundle ? 'bundle-composition-unknown' : 'unspecified-program-premium',
+        label: isBundle ? 'Bundle · composition unknown' : 'Unspecified program premium',
+        parts,
+        complete: !isBundle
+      };
+    }
+    const incompleteBundle = isBundle && parts.length === 1;
+    const label = `${parts.join(' + ')}${incompleteBundle ? ' + unknown component(s)' : ''}`;
+    const key = `${parts.map((part) => normalize(part)).join('+')}${incompleteBundle ? '+unknown' : ''}`;
+    return {
+      key,
+      label,
+      parts,
+      complete: !incompleteBundle
+    };
+  }
+
   function dataQualityIssues(row) {
     const issues = [];
     if (row.rowType !== 'premium') return issues;
@@ -337,10 +380,16 @@
       const componentCategories = useProxyCategories
         ? proxyCategories
         : (reportCategories.length ? reportCategories : (refreshedClass.isBundle ? [] : ['Unspecified program premium']));
+      const composition = packageComposition(componentCategories, refreshedClass.isBundle);
       return {
         ...row,
         ...refreshedClass,
         componentCategories,
+        packageCompositionKey: composition.key,
+        packageCompositionLabel: composition.label,
+        packageCompositionParts: composition.parts,
+        packageCompositionComplete: composition.complete,
+        packageCompositionSource: useProxyCategories ? 'Current-offer proxy' : 'Report description / premium code',
         componentCategorySource: useProxyCategories ? 'Current-offer proxy' : 'Report description / premium code',
         componentCategoryProxyText: useProxyCategories ? proxyMatch.line : '',
         mappingMethod: mapping.method,
@@ -402,7 +451,6 @@
     const categories = new Map();
     rows.forEach((row) => {
       const tags = new Set((row.componentCategories || []).filter(Boolean));
-      if (row.isBundle) tags.add('Bundle / Multi-item');
       if (!tags.size) tags.add('Unspecified program premium');
       tags.forEach((category) => {
         if (!categories.has(category)) categories.set(category, []);
@@ -412,9 +460,28 @@
     return [...categories.entries()].map(([category, categoryRows]) => ({
       category,
       ...metricSummary(categoryRows),
-      distinctPackages: new Set(categoryRows.map((row) => normalize(row.description))).size,
+      distinctPackages: new Set(categoryRows.map((row) => `${row.fundraiserKey}|${normalize(row.description)}`)).size,
       fundraiserCount: new Set(categoryRows.map((row) => row.fundraiserKey)).size
     })).sort((a, b) => b.pledgedDollars - a.pledgedDollars);
+  }
+
+  function compositionAnalysis(rows = []) {
+    const groups = groupBy(rows, (row) => row.packageCompositionKey || packageComposition(row.componentCategories, row.isBundle).key);
+    return [...groups.entries()].map(([key, compositionRows]) => {
+      const exemplar = compositionRows[0] || {};
+      const fallback = packageComposition(exemplar.componentCategories, exemplar.isBundle);
+      return {
+        key,
+        label: exemplar.packageCompositionLabel || fallback.label,
+        complete: compositionRows.every((row) => row.packageCompositionComplete !== false),
+        sourceTypes: [...new Set(compositionRows.map((row) => row.packageCompositionSource || row.componentCategorySource || 'Report description / premium code'))],
+        ...metricSummary(compositionRows),
+        distinctPackages: new Set(compositionRows.map((row) => `${row.fundraiserKey}|${normalize(row.description)}`)).size,
+        distinctTitles: new Set(compositionRows.map((row) => normalize(row.programTitle)).filter(Boolean)).size,
+        fundraiserCount: new Set(compositionRows.map((row) => row.fundraiserKey)).size,
+        rowsDetail: compositionRows
+      };
+    }).sort((a, b) => b.distinctPackages - a.distinctPackages || b.pledgedDollars - a.pledgedDollars);
   }
 
   function fundraiserAnalysis(rows = [], summaries = []) {
@@ -518,6 +585,8 @@
       code: packageRows[0]?.code || '',
       codes: [...new Set(packageRows.map((row) => text(row.code)).filter(Boolean))],
       componentCategories: [...new Set(packageRows.flatMap((row) => row.componentCategories || []))],
+      packageCompositionLabel: packageRows[0]?.packageCompositionLabel || packageComposition(packageRows[0]?.componentCategories, packageRows[0]?.isBundle).label,
+      packageCompositionComplete: packageRows.every((row) => row.packageCompositionComplete !== false),
       stationBranded: packageRows.some((row) => row.stationBranded),
       isBundle: packageRows.some((row) => row.isBundle),
       fundraiserCount: 1,
@@ -684,6 +753,7 @@
     findHeaderRow,
     mapColumns,
     classifyPackage,
+    packageComposition,
     parseMatrix,
     splitPremiumSummary,
     bestPremiumSummaryLine,
@@ -691,6 +761,7 @@
     addMappings,
     metricSummary,
     categoryAnalysis,
+    compositionAnalysis,
     fundraiserAnalysis,
     portfolioSummary,
     packageAnalysis,
