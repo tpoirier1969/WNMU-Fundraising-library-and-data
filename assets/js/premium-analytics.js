@@ -76,9 +76,9 @@
 
   function renderFundraisers(s) {
     $('#premium-fundraiser-table').innerHTML = table(
-      ['Fundraiser','Pledged','Pledges','Took premium','Premium 
+      ['Fundraiser','Pledged','Pledges','Took premium','Premium $','Premium cost','Cost / total $','Net after premium','Avg premium pledge','Avg no-premium pledge','Unitemized'],
       s.fundraiserAnalysis.map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${money(r.totalPledged)}</td><td>${num(r.totalPledges)}</td><td>${pct(r.premiumTakeRate)}</td><td>${money(r.anyPremiumDollars)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.premiumCostPercentOfTotal)}</td><td>${money(r.estimatedTotalNetAfterPremium)}</td><td>${money(r.averagePremiumPledge)}</td><td>${money(r.averageNoPremiumPledge)}</td><td>${num(r.unitemizedPremiumPledges)} / ${money(r.unitemizedPremiumDollars)}</td></tr>`),
-      { minWidth: 1150 }
+      { minWidth: 1250 }
     );
   }
 
@@ -88,15 +88,15 @@
     $('#premium-category-table').innerHTML = table(
       ['Category tag','Packages','Fundraisers','Pledges','Pledged','Avg pledge','Premium cost','Cost %','Net after premium'],
       s.categories.map((r)=>`<tr><td><strong>${esc(r.category)}</strong></td><td>${num(r.distinctPackages)}</td><td>${num(r.fundraiserCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
-      { minWidth: 850 }
+      { minWidth: 950 }
     );
   }
 
   function renderCompositions(s) {
     $('#premium-composition-table').innerHTML = table(
-      ['Package composition','Exact packages','Titles','Fundraisers','Pledges','Pledged','Avg pledge','Premium cost','Cost %','Confidence'],
-      (s.compositions || []).map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${num(r.distinctPackages)}</td><td>${num(r.distinctTitles)}</td><td>${num(r.fundraiserCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${r.complete ? 'Complete' : 'Partial / inferred'}</td></tr>`),
-      { minWidth: 1150 }
+      ['Package composition','Exact packages','Titles','Fundraisers','Pledges','Pledged','Avg pledge','Premium cost','Cost %','Net after premium','Confidence'],
+      (s.compositions || []).map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${num(r.distinctPackages)}</td><td>${num(r.distinctTitles)}</td><td>${num(r.fundraiserCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td><td>${r.complete ? 'Complete' : 'Partial / inferred'}</td></tr>`),
+      { minWidth: 1250 }
     );
   }
 
@@ -112,20 +112,20 @@
     $('#premium-package-table').innerHTML = table(
       ['Fundraiser','Exact premium / package','Package composition','Brand / source','Pledges','Pledged','Avg pledge','Reported cost','Cost %','Net after premium'],
       s.packages.map((r)=>`<tr><td>${esc(r.fundraiserLabel)}</td><td><strong>${esc(r.description)}</strong>${r.stationBranded ? '<span class="premium-inline-flag">WNMU</span>' : ''}</td><td>${esc(r.packageCompositionLabel || '—')}</td><td>${esc(r.brandScope || 'Unclassified')}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost,2)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
-      { minWidth: 1200 }
+      { minWidth: 1250 }
     );
   }
 
   function renderMapped(s) {
     $('#premium-program-table').innerHTML = table(
-      ['Program','Fundraisers','Packages','Pledges','Premium-linked 
+      ['Program','Fundraisers','Packages','Pledges','Premium-linked $','Reported cost','Cost %','Net after premium'],
       s.programs.map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${num(r.fundraiserCount)}</td><td>${num(r.exactPremiumCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
       { minWidth: 980 }
     );
     $('#premium-topic-table').innerHTML = table(
-      ['Topic','Fundraisers','Packages','Pledges','Premium-linked 
-      s.topics.filter((r)=>r.label).map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${num(r.fundraiserCount)}</td><td>${num(r.exactPremiumCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td></tr>`),
-      { minWidth: 900 }
+      ['Topic','Fundraisers','Packages','Pledges','Premium-linked $','Reported cost','Cost %','Net after premium'],
+      s.topics.filter((r)=>r.label).map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${num(r.fundraiserCount)}</td><td>${num(r.exactPremiumCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
+      { minWidth: 980 }
     );
   }
 
