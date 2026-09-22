@@ -51,6 +51,7 @@
       portfolio: A.portfolioSummary(flat.rows, flat.summaries),
       fundraiserAnalysis: A.fundraiserAnalysis(flat.rows, flat.summaries),
       categories: A.categoryAnalysis(mappedRows),
+      compositions: A.compositionAnalysis(mappedRows),
       packages: A.packageAnalysis(mappedRows),
       programs: A.mappedGroupAnalysis(mappedRows, 'programTitle'),
       topics: A.mappedGroupAnalysis(mappedRows, 'topicPrimary'),
@@ -90,11 +91,19 @@
     );
   }
 
+  function renderCompositions(s) {
+    $('#premium-composition-table').innerHTML = table(
+      ['Package composition','Exact packages','Titles','Fundraisers','Pledges','Pledged','Avg pledge','Premium cost','Cost %','Confidence'],
+      (s.compositions || []).map((r)=>`<tr><td><strong>${esc(r.label)}</strong></td><td>${num(r.distinctPackages)}</td><td>${num(r.distinctTitles)}</td><td>${num(r.fundraiserCount)}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${r.complete ? 'Complete' : 'Partial / inferred'}</td></tr>`),
+      { minWidth: 1150 }
+    );
+  }
+
   function renderPackages(s) {
     $('#premium-package-table').innerHTML = table(
-      ['Fundraiser','Exact premium / package','Categories','Pledges','Pledged','Avg pledge','Reported cost','Cost %','Est. net'],
-      s.packages.map((r)=>`<tr><td>${esc(r.fundraiserLabel)}</td><td><strong>${esc(r.description)}</strong>${r.isBundle ? '<span class="premium-inline-flag">Bundle</span>' : ''}${r.stationBranded ? '<span class="premium-inline-flag">WNMU</span>' : ''}</td><td>${esc((r.componentCategories||[]).join(', '))}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost,2)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
-      { minWidth: 1150 }
+      ['Fundraiser','Exact premium / package','Package composition','Pledges','Pledged','Avg pledge','Reported cost','Cost %','Est. net'],
+      s.packages.map((r)=>`<tr><td>${esc(r.fundraiserLabel)}</td><td><strong>${esc(r.description)}</strong>${r.stationBranded ? '<span class="premium-inline-flag">WNMU</span>' : ''}</td><td>${esc(r.packageCompositionLabel || '—')}</td><td>${num(r.pledgeCount)}</td><td>${money(r.pledgedDollars)}</td><td>${money(r.averagePledge)}</td><td>${money(r.totalPremiumCost,2)}</td><td>${pct(r.costPercentOfPledged)}</td><td>${money(r.estimatedNetAfterPremium)}</td></tr>`),
+      { minWidth: 1200 }
     );
   }
 
@@ -157,6 +166,7 @@
     renderOverview(s);
     renderFundraisers(s);
     renderCategories(s);
+    renderCompositions(s);
     renderPackages(s);
     renderMapped(s);
     renderCombined(s);
