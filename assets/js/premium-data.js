@@ -153,6 +153,7 @@
       portfolio: A.portfolioSummary(flat.rows, flat.summaries),
       categories: A.categoryAnalysis(state.mappedRows),
       compositions: A.compositionAnalysis(state.mappedRows),
+      brandScopes: A.brandScopeAnalysis(state.mappedRows),
       packages: A.packageAnalysis(state.mappedRows),
       programs: A.mappedGroupAnalysis(state.mappedRows, 'programTitle'),
       topics: A.mappedGroupAnalysis(state.mappedRows, 'topicPrimary'),
