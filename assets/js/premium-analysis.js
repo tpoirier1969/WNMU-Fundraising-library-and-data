@@ -7,20 +7,35 @@
   ]);
 
   const CATEGORY_RULES = [
-    ['DVD / Blu-ray', /\b(?:dvd|blu[ -]?ray|bluray)\b/i],
-    ['CD / Vinyl', /\b(?:cd|compact disc|vinyl|lp|record album)\b/i],
-    ['Book', /\b(?:book|paperback|hardcover|pbk|guidebook|cookbook)\b/i],
-    ['Apparel', /\b(?:t[ -]?shirt|shirt|sweatshirt|hoodie|jacket|cap|hat|beanie|apparel)\b/i],
-    ['Drinkware', /\b(?:mug|tumbler|water bottle|bottle|tankard|travel cup|glassware|glass)\b/i],
-    ['Tote / Bag', /\b(?:tote|bag|backpack)\b/i],
-    ['Blanket / Home', /\b(?:blanket|throw|pillow|ornament|home goods?|wall art|poster|print)\b/i],
-    ['Experience / Recognition', /\b(?:day sponsor|sponsor|recognition|ticket|tour|experience|meet and greet)\b/i],
-    ['Electronics / Radio', /\b(?:radio|headphone|speaker|electronics?)\b/i],
-    ['Other Merchandise', /\b(?:key strap|keychain|key chain|calendar|journal|notebook|pen|pin|magnet)\b/i]
+    ['DVD / Blu-ray', /\b(?:dvds?|dv|blu[ -]?rays?|blurays?)\b/i],
+    ['CD / Vinyl', /\b(?:(?:\d+[- ]?)?cds?|compact discs?|vinyl|vnl|lp|record album)\b/i],
+    ['Book', /\b(?:books?|paperbacks?|hardcovers?|pbk|guidebooks?|cookbooks?)\b/i],
+    ['Apparel', /\b(?:t[ -]?shirts?|shirts?|sweatshirts?|hoodies?|jackets?|caps?|hats?|beanies?|apparel)\b/i],
+    ['Drinkware', /\b(?:mugs?|tumblers?|water bottles?|bottles?|tankards?|travel cups?|glassware|glasses?)\b/i],
+    ['Tote / Bag', /\b(?:totes?|bags?|backpacks?)\b/i],
+    ['Home / Lifestyle', /\b(?:blanke(?:t)?s?|throws?|pillows?|ornaments?|thermometers?|umbrellas?|home goods?|wall art|posters?|prints?)\b/i],
+    ['Experience / Event', /\b(?:class(?:es)?|workshops?|tickets?|tours?|experiences?|meet and greet|events?)\b/i],
+    ['Sponsorship / Recognition', /\b(?:day sponsor|question spon(?:sor)?|program patron|prog patron|station sponsor|sponsors?|recognition)\b/i],
+    ['Electronics / Radio', /\b(?:radios?|headphones?|speakers?|electronics?)\b/i],
+    ['Specialty / Collectible', /\b(?:mini guitar|guitars?|bridge cards?|playing cards?|card set|collectibles?)\b/i],
+    ['Food / Beverage', /\b(?:coffee|tea|chocolate|food|beverage)\b/i],
+    ['Accessories / Small Goods', /\b(?:key straps?|keychains?|key chains?|calendars?|journals?|notebooks?|pens?|pins?|magnets?)\b/i]
+  ];
+
+  const CODE_CATEGORY_RULES = [
+    ['DVD / Blu-ray', /(?:DVD|DV)$/i],
+    ['CD / Vinyl', /(?:CD|CDS|VNL)$/i],
+    ['Book', /(?:BK|PBK|BOOK)$/i],
+    ['Apparel', /(?:SHIRT|TSHIRT|TEE)$/i],
+    ['Drinkware', /(?:MUG|BOTTLE|WB)$/i],
+    ['Tote / Bag', /(?:TOTE|BAG)$/i],
+    ['Home / Lifestyle', /(?:BLKT|BLANKET)$/i],
+    ['Electronics / Radio', /(?:RADIO|SPEAK)$/i]
   ];
 
   const STATION_GENERIC_RE = /\b(?:wnmu|pbs emergency radio|day sponsor|station sponsor|member card|tv\s+20\d{2})\b/i;
-  const BUNDLE_RE = /\b(?:combo|collection|bundle)\b|\+/i;
+  const BUNDLE_RE = /\b(?:combo|cmb|collection|bundle|package|pkg)\b|\+/i;
+  const BUNDLE_CODE_RE = /(?:CMB\d*|COMBO\d*|CB\d*|PKG)$/i;
   const SUMMARY_RE = /^(?:with\s+no\s+premiums?|with\s+unknown\s+premiums?|with\s+individualized\s+premiums?|with\s+known\s+premiums?|with\s+any\s+premiums?|totals?)$/i;
 
   function text(value) {
@@ -160,16 +175,18 @@
     return index >= 0 ? row[index] : '';
   }
 
-  function classifyPackage(description = '') {
+  function classifyPackage(description = '', code = '') {
     const source = text(description);
-    const componentCategories = CATEGORY_RULES
-      .filter(([, pattern]) => pattern.test(source))
-      .map(([label]) => label);
-    if (!componentCategories.length) componentCategories.push('Other');
+    const codeText = text(code);
+    const componentCategories = [
+      ...CATEGORY_RULES.filter(([, pattern]) => pattern.test(source)).map(([label]) => label),
+      ...CODE_CATEGORY_RULES.filter(([, pattern]) => pattern.test(codeText)).map(([label]) => label)
+    ];
     const unique = [...new Set(componentCategories)];
-    const stationBranded = /\bwnmu\b/i.test(source);
+    const stationBranded = /\bwnmu\b/i.test(source) || /^WNMU/i.test(codeText);
     const stationGeneric = STATION_GENERIC_RE.test(source);
-    const isBundle = BUNDLE_RE.test(source) || unique.length > 1;
+    const isBundle = BUNDLE_RE.test(source) || BUNDLE_CODE_RE.test(codeText) || unique.length > 1;
+    if (!unique.length && !isBundle) unique.push('Unspecified program premium');
     return {
       componentCategories: unique,
       primaryCategory: isBundle ? 'Bundle / Multi-item' : unique[0],
@@ -213,7 +230,7 @@
       if (!rowLabel) continue;
       const summaryLabel = normalize(rowLabel);
       const rowType = SUMMARY_RE.test(summaryLabel) ? 'summary' : 'premium';
-      const classification = classifyPackage(rowLabel);
+      const classification = classifyPackage(rowLabel, code);
       const row = {
         fundraiserKey: fundraiser.key,
         fundraiserLabel: fundraiser.label,
@@ -308,19 +325,23 @@
 
   function addMappings(rows = [], programs = []) {
     return rows.map((row) => {
-      const mapping = mapPremiumToProgram(row, programs);
+      const refreshedClass = classifyPackage(row.description, row.code);
+      const mapping = mapPremiumToProgram({ ...row, ...refreshedClass }, programs);
       const program = mapping.program || null;
-      const reportCategories = (row.componentCategories || []).filter(Boolean);
-      const onlyOther = !reportCategories.length || reportCategories.every((category) => category === 'Other');
+      const reportCategories = (refreshedClass.componentCategories || []).filter(Boolean);
+      const needsCategoryHelp = !reportCategories.length || reportCategories.every((category) => ['Other', 'Unspecified program premium'].includes(category));
       const proxyMatch = program ? bestPremiumSummaryLine(row.description, program) : { line: '', score: 0 };
       const proxyClass = proxyMatch.line ? classifyPackage(proxyMatch.line) : null;
-      const proxyCategories = proxyClass?.componentCategories?.filter((category) => category !== 'Other') || [];
-      const useProxyCategories = onlyOther && proxyCategories.length > 0 && proxyMatch.score >= 0.42;
-      const componentCategories = useProxyCategories ? proxyCategories : (reportCategories.length ? reportCategories : ['Other']);
+      const proxyCategories = proxyClass?.componentCategories?.filter((category) => !['Other', 'Unspecified program premium'].includes(category)) || [];
+      const useProxyCategories = needsCategoryHelp && proxyCategories.length > 0 && proxyMatch.score >= 0.42;
+      const componentCategories = useProxyCategories
+        ? proxyCategories
+        : (reportCategories.length ? reportCategories : (refreshedClass.isBundle ? [] : ['Unspecified program premium']));
       return {
         ...row,
+        ...refreshedClass,
         componentCategories,
-        componentCategorySource: useProxyCategories ? 'Current-offer proxy' : 'Report description',
+        componentCategorySource: useProxyCategories ? 'Current-offer proxy' : 'Report description / premium code',
         componentCategoryProxyText: useProxyCategories ? proxyMatch.line : '',
         mappingMethod: mapping.method,
         mappingConfidence: mapping.confidence,
@@ -380,14 +401,13 @@
   function categoryAnalysis(rows = []) {
     const categories = new Map();
     rows.forEach((row) => {
-      (row.componentCategories || ['Other']).forEach((category) => {
+      const tags = new Set((row.componentCategories || []).filter(Boolean));
+      if (row.isBundle) tags.add('Bundle / Multi-item');
+      if (!tags.size) tags.add('Unspecified program premium');
+      tags.forEach((category) => {
         if (!categories.has(category)) categories.set(category, []);
         categories.get(category).push(row);
       });
-      if (row.isBundle) {
-        if (!categories.has('Bundle / Multi-item')) categories.set('Bundle / Multi-item', []);
-        categories.get('Bundle / Multi-item').push(row);
-      }
     });
     return [...categories.entries()].map(([category, categoryRows]) => ({
       category,
