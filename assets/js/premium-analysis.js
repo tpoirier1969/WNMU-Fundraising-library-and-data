@@ -765,6 +765,154 @@
     }).sort((a, b) => b.broadcastDollars - a.broadcastDollars || b.pledgedDollars - a.pledgedDollars);
   }
 
+  function programIdentity(row = {}) {
+    const id = text(row.programId);
+    if (id) return `id:${id}`;
+    const title = normalize(row.programTitle || row.title || '');
+    return title ? `title:${title}` : '';
+  }
+
+  function sameTitlePremiumComparisons(premiumRows = [], performanceRows = []) {
+    const premiumGroups = groupBy(
+      premiumRows.filter((row) => programIdentity(row)),
+      programIdentity
+    );
+
+    const performanceGroups = groupBy(
+      performanceRows.filter((row) => programIdentity(row)),
+      programIdentity
+    );
+
+    return [...premiumGroups.entries()].map(([identity, rows]) => {
+      const fundraiserKeys = [...new Set(rows.map((row) => text(row.fundraiserKey)).filter(Boolean))];
+      const compositions = [...new Set(rows.map((row) => text(row.packageCompositionLabel)).filter(Boolean))];
+      const exactPackages = [...new Set(rows.map((row) => `${row.fundraiserKey}|${normalize(row.description)}`).filter(Boolean))];
+      const performance = performanceGroups.get(identity) || [];
+      const observations = fundraiserKeys.map((fundraiserKey) => {
+        const premiumForDrive = rows.filter((row) => row.fundraiserKey === fundraiserKey);
+        const performanceForDrive = performance.filter((row) => row.fundraiserKey === fundraiserKey);
+        const premiumMetrics = metricSummary(premiumForDrive);
+        return {
+          fundraiserKey,
+          fundraiserLabel: premiumForDrive[0]?.fundraiserLabel || performanceForDrive[0]?.fundraiserLabel || fundraiserKey,
+          compositions: [...new Set(premiumForDrive.map((row) => text(row.packageCompositionLabel)).filter(Boolean))],
+          exactPackages: [...new Set(premiumForDrive.map((row) => text(row.description)).filter(Boolean))],
+          mappingConfidence: [...new Set(premiumForDrive.map((row) => text(row.mappingConfidence)).filter(Boolean))],
+          premiumLinkedPledges: premiumMetrics.pledgeCount,
+          premiumLinkedDollars: premiumMetrics.pledgedDollars,
+          premiumCost: premiumMetrics.totalPremiumCost,
+          netAfterPremium: premiumMetrics.estimatedNetAfterPremium,
+          broadcastPledges: sum(performanceForDrive, 'broadcastPledges'),
+          broadcastDollars: sum(performanceForDrive, 'broadcastDollars'),
+          broadcastMinutes: sum(performanceForDrive, 'minutes')
+        };
+      });
+
+      return {
+        identity,
+        programId: rows[0]?.programId || performance[0]?.programId || '',
+        programTitle: rows[0]?.programTitle || performance[0]?.programTitle || 'Unknown program',
+        fundraiserCount: fundraiserKeys.length,
+        compositionCount: compositions.length,
+        compositions,
+        exactPackageCount: exactPackages.length,
+        mappingConfidence: [...new Set(rows.map((row) => text(row.mappingConfidence)).filter(Boolean))],
+        totalPremiumLinkedPledges: sum(rows, 'pledgeCount'),
+        totalPremiumLinkedDollars: sum(rows, 'pledgedDollars'),
+        totalPremiumCost: rows.reduce((total, row) => total + Number(row.sentCost || 0) + Number(row.outstandingCost || 0), 0),
+        totalBroadcastPledges: sum(performance, 'broadcastPledges'),
+        totalBroadcastDollars: sum(performance, 'broadcastDollars'),
+        observations
+      };
+    })
+      .filter((item) => item.fundraiserCount >= 2)
+      .sort((a, b) => b.compositionCount - a.compositionCount || b.fundraiserCount - a.fundraiserCount || b.totalBroadcastDollars - a.totalBroadcastDollars);
+  }
+
+  function premiumImpactEvidence(premiumRows = [], summaries = [], performanceRows = []) {
+    const fundraisers = fundraiserAnalysis(premiumRows, summaries);
+    const portfolio = portfolioSummary(premiumRows, summaries);
+    const quality = mappingQuality(premiumRows);
+    const comparisons = sameTitlePremiumComparisons(premiumRows, performanceRows);
+    const differentPackageComparisons = comparisons.filter((item) => item.compositionCount >= 2);
+
+    const comparableFundraisers = fundraisers.filter((row) =>
+      Number.isFinite(Number(row.averagePremiumPledge))
+      && Number.isFinite(Number(row.averageNoPremiumPledge))
+      && Number(row.averageNoPremiumPledge) > 0
+    );
+
+    const byFundraiser = comparableFundraisers.map((row) => {
+      const difference = Number(row.averagePremiumPledge) - Number(row.averageNoPremiumPledge);
+      return {
+        fundraiserKey: row.key,
+        fundraiserLabel: row.label,
+        averagePremiumPledge: row.averagePremiumPledge,
+        averageNoPremiumPledge: row.averageNoPremiumPledge,
+        difference,
+        differencePercent: row.averageNoPremiumPledge ? difference / row.averageNoPremiumPledge : null
+      };
+    });
+
+    const mappedRows = premiumRows.filter((row) => programIdentity(row));
+    const totalRows = premiumRows.length;
+    const verifiedRows = Number(quality['Historically verified'] || 0);
+    const proxyRows = Number(quality['Current-offer proxy'] || 0);
+    const inferredRows = Number(quality['Strongly inferred'] || 0);
+    const unmappedRows = Number(quality.Unmapped || 0);
+
+    return {
+      status: {
+        observedEconomics: fundraisers.length ? 'Available' : 'Not available',
+        associationAnalysis: comparableFundraisers.length ? 'Available' : 'Limited',
+        comparativeHistoricalEvidence: differentPackageComparisons.length ? 'Available' : 'Limited',
+        causalEstimate: 'Not established'
+      },
+      coverage: {
+        fundraiserCount: fundraisers.length,
+        premiumResultRows: totalRows,
+        mappedPremiumRows: mappedRows.length,
+        verifiedRows,
+        proxyRows,
+        inferredRows,
+        unmappedRows,
+        repeatedTitles: comparisons.length,
+        sameTitleDifferentPackageComparisons: differentPackageComparisons.length,
+        comparablePremiumVsNoPremiumFundraisers: comparableFundraisers.length
+      },
+      observed: {
+        totalPledged: portfolio.totalPledged,
+        totalPledges: portfolio.totalPledges,
+        premiumTakingPledges: portfolio.anyPremiumPledges,
+        noPremiumPledges: portfolio.noPremiumPledges,
+        premiumAssociatedDollars: portfolio.anyPremiumDollars,
+        premiumTakeRate: portfolio.premiumTakeRate,
+        premiumAssociatedShareOfDollars: portfolio.totalPledged ? portfolio.anyPremiumDollars / portfolio.totalPledged : null,
+        totalPremiumCost: portfolio.totalPremiumCost,
+        premiumCostPercentOfTotal: portfolio.premiumCostPercentOfTotal,
+        estimatedNetAfterPremium: portfolio.estimatedTotalNetAfterPremium
+      },
+      association: {
+        averagePremiumPledge: portfolio.averagePremiumPledge,
+        averageNoPremiumPledge: portfolio.averageNoPremiumPledge,
+        averagePledgeDifference: Number(portfolio.averagePremiumPledge || 0) - Number(portfolio.averageNoPremiumPledge || 0),
+        averagePledgeDifferencePercent: portfolio.averageNoPremiumPledge
+          ? (Number(portfolio.averagePremiumPledge || 0) - Number(portfolio.averageNoPremiumPledge || 0)) / Number(portfolio.averageNoPremiumPledge)
+          : null,
+        fundraisersPremiumAverageHigher: byFundraiser.filter((row) => row.difference > 0).length,
+        fundraisersPremiumAverageLower: byFundraiser.filter((row) => row.difference < 0).length,
+        byFundraiser
+      },
+      comparisons,
+      differentPackageComparisons,
+      causal: {
+        estimate: null,
+        status: 'Not established',
+        reason: 'Premium-taking and no-premium donors are self-selected groups, not randomized controls. Historical premium selection alone cannot tell us how many donors would have pledged, or how much they would have given, without a premium.'
+      }
+    };
+  }
+
   function mappingQuality(rows = []) {
     const counts = { 'Current-offer proxy': 0, 'Strongly inferred': 0, 'Historically verified': 0, 'Unmapped': 0 };
     rows.forEach((row) => { counts[row.mappingConfidence] = (counts[row.mappingConfidence] || 0) + 1; });
@@ -816,6 +964,9 @@
     performanceRowsFromAnalyses,
     combinedProgramAnalysis,
     combinedTopicAnalysis,
+    programIdentity,
+    sameTitlePremiumComparisons,
+    premiumImpactEvidence,
     mappingQuality,
     mergeImportedFundraisers,
     flattenImports
