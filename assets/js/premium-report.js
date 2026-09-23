@@ -77,7 +77,8 @@
       programs: A.mappedGroupAnalysis(mappedRows, 'programTitle'),
       topics: A.mappedGroupAnalysis(mappedRows, 'topicPrimary'),
       combinedPrograms: A.combinedProgramAnalysis(mappedRows, performanceRows),
-      combinedTopics: A.combinedTopicAnalysis(mappedRows, performanceRows)
+      combinedTopics: A.combinedTopicAnalysis(mappedRows, performanceRows),
+      premiumImpact: A.premiumImpactEvidence(mappedRows, flat.summaries, performanceRows)
     };
   }
 
@@ -88,6 +89,10 @@
       ? s.imports[0].fundraiser.label
       : 'All imported fundraisers';
     const quality = A.mappingQuality(s.mappedRows);
+    const impact = s.premiumImpact || {};
+    const impactAssociation = impact.association || {};
+    const impactCoverage = impact.coverage || {};
+    const impactComparisons = impact.differentPackageComparisons || [];
 
     const fundraiserRows = s.fundraiserAnalysis.map((row) => `
       <tr>
@@ -286,6 +291,128 @@
               ${table(['Topic','Broadcast $','$ / pledge hr','Premium-linked $','Premium cost','Net after premium'], combinedTopicRows)}
             </div>
           </div>
+        </section>
+
+        <section>
+          <div class="section-heading"><h2>Premium Impact evidence</h2><p>Separates observed premium performance from evidence that premiums actually changed donor behavior.</p></div>
+          <div class="premium-impact-status-grid">
+            <article><span>Observed economics</span><strong>${esc(impact.status?.observedEconomics || 'Not available')}</strong></article>
+            <article><span>Association analysis</span><strong>${esc(impact.status?.associationAnalysis || 'Limited')}</strong></article>
+            <article><span>Same-title / different-package</span><strong>${num(impactCoverage.sameTitleDifferentPackageComparisons || 0)}</strong></article>
+            <article class="premium-impact-causal"><span>Causal premium effect</span><strong>${esc(impact.causal?.status || 'Not established')}</strong></article>
+          </div>
+          <p class="premium-impact-callout"><strong>Association is not lift.</strong> Premium-taking donors averaged <strong>${money(impactAssociation.averagePremiumPledge)}</strong> versus <strong>${money(impactAssociation.averageNoPremiumPledge)}</strong> for donors who took no premium. Those are self-selected groups, so the difference does not tell us what the same donors would have given without premiums.</p>
+          ${impactComparisons.length ? table(
+            ['Program','Fundraisers','Package compositions','Premium-linked 
+          <p class="data-quality-note">
+            Mapping rows: ${num(quality['Historically verified'] || 0)} historically verified ·
+            ${num(quality['Current-offer proxy'] || 0)} current-offer proxy ·
+            ${num(quality['Strongly inferred'] || 0)} strongly inferred ·
+            ${num(quality.Unmapped || 0)} unmapped.
+            Reported premium costs exclude expenses not present in the source report, such as shipping/handling.
+          </p>
+        </section>
+      </article>`;
+  }
+
+  function populate() {
+    const select = $('#premium-report-fundraiser');
+    if (!select) return;
+    const previous = select.value;
+    const imports = D.state.imports || [];
+    select.innerHTML = `
+      <option value="all">All imported fundraisers</option>
+      ${imports.map((item) => `<option value="${esc(item.fundraiser.key)}">${esc(item.fundraiser.label)}</option>`).join('')}`;
+    if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+  }
+
+  async function init() {
+    try {
+      if (!A || !D) throw new Error('Premium report modules did not load.');
+      const allowed = await D.requireAdmin({
+        gateId: 'premium-report-access-gate',
+        appId: 'premium-report-app',
+        roleId: 'premium-report-role'
+      });
+      if (!allowed) return;
+
+      await D.loadExistingAnalytics();
+      populate();
+      render();
+      setStatus(
+        D.state.imports.length
+          ? 'Premium report ready.'
+          : 'No browser-stored premium reports yet. Import them in Premium Analytics first.',
+        D.state.imports.length ? 'good' : 'warn'
+      );
+
+      $('#premium-report-fundraiser')?.addEventListener('change', render);
+      $('#premium-report-print')?.addEventListener('click', () => window.print());
+    } catch (error) {
+      console.error(error);
+      setStatus(error?.message || 'Premium report could not start.', 'error');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init, { once: true });
+})();
+,'Premium cost','Broadcast 
+          <p class="data-quality-note">
+            Mapping rows: ${num(quality['Historically verified'] || 0)} historically verified ·
+            ${num(quality['Current-offer proxy'] || 0)} current-offer proxy ·
+            ${num(quality['Strongly inferred'] || 0)} strongly inferred ·
+            ${num(quality.Unmapped || 0)} unmapped.
+            Reported premium costs exclude expenses not present in the source report, such as shipping/handling.
+          </p>
+        </section>
+      </article>`;
+  }
+
+  function populate() {
+    const select = $('#premium-report-fundraiser');
+    if (!select) return;
+    const previous = select.value;
+    const imports = D.state.imports || [];
+    select.innerHTML = `
+      <option value="all">All imported fundraisers</option>
+      ${imports.map((item) => `<option value="${esc(item.fundraiser.key)}">${esc(item.fundraiser.label)}</option>`).join('')}`;
+    if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+  }
+
+  async function init() {
+    try {
+      if (!A || !D) throw new Error('Premium report modules did not load.');
+      const allowed = await D.requireAdmin({
+        gateId: 'premium-report-access-gate',
+        appId: 'premium-report-app',
+        roleId: 'premium-report-role'
+      });
+      if (!allowed) return;
+
+      await D.loadExistingAnalytics();
+      populate();
+      render();
+      setStatus(
+        D.state.imports.length
+          ? 'Premium report ready.'
+          : 'No browser-stored premium reports yet. Import them in Premium Analytics first.',
+        D.state.imports.length ? 'good' : 'warn'
+      );
+
+      $('#premium-report-fundraiser')?.addEventListener('change', render);
+      $('#premium-report-print')?.addEventListener('click', () => window.print());
+    } catch (error) {
+      console.error(error);
+      setStatus(error?.message || 'Premium report could not start.', 'error');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init, { once: true });
+})();
+,'Mapping evidence'],
+            impactComparisons.slice(0,10).map((item)=>`<tr><td><strong>${esc(item.programTitle)}</strong></td><td>${num(item.fundraiserCount)}</td><td>${esc(item.compositions.join(' · '))}</td><td>${money(item.totalPremiumLinkedDollars)}</td><td>${money(item.totalPremiumCost)}</td><td>${money(item.totalBroadcastDollars)}</td><td>${esc(item.mappingConfidence.join(', ') || 'Unclassified')}</td></tr>`)
+          ) : '<p class="premium-note">No same-title / different-package comparisons are mapped yet.</p>'}
+          <p class="premium-impact-causal-note"><strong>Causal estimate: Not established.</strong> ${esc(impact.causal?.reason || '')}</p>
         </section>
 
         <section>
