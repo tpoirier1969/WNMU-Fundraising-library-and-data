@@ -159,6 +159,7 @@
       topics: A.mappedGroupAnalysis(state.mappedRows, 'topicPrimary'),
       combinedPrograms: A.combinedProgramAnalysis(state.mappedRows, state.performanceRows),
       combinedTopics: A.combinedTopicAnalysis(state.mappedRows, state.performanceRows),
+      premiumImpact: A.premiumImpactEvidence(state.mappedRows, flat.summaries, state.performanceRows),
       mappingQuality: A.mappingQuality(state.mappedRows)
     };
   }

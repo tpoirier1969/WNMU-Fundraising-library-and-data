@@ -5,17 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Premium Analytics · WNMU-TV PBS</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.192">
+  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.193">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.192"></script>
-  <script defer src="assets/js/premium-analysis.js?v=0.22.192"></script>
-  <script defer src="assets/js/premium-data.js?v=0.22.192"></script>
-  <script defer src="assets/js/premium-chart-analysis.js?v=0.22.192"></script>
-  <script defer src="assets/js/premium-charts.js?v=0.22.192"></script>
-  <script defer src="assets/js/premium-analytics.js?v=0.22.192"></script>
-  <script defer src="assets/js/premium-visuals.js?v=0.22.192"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-analysis.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-data.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-chart-analysis.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-charts.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-analytics.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-visuals.js?v=0.22.193"></script>
+  <script defer src="assets/js/premium-impact-ui.js?v=0.22.193"></script>
 </head>
 <body>
   <div id="premium-access-gate" class="report-access-gate hidden"></div>
@@ -35,6 +36,7 @@
       </section>
 
       <section class="premium-section"><h2>Overview</h2><p>The exact selectable package is the accounting unit. Components such as DVD, book, mug or blanket are analytical tags and never receive duplicated revenue.</p><div id="premium-overview"></div></section>
+      <section class="premium-section premium-impact-section"><h2>Premium Impact</h2><p>This section asks a different question from Premium Performance: how much evidence do we actually have that premiums are influencing fundraising results, rather than merely being selected by donors who would have pledged anyway?</p><div id="premium-impact"></div></section>
       <section id="premium-visual-dashboard" class="premium-section">
         <h2>Visual analytics</h2>
         <p>These graphs use the same fundraiser filter as the tables below. Exact premiums remain fundraiser-specific; package recipes can be compared across titles.</p>
@@ -63,8 +65,9 @@
           </article>
 
           <article class="premium-chart-card">
-            <div class="premium-chart-card-head"><div><h3>Average pledge · premium vs no premium</h3><p>Shows whether premium-taking donors are actually giving more.</p></div></div>
+            <div class="premium-chart-card-head"><div><h3>Average pledge · premium vs no premium</h3><p>Shows an observed association between donor groups. It does not estimate premium lift.</p></div></div>
             <div id="premium-average-pledge-chart"></div>
+            <p class="premium-causal-warning"><strong>Not a control-group comparison.</strong> Premium-takers may have pledged anyway, may have increased their gift to reach a premium level, or may simply have selected a premium after deciding how much to give.</p>
           </article>
 
           <article class="premium-chart-card">

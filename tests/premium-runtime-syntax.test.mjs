@@ -10,7 +10,8 @@ const runtimeFiles = [
   '../assets/js/premium-report.js',
   '../assets/js/premium-chart-analysis.js',
   '../assets/js/premium-charts.js',
-  '../assets/js/premium-visuals.js'
+  '../assets/js/premium-visuals.js',
+  '../assets/js/premium-impact-ui.js'
 ];
 
 for (const path of runtimeFiles) {

@@ -34,6 +34,7 @@
       topics: A.mappedGroupAnalysis(mappedRows, 'topicPrimary'),
       combinedPrograms: A.combinedProgramAnalysis(mappedRows, performanceRows),
       combinedTopics: A.combinedTopicAnalysis(mappedRows, performanceRows),
+      premiumImpact: A.premiumImpactEvidence(mappedRows, flat.summaries, performanceRows),
       mappingQuality: A.mappingQuality(mappedRows)
     };
   }
@@ -199,7 +200,7 @@
         <article class="premium-chart-card"><h3>Net after premium by package composition</h3>${compositionNetChart(snapshot)}</article>
         <article class="premium-chart-card"><h3>Net with premium-cost burden</h3>${efficiencyChart(snapshot)}</article>
         <article class="premium-chart-card premium-chart-card-wide"><h3>Fundraiser mix · net after premium</h3>${mix}</article>
-        <article class="premium-chart-card"><h3>Average pledge · premium vs no premium</h3>${averagePledgeChart(snapshot)}</article>
+        <article class="premium-chart-card"><h3>Average pledge · premium vs no premium</h3>${averagePledgeChart(snapshot)}<p class="premium-causal-warning"><strong>Association only.</strong> These donor groups are self-selected and are not a no-premium control experiment.</p></article>
         <article class="premium-chart-card"><h3>Take rate vs premium cost %</h3>${takeRateChart(snapshot)}</article>
         <article class="premium-chart-card"><h3>Exact premiums ranked by net</h3>${exactRankingChart(snapshot,'net','top')}</article>
         <article class="premium-chart-card"><h3>Brand / source economics</h3>${brand.grouped}</article>

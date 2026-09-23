@@ -315,3 +315,48 @@ test('brand scope analysis includes net after premium cost', () => {
   assert.equal(item.totalPremiumCost, 40);
   assert.equal(item.estimatedNetAfterPremium, 320);
 });
+
+
+test('premium impact evidence keeps association separate from causal effect', () => {
+  const rows = [
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Example Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Historically verified', pledgeCount:3, pledgedDollars:450, sentCost:30, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Example Program', description:'DVD + Book', packageCompositionLabel:'DVD / Blu-ray + Book', mappingConfidence:'Historically verified', pledgeCount:4, pledgedDollars:720, sentCost:80, outstandingCost:0 }
+  ];
+  const summaries = [
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', description:'With Any Premium', pledgeCount:3, pledgedDollars:450, sentCost:30, outstandingCost:0 },
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', description:'With No Premiums', pledgeCount:5, pledgedDollars:500, sentCost:0, outstandingCost:0 },
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', description:'Total', pledgeCount:8, pledgedDollars:950, sentCost:30, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', description:'With Any Premium', pledgeCount:4, pledgedDollars:720, sentCost:80, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', description:'With No Premiums', pledgeCount:4, pledgedDollars:520, sentCost:0, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', description:'Total', pledgeCount:8, pledgedDollars:1240, sentCost:80, outstandingCost:0 }
+  ];
+  const performance = [
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Example Program', broadcastDollars:600, broadcastPledges:5, minutes:60 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Example Program', broadcastDollars:850, broadcastPledges:6, minutes:60 }
+  ];
+
+  const impact = A.premiumImpactEvidence(rows, summaries, performance);
+  assert.equal(impact.status.causalEstimate, 'Not established');
+  assert.equal(impact.causal.estimate, null);
+  assert.equal(impact.coverage.fundraiserCount, 2);
+  assert.equal(impact.coverage.repeatedTitles, 1);
+  assert.equal(impact.coverage.sameTitleDifferentPackageComparisons, 1);
+  assert.equal(impact.coverage.verifiedRows, 2);
+  assert.equal(impact.association.fundraisersPremiumAverageHigher, 2);
+  assert.equal(impact.differentPackageComparisons[0].programTitle, 'Example Program');
+  assert.match(impact.causal.reason, /self-selected groups/i);
+});
+
+test('same-title premium comparisons require at least two fundraisers and preserve observations', () => {
+  const rows = [
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Repeated Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Current-offer proxy', pledgeCount:2, pledgedDollars:240, sentCost:20, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Repeated Program', description:'DVD + Book', packageCompositionLabel:'DVD / Blu-ray + Book', mappingConfidence:'Historically verified', pledgeCount:3, pledgedDollars:450, sentCost:45, outstandingCost:0 },
+    { fundraiserKey:'2026-06', fundraiserLabel:'June 2026', programId:'p2', programTitle:'One-off Program', description:'CD', packageCompositionLabel:'CD / Vinyl', mappingConfidence:'Historically verified', pledgeCount:1, pledgedDollars:120, sentCost:10, outstandingCost:0 }
+  ];
+  const comparisons = A.sameTitlePremiumComparisons(rows, []);
+  assert.equal(comparisons.length, 1);
+  assert.equal(comparisons[0].programTitle, 'Repeated Program');
+  assert.equal(comparisons[0].fundraiserCount, 2);
+  assert.equal(comparisons[0].compositionCount, 2);
+  assert.equal(comparisons[0].observations.length, 2);
+});
