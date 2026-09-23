@@ -76,18 +76,18 @@
   }
 
   function renderImpact(s) {
-    const impact = s.premiumImpact;
-    const association = impact?.association || {};
-    const coverage = impact?.coverage || {};
-    const causal = impact?.causal || {};
-    const comparisons = impact?.differentPackageComparisons || [];
+    const impact = s.premiumImpact || {};
+    const association = impact.association || {};
+    const coverage = impact.coverage || {};
+    const causal = impact.causal || {};
+    const comparisons = impact.differentPackageComparisons || [];
     const associationDelta = Number(association.averagePledgeDifference || 0);
     const associationDeltaPct = association.averagePledgeDifferencePercent;
 
     $('#premium-impact').innerHTML = `
       <div class="premium-impact-status-grid">
-        <article><span>Observed premium economics</span><strong>${esc(impact?.status?.observedEconomics || 'Not available')}</strong><small>What actually happened in the imported reports.</small></article>
-        <article><span>Premium association</span><strong>${esc(impact?.status?.associationAnalysis || 'Limited')}</strong><small>Descriptive relationships, not estimated lift.</small></article>
+        <article><span>Observed premium economics</span><strong>${esc(impact.status?.observedEconomics || 'Not available')}</strong><small>What actually happened in the imported reports.</small></article>
+        <article><span>Premium association</span><strong>${esc(impact.status?.associationAnalysis || 'Limited')}</strong><small>Descriptive relationships, not estimated lift.</small></article>
         <article><span>Same-title / different-package</span><strong>${num(coverage.sameTitleDifferentPackageComparisons || 0)}</strong><small>Comparative opportunities across fundraiser history.</small></article>
         <article class="premium-impact-causal"><span>Causal premium effect</span><strong>${esc(causal.status || 'Not established')}</strong><small>No valid counterfactual yet.</small></article>
       </div>
