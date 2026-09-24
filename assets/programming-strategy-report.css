@@ -247,3 +247,128 @@
   .strategy-window-rationale,.strategy-peer-practice{break-inside:avoid}
   .strategy-peer-practice-grid{grid-template-columns:1fr 1fr}
 }
+
+
+/* v0.22.196 print pagination pass
+   Large strategy containers must be allowed to fragment across pages.
+   Keep atomic rows/headings together, not entire days or card groups. */
+@media print{
+  .strategy-sheet{
+    font-size:8.4pt;
+    line-height:1.22;
+  }
+
+  .strategy-sheet .sheet-section{
+    break-inside:auto!important;
+    page-break-inside:auto!important;
+    margin-bottom:7px;
+  }
+
+  .strategy-section-head,
+  .strategy-generated-head,
+  .strategy-day-compact>header,
+  .strategy-hourly-day>h3,
+  .strategy-window-divider{
+    break-after:avoid-page;
+    page-break-after:avoid;
+  }
+
+  /* Day-by-day was the biggest source of half-empty pages. */
+  .strategy-days-compact,
+  .strategy-program-table{
+    display:block!important;
+  }
+  .strategy-day-compact{
+    break-inside:auto!important;
+    page-break-inside:auto!important;
+    overflow:visible!important;
+    margin:0 0 7px;
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+  }
+  .strategy-program-row{
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-window-rationale{
+    break-inside:auto!important;
+    page-break-inside:auto!important;
+    padding:6px 8px 7px;
+  }
+  .strategy-window-rationale-head,
+  .strategy-window-peer>strong,
+  .strategy-timing-nearby>strong{
+    break-after:avoid-page;
+    page-break-after:avoid;
+  }
+  .strategy-timing-peer-list li,
+  .strategy-timing-nearby li{
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+
+  /* Two-column browser grids are poor page-fragmentation containers.
+     Stack them for print so the browser can use the remaining page height. */
+  .strategy-hourly-grid,
+  .strategy-peer-practice-grid{
+    display:block!important;
+  }
+  .strategy-hourly-day,
+  .strategy-peer-practice{
+    break-inside:auto!important;
+    page-break-inside:auto!important;
+    overflow:visible!important;
+    margin-bottom:7px;
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+  }
+  .strategy-hourly-row,
+  .strategy-peer-examples>div{
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-peer-practice header{
+    break-after:avoid-page;
+    page-break-after:avoid;
+  }
+
+  /* Let long opportunity cards split instead of ejecting to a fresh page. */
+  .strategy-opportunity-row{
+    break-inside:auto!important;
+    page-break-inside:auto!important;
+    box-decoration-break:clone;
+    -webkit-box-decoration-break:clone;
+  }
+  .strategy-opportunity-row>div:first-child{
+    break-after:avoid-page;
+    page-break-after:avoid;
+  }
+
+  /* Compact lists use the paper more efficiently without splitting an item. */
+  .strategy-compact-list{
+    columns:2;
+    column-gap:12px;
+  }
+  .strategy-compact-list>div{
+    break-inside:avoid-column!important;
+    page-break-inside:avoid;
+    margin-bottom:4px;
+  }
+
+  /* A topic container may be long, especially Documentary. Keep its individual
+     subtopic rows intact but allow the overall topic block to continue. */
+  .strategy-topic-list-row{
+    break-inside:auto!important;
+    page-break-inside:auto!important;
+  }
+  .strategy-documentary-subtopic{
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+
+  .strategy-sheet p,
+  .strategy-sheet li{
+    orphans:2;
+    widows:2;
+  }
+}
