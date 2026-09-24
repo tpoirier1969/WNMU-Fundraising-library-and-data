@@ -608,3 +608,68 @@
   .strategy-daily-breakdown-head{margin:3px 0 4px}
   .strategy-daily-breakdown-head p{font-size:6.8pt}
 }
+
+
+/* v0.22.199 seasonal + all-history Day/Time comparison */
+.strategy-hourly-compare-head,
+.strategy-hourly-compare-row{
+  display:grid;
+  grid-template-columns:90px minmax(0,1fr) minmax(0,1fr);
+  gap:8px;
+  align-items:start;
+}
+.strategy-hourly-compare-head{
+  padding:5px 9px;
+  border-bottom:1px solid #dbe6ea;
+  background:#f5f9fb;
+  color:#607682;
+  font-size:.72rem;
+  font-weight:850;
+  text-transform:uppercase;
+  letter-spacing:.025em;
+}
+.strategy-hourly-compare-row{
+  padding:5px 9px;
+  border-bottom:1px solid #edf1f3;
+  font-size:.78rem;
+}
+.strategy-hourly-compare-row:last-child{border-bottom:0}
+.strategy-hourly-compare-row:nth-child(even){background:#fbfcfd}
+.strategy-hourly-scope{
+  display:grid;
+  gap:1px;
+}
+.strategy-hourly-scope small{
+  color:#6b7f89;
+  font-size:.72rem;
+}
+.strategy-hourly-compare-row .strategy-no-history{
+  color:#99a5ab;
+  font-size:.72rem;
+  font-style:italic;
+}
+@media(max-width:760px){
+  .strategy-hourly-compare-head,
+  .strategy-hourly-compare-row{
+    grid-template-columns:70px 1fr;
+  }
+  .strategy-hourly-compare-head span:last-child,
+  .strategy-hourly-compare-row>span:last-child{
+    grid-column:2;
+  }
+}
+@media print{
+  .strategy-hourly-compare-head,
+  .strategy-hourly-compare-row{
+    grid-template-columns:50px minmax(0,1fr) minmax(0,1fr);
+    gap:4px;
+    padding:3px 5px;
+    font-size:6.6pt;
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-hourly-scope small,
+  .strategy-hourly-compare-row .strategy-no-history{
+    font-size:6.1pt;
+  }
+}
