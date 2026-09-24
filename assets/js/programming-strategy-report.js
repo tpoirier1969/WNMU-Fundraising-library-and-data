@@ -169,9 +169,11 @@ function hourlyPatternsSection(hourly){
   return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Each daily row shows <strong>${esc(data.season||'selected')} fundraiser history first</strong>, with <strong>all fundraiser history</strong> beside it for sample-size context. All-history span: ${esc(span)}. Regular-program boundary/end-break fundraising is excluded from these pledge-program averages.</p></div></div>
     <div class="strategy-daily-breakdown-head"><h3>Daily breakdown</h3><p>Season-specific evidence is primary; all-history evidence is context.</p></div>
     <div class="strategy-hourly-grid">${order.map(day=>{
-      const rows=(groups.get(day)||[])
-        .filter(x=>Number(x.targetSeason?.fundraiserSamples||0)>0||Number(x.allHistory?.fundraiserSamples||0)>0)
-        .sort((a,b)=>a.startMinutes-b.startMinutes);
+      const allRows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);
+      const observed=allRows.filter(x=>Number(x.targetSeason?.fundraiserSamples||0)>0||Number(x.allHistory?.fundraiserSamples||0)>0);
+      const minStart=observed.length?Math.min(...observed.map(x=>Number(x.startMinutes))):null;
+      const maxStart=observed.length?Math.max(...observed.map(x=>Number(x.startMinutes))):null;
+      const rows=observed.length?allRows.filter(x=>Number(x.startMinutes)>=minStart&&Number(x.startMinutes)<=maxStart):[];
       return`<section class="strategy-hourly-day"><h3>${day}</h3><div class="strategy-hourly-compare-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-compare-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-hourly-scope">${metric(x.targetSeason,data.season||'season')}</span><span class="strategy-hourly-scope">${metric(x.allHistory,'all-history')}</span></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
     }).join('')}</div></section>`;
 }
