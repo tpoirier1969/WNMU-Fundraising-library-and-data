@@ -466,7 +466,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.203'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.204'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1072,6 +1072,39 @@ test('strategy excludes boundary/end-break regular programming from pledge-progr
   const roadshowClass = workerContext.strategyBoundaryBreakClassification(roadshow, roadshowAiring);
   assert.equal(roadshowClass.exclude,true);
   assert.match(roadshowClass.reason,/end pledge break/i);
+
+  const protectedFriday = {
+    dateKey:'2025-12-05',
+    startMinutes:20*60,
+    lengthMinutes:24,
+    programTitle:'Washington Week In Review',
+    isNonPledge:false
+  };
+  const fridayAiring = {
+    program_minutes:30,
+    raw_payload:{},
+    dollars:156,
+    pledge_count:2
+  };
+  const fridayClass = workerContext.strategyBoundaryBreakClassification(protectedFriday, fridayAiring);
+  assert.equal(fridayClass.exclude,true);
+  assert.match(fridayClass.reason,/recurring Friday 8 PM regular programming/i);
+
+  const fridayPledgeSpecial = {
+    dateKey:'2015-12-04',
+    startMinutes:20*60,
+    lengthMinutes:90,
+    programTitle:'Simon & Garfunkel: The Concert in Central Park',
+    isNonPledge:false
+  };
+  const fridayPledgeAiring = {
+    program_minutes:90,
+    raw_payload:{},
+    dollars:785,
+    pledge_count:8
+  };
+  const fridayPledgeClass = workerContext.strategyBoundaryBreakClassification(fridayPledgeSpecial, fridayPledgeAiring);
+  assert.equal(fridayPledgeClass.exclude,false,'a genuine Friday 8 PM pledge special must remain historical evidence');
 
   const shortBoundary = {
     dateKey:'2018-11-27',

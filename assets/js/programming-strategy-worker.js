@@ -62,6 +62,20 @@ function strategyBoundaryBreakClassification(placement = {}, airing = null) {
     };
   }
 
+  const recurringFridayRegular =
+    date?.getDay() === 5
+    && Number.isFinite(startMinutes)
+    && startMinutes >= 20 * 60
+    && startMinutes < 21 * 60
+    && ['washington week in review', 'charlie rose', 'off the record'].includes(titleKey);
+
+  if (recurringFridayRegular) {
+    return {
+      exclude: true,
+      reason: 'Boundary-break fundraising: recurring Friday 8 PM regular programming with pledge dollars attached to the normal program.'
+    };
+  }
+
   const regularRoadshowBoundaryBreak =
     titleKey === 'antiques roadshow'
     && date?.getDay() === 1
