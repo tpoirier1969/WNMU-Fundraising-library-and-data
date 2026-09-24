@@ -319,8 +319,8 @@ test('brand scope analysis includes net after premium cost', () => {
 
 test('premium impact evidence keeps association separate from causal effect', () => {
   const rows = [
-    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Example Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Historically verified', pledgeCount:3, pledgedDollars:450, sentCost:30, outstandingCost:0 },
-    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Example Program', description:'DVD + Book', packageCompositionLabel:'DVD / Blu-ray + Book', mappingConfidence:'Historically verified', pledgeCount:4, pledgedDollars:720, sentCost:80, outstandingCost:0 }
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Example Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Historically verified', historicalOfferSetId:'offer-a', historicalOfferSummary:'DVD offer', pledgeCount:3, pledgedDollars:450, sentCost:30, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Example Program', description:'DVD + Book', packageCompositionLabel:'DVD / Blu-ray + Book', mappingConfidence:'Historically verified', historicalOfferSetId:'offer-b', historicalOfferSummary:'DVD + Book offer', pledgeCount:4, pledgedDollars:720, sentCost:80, outstandingCost:0 }
   ];
   const summaries = [
     { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', description:'With Any Premium', pledgeCount:3, pledgedDollars:450, sentCost:30, outstandingCost:0 },
@@ -340,23 +340,41 @@ test('premium impact evidence keeps association separate from causal effect', ()
   assert.equal(impact.causal.estimate, null);
   assert.equal(impact.coverage.fundraiserCount, 2);
   assert.equal(impact.coverage.repeatedTitles, 1);
+  assert.equal(impact.coverage.sameTitleDifferentOfferComparisons, 1);
   assert.equal(impact.coverage.sameTitleDifferentPackageComparisons, 1);
   assert.equal(impact.coverage.verifiedRows, 2);
   assert.equal(impact.association.fundraisersPremiumAverageHigher, 2);
+  assert.equal(impact.differentOfferComparisons[0].programTitle, 'Example Program');
   assert.equal(impact.differentPackageComparisons[0].programTitle, 'Example Program');
   assert.match(impact.causal.reason, /self-selected groups/i);
 });
 
 test('same-title premium comparisons require at least two fundraisers and preserve observations', () => {
   const rows = [
-    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Repeated Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Current-offer proxy', pledgeCount:2, pledgedDollars:240, sentCost:20, outstandingCost:0 },
-    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Repeated Program', description:'DVD + Book', packageCompositionLabel:'DVD / Blu-ray + Book', mappingConfidence:'Historically verified', pledgeCount:3, pledgedDollars:450, sentCost:45, outstandingCost:0 },
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Repeated Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Historically verified', historicalOfferSetId:'same-offer', historicalOfferSummary:'Same offer set', pledgeCount:2, pledgedDollars:240, sentCost:20, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Repeated Program', description:'DVD + Book', packageCompositionLabel:'DVD / Blu-ray + Book', mappingConfidence:'Historically verified', historicalOfferSetId:'same-offer', historicalOfferSummary:'Same offer set', pledgeCount:3, pledgedDollars:450, sentCost:45, outstandingCost:0 },
     { fundraiserKey:'2026-06', fundraiserLabel:'June 2026', programId:'p2', programTitle:'One-off Program', description:'CD', packageCompositionLabel:'CD / Vinyl', mappingConfidence:'Historically verified', pledgeCount:1, pledgedDollars:120, sentCost:10, outstandingCost:0 }
   ];
   const comparisons = A.sameTitlePremiumComparisons(rows, []);
   assert.equal(comparisons.length, 1);
   assert.equal(comparisons[0].programTitle, 'Repeated Program');
   assert.equal(comparisons[0].fundraiserCount, 2);
-  assert.equal(comparisons[0].compositionCount, 2);
+  assert.equal(comparisons[0].selectedCompositionCount, 2);
+  assert.equal(comparisons[0].verifiedOfferSetCount, 1);
   assert.equal(comparisons[0].observations.length, 2);
+
+  const impact = A.premiumImpactEvidence(rows, [], []);
+  assert.equal(impact.coverage.sameTitleDifferentOfferComparisons, 0, 'different donor selections must not be mistaken for a changed offer set');
+});
+
+
+test('same-title comparison counts a changed offer only when verified offer-set IDs differ', () => {
+  const rows = [
+    { fundraiserKey:'2025-03', fundraiserLabel:'March 2025', programId:'p1', programTitle:'Repeated Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Historically verified', historicalOfferSetId:'offer-a', historicalOfferSummary:'Offer A', pledgeCount:2, pledgedDollars:240, sentCost:20, outstandingCost:0 },
+    { fundraiserKey:'2026-03', fundraiserLabel:'March 2026', programId:'p1', programTitle:'Repeated Program', description:'DVD', packageCompositionLabel:'DVD / Blu-ray', mappingConfidence:'Historically verified', historicalOfferSetId:'offer-b', historicalOfferSummary:'Offer B', pledgeCount:3, pledgedDollars:450, sentCost:45, outstandingCost:0 }
+  ];
+  const impact = A.premiumImpactEvidence(rows, [], []);
+  assert.equal(impact.coverage.sameTitleDifferentOfferComparisons, 1);
+  assert.equal(impact.differentOfferComparisons.length, 1);
+  assert.deepEqual(new Set(impact.differentOfferComparisons[0].verifiedOfferSetIds), new Set(['offer-a','offer-b']));
 });

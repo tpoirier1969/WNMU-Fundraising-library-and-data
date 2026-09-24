@@ -785,9 +785,12 @@
 
     return [...premiumGroups.entries()].map(([identity, rows]) => {
       const fundraiserKeys = [...new Set(rows.map((row) => text(row.fundraiserKey)).filter(Boolean))];
-      const compositions = [...new Set(rows.map((row) => text(row.packageCompositionLabel)).filter(Boolean))];
+      const selectedCompositions = [...new Set(rows.map((row) => text(row.packageCompositionLabel)).filter(Boolean))];
       const exactPackages = [...new Set(rows.map((row) => `${row.fundraiserKey}|${normalize(row.description)}`).filter(Boolean))];
+      const verifiedOfferSetIds = [...new Set(rows.map((row) => text(row.historicalOfferSetId)).filter(Boolean))];
+      const verifiedOfferSummaries = [...new Set(rows.map((row) => text(row.historicalOfferSummary)).filter(Boolean))];
       const performance = performanceGroups.get(identity) || [];
+
       const observations = fundraiserKeys.map((fundraiserKey) => {
         const premiumForDrive = rows.filter((row) => row.fundraiserKey === fundraiserKey);
         const performanceForDrive = performance.filter((row) => row.fundraiserKey === fundraiserKey);
@@ -795,8 +798,10 @@
         return {
           fundraiserKey,
           fundraiserLabel: premiumForDrive[0]?.fundraiserLabel || performanceForDrive[0]?.fundraiserLabel || fundraiserKey,
-          compositions: [...new Set(premiumForDrive.map((row) => text(row.packageCompositionLabel)).filter(Boolean))],
+          selectedCompositions: [...new Set(premiumForDrive.map((row) => text(row.packageCompositionLabel)).filter(Boolean))],
           exactPackages: [...new Set(premiumForDrive.map((row) => text(row.description)).filter(Boolean))],
+          verifiedOfferSetIds: [...new Set(premiumForDrive.map((row) => text(row.historicalOfferSetId)).filter(Boolean))],
+          verifiedOfferSummaries: [...new Set(premiumForDrive.map((row) => text(row.historicalOfferSummary)).filter(Boolean))],
           mappingConfidence: [...new Set(premiumForDrive.map((row) => text(row.mappingConfidence)).filter(Boolean))],
           premiumLinkedPledges: premiumMetrics.pledgeCount,
           premiumLinkedDollars: premiumMetrics.pledgedDollars,
@@ -813,9 +818,12 @@
         programId: rows[0]?.programId || performance[0]?.programId || '',
         programTitle: rows[0]?.programTitle || performance[0]?.programTitle || 'Unknown program',
         fundraiserCount: fundraiserKeys.length,
-        compositionCount: compositions.length,
-        compositions,
+        selectedCompositionCount: selectedCompositions.length,
+        selectedCompositions,
         exactPackageCount: exactPackages.length,
+        verifiedOfferSetCount: verifiedOfferSetIds.length,
+        verifiedOfferSetIds,
+        verifiedOfferSummaries,
         mappingConfidence: [...new Set(rows.map((row) => text(row.mappingConfidence)).filter(Boolean))],
         totalPremiumLinkedPledges: sum(rows, 'pledgeCount'),
         totalPremiumLinkedDollars: sum(rows, 'pledgedDollars'),
@@ -826,7 +834,11 @@
       };
     })
       .filter((item) => item.fundraiserCount >= 2)
-      .sort((a, b) => b.compositionCount - a.compositionCount || b.fundraiserCount - a.fundraiserCount || b.totalBroadcastDollars - a.totalBroadcastDollars);
+      .sort((a, b) =>
+        b.verifiedOfferSetCount - a.verifiedOfferSetCount
+        || b.fundraiserCount - a.fundraiserCount
+        || b.totalBroadcastDollars - a.totalBroadcastDollars
+      );
   }
 
   function premiumImpactEvidence(premiumRows = [], summaries = [], performanceRows = []) {
@@ -834,7 +846,7 @@
     const portfolio = portfolioSummary(premiumRows, summaries);
     const quality = mappingQuality(premiumRows);
     const comparisons = sameTitlePremiumComparisons(premiumRows, performanceRows);
-    const differentPackageComparisons = comparisons.filter((item) => item.compositionCount >= 2);
+    const differentOfferComparisons = comparisons.filter((item) => item.verifiedOfferSetCount >= 2);
 
     const comparableFundraisers = fundraisers.filter((row) =>
       Number.isFinite(Number(row.averagePremiumPledge))
@@ -865,7 +877,7 @@
       status: {
         observedEconomics: fundraisers.length ? 'Available' : 'Not available',
         associationAnalysis: comparableFundraisers.length ? 'Available' : 'Limited',
-        comparativeHistoricalEvidence: differentPackageComparisons.length ? 'Available' : 'Limited',
+        comparativeHistoricalEvidence: differentOfferComparisons.length ? 'Available' : 'Limited',
         causalEstimate: 'Not established'
       },
       coverage: {
@@ -877,7 +889,8 @@
         inferredRows,
         unmappedRows,
         repeatedTitles: comparisons.length,
-        sameTitleDifferentPackageComparisons: differentPackageComparisons.length,
+        sameTitleDifferentOfferComparisons: differentOfferComparisons.length,
+        sameTitleDifferentPackageComparisons: differentOfferComparisons.length,
         comparablePremiumVsNoPremiumFundraisers: comparableFundraisers.length
       },
       observed: {
@@ -904,7 +917,8 @@
         byFundraiser
       },
       comparisons,
-      differentPackageComparisons,
+      differentOfferComparisons,
+      differentPackageComparisons: differentOfferComparisons,
       causal: {
         estimate: null,
         status: 'Not established',
