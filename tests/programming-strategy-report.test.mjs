@@ -1161,7 +1161,7 @@ test('Day/Time performance keeps 8:00 and 8:30 starts in separate half-hour buck
     row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:300 }),
     row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60+30, minutes:60, dollars:100 }),
     row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:20*60, minutes:60, dollars:200 }),
-    row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:20*60+30, minutes:60, dollars:400 })
+    row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:20*60+30, minutes:60, dollars:100 })
   ];
 
   const result = workerContext.buildHourlyPatterns(schedule, rows);
@@ -1176,9 +1176,9 @@ test('Day/Time performance keeps 8:00 and 8:30 starts in separate half-hour buck
 
   assert.ok(mondayEight);
   assert.ok(mondayEightThirty);
-  assert.equal(mondayEight.airings, 1);
-  assert.equal(mondayEightThirty.airings, 1);
-  assert.equal(mondayEight.averageRate, 300);
+  assert.equal(mondayEight.airings, 2);
+  assert.equal(mondayEightThirty.airings, 2);
+  assert.equal(mondayEight.averageRate, 250);
   assert.equal(mondayEightThirty.averageRate, 100);
 });
 
