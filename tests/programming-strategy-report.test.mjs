@@ -1088,7 +1088,23 @@ test('strategy excludes boundary/end-break regular programming from pledge-progr
   };
   const fridayClass = workerContext.strategyBoundaryBreakClassification(protectedFriday, fridayAiring);
   assert.equal(fridayClass.exclude,true);
-  assert.match(fridayClass.reason,/Friday 8.?9 PM is protected regular programming/i);
+  assert.match(fridayClass.reason,/recurring Friday 8 PM regular programming/i);
+
+  const fridayPledgeSpecial = {
+    dateKey:'2015-12-04',
+    startMinutes:20*60,
+    lengthMinutes:90,
+    programTitle:'Simon & Garfunkel: The Concert in Central Park',
+    isNonPledge:false
+  };
+  const fridayPledgeAiring = {
+    program_minutes:90,
+    raw_payload:{},
+    dollars:785,
+    pledge_count:8
+  };
+  const fridayPledgeClass = workerContext.strategyBoundaryBreakClassification(fridayPledgeSpecial, fridayPledgeAiring);
+  assert.equal(fridayPledgeClass.exclude,false,'a genuine Friday 8 PM pledge special must remain historical evidence');
 
   const shortBoundary = {
     dateKey:'2018-11-27',
