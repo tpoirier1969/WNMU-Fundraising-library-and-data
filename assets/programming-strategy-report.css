@@ -673,3 +673,11 @@
     font-size:6.1pt;
   }
 }
+
+
+/* v0.22.201 print only the sections currently visible on screen */
+@media print{
+  .strategy-sheet .sheet-section.is-collapsed{
+    display:none!important;
+  }
+}
