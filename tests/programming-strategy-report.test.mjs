@@ -201,6 +201,42 @@ test('programmer ratings include explicit Neutral and Viable between Neutral and
   assert.ok(dont.score < unrated.score);
 });
 
+test('stale single-airing success is capped while multiple proven successes keep full rested value', () => {
+  const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime');
+  const single = baseProgram({ id:'stale-single', title:'Stale Single Winner', topic_primary:'Music' });
+  const proven = baseProgram({ id:'proven-old', title:'Proven Old Winner', topic_primary:'Music' });
+
+  const singleHistory = [
+    row({ programId:'stale-single', title:'Stale Single Winner', dateKey:'2020-03-08', minutes:90, dollars:1200, fundraiserId:'mar20' })
+  ];
+  const provenHistory = [
+    row({ programId:'proven-old', title:'Proven Old Winner', dateKey:'2020-03-08', minutes:90, dollars:1200, fundraiserId:'mar20' }),
+    row({ programId:'proven-old', title:'Proven Old Winner', dateKey:'2021-03-06', minutes:90, dollars:1200, fundraiserId:'mar21' })
+  ];
+
+  const stale = S.scoreProgramForSlot(single, slot, {
+    schedule,
+    evidenceRows: singleHistory,
+    overrideByProgramId:new Map(),
+    baselineRate:300
+  });
+  const multi = S.scoreProgramForSlot(proven, slot, {
+    schedule,
+    evidenceRows: provenHistory,
+    overrideByProgramId:new Map(),
+    baselineRate:300
+  });
+
+  const adjustment = (result, name) => result.adjustments.find(([key]) => key === name)?.[1];
+  assert.equal(adjustment(stale, 'titleHistory'), 4, 'one success older than two years should not keep the full high-rate title boost');
+  assert.equal(adjustment(stale, 'rest'), 2, 'a long rest should be modest when it rests on only one ancient result');
+  assert.ok(stale.cautions.some((item) => /stale single-airing evidence is capped/i.test(item)));
+
+  assert.equal(adjustment(multi, 'titleHistory'), 12, 'multiple proven successes should retain the full historical rate signal');
+  assert.equal(adjustment(multi, 'rest'), 8, 'multiple proven successes can still benefit from a long rest');
+  assert.ok(multi.score > stale.score);
+});
+
 test('day-map selector favors new titles and keeps previously aired anchors at one-third or less', () => {
   const make = (id, score, newTitle, rating = '') => ({
     programId: id,
