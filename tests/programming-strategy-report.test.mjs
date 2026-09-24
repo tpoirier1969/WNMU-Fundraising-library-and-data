@@ -1276,3 +1276,10 @@ test('peer-practice renderer does not coerce missing financials into $0 or 0 ple
   assert.match(enhancements,/example\.goalDollars != null/);
   assert.match(enhancements,/example\.pledgeCount != null/);
 });
+
+
+test('strategy print controls clearly state that collapsed sections will not print', () => {
+  const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
+  assert.match(page,/Print visible sections/);
+  assert.match(page,/Collapsed sections will not print\./);
+});
