@@ -153,8 +153,8 @@
     let differenceLabel = 'Median difference unavailable';
     if (Number.isFinite(diff)) {
       if (Math.abs(diff) < 0.5) differenceLabel = 'Median difference: essentially even';
-      else if (diff > 0) differenceLabel = 'Median difference: 9 PM +' + money(Math.abs(diff)) + '/pledge hr';
-      else differenceLabel = 'Median difference: 8 PM +' + money(Math.abs(diff)) + '/pledge hr';
+      else if (diff > 0) differenceLabel = 'Median difference: 9:00 PM +' + money(Math.abs(diff)) + '/pledge hr';
+      else differenceLabel = 'Median difference: 8:00 PM +' + money(Math.abs(diff)) + '/pledge hr';
     }
     return { paired, eight, nine, ties, diff, differenceLabel };
   }
@@ -165,8 +165,8 @@
     return '<div class="strategy-starttime-cell">' +
       '<strong>' + s.paired + ' paired fundraiser' + (s.paired === 1 ? '' : 's') + '</strong>' +
       '<div class="strategy-starttime-wins">' +
-        '<span><b>8 PM better:</b> ' + s.eight + '</span>' +
-        '<span><b>9 PM better:</b> ' + s.nine + '</span>' +
+        '<span><b>8:00 PM better:</b> ' + s.eight + '</span>' +
+        '<span><b>9:00 PM better:</b> ' + s.nine + '</span>' +
         '<span><b>Ties:</b> ' + s.ties + '</span>' +
       '</div>' +
       '<div class="strategy-starttime-difference">' + esc(s.differenceLabel) + '</div>' +
@@ -180,10 +180,10 @@
     const overall = comparisonSummary(rec.overall || {});
     const rows = Array.isArray(rec.weekdays) ? rec.weekdays : [];
     let html = '<div class="strategy-starttime-reconcile">';
-    html += '<div class="strategy-starttime-reconcile-head"><strong>8 PM vs 9 PM cross-check</strong><span>Paired-fundraiser comparison</span></div>';
+    html += '<div class="strategy-starttime-reconcile-head"><strong>8:00 PM vs 9:00 PM cross-check</strong><span>Paired-fundraiser comparison</span></div>';
     html += '<div class="strategy-starttime-howto"><strong>How to read this</strong>';
-    html += '<p>A <b>paired fundraiser</b> is one where we have at least one pledge-program start in both the <b>8:00–8:59 PM</b> bucket and the <b>9:00–9:59 PM</b> bucket for the weekday being compared. An 8:30 start counts with 8 PM; a 9:30 start counts with 9 PM.</p>';
-    html += '<p><b>8 PM better</b> and <b>9 PM better</b> count which bucket had the higher dollars-per-pledge-hour result within each fundraiser. <b>Median difference</b> is the middle of those within-fundraiser differences. It describes the history; it does not mean moving the same program by one hour will automatically create that amount.</p>';
+    html += '<p>A <b>paired fundraiser</b> is one where we have at least one pledge-program start in both the <b>8:00–8:29 PM</b> bucket and the <b>9:00–9:29 PM</b> bucket for the weekday being compared. <b>8:30 and 9:30 are separate buckets and are not included in this cross-check.</b></p>';
+    html += '<p><b>8:00 PM better</b> and <b>9:00 PM better</b> count which bucket had the higher dollars-per-pledge-hour result within each fundraiser. <b>Median difference</b> is the middle of those within-fundraiser differences. It describes the history; it does not mean moving the same program by one hour will automatically create that amount.</p>';
     html += '</div>';
 
     if (Number(diagnostics?.excludedBoundaryBreakRows || 0) > 0) {
@@ -196,8 +196,8 @@
 
     if (overall.paired) {
       html += '<p class="strategy-starttime-broad"><b>Broad history:</b> ' +
-        overall.paired + ' paired fundraisers. <b>8 PM better: ' + overall.eight +
-        '</b> · <b>9 PM better: ' + overall.nine + '</b> · <b>Ties: ' + overall.ties +
+        overall.paired + ' paired fundraisers. <b>8:00 PM better: ' + overall.eight +
+        '</b> · <b>9:00 PM better: ' + overall.nine + '</b> · <b>Ties: ' + overall.ties +
         '</b>. <b>' + esc(overall.differenceLabel) + '.</b></p>';
     }
 
@@ -220,7 +220,7 @@
       html += '</div>';
     }
 
-    html += '<p class="strategy-starttime-caution"><strong>Still not causal.</strong> Pairing 8 PM and 9 PM within the same fundraiser reduces drive-to-drive differences, but program mix remains a major confound. A bucket loaded with unusually strong or weak titles can make the clock look more important than it is.</p>';
+    html += '<p class="strategy-starttime-caution"><strong>Still not causal.</strong> Pairing the 8:00 PM and 9:00 PM half-hour buckets within the same fundraiser reduces drive-to-drive differences, but program mix remains a major confound. A bucket loaded with unusually strong or weak titles can make the clock look more important than it is.</p>';
     html += '</div>';
     return html;
   }
