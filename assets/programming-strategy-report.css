@@ -681,3 +681,14 @@
     display:none!important;
   }
 }
+
+
+.strategy-print-note{
+  align-self:center;
+  color:#5e7480;
+  font-size:.78rem;
+  font-weight:750;
+}
+@media print{
+  .strategy-print-note{display:none!important}
+}
