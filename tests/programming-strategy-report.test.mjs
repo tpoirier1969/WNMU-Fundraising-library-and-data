@@ -464,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.196'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.197'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -988,7 +988,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.196/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.197/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -1046,4 +1046,108 @@ test('strategy print CSS allows large day and grid containers to fragment across
   assert.match(styles,/\.strategy-hourly-grid,[\s\S]*?\.strategy-peer-practice-grid\{[\s\S]*?display:block!important/);
   assert.match(styles,/\.strategy-program-row\{[\s\S]*?break-inside:avoid-page/);
   assert.match(styles,/\.strategy-opportunity-row\{[\s\S]*?break-inside:auto!important/);
+});
+
+
+test('strategy excludes boundary/end-break regular programming from pledge-program performance', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.strategyBoundaryBreakClassification, 'function');
+
+  const roadshow = {
+    dateKey:'2020-03-02',
+    startMinutes:20*60,
+    lengthMinutes:60,
+    programTitle:'Antiques Roadshow',
+    isNonPledge:false
+  };
+  const roadshowAiring = {
+    program_minutes:60,
+    raw_payload:{},
+    imported_program_title:'ANTIQUES ROADSHOW'
+  };
+  const roadshowClass = workerContext.strategyBoundaryBreakClassification(roadshow, roadshowAiring);
+  assert.equal(roadshowClass.exclude,true);
+  assert.match(roadshowClass.reason,/end pledge break/i);
+
+  const shortBoundary = {
+    dateKey:'2018-11-27',
+    startMinutes:12*60,
+    lengthMinutes:60,
+    programTitle:'Regular Series',
+    isNonPledge:false
+  };
+  const shortBoundaryAiring = {
+    program_minutes:3,
+    raw_payload:{break_count:' 1 '}
+  };
+  const shortClass = workerContext.strategyBoundaryBreakClassification(shortBoundary, shortBoundaryAiring);
+  assert.equal(shortClass.exclude,true);
+  assert.match(shortClass.reason,/Boundary-break fundraising/i);
+
+  const truePledgeZero = {
+    dateKey:'2022-02-28',
+    startMinutes:21*60,
+    lengthMinutes:90,
+    programTitle:'Safe Money in Tough Times',
+    isNonPledge:false
+  };
+  const truePledgeZeroAiring = {
+    program_minutes:90,
+    raw_payload:{},
+    dollars:0,
+    pledge_count:0
+  };
+  const pledgeClass = workerContext.strategyBoundaryBreakClassification(truePledgeZero, truePledgeZeroAiring);
+  assert.equal(pledgeClass.exclude,false,'a genuine pledge program that raises $0 must remain in the averages');
+});
+
+test('prepared strategy schedules preserve source data but mark detected boundary breaks non-pledge for analysis', () => {
+  const { workerContext } = makeWorkerHarness();
+  const prepared = workerContext.prepareStrategySchedules([
+    {
+      id:'drive',
+      title:'Drive',
+      startDate:'2018-11-25',
+      endDate:'2018-12-05',
+      placements:[
+        {
+          id:'ar',
+          dateKey:'2018-11-26',
+          startMinutes:20*60,
+          lengthMinutes:60,
+          programTitle:'Antiques Roadshow',
+          sourceAiringHash:'ar-hash',
+          isNonPledge:false
+        },
+        {
+          id:'pledge',
+          dateKey:'2018-11-26',
+          startMinutes:21*60,
+          lengthMinutes:90,
+          programTitle:'Pledge Special',
+          sourceAiringHash:'pledge-hash',
+          isNonPledge:false
+        }
+      ]
+    }
+  ],[
+    {row_hash:'ar-hash',program_minutes:2,raw_payload:{break_count:' 1 '}},
+    {row_hash:'pledge-hash',program_minutes:90,raw_payload:{break_count:' 4 '}}
+  ]);
+
+  assert.equal(prepared.excludedBoundaryBreaks,1);
+  assert.equal(prepared.schedules[0].placements[0].isNonPledge,true);
+  assert.equal(prepared.schedules[0].placements[0].strategyBoundaryBreakOnly,true);
+  assert.equal(prepared.schedules[0].placements[1].isNonPledge,false);
+});
+
+test('start-time cross-check spells out win counts and median difference instead of scoreboard shorthand', () => {
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  assert.match(enhancements,/8 PM better/);
+  assert.match(enhancements,/9 PM better/);
+  assert.match(enhancements,/Ties/);
+  assert.match(enhancements,/Median difference/);
+  assert.match(enhancements,/paired fundraiser/);
+  assert.match(enhancements,/Data cleanup/);
+  assert.doesNotMatch(enhancements,/leader \+ ' ' \+ eight \+ '–' \+ nine/);
 });
