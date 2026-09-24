@@ -1073,6 +1073,23 @@ test('strategy excludes boundary/end-break regular programming from pledge-progr
   assert.equal(roadshowClass.exclude,true);
   assert.match(roadshowClass.reason,/end pledge break/i);
 
+  const protectedFriday = {
+    dateKey:'2025-12-05',
+    startMinutes:20*60,
+    lengthMinutes:24,
+    programTitle:'Washington Week In Review',
+    isNonPledge:false
+  };
+  const fridayAiring = {
+    program_minutes:30,
+    raw_payload:{},
+    dollars:156,
+    pledge_count:2
+  };
+  const fridayClass = workerContext.strategyBoundaryBreakClassification(protectedFriday, fridayAiring);
+  assert.equal(fridayClass.exclude,true);
+  assert.match(fridayClass.reason,/Friday 8.?9 PM is protected regular programming/i);
+
   const shortBoundary = {
     dateKey:'2018-11-27',
     startMinutes:12*60,
