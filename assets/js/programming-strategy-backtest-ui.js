@@ -76,7 +76,7 @@ function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);stat
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.205');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.206');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
@@ -121,7 +121,7 @@ function render(result){
     </section>
     <section class="backtest-metrics">
       ${metric(`${s.testedRecommendations}/${s.recommendedTitles}`,'recommended titles that actually aired and can be tested')}
-      ${metric(`${s.aboveMedianHits}/${s.testedRecommendations||0}`,'tested recommendations at or above this drive’s median title rate')}
+      ${metric(`${s.aboveMedianHits}/${s.testedRecommendations||0}`,'tested recommendations above this drive’s median title rate')}
       ${metric(`${s.topQuartileHits}/${s.testedRecommendations||0}`,'tested recommendations that landed in the drive’s top quartile')}
       ${metric(s.topActualTitles?pct(s.topActualCoverage):'—','top-quartile actual performers covered by the recommendation set')}
       ${metric(corr(correlation),'model-score / actual-rate correlation; requires at least 3 tested titles')}
