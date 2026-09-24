@@ -990,7 +990,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.201/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.202/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -1282,4 +1282,12 @@ test('strategy print controls clearly state that collapsed sections will not pri
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   assert.match(page,/Print visible sections/);
   assert.match(page,/Collapsed sections will not print\./);
+});
+
+
+test('nearby peer timing evidence does not convert missing dollars or pledge counts to zero', () => {
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  assert.match(enhancements,/item\.actualDollars != null/);
+  assert.match(enhancements,/item\.pledgeCount != null/);
+  assert.doesNotMatch(enhancements,/if \(Number\.isFinite\(Number\(item\.pledgeCount\)\)\)/);
 });

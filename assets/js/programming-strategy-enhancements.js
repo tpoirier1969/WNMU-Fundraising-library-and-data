@@ -68,8 +68,8 @@
         html += '<b>' + esc(clock(item.startMinutes)) + ' · ' + esc(item.sourceLabel || 'Other station') + '</b>';
         if (item.programTitle) html += ' · ' + esc(item.programTitle);
         html += ': ' + esc(item.text || '');
-        if (Number.isFinite(Number(item.actualDollars))) html += ' · ' + esc(money(item.actualDollars));
-        if (Number.isFinite(Number(item.pledgeCount))) html += ' · ' + Number(item.pledgeCount) + ' pledge' + (Number(item.pledgeCount) === 1 ? '' : 's');
+        if (item.actualDollars != null && Number.isFinite(Number(item.actualDollars))) html += ' · ' + esc(money(item.actualDollars));
+        if (item.pledgeCount != null && Number.isFinite(Number(item.pledgeCount))) html += ' · ' + Number(item.pledgeCount) + ' pledge' + (Number(item.pledgeCount) === 1 ? '' : 's');
         html += '</li>';
       });
       html += '</ul></div>';
