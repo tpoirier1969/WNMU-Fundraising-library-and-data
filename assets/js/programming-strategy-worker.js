@@ -62,16 +62,17 @@ function strategyBoundaryBreakClassification(placement = {}, airing = null) {
     };
   }
 
-  const protectedFridayBoundaryBreak =
+  const recurringFridayRegular =
     date?.getDay() === 5
     && Number.isFinite(startMinutes)
     && startMinutes >= 20 * 60
-    && startMinutes < 21 * 60;
+    && startMinutes < 21 * 60
+    && ['washington week in review', 'charlie rose', 'off the record'].includes(titleKey);
 
-  if (protectedFridayBoundaryBreak) {
+  if (recurringFridayRegular) {
     return {
       exclude: true,
-      reason: 'Boundary-break fundraising: Friday 8–9 PM is protected regular programming, so pledge dollars attached to that program are not treated as pledge-title performance.'
+      reason: 'Boundary-break fundraising: recurring Friday 8 PM regular programming with pledge dollars attached to the normal program.'
     };
   }
 
