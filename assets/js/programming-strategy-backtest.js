@@ -83,10 +83,10 @@
     const actualRank = new Map(outcomes.map((x, i) => [x.key, i + 1]));
     const recommendationResults = recommendations.map((rec, i) => {
       const actual = byKey.get(rec.key) || byTitle.get(keyTitle(rec.title)) || null;
-      return { ...rec, recommendationRank: i + 1, observed: !!actual, actualRate: actual?.rate ?? null, actualDollars: actual?.dollars ?? null, actualPledges: actual?.pledges ?? null, actualAirings: actual?.airings ?? null, actualRank: actual ? actualRank.get(actual.key) : null, aboveMedian: actual && medianRate != null ? actual.rate >= medianRate : null, topQuartile: actual && topThreshold != null ? actual.rate >= topThreshold : null };
+      return { ...rec, recommendationRank: i + 1, observed: !!actual, actualRate: actual?.rate ?? null, actualDollars: actual?.dollars ?? null, actualPledges: actual?.pledges ?? null, actualAirings: actual?.airings ?? null, actualRank: actual ? actualRank.get(actual.key) : null, aboveMedian: actual && medianRate != null ? actual.rate > medianRate : null, topQuartile: actual && topThreshold != null ? actual.rate > 0 && actual.rate >= topThreshold : null };
     });
     const recKeys = new Set(recommendations.map((x) => x.key)), recTitles = new Set(recommendations.map((x) => keyTitle(x.title)));
-    const topActual = outcomes.filter((x) => topThreshold != null && x.rate >= topThreshold).map((x) => {
+    const topActual = outcomes.filter((x) => topThreshold != null && x.rate > 0 && x.rate >= topThreshold).map((x) => {
       const rec = recommendationResults.find((r) => r.key === x.key || keyTitle(r.title) === keyTitle(x.title));
       return { ...x, recommended: recKeys.has(x.key) || recTitles.has(keyTitle(x.title)), recommendationRank: rec?.recommendationRank ?? null };
     });
