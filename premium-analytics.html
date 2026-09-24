@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Premium Analytics · WNMU-TV PBS</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
-  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.193">
+  <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.194">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
-  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-analysis.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-data.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-chart-analysis.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-charts.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-analytics.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-visuals.js?v=0.22.193"></script>
-  <script defer src="assets/js/premium-impact-ui.js?v=0.22.193"></script>
+  <script defer src="assets/js/one-sheet-analysis.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-analysis.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-historical-evidence.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-data.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-chart-analysis.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-charts.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-analytics.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-visuals.js?v=0.22.194"></script>
+  <script defer src="assets/js/premium-impact-ui.js?v=0.22.194"></script>
 </head>
 <body>
   <div id="premium-access-gate" class="report-access-gate hidden"></div>
@@ -30,8 +31,10 @@
         <label class="premium-field"><span>Import premium-cost reports (.xls/.xlsx)</span><input id="premium-file-input" type="file" multiple accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
         <label class="premium-field"><span>View</span><select id="premium-fundraiser-filter"><option value="all">All imported fundraisers</option></select></label>
         <button id="premium-refresh-library" class="premium-button" type="button">Refresh Program Library</button>
+        <label class="premium-field"><span>Import verified offer evidence (.json)</span><input id="premium-evidence-file-input" type="file" accept=".json,application/json"></label>
+        <button id="premium-clear-evidence" class="premium-button" type="button">Clear verified evidence</button>
         <button id="premium-clear" class="premium-button" type="button">Clear browser premium data</button>
-        <div><div id="premium-import-count" class="premium-role">0 fundraiser reports stored</div></div>
+        <div><div id="premium-import-count" class="premium-role">0 fundraiser reports stored</div><div id="premium-evidence-count" class="premium-role">0 verified offer records</div></div>
         <div id="premium-status" class="premium-status">Checking administrator access…</div>
       </section>
 
