@@ -141,6 +141,61 @@
     });
   }
 
+  function comparisonText(item) {
+    if (!item || !Number(item.pairedFundraisers)) return 'Not enough paired history';
+    const eight = Number(item.hourAWins || 0);
+    const nine = Number(item.hourBWins || 0);
+    const ties = Number(item.ties || 0);
+    const diff = Number(item.medianDifference);
+    const leader = eight === nine ? 'Even' : eight > nine ? '8 PM leads' : '9 PM leads';
+    const diffText = Number.isFinite(diff)
+      ? ' · median 9−8 ' + (diff >= 0 ? '+' : '') + money(diff) + '/pledge hr'
+      : '';
+    return leader + ' ' + eight + '–' + nine + (ties ? '–' + ties : '') + diffText;
+  }
+
+  function startTimeReconciliationHtml(hourly) {
+    const rec = hourly && hourly.reconciliation ? hourly.reconciliation : null;
+    if (!rec) return '';
+
+    const overall = rec.overall || {};
+    const rows = Array.isArray(rec.weekdays) ? rec.weekdays : [];
+    let html = '<div class="strategy-starttime-reconcile">';
+    html += '<div class="strategy-starttime-reconcile-head"><strong>8 PM vs 9 PM cross-check</strong><span>Paired-fundraiser comparison</span></div>';
+    html += '<p><b>Broad history:</b> ' + esc(comparisonText(overall)) + '. This is the broader result we have discussed before.</p>';
+    html += '<p>The hourly grid above is narrower: it is <b>weekday-specific</b> and usually <b>' + esc(rec.targetSeason || hourly.season || 'selected') + '-season specific</b>. A weekday can therefore legitimately run opposite to the broad 8 PM result.</p>';
+
+    const usable = rows.filter(function (row) {
+      return Number(row.allHistory?.pairedFundraisers || 0) > 0 || Number(row.targetSeason?.pairedFundraisers || 0) > 0;
+    });
+    if (usable.length) {
+      html += '<div class="strategy-starttime-reconcile-table">';
+      html += '<div class="strategy-starttime-reconcile-row strategy-starttime-reconcile-header"><span>Weekday</span><span>All history</span><span>' + esc(rec.targetSeason || 'Target season') + ' only</span></div>';
+      usable.forEach(function (row) {
+        html += '<div class="strategy-starttime-reconcile-row"><strong>' + esc(row.weekday || '') + '</strong><span>' + esc(comparisonText(row.allHistory)) + '</span><span>' + esc(comparisonText(row.targetSeason)) + '</span></div>';
+      });
+      html += '</div>';
+    }
+
+    html += '<p class="strategy-starttime-caution"><strong>Still not causal.</strong> Pairing 8 PM and 9 PM within the same fundraiser reduces drive-to-drive differences, but program mix remains a major confound. A 9 PM bucket loaded with strong music titles and an 8 PM bucket loaded with weak or non-pledge-like titles can make the clock look more important than it is.</p>';
+    html += '</div>';
+    return html;
+  }
+
+  function decorateHourlySection(root, hourly) {
+    if (!root || !hourly) return;
+    const section = Array.from(root.querySelectorAll('section.sheet-section')).find(function (item) {
+      const heading = item.querySelector('.strategy-section-head h2, :scope > h2');
+      return heading && heading.textContent.trim() === 'Day/time performance';
+    });
+    if (!section || section.querySelector('.strategy-starttime-reconcile')) return;
+    const head = section.querySelector(':scope > .strategy-section-head');
+    const html = startTimeReconciliationHtml(hourly);
+    if (!html) return;
+    if (head) head.insertAdjacentHTML('afterend', html);
+    else section.insertAdjacentHTML('afterbegin', html);
+  }
+
   function peerPracticesHtml(rows) {
     if (!Array.isArray(rows) || !rows.length) {
       return '<section class="sheet-section"><h2>Peer practices WNMU may be leaving on the table</h2><p>No strong positive peer-practice evidence is loaded yet.</p></section>';
@@ -246,6 +301,7 @@
 
   function decorate(root, result) {
     if (!root || !result) return;
+    decorateHourlySection(root, result.hourlyPatterns || {});
     insertPeerPractices(root, result.peerPractices || []);
     decorateDayMap(root, result.strategy || {});
     splitCompoundSections(root);
@@ -255,6 +311,8 @@
   globalThis.WNMUStrategyEnhancements = {
     decorate,
     decorateDayMap,
+    decorateHourlySection,
+    startTimeReconciliationHtml,
     insertPeerPractices,
     splitCompoundSections,
     enableCollapsibleSections,
