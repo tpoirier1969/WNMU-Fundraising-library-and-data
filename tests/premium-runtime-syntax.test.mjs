@@ -5,7 +5,9 @@ import test from 'node:test';
 
 const runtimeFiles = [
   '../assets/js/premium-analysis.js',
+  '../assets/js/premium-historical-evidence.js',
   '../assets/js/premium-data.js',
+  '../assets/js/premium-evidence-ui.js',
   '../assets/js/premium-analytics.js',
   '../assets/js/premium-report.js',
   '../assets/js/premium-chart-analysis.js',
