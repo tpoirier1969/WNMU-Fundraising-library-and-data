@@ -121,7 +121,7 @@ function render(result){
     </section>
     <section class="backtest-metrics">
       ${metric(`${s.testedRecommendations}/${s.recommendedTitles}`,'recommended titles that actually aired and can be tested')}
-      ${metric(`${s.aboveMedianHits}/${s.testedRecommendations||0}`,'tested recommendations at or above this drive’s median title rate')}
+      ${metric(`${s.aboveMedianHits}/${s.testedRecommendations||0}`,'tested recommendations above this drive’s median title rate')}
       ${metric(`${s.topQuartileHits}/${s.testedRecommendations||0}`,'tested recommendations that landed in the drive’s top quartile')}
       ${metric(s.topActualTitles?pct(s.topActualCoverage):'—','top-quartile actual performers covered by the recommendation set')}
       ${metric(corr(correlation),'model-score / actual-rate correlation; requires at least 3 tested titles')}
