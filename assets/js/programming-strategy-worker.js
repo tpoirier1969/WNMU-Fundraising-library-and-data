@@ -62,6 +62,19 @@ function strategyBoundaryBreakClassification(placement = {}, airing = null) {
     };
   }
 
+  const protectedFridayBoundaryBreak =
+    date?.getDay() === 5
+    && Number.isFinite(startMinutes)
+    && startMinutes >= 20 * 60
+    && startMinutes < 21 * 60;
+
+  if (protectedFridayBoundaryBreak) {
+    return {
+      exclude: true,
+      reason: 'Boundary-break fundraising: Friday 8–9 PM is protected regular programming, so pledge dollars attached to that program are not treated as pledge-title performance.'
+    };
+  }
+
   const regularRoadshowBoundaryBreak =
     titleKey === 'antiques roadshow'
     && date?.getDay() === 1
