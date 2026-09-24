@@ -464,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.198'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.199'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -988,7 +988,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.198/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.199/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -1176,37 +1176,34 @@ test('Day/Time performance keeps 8:00 and 8:30 starts in separate half-hour buck
 
   assert.ok(mondayEight);
   assert.ok(mondayEightThirty);
-  assert.equal(mondayEight.airings, 2);
-  assert.equal(mondayEightThirty.airings, 2);
-  assert.equal(mondayEight.averageRate, 250);
-  assert.equal(mondayEightThirty.averageRate, 100);
+  assert.equal(mondayEight.targetSeason.airings, 2);
+  assert.equal(mondayEightThirty.targetSeason.airings, 2);
+  assert.equal(mondayEight.targetSeason.averageRate, 250);
+  assert.equal(mondayEightThirty.targetSeason.averageRate, 100);
+  assert.equal(mondayEight.allHistory.airings, 2);
+  assert.equal(mondayEightThirty.allHistory.airings, 2);
 });
 
-test('Day/Time performance supplies weekday and weekend half-hour overview before daily detail', () => {
+test('Day/Time performance keeps target-season evidence primary while carrying all-history context', () => {
   const { workerContext } = makeWorkerHarness();
   const rows = [
-    row({ fundraiserId:'weekday-a', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:300 }),
-    row({ fundraiserId:'weekday-b', dateKey:'2025-12-02', startMinutes:20*60, minutes:60, dollars:500 }),
-    row({ fundraiserId:'weekend-a', dateKey:'2025-12-06', startMinutes:20*60, minutes:60, dollars:100 }),
-    row({ fundraiserId:'weekend-b', dateKey:'2025-12-07', startMinutes:20*60+30, minutes:60, dollars:200 })
+    row({ fundraiserId:'dec-a', dateKey:'2025-12-03', startMinutes:22*60, minutes:60, dollars:300 }),
+    row({ fundraiserId:'mar-a', dateKey:'2025-03-05', startMinutes:22*60, minutes:60, dollars:500 })
   ];
 
   const result = workerContext.buildHourlyPatterns(schedule, rows);
-  const weekday = result.overviewRows.find((item) => item.group === 'Weekday');
-  const weekend = result.overviewRows.find((item) => item.group === 'Weekend');
+  const wednesdayTen = result.rows.find((item) =>
+    item.weekday === 'Wednesday' && item.startMinutes === 22*60
+  );
 
-  assert.ok(weekday);
-  assert.ok(weekend);
-  assert.equal(weekday.days, 'Monday–Friday');
-  assert.equal(weekend.days, 'Saturday–Sunday');
-
-  const weekdayEight = weekday.rows.find((item) => item.startMinutes === 20*60);
-  const weekendEight = weekend.rows.find((item) => item.startMinutes === 20*60);
-  const weekendEightThirty = weekend.rows.find((item) => item.startMinutes === 20*60+30);
-
-  assert.equal(weekdayEight.airings, 2);
-  assert.equal(weekendEight.airings, 1);
-  assert.equal(weekendEightThirty.airings, 1);
+  assert.ok(wednesdayTen);
+  assert.equal(result.season,'December');
+  assert.equal(wednesdayTen.targetSeason.airings,1);
+  assert.equal(wednesdayTen.targetSeason.fundraiserSamples,1);
+  assert.equal(wednesdayTen.allHistory.airings,2);
+  assert.equal(wednesdayTen.allHistory.fundraiserSamples,2);
+  assert.ok(result.historyStartDate);
+  assert.ok(result.historyEndDate);
 });
 
 test('8:00 vs 9:00 paired comparison excludes 8:30 and 9:30 starts', () => {
@@ -1233,15 +1230,53 @@ test('8:00 vs 9:00 paired comparison excludes 8:30 and 9:30 starts', () => {
   assert.equal(exact.medianHourBRate,300);
 });
 
-test('Day/Time report explains half-hour buckets and renders broad overview before daily breakdown', () => {
+test('Day/Time report explains half-hour buckets and shows season plus all-history context without redundant weekday overview', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
 
   assert.match(reportUi,/30-minute start-time buckets/);
   assert.match(reportUi,/8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM/);
-  assert.match(reportUi,/General weekday \/ weekend pattern/);
+  assert.match(reportUi,/all fundraiser history/);
+  assert.match(reportUi,/Season-specific evidence is primary/);
   assert.match(reportUi,/Daily breakdown/);
-  assert.ok(reportUi.indexOf('General weekday / weekend pattern') < reportUi.indexOf('Daily breakdown'));
+  assert.doesNotMatch(reportUi,/General weekday \/ weekend pattern/);
+  assert.match(reportUi,/minStart/);
+  assert.match(reportUi,/maxStart/);
   assert.match(enhancements,/8:00–8:29 PM/);
   assert.match(enhancements,/8:30 and 9:30 are separate buckets/);
+});
+
+
+test('peer-practice evidence preserves missing financials as missing rather than zero', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.buildPeerPracticeGaps, 'function');
+  const practices = workerContext.buildPeerPracticeGaps(schedule,[
+    {
+      station_code:'PBSWIS',
+      station_name:'PBS Wisconsin',
+      season:'December',
+      program_title_raw:'Bucky Badger documentary',
+      assessment_raw:'Local documentary premiere was a major success, rated 5+++.',
+      summary:'Local documentary premiere was a major success, rated 5+++.',
+      assessment_signal:2,
+      evidence_strength:5,
+      context_flags:{ local:true, live:true, guest:true },
+      actual_dollars:null,
+      goal_dollars:null,
+      pledge_count:null
+    }
+  ]);
+  const local = practices.find((item) => item.label === 'Local productions as pledge anchors');
+  assert.ok(local);
+  assert.equal(local.examples[0].actualDollars,null);
+  assert.equal(local.examples[0].goalDollars,null);
+  assert.equal(local.examples[0].pledgeCount,null);
+  assert.match(local.examples[0].summary,/5\+\+\+/);
+});
+
+test('peer-practice renderer does not coerce missing financials into $0 or 0 pledges', () => {
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  assert.match(enhancements,/example\.actualDollars != null/);
+  assert.match(enhancements,/example\.goalDollars != null/);
+  assert.match(enhancements,/example\.pledgeCount != null/);
 });
