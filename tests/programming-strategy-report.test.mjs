@@ -464,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.195'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.196'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -988,7 +988,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.195/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.196/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -998,4 +998,52 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   assert.match(styles, /\.sheet-section\.is-collapsed/);
   assert.match(styles, /\.strategy-collapse-toggle/);
   assert.match(styles, /\.strategy-window-rationale/);
+});
+
+
+test('paired start-time reconciliation can show broad 8 PM strength while Monday favors 9 PM', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.pairedStartTimeCheck, 'function');
+
+  const rows = [
+    // Fundraiser A: Monday 9 PM wins
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:100 }),
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:21*60, minutes:60, dollars:300 }),
+    // Fundraiser B: Monday 9 PM wins
+    row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:20*60, minutes:60, dollars:100 }),
+    row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:21*60, minutes:60, dollars:250 }),
+    // Three non-Monday fundraisers where 8 PM wins, making the broad result favor 8 PM
+    row({ fundraiserId:'c', dateKey:'2025-12-02', startMinutes:20*60, minutes:60, dollars:400 }),
+    row({ fundraiserId:'c', dateKey:'2025-12-02', startMinutes:21*60, minutes:60, dollars:100 }),
+    row({ fundraiserId:'d', dateKey:'2025-12-03', startMinutes:20*60, minutes:60, dollars:500 }),
+    row({ fundraiserId:'d', dateKey:'2025-12-03', startMinutes:21*60, minutes:60, dollars:100 }),
+    row({ fundraiserId:'e', dateKey:'2025-12-04', startMinutes:20*60, minutes:60, dollars:450 }),
+    row({ fundraiserId:'e', dateKey:'2025-12-04', startMinutes:21*60, minutes:60, dollars:100 })
+  ];
+
+  const overall = workerContext.pairedStartTimeCheck(rows,{hourA:20,hourB:21});
+  const monday = workerContext.pairedStartTimeCheck(rows,{hourA:20,hourB:21,weekdayIndex:1,season:'December'});
+
+  assert.equal(overall.hourAWins,3);
+  assert.equal(overall.hourBWins,2);
+  assert.ok(overall.medianDifference < 0);
+  assert.equal(monday.hourAWins,0);
+  assert.equal(monday.hourBWins,2);
+  assert.ok(monday.medianDifference > 0);
+});
+
+test('strategy report explicitly reconciles broad and weekday-specific 8 PM vs 9 PM evidence', () => {
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  assert.match(enhancements,/8 PM vs 9 PM cross-check/);
+  assert.match(enhancements,/Paired-fundraiser comparison/);
+  assert.match(enhancements,/weekday-specific/);
+  assert.match(enhancements,/program mix remains a major confound/);
+});
+
+test('strategy print CSS allows large day and grid containers to fragment across pages', () => {
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+  assert.match(styles,/\.strategy-day-compact\{[\s\S]*?break-inside:auto!important/);
+  assert.match(styles,/\.strategy-hourly-grid,[\s\S]*?\.strategy-peer-practice-grid\{[\s\S]*?display:block!important/);
+  assert.match(styles,/\.strategy-program-row\{[\s\S]*?break-inside:avoid-page/);
+  assert.match(styles,/\.strategy-opportunity-row\{[\s\S]*?break-inside:auto!important/);
 });
