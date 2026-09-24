@@ -1344,7 +1344,7 @@ test('historical backtest freezes recommendations before the target fundraiser a
       library,
       airings,
       scheduleRows,
-      overrides:[],
+      overrides:[{ program_id:'2', rating:'must_air', rated_at:'2026-01-10T00:00:00Z', updated_at:'2026-01-10T00:00:00Z' }],
       peerObservations:[],
       now:'2026-09-24T12:00:00Z'
     }
@@ -1353,6 +1353,9 @@ test('historical backtest freezes recommendations before the target fundraiser a
   const result = workerMessages.find((message) => message.type === 'result');
   assert.ok(result);
   assert.equal(result.strategy.cutoff, '2025-12-04');
+  assert.equal(result.diagnostics.overrideRows, 1);
+  assert.equal(result.diagnostics.effectiveOverrideRows, 0, 'a programmer rating entered after the target drive must not time-travel into the recommendation');
+  assert.equal(result.diagnostics.excludedPostCutoffOverrides, 1);
   assert.equal(result.diagnostics.evidenceRows, 1, 'only the completed 2024 fundraiser may inform December 2025 recommendations');
   assert.equal(result.diagnostics.backtestTargetFound, true);
   assert.equal(result.diagnostics.backtestActualRows, 2, 'the target fundraiser is read separately for outcome grading');
