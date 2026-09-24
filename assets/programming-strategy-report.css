@@ -515,3 +515,96 @@
     font-size:6.8pt;
   }
 }
+
+
+/* v0.22.198 half-hour Day/Time performance */
+.strategy-dayclass-overview{
+  margin:10px 0 14px;
+  border:1px solid #d7e3e8;
+  border-radius:8px;
+  background:#fbfdfe;
+  overflow:hidden;
+}
+.strategy-dayclass-overview>h3,
+.strategy-daily-breakdown-head>h3{
+  margin:0;
+  color:#17384a;
+  font-size:.95rem;
+}
+.strategy-dayclass-overview>h3{padding:9px 11px 2px}
+.strategy-dayclass-overview>p{
+  margin:0;
+  padding:0 11px 9px;
+  color:#607682;
+  font-size:.8rem;
+}
+.strategy-dayclass-table{border-top:1px solid #d7e3e8}
+.strategy-dayclass-row{
+  display:grid;
+  grid-template-columns:110px minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+  align-items:center;
+  padding:6px 10px;
+  border-bottom:1px solid #e8eef1;
+  font-size:.79rem;
+  background:#fff;
+}
+.strategy-dayclass-row:last-child{border-bottom:0}
+.strategy-dayclass-row:nth-child(even):not(.strategy-dayclass-head){background:#fafcfd}
+.strategy-dayclass-row>strong{color:#315a6e}
+.strategy-dayclass-row>span{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:4px 9px;
+}
+.strategy-dayclass-row small{color:#6b7f89}
+.strategy-dayclass-head{
+  background:#eaf2f6!important;
+  color:#405d6a;
+  font-weight:850;
+}
+.strategy-daily-breakdown-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:12px;
+  margin:4px 0 8px;
+}
+.strategy-daily-breakdown-head p{
+  margin:0;
+  color:#607682;
+  font-size:.8rem;
+}
+.strategy-hourly-empty{
+  padding:7px 10px;
+  color:#7a8790;
+  font-size:.78rem;
+}
+.strategy-no-history{color:#8a969d}
+
+@media(max-width:760px){
+  .strategy-dayclass-row{grid-template-columns:90px 1fr}
+  .strategy-dayclass-row>span:last-child{grid-column:2}
+  .strategy-dayclass-head{display:none}
+  .strategy-daily-breakdown-head{display:grid}
+}
+@media print{
+  .strategy-dayclass-overview{
+    break-inside:auto;
+    page-break-inside:auto;
+    margin:5px 0 7px;
+  }
+  .strategy-dayclass-row{
+    grid-template-columns:65px minmax(0,1fr) minmax(0,1fr);
+    padding:3px 5px;
+    font-size:6.8pt;
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-dayclass-row small{font-size:6.4pt}
+  .strategy-dayclass-overview>h3{padding:5px 6px 1px}
+  .strategy-dayclass-overview>p{padding:0 6px 5px;font-size:6.8pt}
+  .strategy-daily-breakdown-head{margin:3px 0 4px}
+  .strategy-daily-breakdown-head p{font-size:6.8pt}
+}
