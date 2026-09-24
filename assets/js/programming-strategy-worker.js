@@ -29,67 +29,9 @@ function strategyBoundaryBreakClassification(placement = {}, airing = null) {
     return { exclude: true, reason: 'Explicitly marked non-pledge.' };
   }
 
-  const scheduledMinutes = Number(
-    placement.lengthMinutes
-    ?? placement.programMinutes
-    ?? placement.program_minutes
-    ?? placement.durationMinutes
-    ?? 0
-  );
-  const reportedMinutes = Number(airing?.program_minutes || 0);
-  const breakCount = rawBreakCount(airing);
-  const startMinutes = Number(placement.startMinutes ?? placement.start_minutes);
-  const date = S.parseDate(placement.dateKey || placement.date_key || '');
-  const titleKey = S.lookupKey(
-    placement.programTitle
-    || placement.program_title
-    || placement.title
-    || airing?.matched_library_title
-    || airing?.imported_program_title
-    || ''
-  );
-
-  const shortSingleBreak =
-    scheduledMinutes >= 30
-    && reportedMinutes > 0
-    && reportedMinutes <= 10
-    && breakCount === 1;
-
-  if (shortSingleBreak) {
-    return {
-      exclude: true,
-      reason: 'Boundary-break fundraising: ' + reportedMinutes + ' reported fundraising minute' + (reportedMinutes === 1 ? '' : 's') + ' / one break attached to a ' + scheduledMinutes + '-minute scheduled program.'
-    };
-  }
-
-  const recurringFridayRegular =
-    date?.getDay() === 5
-    && Number.isFinite(startMinutes)
-    && startMinutes >= 20 * 60
-    && startMinutes < 21 * 60
-    && ['washington week in review', 'charlie rose', 'off the record'].includes(titleKey);
-
-  if (recurringFridayRegular) {
-    return {
-      exclude: true,
-      reason: 'Boundary-break fundraising: recurring Friday 8 PM regular programming with pledge dollars attached to the normal program.'
-    };
-  }
-
-  const regularRoadshowBoundaryBreak =
-    titleKey === 'antiques roadshow'
-    && date?.getDay() === 1
-    && Number.isFinite(startMinutes)
-    && startMinutes >= 20 * 60
-    && startMinutes < 21 * 60;
-
-  if (regularRoadshowBoundaryBreak) {
-    return {
-      exclude: true,
-      reason: 'Boundary-break fundraising: regular Monday 8 PM Antiques Roadshow remained normal programming with an end pledge break.'
-    };
-  }
-
+  // WNMU treats a program with an attached pledge break as a pledge program
+  // whether the break is internal or follows the program. Do not infer
+  // non-pledge status from break placement, break count, or reported break minutes.
   return { exclude: false, reason: '' };
 }
 
