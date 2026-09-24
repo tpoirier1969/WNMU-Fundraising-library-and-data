@@ -7,8 +7,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.177">
   <link rel="stylesheet" href="assets/programming-strategy-report.css?v=0.22.199">
+  <link rel="stylesheet" href="assets/standalone-navigation.css?v=0.22.200">
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
+  <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
   <script defer src="assets/js/programming-strategy-enhancements.js?v=0.22.199"></script>
   <script defer src="assets/js/programming-strategy-report.js?v=0.22.199"></script>
 </head>
@@ -23,12 +25,9 @@
           <p>Pre-drive topic, title, day and time planning from WNMU history</p>
         </div>
       </div>
-      <div class="report-top-actions">
-        <span id="strategy-role" class="report-role">Checking access…</span>
-        <a class="report-button" href="reports.html">Report hub</a>
-        <a class="report-button" href="./">Pledge Program Library</a>
-      </div>
+      <div class="report-top-actions"><span id="strategy-role" class="report-role">Checking access…</span></div>
     </header>
+    <div data-standalone-navigation data-active="strategy" data-extras="reports,strategy,premium"></div>
     <main class="report-main">
       <div class="report-toolbar strategy-toolbar">
         <div class="strategy-controls">
