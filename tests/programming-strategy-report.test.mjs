@@ -622,9 +622,11 @@ test('Report 5 uses reconciled schedule duration and excludes unmatched or out-o
   assert.ok(music);
   assert.equal(Math.round(music.averageRate), 133, '$200 over the reconciled 90-minute placement should be about $133/hr, not $12,000/hr');
   const saturdaySeven = result.hourlyPatterns.rows.find((item) => item.weekday === 'Saturday' && item.startMinutes === 19 * 60);
-  assert.equal(Math.round(saturdaySeven.averageRate), 133);
+  assert.equal(Math.round(saturdaySeven.targetSeason.averageRate), 133);
+  assert.equal(Math.round(saturdaySeven.allHistory.averageRate), 133);
   const saturdayEight = result.hourlyPatterns.rows.find((item) => item.weekday === 'Saturday' && item.startMinutes === 20 * 60);
-  assert.equal(saturdayEight.fundraiserSamples, 0, 'unmatched imported dollars must not become start-time performance evidence');
+  assert.equal(saturdayEight.targetSeason.fundraiserSamples, 0, 'unmatched imported dollars must not become start-time performance evidence');
+  assert.equal(saturdayEight.allHistory.fundraiserSamples, 0, 'unmatched imported dollars must not become all-history start-time evidence');
 });
 
 test('Anticipated Day Strength normalizes against the full accepted historical fundraiser schedule', () => {
