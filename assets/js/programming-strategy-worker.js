@@ -385,7 +385,16 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
       stationKey: S.lookupKey(item.station_code || sourceLabel),
       sourceLabel,
       text: text(item.summary || item.assessment_raw || ''),
-      tone: signal > 0 ? 'positive' : signal < 0 ? 'negative' : 'neutral'
+      tone: signal > 0 ? 'positive' : signal < 0 ? 'negative' : 'neutral',
+      season,
+      startMinutes: Number.isFinite(itemStart) ? itemStart : null,
+      endMinutes: Number.isFinite(itemEnd) ? itemEnd : null,
+      daypart: text(item.daypart),
+      programTitle: text(item.program_title_raw),
+      actualDollars: Number.isFinite(Number(item.actual_dollars)) ? Number(item.actual_dollars) : null,
+      goalDollars: Number.isFinite(Number(item.goal_dollars)) ? Number(item.goal_dollars) : null,
+      pledgeCount: Number.isFinite(Number(item.pledge_count)) ? Number(item.pledge_count) : null,
+      contextFlags: item.context_flags && typeof item.context_flags === 'object' ? item.context_flags : {}
     });
   }
 
@@ -424,6 +433,212 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
     }
   }
   return chosen.slice(0, 4);
+}
+
+function peerTimingAlternatives(schedule = {}, observations = [], weekday = '', anchorMinutes = 17 * 60) {
+  const targetSeason = S.seasonForDate(schedule.startDate);
+  const minStart = anchorMinutes - 60;
+  const maxStart = anchorMinutes + 90;
+  const candidates = [];
+
+  for (const item of observations || []) {
+    if (text(item.day_of_week).toLowerCase() !== text(weekday).toLowerCase()) continue;
+    const start = Number(item.start_time_minutes);
+    if (!Number.isFinite(start) || start < minStart || start > maxStart) continue;
+    const strength = Number(item.evidence_strength || 0);
+    if (strength < 3) continue;
+    const signal = Number(item.assessment_signal);
+    const sameSeason = text(item.season) === targetSeason;
+    const sourceLabel = text(item.station_name || item.station_code || 'Other station');
+    candidates.push({
+      sourceLabel,
+      stationKey: S.lookupKey(item.station_code || sourceLabel),
+      startMinutes: start,
+      signal: Number.isFinite(signal) ? signal : 0,
+      strength,
+      sameSeason,
+      relevance: (sameSeason ? 5 : 1) + Math.min(5, strength) / 10 + Math.max(-2, Math.min(2, Number.isFinite(signal) ? signal : 0)),
+      programTitle: text(item.program_title_raw),
+      actualDollars: Number.isFinite(Number(item.actual_dollars)) ? Number(item.actual_dollars) : null,
+      pledgeCount: Number.isFinite(Number(item.pledge_count)) ? Number(item.pledge_count) : null,
+      text: text(item.summary || item.assessment_raw || ''),
+      tone: signal > 0 ? 'positive' : signal < 0 ? 'negative' : 'neutral'
+    });
+  }
+
+  const ranked = candidates.sort((a, b) =>
+    b.relevance - a.relevance
+    || b.strength - a.strength
+    || Math.abs(b.signal) - Math.abs(a.signal)
+    || a.startMinutes - b.startMinutes
+  );
+
+  const seen = new Set();
+  const selected = [];
+  for (const item of ranked) {
+    const key = `${item.stationKey}|${item.startMinutes}|${S.lookupKey(item.programTitle)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selected.push(item);
+    if (selected.length >= 6) break;
+  }
+  return selected.sort((a, b) => a.startMinutes - b.startMinutes || b.relevance - a.relevance);
+}
+
+function buildSlotTimingEvidence(schedule = {}, peerObservations = [], slot = {}) {
+  if (slot.blocked) return null;
+  const history = slot.windowHistory || {};
+  const localRows = Array.isArray(history.rates) ? history.rates.length : Number(slot.evidenceRows || 0);
+  const localFundraisers = Number(history.fundraisers || 0);
+  const peers = peerEvidenceForWindow(schedule, peerObservations, slot.weekday, slot.startMinutes, slot.endMinutes);
+  const nearbyPeers = peerTimingAlternatives(schedule, peerObservations, slot.weekday, slot.startMinutes);
+  const positivePeers = peers.filter((item) => item.signal > 0).length;
+  const negativePeers = peers.filter((item) => item.signal < 0).length;
+
+  let status = 'Exploratory timing';
+  if (localFundraisers >= 2 && Number.isFinite(Number(history.averageRate))) status = 'WNMU-supported timing';
+  else if (localRows > 0) status = 'Thin WNMU timing evidence';
+  else if (positivePeers > 0) status = 'Peer-supported exploratory timing';
+
+  let boundaryNote = '';
+  if (slot.label === 'Early evening' && slot.startMinutes === 17 * 60) {
+    boundaryNote = '5:00 PM is the model boundary for the Early evening planning window, not an evidence-selected exact start time. The historical data does not establish 5:00 over 4:00 or 5:30.';
+  } else if (slot.label === 'Prime') {
+    boundaryNote = 'This is a broad prime-time planning window; the displayed boundary is not automatically the exact start time for a program.';
+  } else if (slot.experimental) {
+    boundaryNote = 'This is explicitly a test window. The exact program start should follow the evidence shown here rather than the window boundary alone.';
+  }
+
+  return {
+    status,
+    boundaryNote,
+    localRows,
+    localFundraisers,
+    localAverageRate: Number.isFinite(Number(history.averageRate)) ? Number(history.averageRate) : null,
+    peerEvidence: peers,
+    nearbyPeers,
+    positivePeers,
+    negativePeers,
+    exactStartEstablished: localFundraisers >= 2 && localRows >= 3
+  };
+}
+
+function positivePeerObservation(item = {}) {
+  return Number(item.assessment_signal) > 0 && Number(item.evidence_strength || 0) >= 4;
+}
+
+function flagOn(item = {}, ...keys) {
+  const flags = item.context_flags && typeof item.context_flags === 'object' ? item.context_flags : {};
+  return keys.some((key) => Boolean(flags[key]));
+}
+
+function buildPeerPracticeGaps(schedule = {}, observations = []) {
+  const definitions = [
+    {
+      id: 'challenge-grants',
+      label: 'Challenge / matching grants',
+      match: (item) => flagOn(item, 'challenge_grant'),
+      wnmuStatus: 'Not tracked in WNMU strategy data; confirm whether current drives already use this.',
+      testIdea: 'Test a clearly bounded challenge on a strong night or a program with a loyal audience, and compare response before/during the challenge.'
+    },
+    {
+      id: 'tickets',
+      label: 'Ticket-linked fundraising',
+      match: (item) => flagOn(item, 'tickets'),
+      wnmuStatus: 'Not tracked in WNMU strategy data; confirm whether WNMU currently has usable ticket inventory.',
+      testIdea: 'When local/regional event tickets are available, compare the same title family with and without a ticket offer rather than assuming the program alone drove the result.'
+    },
+    {
+      id: 'live-localized',
+      label: 'Live / localized breaks and in-studio guests',
+      match: (item) => flagOn(item, 'live', 'local_breaks', 'guest', 'guests', 'studio_animals', 'local_nonprofit'),
+      wnmuStatus: 'Not represented as a structured tactic in the current strategy model.',
+      testIdea: 'Identify one high-confidence program where a live guest, producer, local expert or community partner materially changes the break rather than simply making it live.'
+    },
+    {
+      id: 'local-programming',
+      label: 'Local productions as pledge anchors',
+      match: (item) => flagOn(item, 'local') || text(item.topic_primary).toLowerCase() === 'local',
+      wnmuStatus: 'WNMU does use local programming, but the strategy does not yet measure local-event treatment as a separate fundraising tactic.',
+      testIdea: 'Separate ordinary local-title performance from locally produced pledge events with guests, premieres, special premiums or community framing.'
+    },
+    {
+      id: 'off-drive',
+      label: 'Themed off-drive pledge blocks',
+      match: (item) => flagOn(item, 'toop'),
+      wnmuStatus: 'Not part of the current fundraiser-only planning model.',
+      testIdea: 'Consider a small themed pledge block outside the major drives and measure whether it reaches donors without displacing a full fundraiser.'
+    },
+    {
+      id: 'sunday-morning',
+      label: 'Sunday-morning pledge',
+      match: (item) => text(item.day_of_week).toLowerCase() === 'sunday' && text(item.daypart).toLowerCase().includes('morning'),
+      wnmuStatus: 'Current Day-by-Day strategy windows do not include Sunday morning.',
+      testIdea: 'If rights and staffing allow, test one Sunday-morning block with programming aimed at an audience not already served by prime-time pledge.'
+    },
+    {
+      id: 'marathons',
+      label: 'Marathons / event blocks',
+      match: (item) => flagOn(item, 'marathon'),
+      wnmuStatus: 'WNMU has used marathons, so treat this as a tactic to evaluate rather than an automatic gap.',
+      testIdea: 'Compare marathon results with ordinary single-title placements after adjusting for total pledge hours.'
+    },
+    {
+      id: 'aircheck-reuse',
+      label: 'Strategic aircheck / replay reuse',
+      match: (item) => flagOn(item, 'aircheck'),
+      wnmuStatus: 'Replay strategy is not explicitly scored as a peer tactic in the current report.',
+      testIdea: 'When a strong event was previously airchecked, compare replay economics with producing new breaks or acquiring another title.'
+    }
+  ];
+
+  const positive = (observations || []).filter(positivePeerObservation);
+  const rows = [];
+
+  for (const definition of definitions) {
+    const matches = positive.filter(definition.match);
+    if (!matches.length) continue;
+
+    const bestByStation = new Map();
+    const ranked = [...matches].sort((a, b) =>
+      Number(b.evidence_strength || 0) - Number(a.evidence_strength || 0)
+      || Number(b.assessment_signal || 0) - Number(a.assessment_signal || 0)
+      || Number(b.actual_dollars || 0) - Number(a.actual_dollars || 0)
+    );
+    for (const item of ranked) {
+      const station = text(item.station_name || item.station_code || 'Other station');
+      const key = S.lookupKey(item.station_code || station);
+      if (!bestByStation.has(key)) {
+        bestByStation.set(key, {
+          station,
+          programTitle: text(item.program_title_raw),
+          summary: text(item.summary || item.assessment_raw || ''),
+          actualDollars: Number.isFinite(Number(item.actual_dollars)) ? Number(item.actual_dollars) : null,
+          goalDollars: Number.isFinite(Number(item.goal_dollars)) ? Number(item.goal_dollars) : null,
+          pledgeCount: Number.isFinite(Number(item.pledge_count)) ? Number(item.pledge_count) : null,
+          evidenceStrength: Number(item.evidence_strength || 0),
+          signal: Number(item.assessment_signal || 0),
+          season: text(item.season)
+        });
+      }
+    }
+
+    const examples = [...bestByStation.values()].slice(0, 4);
+    rows.push({
+      id: definition.id,
+      label: definition.label,
+      stationCount: bestByStation.size,
+      observationCount: matches.length,
+      averageStrength: matches.reduce((sum, item) => sum + Number(item.evidence_strength || 0), 0) / matches.length,
+      wnmuStatus: definition.wnmuStatus,
+      testIdea: definition.testIdea,
+      examples
+    });
+  }
+
+  return rows
+    .sort((a, b) => b.stationCount - a.stationCount || b.averageStrength - a.averageStrength || b.observationCount - a.observationCount)
+    .slice(0, 8);
 }
 
 function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerObservations = []) {
@@ -578,7 +793,7 @@ function compactRecommendation(item = {}) {
   };
 }
 
-function compactStrategy(strategy = {}) {
+function compactStrategy(strategy = {}, schedule = {}, peerObservations = []) {
   return {
     schedule: strategy.schedule,
     cutoff: strategy.cutoff,
@@ -601,6 +816,7 @@ function compactStrategy(strategy = {}) {
       evidenceRows: slot.evidenceRows,
       windowHistory: slot.windowHistory,
       experimentalEvidence: slot.experimentalEvidence,
+      timingEvidence: buildSlotTimingEvidence(schedule, peerObservations, slot),
       recommendations: (slot.recommendations || []).map(compactRecommendation)
     })),
     topicComparison: strategy.topicComparison,
@@ -685,10 +901,11 @@ self.onmessage = (event) => {
     const dayOutlook = buildDayOutlook(schedule, analyses);
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns, peerObservations);
+    const peerPractices = buildPeerPracticeGaps(schedule, peerObservations);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 
     phase = nowMs();
-    const compact = compactStrategy(strategy);
+    const compact = compactStrategy(strategy, schedule, peerObservations);
     diagnostics.compactMs = Math.round(nowMs() - phase);
     diagnostics.totalMs = Math.round(nowMs() - totalStarted);
 
@@ -699,6 +916,7 @@ self.onmessage = (event) => {
       dayOutlook,
       hourlyPatterns,
       opportunities,
+      peerPractices,
       diagnostics
     });
   } catch (error) {
