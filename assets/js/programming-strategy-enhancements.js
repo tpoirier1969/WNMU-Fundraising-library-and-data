@@ -186,6 +186,31 @@
     mapSection.insertAdjacentHTML('beforebegin', peerPracticesHtml(rows));
   }
 
+  function splitCompoundSections(root) {
+    if (!root) return;
+    const compounds = Array.from(root.querySelectorAll('section.sheet-section.strategy-two-column'));
+    compounds.forEach(function (compound) {
+      const replacement = document.createDocumentFragment();
+      const columns = Array.from(compound.children);
+
+      columns.forEach(function (column) {
+        let current = null;
+        Array.from(column.childNodes).forEach(function (node) {
+          if (node.nodeType === 1 && node.tagName === 'H2') {
+            current = document.createElement('section');
+            current.className = 'sheet-section strategy-split-section';
+            current.appendChild(node);
+            replacement.appendChild(current);
+          } else if (current) {
+            current.appendChild(node);
+          }
+        });
+      });
+
+      if (replacement.childNodes.length) compound.replaceWith(replacement);
+    });
+  }
+
   function enableCollapsibleSections(root) {
     if (!root) return;
     const sections = Array.from(root.querySelectorAll('section.sheet-section'));
@@ -223,6 +248,7 @@
     if (!root || !result) return;
     insertPeerPractices(root, result.peerPractices || []);
     decorateDayMap(root, result.strategy || {});
+    splitCompoundSections(root);
     enableCollapsibleSections(root);
   }
 
@@ -230,6 +256,7 @@
     decorate,
     decorateDayMap,
     insertPeerPractices,
+    splitCompoundSections,
     enableCollapsibleSections,
     timingEvidenceHtml,
     peerPracticesHtml
