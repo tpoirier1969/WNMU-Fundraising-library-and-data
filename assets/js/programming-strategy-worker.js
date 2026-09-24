@@ -8,6 +8,7 @@ if (!A) throw new Error('Shared historical analysis module did not load in worke
 if (!S) throw new Error('Programming strategy analysis module did not load in worker.');
 
 const text = (value) => String(value ?? '').trim();
+const nullableNumber = (value) => value == null || String(value).trim() === '' ? null : (Number.isFinite(Number(value)) ? Number(value) : null);
 const nolaKey = (value) => text(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
 const nowMs = () => self.performance?.now?.() ?? Date.now();
 
@@ -545,7 +546,9 @@ function buildHalfHourRows(poolRows = [], dayMatcher = () => true) {
 }
 
 function buildHourlyPatterns(schedule = {}, rows = []) {
-  const pool = seasonPlanningPool(schedule, rows);
+  const targetSeason = S.seasonForDate(schedule.startDate);
+  const clean = reportableProgrammingRows(rows);
+  const seasonal = clean.filter((row) => S.rowSeason(row) === targetSeason);
   const weekdays = [
     { day: 1, weekday: 'Monday' },
     { day: 2, weekday: 'Tuesday' },
@@ -556,40 +559,38 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
     { day: 0, weekday: 'Sunday' }
   ];
 
+  const historyDates = clean.map((row) => text(row.dateKey)).filter(Boolean).sort();
+  const seasonFundraisers = new Set(seasonal.map((row) => row.fundraiserId).filter(Boolean)).size;
+  const allFundraisers = new Set(clean.map((row) => row.fundraiserId).filter(Boolean)).size;
   const resultRows = [];
+
   for (const item of weekdays) {
-    const dayRows = buildHalfHourRows(pool.rows, (day) => day === item.day);
-    for (const row of dayRows) {
+    const allRows = buildHalfHourRows(clean, (day) => day === item.day);
+    const seasonRows = buildHalfHourRows(seasonal, (day) => day === item.day);
+    for (let i = 0; i < allRows.length; i += 1) {
       resultRows.push({
         weekday: item.weekday,
         weekdayIndex: item.day,
-        ...row
+        startMinutes: allRows[i].startMinutes,
+        endMinutes: allRows[i].endMinutes,
+        targetSeason: seasonRows[i],
+        allHistory: allRows[i]
       });
     }
   }
 
-  const overviewRows = [
-    {
-      group: 'Weekday',
-      days: 'Monday–Friday',
-      rows: buildHalfHourRows(pool.rows, (day) => day >= 1 && day <= 5)
-    },
-    {
-      group: 'Weekend',
-      days: 'Saturday–Sunday',
-      rows: buildHalfHourRows(pool.rows, (day) => day === 0 || day === 6)
-    }
-  ];
-
   return {
-    season: pool.targetSeason,
-    fallback: pool.fallback,
+    season: targetSeason,
     bucketMinutes: 30,
     rows: resultRows,
-    overviewRows,
-    reconciliation: buildStartTimeReconciliation(schedule, rows)
+    seasonFundraisers,
+    allFundraisers,
+    historyStartDate: historyDates[0] || '',
+    historyEndDate: historyDates[historyDates.length - 1] || '',
+    reconciliation: buildStartTimeReconciliation(schedule, clean)
   };
 }
+
 
 function daypartRange(label = '') {
   const key = text(label).toLowerCase();
@@ -651,9 +652,9 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
       endMinutes: Number.isFinite(itemEnd) ? itemEnd : null,
       daypart: text(item.daypart),
       programTitle: text(item.program_title_raw),
-      actualDollars: Number.isFinite(Number(item.actual_dollars)) ? Number(item.actual_dollars) : null,
-      goalDollars: Number.isFinite(Number(item.goal_dollars)) ? Number(item.goal_dollars) : null,
-      pledgeCount: Number.isFinite(Number(item.pledge_count)) ? Number(item.pledge_count) : null,
+      actualDollars: nullableNumber(item.actual_dollars),
+      goalDollars: nullableNumber(item.goal_dollars),
+      pledgeCount: nullableNumber(item.pledge_count),
       contextFlags: item.context_flags && typeof item.context_flags === 'object' ? item.context_flags : {}
     });
   }
@@ -719,8 +720,8 @@ function peerTimingAlternatives(schedule = {}, observations = [], weekday = '', 
       sameSeason,
       relevance: (sameSeason ? 5 : 1) + Math.min(5, strength) / 10 + Math.max(-2, Math.min(2, Number.isFinite(signal) ? signal : 0)),
       programTitle: text(item.program_title_raw),
-      actualDollars: Number.isFinite(Number(item.actual_dollars)) ? Number(item.actual_dollars) : null,
-      pledgeCount: Number.isFinite(Number(item.pledge_count)) ? Number(item.pledge_count) : null,
+      actualDollars: nullableNumber(item.actual_dollars),
+      pledgeCount: nullableNumber(item.pledge_count),
       text: text(item.summary || item.assessment_raw || ''),
       tone: signal > 0 ? 'positive' : signal < 0 ? 'negative' : 'neutral'
     });
@@ -873,9 +874,9 @@ function buildPeerPracticeGaps(schedule = {}, observations = []) {
           station,
           programTitle: text(item.program_title_raw),
           summary: text(item.summary || item.assessment_raw || ''),
-          actualDollars: Number.isFinite(Number(item.actual_dollars)) ? Number(item.actual_dollars) : null,
-          goalDollars: Number.isFinite(Number(item.goal_dollars)) ? Number(item.goal_dollars) : null,
-          pledgeCount: Number.isFinite(Number(item.pledge_count)) ? Number(item.pledge_count) : null,
+          actualDollars: nullableNumber(item.actual_dollars),
+          goalDollars: nullableNumber(item.goal_dollars),
+          pledgeCount: nullableNumber(item.pledge_count),
           evidenceStrength: Number(item.evidence_strength || 0),
           signal: Number(item.assessment_signal || 0),
           season: text(item.season)
