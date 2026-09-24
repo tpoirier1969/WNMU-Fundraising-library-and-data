@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fundraiser Strategy Backtest · WNMU-TV PBS</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
+  <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.177">
+  <link rel="stylesheet" href="assets/programming-strategy-report.css?v=0.22.201">
+  <link rel="stylesheet" href="assets/programming-strategy-backtest.css?v=0.22.203">
+  <link rel="stylesheet" href="assets/standalone-navigation.css?v=0.22.200">
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="config.js"></script>
+  <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
+  <script defer src="assets/js/programming-strategy-backtest-ui.js?v=0.22.203"></script>
+</head>
+<body>
+  <div id="backtest-access-gate" class="report-access-gate hidden"></div>
+  <div id="backtest-app" class="report-shell hidden">
+    <header class="report-topbar">
+      <div class="report-brand">
+        <img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo">
+        <div>
+          <h1>Fundraiser Strategy Backtest</h1>
+          <p>Freeze the recommendation model before an old drive, then compare it with what actually happened</p>
+        </div>
+      </div>
+      <div class="report-top-actions">
+        <span id="backtest-role" class="report-role">Checking access…</span>
+        <a class="report-button" href="programming-strategy.html">Current strategy</a>
+      </div>
+    </header>
+    <div data-standalone-navigation data-active="strategy" data-extras="reports,strategy,premium"></div>
+    <main class="report-main">
+      <div class="report-toolbar strategy-toolbar">
+        <div class="strategy-controls">
+          <label class="report-field"><span>Historical fundraiser</span><select id="backtest-fundraiser"></select></label>
+          <button id="backtest-run" class="report-button primary" type="button">Run backtest</button>
+        </div>
+        <div id="backtest-status" class="strategy-status">Checking administrator access…</div>
+      </div>
+      <div id="backtest-output">
+        <section class="backtest-intro">
+          <strong>This is a diagnostic, not a rewrite of history.</strong>
+          <p>The model may use only evidence available before the selected fundraiser. Results from that fundraiser are held back until scoring is complete, then used as the answer key. Recommendations that never aired remain untestable.</p>
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
