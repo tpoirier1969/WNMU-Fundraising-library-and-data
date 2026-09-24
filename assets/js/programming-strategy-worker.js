@@ -104,7 +104,8 @@ function prepareStrategySchedules(scheduleRows = [], canonicalAirings = []) {
   let excludedBoundaryBreaks = 0;
   const excludedExamples = [];
 
-  const schedules = (scheduleRows || []).map(A.normalizeSchedule).map((schedule) => {
+  const normalizedSchedules = (scheduleRows || []).map((row) => row?.schedule_data ? A.normalizeSchedule(row) : (row?.startDate || Array.isArray(row?.placements) ? { ...row, placements: Array.isArray(row?.placements) ? row.placements : [] } : A.normalizeSchedule(row)));
+  const schedules = normalizedSchedules.map((schedule) => {
     const placements = (schedule.placements || []).map((placement) => {
       const airing = airingForPlacement(placement);
       const classification = strategyBoundaryBreakClassification(placement, airing);
