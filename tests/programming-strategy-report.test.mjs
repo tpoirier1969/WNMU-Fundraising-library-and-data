@@ -5,6 +5,7 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../assets/js/programming-strategy-analysis.js', import.meta.url), 'utf8');
 const oneSheetSource = fs.readFileSync(new URL('../assets/js/one-sheet-analysis.js', import.meta.url), 'utf8');
+const backtestSource = fs.readFileSync(new URL('../assets/js/programming-strategy-backtest.js', import.meta.url), 'utf8');
 const workerSource = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 const context = { console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl };
 context.globalThis = context;
@@ -56,6 +57,7 @@ function makeWorkerHarness() {
   workerContext.importScripts = () => {};
   vm.runInNewContext(oneSheetSource, workerContext, { filename: 'one-sheet-analysis.js' });
   vm.runInNewContext(source, workerContext, { filename: 'programming-strategy-analysis.js' });
+  vm.runInNewContext(backtestSource, workerContext, { filename: 'programming-strategy-backtest.js' });
   vm.runInNewContext(workerSource, workerContext, { filename: 'programming-strategy-worker.js' });
   return { workerContext, workerMessages };
 }
@@ -472,7 +474,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.186'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.186', 'programming-strategy-backtest\.js\?v=0\.22\.203'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1290,4 +1292,74 @@ test('nearby peer timing evidence does not convert missing dollars or pledge cou
   assert.match(enhancements,/item\.actualDollars != null/);
   assert.match(enhancements,/item\.pledgeCount != null/);
   assert.doesNotMatch(enhancements,/if \(Number\.isFinite\(Number\(item\.pledgeCount\)\)\)/);
+});
+
+
+test('historical backtest freezes recommendations before the target fundraiser and uses target results only as the answer key', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  const target = { id:'dec25-target', title:'December 2025 Target', startDate:'2025-12-05', endDate:'2025-12-14' };
+  const library = [
+    baseProgram({ id:'1', title:'Music Anchor', nola_code:'MUSC', topic_primary:'Music', rights_start:'2024-01-01', rights_end:'2027-12-31' }),
+    baseProgram({ id:'2', title:'History Winner', nola_code:'HIST', topic_primary:'History', rights_start:'2024-01-01', rights_end:'2027-12-31' })
+  ];
+  const scheduleRows = [
+    historicalScheduleRow({
+      id:'dec24-prior', title:'December 2024 Prior', startDate:'2024-12-06', endDate:'2024-12-15',
+      placements:[{ programId:'1', programTitle:'Music Anchor', nolaCode:'MUSC', dateKey:'2024-12-07', startMinutes:19*60, lengthMinutes:60 }]
+    }),
+    historicalScheduleRow({
+      id:'dec25-target', title:'December 2025 Target', startDate:'2025-12-05', endDate:'2025-12-14',
+      placements:[
+        { programId:'1', programTitle:'Music Anchor', nolaCode:'MUSC', dateKey:'2025-12-06', startMinutes:19*60, lengthMinutes:60 },
+        { programId:'2', programTitle:'History Winner', nolaCode:'HIST', dateKey:'2025-12-07', startMinutes:19*60, lengthMinutes:60 }
+      ]
+    })
+  ];
+  const airings = [
+    {
+      id:1, program_id:'1', pledge_program_id:'1', imported_program_title:'Music Anchor', matched_library_title:'Music Anchor',
+      nola_code:'MUSC', air_date:'2024-12-07', air_time:'19:00', dollars:200, pledge_count:2, program_minutes:60,
+      drive_start_date:'2024-12-06', drive_end_date:'2024-12-15', fundraiser_label:'December 2024 Prior',
+      station:'WNMU', row_hash:'prior-music', source_file_name:'dec24.csv'
+    },
+    {
+      id:2, program_id:'1', pledge_program_id:'1', imported_program_title:'Music Anchor', matched_library_title:'Music Anchor',
+      nola_code:'MUSC', air_date:'2025-12-06', air_time:'19:00', dollars:100, pledge_count:1, program_minutes:60,
+      drive_start_date:'2025-12-05', drive_end_date:'2025-12-14', fundraiser_label:'December 2025 Target',
+      station:'WNMU', row_hash:'target-music', source_file_name:'dec25.csv'
+    },
+    {
+      id:3, program_id:'2', pledge_program_id:'2', imported_program_title:'History Winner', matched_library_title:'History Winner',
+      nola_code:'HIST', air_date:'2025-12-07', air_time:'19:00', dollars:900, pledge_count:6, program_minutes:60,
+      drive_start_date:'2025-12-05', drive_end_date:'2025-12-14', fundraiser_label:'December 2025 Target',
+      station:'WNMU', row_hash:'target-history', source_file_name:'dec25.csv'
+    }
+  ];
+
+  workerContext.onmessage({
+    data:{
+      requestId:203,
+      mode:'backtest',
+      schedule:target,
+      library,
+      airings,
+      scheduleRows,
+      overrides:[],
+      peerObservations:[],
+      now:'2026-09-24T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  assert.equal(result.strategy.cutoff, '2025-12-04');
+  assert.equal(result.diagnostics.evidenceRows, 1, 'only the completed 2024 fundraiser may inform December 2025 recommendations');
+  assert.equal(result.diagnostics.backtestTargetFound, true);
+  assert.equal(result.diagnostics.backtestActualRows, 2, 'the target fundraiser is read separately for outcome grading');
+  assert.ok(result.backtest);
+  assert.equal(result.backtest.leakageSafe, true);
+  assert.equal(result.backtest.expectedCutoff, '2025-12-04');
+  assert.equal(result.backtest.drive.titleCount, 2);
+  assert.ok(result.backtest.topActual.some((item) => item.title === 'History Winner'));
+  assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'backtest'));
 });
