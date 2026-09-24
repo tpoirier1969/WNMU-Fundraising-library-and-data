@@ -151,14 +151,43 @@ function dayOutlookSection(outlook){
 }
 
 function hourlyPatternsSection(hourly){
-  const data=hourly||{season:'selected',fallback:false,rows:[]};
+  const data=hourly||{season:'selected',fallback:false,rows:[],overviewRows:[]};
   const groups=new Map();
   for(const row of data.rows||[]){
     if(!groups.has(row.weekday))groups.set(row.weekday,[]);
     groups.get(row.weekday).push(row);
   }
   const order=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p>Hourly start-time buckets from noon onward. Half-hour starts are included in the hour they begin. Values use fundraiser-balanced Avg $ / Pledge Hour for the ${esc(data.season||'selected')} season${data.fallback?' with all-season fallback because same-season history is thin':''}.</p></div></div><div class="strategy-hourly-grid">${order.map(day=>{const rows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);return`<section class="strategy-hourly-day"><h3>${day}</h3><div>${rows.map(x=>`<div class="strategy-hourly-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}–${clock(x.endMinutes)}</span><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No history'}</span><small>${x.fundraiserSamples?`${x.fundraiserSamples} fundraiser${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}`:'No fundraiser sample'}</small></div>`).join('')}</div></section>`}).join('')}</div></section>`;
+  const overview=new Map((data.overviewRows||[]).map(group=>[group.group,group]));
+  const weekdayRows=overview.get('Weekday')?.rows||[];
+  const weekendRows=overview.get('Weekend')?.rows||[];
+  const overviewSlots=[...new Set([...weekdayRows,...weekendRows]
+    .filter(row=>Number(row.fundraiserSamples||0)>0)
+    .map(row=>Number(row.startMinutes)))]
+    .sort((a,b)=>a-b);
+  const byStart=(rows,start)=>rows.find(row=>Number(row.startMinutes)===Number(start))||{};
+  const metric=(row)=>{
+    if(!Number(row.fundraiserSamples||0))return'<span class="strategy-no-history">No history</span>';
+    return`<span class="strategy-rate">Avg $${Math.round(row.averageRate)}/pledge hr</span><small>${row.fundraiserSamples} fundraiser${row.fundraiserSamples===1?'':'s'} · ${row.airings} airing${row.airings===1?'':'s'}</small>`;
+  };
+  const overviewTable=overviewSlots.length
+    ?`<div class="strategy-dayclass-table">
+        <div class="strategy-dayclass-row strategy-dayclass-head"><span>Start time</span><span>Weekdays · Mon–Fri</span><span>Weekend · Sat–Sun</span></div>
+        ${overviewSlots.map(start=>{
+          const weekday=byStart(weekdayRows,start);
+          const weekend=byStart(weekendRows,start);
+          return`<div class="strategy-dayclass-row"><strong>${clock(start)}</strong><span>${metric(weekday)}</span><span>${metric(weekend)}</span></div>`;
+        }).join('')}
+      </div>`
+    :'<p>No rate-valid weekday/weekend start-time history is available.</p>';
+
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Values use fundraiser-balanced Avg $ / Pledge Hour for the ${esc(data.season||'selected')} season${data.fallback?' with all-season fallback because same-season history is thin':''}. Empty half-hour buckets are omitted.</p></div></div>
+    <div class="strategy-dayclass-overview"><h3>General weekday / weekend pattern</h3><p>Start here for the broad pattern, then use the daily cards below to see where individual weekdays depart from it.</p>${overviewTable}</div>
+    <div class="strategy-daily-breakdown-head"><h3>Daily breakdown</h3><p>Each start time is its own 30-minute bucket.</p></div>
+    <div class="strategy-hourly-grid">${order.map(day=>{
+      const rows=(groups.get(day)||[]).filter(x=>Number(x.fundraiserSamples||0)>0).sort((a,b)=>a.startMinutes-b.startMinutes);
+      return`<section class="strategy-hourly-day"><h3>${day}</h3><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-rate">Avg $${Math.round(x.averageRate)}/pledge hr</span><small>${x.fundraiserSamples} fundraiser${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}</small></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
+    }).join('')}</div></section>`;
 }
 
 function opportunitiesSection(opportunities){
