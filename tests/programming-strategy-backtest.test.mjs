@@ -87,3 +87,28 @@ test('score/rate correlation stays null when fewer than three recommendations we
   const result = B.evaluate({ strategy, actualRows, schedule });
   assert.equal(result.summary.scoreRateCorrelation, null);
 });
+
+test('zero-dollar titles are not counted as above-median or top-quartile hits when the drive median is zero', () => {
+  const zeroSchedule = { id:'zero-drive', title:'Zero-heavy drive', startDate:'2025-12-01', endDate:'2025-12-03' };
+  const zeroStrategy = {
+    cutoff:'2025-11-30',
+    windows:[{ experimental:false, blocked:false, recommendations:[
+      { programId:'a', title:'Alpha Zero', topic:'Music', score:80 },
+      { programId:'b', title:'Beta Winner', topic:'Music', score:70 }
+    ]}]
+  };
+  const rows = [
+    { programId:'a', title:'Alpha Zero', dateKey:'2025-12-01', minutes:60, dollars:0, known:true, countsTowardScheduleMinutes:true },
+    { programId:'b', title:'Beta Winner', dateKey:'2025-12-02', minutes:60, dollars:100, known:true, countsTowardScheduleMinutes:true },
+    { programId:'c', title:'Gamma Zero', dateKey:'2025-12-03', minutes:60, dollars:0, known:true, countsTowardScheduleMinutes:true }
+  ];
+  const result = B.evaluate({ strategy:zeroStrategy, actualRows:rows, schedule:zeroSchedule });
+  assert.equal(result.drive.medianTitleRate, 0);
+  const alpha = result.recommendationResults.find((item) => item.title === 'Alpha Zero');
+  const beta = result.recommendationResults.find((item) => item.title === 'Beta Winner');
+  assert.equal(alpha.aboveMedian, false);
+  assert.equal(alpha.topQuartile, false);
+  assert.equal(beta.aboveMedian, true);
+  assert.equal(beta.topQuartile, true);
+  assert.ok(!result.topActual.some((item) => item.title === 'Alpha Zero'));
+});
