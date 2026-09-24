@@ -201,6 +201,42 @@ test('programmer ratings include explicit Neutral and Viable between Neutral and
   assert.ok(dont.score < unrated.score);
 });
 
+test('stale single-airing success is capped while multiple proven successes keep full rested value', () => {
+  const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime');
+  const single = baseProgram({ id:'stale-single', title:'Stale Single Winner', topic_primary:'Music' });
+  const proven = baseProgram({ id:'proven-old', title:'Proven Old Winner', topic_primary:'Music' });
+
+  const singleHistory = [
+    row({ programId:'stale-single', title:'Stale Single Winner', dateKey:'2020-03-08', minutes:90, dollars:1200, fundraiserId:'mar20' })
+  ];
+  const provenHistory = [
+    row({ programId:'proven-old', title:'Proven Old Winner', dateKey:'2020-03-08', minutes:90, dollars:1200, fundraiserId:'mar20' }),
+    row({ programId:'proven-old', title:'Proven Old Winner', dateKey:'2021-03-06', minutes:90, dollars:1200, fundraiserId:'mar21' })
+  ];
+
+  const stale = S.scoreProgramForSlot(single, slot, {
+    schedule,
+    evidenceRows: singleHistory,
+    overrideByProgramId:new Map(),
+    baselineRate:300
+  });
+  const multi = S.scoreProgramForSlot(proven, slot, {
+    schedule,
+    evidenceRows: provenHistory,
+    overrideByProgramId:new Map(),
+    baselineRate:300
+  });
+
+  const adjustment = (result, name) => result.adjustments.find(([key]) => key === name)?.[1];
+  assert.equal(adjustment(stale, 'titleHistory'), 4, 'one success older than two years should not keep the full high-rate title boost');
+  assert.equal(adjustment(stale, 'rest'), 2, 'a long rest should be modest when it rests on only one ancient result');
+  assert.ok(stale.cautions.some((item) => /stale single-airing evidence is capped/i.test(item)));
+
+  assert.equal(adjustment(multi, 'titleHistory'), 12, 'multiple proven successes should retain the full historical rate signal');
+  assert.equal(adjustment(multi, 'rest'), 8, 'multiple proven successes can still benefit from a long rest');
+  assert.ok(multi.score > stale.score);
+});
+
 test('day-map selector favors new titles and keeps previously aired anchors at one-third or less', () => {
   const make = (id, score, newTitle, rating = '') => ({
     programId: id,
@@ -466,7 +502,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.206'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.207'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -474,7 +510,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.186', 'programming-strategy-backtest\.js\?v=0\.22\.206'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.207', 'programming-strategy-backtest\.js\?v=0\.22\.206'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
