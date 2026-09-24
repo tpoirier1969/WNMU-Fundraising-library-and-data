@@ -141,104 +141,6 @@
     });
   }
 
-  function comparisonSummary(item) {
-    if (!item || !Number(item.pairedFundraisers)) {
-      return { paired:0, eight:0, nine:0, ties:0, diff:null, differenceLabel:'Not enough paired history' };
-    }
-    const paired = Number(item.pairedFundraisers || 0);
-    const eight = Number(item.hourAWins || 0);
-    const nine = Number(item.hourBWins || 0);
-    const ties = Number(item.ties || 0);
-    const diff = Number(item.medianDifference);
-    let differenceLabel = 'Median difference unavailable';
-    if (Number.isFinite(diff)) {
-      if (Math.abs(diff) < 0.5) differenceLabel = 'Median difference: essentially even';
-      else if (diff > 0) differenceLabel = 'Median difference: 9:00 PM +' + money(Math.abs(diff)) + '/pledge hr';
-      else differenceLabel = 'Median difference: 8:00 PM +' + money(Math.abs(diff)) + '/pledge hr';
-    }
-    return { paired, eight, nine, ties, diff, differenceLabel };
-  }
-
-  function comparisonCell(item) {
-    const s = comparisonSummary(item);
-    if (!s.paired) return '<span class="strategy-starttime-none">Not enough paired history</span>';
-    return '<div class="strategy-starttime-cell">' +
-      '<strong>' + s.paired + ' paired fundraiser' + (s.paired === 1 ? '' : 's') + '</strong>' +
-      '<div class="strategy-starttime-wins">' +
-        '<span><b>8:00 PM better:</b> ' + s.eight + '</span>' +
-        '<span><b>9:00 PM better:</b> ' + s.nine + '</span>' +
-        '<span><b>Ties:</b> ' + s.ties + '</span>' +
-      '</div>' +
-      '<div class="strategy-starttime-difference">' + esc(s.differenceLabel) + '</div>' +
-    '</div>';
-  }
-
-  function startTimeReconciliationHtml(hourly, diagnostics) {
-    const rec = hourly && hourly.reconciliation ? hourly.reconciliation : null;
-    if (!rec) return '';
-
-    const overall = comparisonSummary(rec.overall || {});
-    const rows = Array.isArray(rec.weekdays) ? rec.weekdays : [];
-    let html = '<div class="strategy-starttime-reconcile">';
-    html += '<div class="strategy-starttime-reconcile-head"><strong>8:00 PM vs 9:00 PM cross-check</strong><span>Paired-fundraiser comparison</span></div>';
-    html += '<div class="strategy-starttime-howto"><strong>How to read this</strong>';
-    html += '<p>A <b>paired fundraiser</b> is one where we have at least one pledge-program start in both the <b>8:00–8:29 PM</b> bucket and the <b>9:00–9:29 PM</b> bucket for the weekday being compared. <b>8:30 and 9:30 are separate buckets and are not included in this cross-check.</b></p>';
-    html += '<p><b>8:00 PM better</b> and <b>9:00 PM better</b> count which bucket had the higher dollars-per-pledge-hour result within each fundraiser. <b>Median difference</b> is the middle of those within-fundraiser differences. It describes the history; it does not mean moving the same program by one hour will automatically create that amount.</p>';
-    html += '</div>';
-
-    if (Number(diagnostics?.excludedBoundaryBreakRows || 0) > 0) {
-      html += '<p class="strategy-starttime-cleanup"><strong>Data cleanup:</strong> ' +
-        Number(diagnostics.excludedBoundaryBreakRows) +
-        ' regular-program boundary/end-break row' +
-        (Number(diagnostics.excludedBoundaryBreakRows) === 1 ? '' : 's') +
-        ' excluded from pledge-program performance and start-time averages.</p>';
-    }
-
-    if (overall.paired) {
-      html += '<p class="strategy-starttime-broad"><b>Broad history:</b> ' +
-        overall.paired + ' paired fundraisers. <b>8:00 PM better: ' + overall.eight +
-        '</b> · <b>9:00 PM better: ' + overall.nine + '</b> · <b>Ties: ' + overall.ties +
-        '</b>. <b>' + esc(overall.differenceLabel) + '.</b></p>';
-    }
-
-    html += '<p>The hourly grid above is narrower: it is <b>weekday-specific</b> and usually <b>' +
-      esc(rec.targetSeason || hourly.season || 'selected') +
-      '-season specific</b>. A weekday can therefore legitimately differ from the broad result.</p>';
-
-    const usable = rows.filter(function (row) {
-      return Number(row.allHistory?.pairedFundraisers || 0) > 0 || Number(row.targetSeason?.pairedFundraisers || 0) > 0;
-    });
-
-    if (usable.length) {
-      html += '<div class="strategy-starttime-reconcile-table">';
-      html += '<div class="strategy-starttime-reconcile-row strategy-starttime-reconcile-header"><span>Weekday</span><span>All history</span><span>' +
-        esc(rec.targetSeason || 'Target season') + ' only</span></div>';
-      usable.forEach(function (row) {
-        html += '<div class="strategy-starttime-reconcile-row"><strong>' + esc(row.weekday || '') + '</strong><span>' +
-          comparisonCell(row.allHistory) + '</span><span>' + comparisonCell(row.targetSeason) + '</span></div>';
-      });
-      html += '</div>';
-    }
-
-    html += '<p class="strategy-starttime-caution"><strong>Still not causal.</strong> Pairing the 8:00 PM and 9:00 PM half-hour buckets within the same fundraiser reduces drive-to-drive differences, but program mix remains a major confound. A bucket loaded with unusually strong or weak titles can make the clock look more important than it is.</p>';
-    html += '</div>';
-    return html;
-  }
-
-  function decorateHourlySection(root, hourly, diagnostics) {
-    if (!root || !hourly) return;
-    const section = Array.from(root.querySelectorAll('section.sheet-section')).find(function (item) {
-      const heading = item.querySelector('.strategy-section-head h2, :scope > h2');
-      return heading && heading.textContent.trim() === 'Day/time performance';
-    });
-    if (!section || section.querySelector('.strategy-starttime-reconcile')) return;
-    const head = section.querySelector(':scope > .strategy-section-head');
-    const html = startTimeReconciliationHtml(hourly, diagnostics || {});
-    if (!html) return;
-    if (head) head.insertAdjacentHTML('afterend', html);
-    else section.insertAdjacentHTML('afterbegin', html);
-  }
-
   function peerPracticesHtml(rows) {
     if (!Array.isArray(rows) || !rows.length) {
       return '<section class="sheet-section"><h2>Peer practices WNMU may be leaving on the table</h2><p>No strong positive peer-practice evidence is loaded yet.</p></section>';
@@ -344,7 +246,6 @@
 
   function decorate(root, result) {
     if (!root || !result) return;
-    decorateHourlySection(root, result.hourlyPatterns || {}, result.diagnostics || {});
     insertPeerPractices(root, result.peerPractices || []);
     decorateDayMap(root, result.strategy || {});
     splitCompoundSections(root);
@@ -354,8 +255,6 @@
   globalThis.WNMUStrategyEnhancements = {
     decorate,
     decorateDayMap,
-    decorateHourlySection,
-    startTimeReconciliationHtml,
     insertPeerPractices,
     splitCompoundSections,
     enableCollapsibleSections,
