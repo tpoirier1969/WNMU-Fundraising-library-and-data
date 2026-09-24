@@ -464,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.197'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.198'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -988,7 +988,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.197/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.198/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -1034,7 +1034,7 @@ test('paired start-time reconciliation can show broad 8 PM strength while Monday
 
 test('strategy report explicitly reconciles broad and weekday-specific 8 PM vs 9 PM evidence', () => {
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
-  assert.match(enhancements,/8 PM vs 9 PM cross-check/);
+  assert.match(enhancements,/8:00 PM vs 9:00 PM cross-check/);
   assert.match(enhancements,/Paired-fundraiser comparison/);
   assert.match(enhancements,/weekday-specific/);
   assert.match(enhancements,/program mix remains a major confound/);
@@ -1143,11 +1143,105 @@ test('prepared strategy schedules preserve source data but mark detected boundar
 
 test('start-time cross-check spells out win counts and median difference instead of scoreboard shorthand', () => {
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
-  assert.match(enhancements,/8 PM better/);
-  assert.match(enhancements,/9 PM better/);
+  assert.match(enhancements,/8:00 PM better/);
+  assert.match(enhancements,/9:00 PM better/);
   assert.match(enhancements,/Ties/);
   assert.match(enhancements,/Median difference/);
   assert.match(enhancements,/paired fundraiser/);
   assert.match(enhancements,/Data cleanup/);
   assert.doesNotMatch(enhancements,/leader \+ ' ' \+ eight \+ '–' \+ nine/);
+});
+
+
+test('Day/Time performance keeps 8:00 and 8:30 starts in separate half-hour buckets', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.buildHourlyPatterns, 'function');
+
+  const rows = [
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:300 }),
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60+30, minutes:60, dollars:100 }),
+    row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:20*60, minutes:60, dollars:200 }),
+    row({ fundraiserId:'b', dateKey:'2024-12-02', startMinutes:20*60+30, minutes:60, dollars:400 })
+  ];
+
+  const result = workerContext.buildHourlyPatterns(schedule, rows);
+  assert.equal(result.bucketMinutes, 30);
+
+  const mondayEight = result.rows.find((item) =>
+    item.weekday === 'Monday' && item.startMinutes === 20*60
+  );
+  const mondayEightThirty = result.rows.find((item) =>
+    item.weekday === 'Monday' && item.startMinutes === 20*60+30
+  );
+
+  assert.ok(mondayEight);
+  assert.ok(mondayEightThirty);
+  assert.equal(mondayEight.airings, 1);
+  assert.equal(mondayEightThirty.airings, 1);
+  assert.equal(mondayEight.averageRate, 300);
+  assert.equal(mondayEightThirty.averageRate, 100);
+});
+
+test('Day/Time performance supplies weekday and weekend half-hour overview before daily detail', () => {
+  const { workerContext } = makeWorkerHarness();
+  const rows = [
+    row({ fundraiserId:'weekday-a', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:300 }),
+    row({ fundraiserId:'weekday-b', dateKey:'2025-12-02', startMinutes:20*60, minutes:60, dollars:500 }),
+    row({ fundraiserId:'weekend-a', dateKey:'2025-12-06', startMinutes:20*60, minutes:60, dollars:100 }),
+    row({ fundraiserId:'weekend-b', dateKey:'2025-12-07', startMinutes:20*60+30, minutes:60, dollars:200 })
+  ];
+
+  const result = workerContext.buildHourlyPatterns(schedule, rows);
+  const weekday = result.overviewRows.find((item) => item.group === 'Weekday');
+  const weekend = result.overviewRows.find((item) => item.group === 'Weekend');
+
+  assert.ok(weekday);
+  assert.ok(weekend);
+  assert.equal(weekday.days, 'Monday–Friday');
+  assert.equal(weekend.days, 'Saturday–Sunday');
+
+  const weekdayEight = weekday.rows.find((item) => item.startMinutes === 20*60);
+  const weekendEight = weekend.rows.find((item) => item.startMinutes === 20*60);
+  const weekendEightThirty = weekend.rows.find((item) => item.startMinutes === 20*60+30);
+
+  assert.equal(weekdayEight.airings, 2);
+  assert.equal(weekendEight.airings, 1);
+  assert.equal(weekendEightThirty.airings, 1);
+});
+
+test('8:00 vs 9:00 paired comparison excludes 8:30 and 9:30 starts', () => {
+  const { workerContext } = makeWorkerHarness();
+  const rows = [
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:100 }),
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:20*60+30, minutes:60, dollars:10000 }),
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:21*60, minutes:60, dollars:300 }),
+    row({ fundraiserId:'a', dateKey:'2025-12-01', startMinutes:21*60+30, minutes:60, dollars:1 })
+  ];
+
+  const exact = workerContext.pairedStartTimeCheck(rows,{
+    startA:20*60,
+    startB:21*60,
+    bucketMinutes:30,
+    weekdayIndex:1,
+    season:'December'
+  });
+
+  assert.equal(exact.pairedFundraisers,1);
+  assert.equal(exact.hourAWins,0);
+  assert.equal(exact.hourBWins,1);
+  assert.equal(exact.medianHourARate,100);
+  assert.equal(exact.medianHourBRate,300);
+});
+
+test('Day/Time report explains half-hour buckets and renders broad overview before daily breakdown', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+
+  assert.match(reportUi,/30-minute start-time buckets/);
+  assert.match(reportUi,/8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM/);
+  assert.match(reportUi,/General weekday \/ weekend pattern/);
+  assert.match(reportUi,/Daily breakdown/);
+  assert.ok(reportUi.indexOf('General weekday / weekend pattern') < reportUi.indexOf('Daily breakdown'));
+  assert.match(enhancements,/8:00–8:29 PM/);
+  assert.match(enhancements,/8:30 and 9:30 are separate buckets/);
 });
