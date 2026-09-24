@@ -1168,6 +1168,15 @@ self.onmessage = (event) => {
 
     const canonical = A.canonicalizeImportedAirings(rawAirings);
     const cutoff = S.evidenceCutoff(schedule, now);
+    const effectiveOverrides = payload.mode === 'backtest'
+      ? overrides.filter((row) => {
+        const when = text(row?.rated_at || row?.updated_at || '').slice(0, 10);
+        return Boolean(when && cutoff && when <= cutoff);
+      })
+      : overrides;
+    diagnostics.overrideRows = overrides.length;
+    diagnostics.effectiveOverrideRows = effectiveOverrides.length;
+    diagnostics.excludedPostCutoffOverrides = overrides.length - effectiveOverrides.length;
     const historical = completedHistoricalAnalyses(scheduleRows, canonical, library, cutoff);
     const analyses = historical.analyses;
     const rows = strategyEvidenceRowsFromAnalyses(analyses);
@@ -1188,7 +1197,7 @@ self.onmessage = (event) => {
       schedule,
       library,
       evidenceRows: rows,
-      overrides,
+      overrides: effectiveOverrides,
       performanceStats,
       now
     });
