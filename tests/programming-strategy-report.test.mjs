@@ -990,7 +990,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.199/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.201/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -1034,12 +1034,12 @@ test('paired start-time reconciliation can show broad 8 PM strength while Monday
   assert.ok(monday.medianDifference > 0);
 });
 
-test('strategy report explicitly reconciles broad and weekday-specific 8 PM vs 9 PM evidence', () => {
+test('strategy report no longer renders a separate 8 PM vs 9 PM cross-check', () => {
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
-  assert.match(enhancements,/8:00 PM vs 9:00 PM cross-check/);
-  assert.match(enhancements,/Paired-fundraiser comparison/);
-  assert.match(enhancements,/weekday-specific/);
-  assert.match(enhancements,/program mix remains a major confound/);
+  assert.doesNotMatch(enhancements,/8:00 PM vs 9:00 PM cross-check/);
+  assert.doesNotMatch(enhancements,/Paired-fundraiser comparison/);
+  assert.doesNotMatch(enhancements,/startTimeReconciliationHtml/);
+  assert.doesNotMatch(enhancements,/decorateHourlySection/);
 });
 
 test('strategy print CSS allows large day and grid containers to fragment across pages', () => {
@@ -1143,15 +1143,9 @@ test('prepared strategy schedules preserve source data but mark detected boundar
   assert.equal(prepared.schedules[0].placements[1].isNonPledge,false);
 });
 
-test('start-time cross-check spells out win counts and median difference instead of scoreboard shorthand', () => {
-  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
-  assert.match(enhancements,/8:00 PM better/);
-  assert.match(enhancements,/9:00 PM better/);
-  assert.match(enhancements,/Ties/);
-  assert.match(enhancements,/Median difference/);
-  assert.match(enhancements,/paired fundraiser/);
-  assert.match(enhancements,/Data cleanup/);
-  assert.doesNotMatch(enhancements,/leader \+ ' ' \+ eight \+ '–' \+ nine/);
+test('collapsed strategy sections stay out of print instead of reopening', () => {
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+  assert.match(styles,/\.strategy-sheet \.sheet-section\.is-collapsed\{\s*display:none!important;/);
 });
 
 
