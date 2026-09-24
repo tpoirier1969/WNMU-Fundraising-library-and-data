@@ -103,7 +103,9 @@ function simpleList(rows=[],type){
   return `<div class="backtest-list">${rows.map(x=>{
     const detail=type==='missed'
       ?`${rate(x.rate)} · ${money(x.dollars)} · ${x.airings} airing${x.airings===1?'':'s'}`
-      :`Model score ${Math.round(Number(x.score)||0)} · actual ${rate(x.actualRate)} · ${money(x.actualDollars)}`;
+      : type==='untested'
+        ?`Model score ${Math.round(Number(x.score)||0)} · not aired in this fundraiser`
+        :`Model score ${Math.round(Number(x.score)||0)} · actual ${rate(x.actualRate)} · ${money(x.actualDollars)}`;
     return `<article><strong>${esc(x.title)}</strong><span class="backtest-sub">${esc(x.topic||'Uncategorized')} · ${esc(detail)}</span></article>`;
   }).join('')}</div>`;
 }
@@ -128,7 +130,7 @@ function render(result){
     <section class="backtest-section"><h2>Strong actual performers the model missed</h2><p>Titles in the fundraiser’s top quartile that did not appear in the model’s top recommendation set. These are the first places to look for weak weighting or missing context.</p>${simpleList(b.missedTopPerformers,'missed')}</section>
     <section class="backtest-section"><h2>High-score recommendations that underperformed</h2><p>Recommended titles that actually aired but finished below the fundraiser’s median title rate. These can expose over-weighted history, insufficient fatigue penalties, poor seasonal logic, or a bad-night anomaly.</p>${simpleList(b.underperformingRecommendations,'under')}</section>
     <section class="backtest-section"><h2>Untestable recommendations</h2><p>These were recommended by the frozen model but WNMU did not air them in this fundraiser. They remain hypotheses, not losses.</p>${simpleList(b.untestedRecommendations,'untested')}</section>
-    <section class="backtest-section backtest-method"><h2>Method and limitations</h2><ul>${(b.notes||[]).map(x=>`<li>${esc(x)}</li>`).join('')}<li>Actual performance is aggregated by title using reconciled fundraiser schedule duration and broadcast dollars.</li><li>The top-quartile and median comparisons are within this fundraiser, so they help diagnose ranking behavior without pretending every drive has the same dollar scale.</li></ul></section>
+    <section class="backtest-section backtest-method"><h2>Method and limitations</h2><ul>${(b.notes||[]).map(x=>`<li>${esc(x)}</li>`).join('')}<li>${Number(result.diagnostics?.excludedPostCutoffOverrides||0)} programmer rating${Number(result.diagnostics?.excludedPostCutoffOverrides||0)===1?' was':'s were'} entered after the evidence cutoff and excluded from this historical run.</li><li>Actual performance is aggregated by title using reconciled fundraiser schedule duration and broadcast dollars.</li><li>The top-quartile and median comparisons are within this fundraiser, so they help diagnose ranking behavior without pretending every drive has the same dollar scale.</li></ul></section>
   </div>`;
 }
 async function run(){
