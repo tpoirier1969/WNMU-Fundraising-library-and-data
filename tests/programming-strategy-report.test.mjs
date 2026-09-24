@@ -1053,92 +1053,55 @@ test('strategy print CSS allows large day and grid containers to fragment across
 });
 
 
-test('strategy excludes boundary/end-break regular programming from pledge-program performance', () => {
+test('strategy keeps attached external and end pledge breaks as pledge-program performance', () => {
   const { workerContext } = makeWorkerHarness();
   assert.equal(typeof workerContext.strategyBoundaryBreakClassification, 'function');
 
-  const roadshow = {
-    dateKey:'2020-03-02',
-    startMinutes:20*60,
-    lengthMinutes:60,
-    programTitle:'Antiques Roadshow',
-    isNonPledge:false
-  };
-  const roadshowAiring = {
-    program_minutes:60,
-    raw_payload:{},
-    imported_program_title:'ANTIQUES ROADSHOW'
-  };
-  const roadshowClass = workerContext.strategyBoundaryBreakClassification(roadshow, roadshowAiring);
-  assert.equal(roadshowClass.exclude,true);
-  assert.match(roadshowClass.reason,/end pledge break/i);
+  const cases = [
+    {
+      placement:{ dateKey:'2020-03-02', startMinutes:20*60, lengthMinutes:60, programTitle:'Antiques Roadshow', isNonPledge:false },
+      airing:{ program_minutes:60, raw_payload:{}, imported_program_title:'ANTIQUES ROADSHOW' },
+      label:'Monday Antiques Roadshow with an end pledge break'
+    },
+    {
+      placement:{ dateKey:'2025-12-05', startMinutes:20*60, lengthMinutes:24, programTitle:'Washington Week In Review', isNonPledge:false },
+      airing:{ program_minutes:30, raw_payload:{}, dollars:156, pledge_count:2 },
+      label:'Friday Washington Week with a pledge break after the program'
+    },
+    {
+      placement:{ dateKey:'2018-11-27', startMinutes:12*60, lengthMinutes:60, programTitle:'Regular Series', isNonPledge:false },
+      airing:{ program_minutes:3, raw_payload:{break_count:' 1 '} },
+      label:'short single attached pledge break'
+    },
+    {
+      placement:{ dateKey:'2015-12-04', startMinutes:20*60, lengthMinutes:90, programTitle:'Simon & Garfunkel: The Concert in Central Park', isNonPledge:false },
+      airing:{ program_minutes:90, raw_payload:{}, dollars:785, pledge_count:8 },
+      label:'traditional pledge special'
+    },
+    {
+      placement:{ dateKey:'2022-02-28', startMinutes:21*60, lengthMinutes:90, programTitle:'Safe Money in Tough Times', isNonPledge:false },
+      airing:{ program_minutes:90, raw_payload:{}, dollars:0, pledge_count:0 },
+      label:'pledge program that raised zero dollars'
+    }
+  ];
 
-  const protectedFriday = {
+  cases.forEach(({placement,airing,label}) => {
+    const classification = workerContext.strategyBoundaryBreakClassification(placement, airing);
+    assert.equal(classification.exclude,false,label + ' must remain pledge-title evidence');
+  });
+
+  const explicitNonPledge = workerContext.strategyBoundaryBreakClassification({
     dateKey:'2025-12-05',
     startMinutes:20*60,
-    lengthMinutes:24,
-    programTitle:'Washington Week In Review',
-    isNonPledge:false
-  };
-  const fridayAiring = {
-    program_minutes:30,
-    raw_payload:{},
-    dollars:156,
-    pledge_count:2
-  };
-  const fridayClass = workerContext.strategyBoundaryBreakClassification(protectedFriday, fridayAiring);
-  assert.equal(fridayClass.exclude,true);
-  assert.match(fridayClass.reason,/recurring Friday 8 PM regular programming/i);
-
-  const fridayPledgeSpecial = {
-    dateKey:'2015-12-04',
-    startMinutes:20*60,
-    lengthMinutes:90,
-    programTitle:'Simon & Garfunkel: The Concert in Central Park',
-    isNonPledge:false
-  };
-  const fridayPledgeAiring = {
-    program_minutes:90,
-    raw_payload:{},
-    dollars:785,
-    pledge_count:8
-  };
-  const fridayPledgeClass = workerContext.strategyBoundaryBreakClassification(fridayPledgeSpecial, fridayPledgeAiring);
-  assert.equal(fridayPledgeClass.exclude,false,'a genuine Friday 8 PM pledge special must remain historical evidence');
-
-  const shortBoundary = {
-    dateKey:'2018-11-27',
-    startMinutes:12*60,
     lengthMinutes:60,
-    programTitle:'Regular Series',
-    isNonPledge:false
-  };
-  const shortBoundaryAiring = {
-    program_minutes:3,
-    raw_payload:{break_count:' 1 '}
-  };
-  const shortClass = workerContext.strategyBoundaryBreakClassification(shortBoundary, shortBoundaryAiring);
-  assert.equal(shortClass.exclude,true);
-  assert.match(shortClass.reason,/Boundary-break fundraising/i);
-
-  const truePledgeZero = {
-    dateKey:'2022-02-28',
-    startMinutes:21*60,
-    lengthMinutes:90,
-    programTitle:'Safe Money in Tough Times',
-    isNonPledge:false
-  };
-  const truePledgeZeroAiring = {
-    program_minutes:90,
-    raw_payload:{},
-    dollars:0,
-    pledge_count:0
-  };
-  const pledgeClass = workerContext.strategyBoundaryBreakClassification(truePledgeZero, truePledgeZeroAiring);
-  assert.equal(pledgeClass.exclude,false,'a genuine pledge program that raises $0 must remain in the averages');
+    programTitle:'Explicit Non-Pledge',
+    isNonPledge:true
+  }, null);
+  assert.equal(explicitNonPledge.exclude,true);
+  assert.match(explicitNonPledge.reason,/Explicitly marked non-pledge/i);
 });
 
-test('prepared strategy schedules preserve source data but mark detected boundary breaks non-pledge for analysis', () => {
+test('prepared strategy schedules do not convert attached pledge breaks to non-pledge', () => {
   const { workerContext } = makeWorkerHarness();
   const prepared = workerContext.prepareStrategySchedules([
     {
@@ -1172,9 +1135,9 @@ test('prepared strategy schedules preserve source data but mark detected boundar
     {row_hash:'pledge-hash',program_minutes:90,raw_payload:{break_count:' 4 '}}
   ]);
 
-  assert.equal(prepared.excludedBoundaryBreaks,1);
-  assert.equal(prepared.schedules[0].placements[0].isNonPledge,true);
-  assert.equal(prepared.schedules[0].placements[0].strategyBoundaryBreakOnly,true);
+  assert.equal(prepared.excludedBoundaryBreaks,0);
+  assert.equal(prepared.schedules[0].placements[0].isNonPledge,false);
+  assert.equal(prepared.schedules[0].placements[0].strategyBoundaryBreakOnly,undefined);
   assert.equal(prepared.schedules[0].placements[1].isNonPledge,false);
 });
 
