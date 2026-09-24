@@ -464,7 +464,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.186'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.195'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -882,4 +882,120 @@ test('Must Air does not override an obviously wrong seasonal placement', () => {
   });
   assert.equal(scored.fit, 'Save for Christmas season');
   assert.ok(scored.cautions.some((item) => /does not override seasonal fit/i.test(item)));
+});
+
+
+test('early-evening planning boundary explains that 5 PM is not an evidence-selected exact start', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  workerContext.onmessage({
+    data: {
+      requestId: 195,
+      schedule,
+      library: [baseProgram({ id: 1, title: 'Test Music', topic_primary: 'Music', nola_code: 'TMUS' })],
+      airings: [],
+      scheduleRows: [],
+      overrides: [],
+      peerObservations: [
+        {
+          station_code: 'PEERA', station_name: 'Peer A', season: 'December',
+          day_of_week: 'Sunday', start_time_minutes: 960, end_time_minutes: 1020,
+          program_title_raw: 'Four PM Test', assessment_signal: 1, evidence_strength: 4,
+          actual_dollars: 420, pledge_count: 2, summary: 'Sunday 4 PM produced an encouraging result.'
+        },
+        {
+          station_code: 'PEERB', station_name: 'Peer B', season: 'December',
+          day_of_week: 'Sunday', start_time_minutes: 1020, end_time_minutes: 1080,
+          program_title_raw: 'Five PM Test', assessment_signal: -1, evidence_strength: 5,
+          summary: 'Station said 5 PM was too early for this drive.'
+        },
+        {
+          station_code: 'PEERC', station_name: 'Peer C', season: 'December',
+          day_of_week: 'Sunday', start_time_minutes: 1050, end_time_minutes: 1110,
+          program_title_raw: 'Five Thirty Test', assessment_signal: 2, evidence_strength: 5,
+          actual_dollars: 3200, pledge_count: 23, summary: 'Sunday 5:30 PM was a strong result.'
+        }
+      ],
+      now: '2026-09-24T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  const sundayEarly = result.strategy.windows.find((slot) =>
+    slot.weekday === 'Sunday' && slot.label === 'Early evening' && slot.startMinutes === 17 * 60
+  );
+  assert.ok(sundayEarly);
+  assert.match(sundayEarly.timingEvidence.boundaryNote, /5:00 PM is the model boundary/i);
+  assert.match(sundayEarly.timingEvidence.boundaryNote, /not an evidence-selected exact start time/i);
+  assert.match(sundayEarly.timingEvidence.boundaryNote, /4:00 or 5:30/i);
+  assert.deepEqual(
+    Array.from(sundayEarly.timingEvidence.nearbyPeers, (item) => item.startMinutes),
+    [960, 1020, 1050]
+  );
+  assert.ok(sundayEarly.timingEvidence.peerEvidence.some((item) => /5:30 PM was a strong result/i.test(item.text)));
+  assert.ok(sundayEarly.timingEvidence.peerEvidence.some((item) => /5 PM was too early/i.test(item.text)));
+});
+
+test('worker surfaces positive peer fundraising practices separately from title scheduling', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  workerContext.onmessage({
+    data: {
+      requestId: 196,
+      schedule,
+      library: [baseProgram({ id: 1, title: 'Test Music', topic_primary: 'Music', nola_code: 'TMUS' })],
+      airings: [],
+      scheduleRows: [],
+      overrides: [],
+      peerObservations: [
+        {
+          station_code: 'MATCH', station_name: 'Match PBS', season: 'December',
+          evidence_scope: 'strategy', assessment_signal: 2, evidence_strength: 5,
+          context_flags: { challenge_grant: true, live: true },
+          actual_dollars: 6000, goal_dollars: 2000,
+          summary: 'A live challenge-grant night tripled its goal.'
+        },
+        {
+          station_code: 'TICKET', station_name: 'Ticket PBS', season: 'December',
+          evidence_scope: 'strategy', assessment_signal: 2, evidence_strength: 5,
+          context_flags: { tickets: true },
+          summary: 'Ticket-linked programs accounted for a large share of drive revenue.'
+        },
+        {
+          station_code: 'MORNING', station_name: 'Morning PBS', season: 'December',
+          evidence_scope: 'timeslot', assessment_signal: 2, evidence_strength: 4,
+          day_of_week: 'Sunday', daypart: 'Morning',
+          summary: 'Sunday-morning pledge reaches a different audience and produces regular revenue.'
+        }
+      ],
+      now: '2026-09-24T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  const labels = new Set((result.peerPractices || []).map((item) => item.label));
+  assert.ok(labels.has('Challenge / matching grants'));
+  assert.ok(labels.has('Ticket-linked fundraising'));
+  assert.ok(labels.has('Sunday-morning pledge'));
+  const sunday = result.peerPractices.find((item) => item.label === 'Sunday-morning pledge');
+  assert.match(sunday.wnmuStatus, /do not include Sunday morning/i);
+});
+
+test('strategy enhancement layer makes top-level and compound sections collapsible and labels times as planning windows', () => {
+  const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+
+  assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.195/);
+  assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
+  assert.match(enhancements, /splitCompoundSections/);
+  assert.match(enhancements, /enableCollapsibleSections/);
+  assert.match(enhancements, /Planning window/);
+  assert.match(enhancements, /Why this window\?/);
+  assert.match(enhancements, /Peer practices WNMU may be leaving on the table/);
+  assert.match(styles, /\.sheet-section\.is-collapsed/);
+  assert.match(styles, /\.strategy-collapse-toggle/);
+  assert.match(styles, /\.strategy-window-rationale/);
 });
