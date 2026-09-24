@@ -296,6 +296,99 @@ function summarizeTimeslotRows(rows = []) {
   };
 }
 
+function pairedStartTimeCheck(rows = [], options = {}) {
+  const hourA = Number.isFinite(Number(options.hourA)) ? Number(options.hourA) : 20;
+  const hourB = Number.isFinite(Number(options.hourB)) ? Number(options.hourB) : 21;
+  const weekdayIndex = Number.isFinite(Number(options.weekdayIndex)) ? Number(options.weekdayIndex) : null;
+  const season = text(options.season);
+  const byFundraiser = new Map();
+  const topicCounts = { a: new Map(), b: new Map() };
+
+  for (const row of reportableProgrammingRows(rows)) {
+    const date = S.parseDate(row.dateKey);
+    const start = Number(row.startMinutes);
+    if (!date || !Number.isFinite(start) || Number(row.minutes) <= 0) continue;
+    if (weekdayIndex != null && date.getDay() !== weekdayIndex) continue;
+    if (season && S.rowSeason(row) !== season) continue;
+
+    let bucket = '';
+    if (start >= hourA * 60 && start < (hourA + 1) * 60) bucket = 'a';
+    else if (start >= hourB * 60 && start < (hourB + 1) * 60) bucket = 'b';
+    else continue;
+
+    const key = row.fundraiserId || row.dateKey;
+    if (!byFundraiser.has(key)) byFundraiser.set(key, {
+      a: { dollars: 0, minutes: 0 },
+      b: { dollars: 0, minutes: 0 }
+    });
+    const target = byFundraiser.get(key)[bucket];
+    target.dollars += Number(row.dollars || 0);
+    target.minutes += Number(row.minutes || 0);
+
+    const topic = text(row.topic || 'Uncategorized');
+    const counts = topicCounts[bucket];
+    counts.set(topic, (counts.get(topic) || 0) + 1);
+  }
+
+  const pairs = [];
+  for (const [fundraiserId, group] of byFundraiser.entries()) {
+    if (!(group.a.minutes > 0) || !(group.b.minutes > 0)) continue;
+    const rateA = group.a.dollars * 60 / group.a.minutes;
+    const rateB = group.b.dollars * 60 / group.b.minutes;
+    if (!Number.isFinite(rateA) || !Number.isFinite(rateB)) continue;
+    pairs.push({ fundraiserId, rateA, rateB, difference: rateB - rateA });
+  }
+
+  const dominant = (map) => {
+    const sorted = [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const total = sorted.reduce((sum, item) => sum + item[1], 0);
+    return {
+      topic: sorted[0]?.[0] || '',
+      share: total ? (sorted[0]?.[1] || 0) / total : 0,
+      starts: total
+    };
+  };
+
+  return {
+    hourA,
+    hourB,
+    pairedFundraisers: pairs.length,
+    hourAWins: pairs.filter((item) => item.rateA > item.rateB).length,
+    hourBWins: pairs.filter((item) => item.rateB > item.rateA).length,
+    ties: pairs.filter((item) => item.rateA === item.rateB).length,
+    medianHourARate: S.median(pairs.map((item) => item.rateA)),
+    medianHourBRate: S.median(pairs.map((item) => item.rateB)),
+    medianDifference: S.median(pairs.map((item) => item.difference)),
+    meanDifference: S.mean(pairs.map((item) => item.difference)),
+    hourAMix: dominant(topicCounts.a),
+    hourBMix: dominant(topicCounts.b)
+  };
+}
+
+function buildStartTimeReconciliation(schedule = {}, rows = []) {
+  const targetSeason = S.seasonForDate(schedule.startDate);
+  const weekdays = [
+    { day: 1, weekday: 'Monday' },
+    { day: 2, weekday: 'Tuesday' },
+    { day: 3, weekday: 'Wednesday' },
+    { day: 4, weekday: 'Thursday' },
+    { day: 5, weekday: 'Friday' },
+    { day: 6, weekday: 'Saturday' },
+    { day: 0, weekday: 'Sunday' }
+  ];
+
+  return {
+    targetSeason,
+    overall: pairedStartTimeCheck(rows, { hourA: 20, hourB: 21 }),
+    weekdays: weekdays.map((item) => ({
+      weekday: item.weekday,
+      weekdayIndex: item.day,
+      allHistory: pairedStartTimeCheck(rows, { hourA: 20, hourB: 21, weekdayIndex: item.day }),
+      targetSeason: pairedStartTimeCheck(rows, { hourA: 20, hourB: 21, weekdayIndex: item.day, season: targetSeason })
+    }))
+  };
+}
+
 function buildHourlyPatterns(schedule = {}, rows = []) {
   const pool = seasonPlanningPool(schedule, rows);
   const weekdays = [
@@ -327,7 +420,8 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
   return {
     season: pool.targetSeason,
     fallback: pool.fallback,
-    rows: resultRows
+    rows: resultRows,
+    reconciliation: buildStartTimeReconciliation(schedule, rows)
   };
 }
 
