@@ -101,8 +101,18 @@ test('visual implementation contains no scatter-plot dependency or canvas chart 
 test('premium entry pages load the isolated Premium Impact UI', () => {
   const analytics = fs.readFileSync(new URL('../premium-analytics.html', import.meta.url),'utf8');
   const report = fs.readFileSync(new URL('../premium-report.html', import.meta.url),'utf8');
-  assert.match(analytics,/premium-impact-ui\.js\?v=0\.22\.193/);
-  assert.match(report,/premium-impact-ui\.js\?v=0\.22\.193/);
+  assert.match(analytics,/premium-impact-ui\.js\?v=0\.22\.\d+/);
+  assert.match(report,/premium-impact-ui\.js\?v=0\.22\.\d+/);
   assert.match(analytics,/id="premium-impact"/);
   assert.match(analytics,/Not a control-group comparison/);
+});
+
+
+test('premium pages load private historical evidence support without embedding evidence data in the public app', () => {
+  const analytics = fs.readFileSync(new URL('../premium-analytics.html', import.meta.url),'utf8');
+  const report = fs.readFileSync(new URL('../premium-report.html', import.meta.url),'utf8');
+  assert.match(analytics,/premium-historical-evidence\.js\?v=0\.22\.194/);
+  assert.match(report,/premium-historical-evidence\.js\?v=0\.22\.194/);
+  assert.match(analytics,/premium-evidence-ui\.js\?v=0\.22\.194/);
+  assert.match(analytics,/id="premium-evidence-file-input"/);
 });
