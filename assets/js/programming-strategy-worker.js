@@ -1,11 +1,13 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.186');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.186', 'programming-strategy-backtest.js?v=0.22.203');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
+const B = self.WNMUStrategyBacktest;
 if (!A) throw new Error('Shared historical analysis module did not load in worker.');
 if (!S) throw new Error('Programming strategy analysis module did not load in worker.');
+if (!B) throw new Error('Programming strategy backtest module did not load in worker.');
 
 const text = (value) => String(value ?? '').trim();
 const nullableNumber = (value) => value == null || String(value).trim() === '' ? null : (Number.isFinite(Number(value)) ? Number(value) : null);
@@ -186,6 +188,39 @@ function strategyEvidenceRowsFromAnalyses(analyses = []) {
     }
   }
   return rows;
+}
+
+function targetBacktestRows(scheduleRows = [], canonicalAirings = [], library = [], targetSchedule = {}) {
+  const prepared = prepareStrategySchedules(scheduleRows, canonicalAirings);
+  const schedules = A.prepareSchedules(prepared.schedules);
+  const targetId = text(targetSchedule.id || '');
+  const targetStart = text(targetSchedule.startDate || targetSchedule.start_date || '').slice(0, 10);
+  const targetEnd = text(targetSchedule.endDate || targetSchedule.end_date || '').slice(0, 10);
+  const targetTitle = S.lookupKey(targetSchedule.title || '');
+
+  const target = schedules.find((item) => targetId && text(item.id || '') === targetId)
+    || schedules.find((item) =>
+      targetStart
+      && targetEnd
+      && text(item.startDate || '').slice(0, 10) === targetStart
+      && text(item.endDate || '').slice(0, 10) === targetEnd
+      && (!targetTitle || S.lookupKey(item.title || '') === targetTitle)
+    )
+    || schedules.find((item) =>
+      targetStart
+      && targetEnd
+      && text(item.startDate || '').slice(0, 10) === targetStart
+      && text(item.endDate || '').slice(0, 10) === targetEnd
+    );
+
+  if (!target) return { rows: [], found: false, schedule: null };
+  const indexes = A.buildLibraryIndexes(library);
+  const analysis = A.analyzeSchedule(target, canonicalAirings, indexes);
+  return {
+    rows: strategyEvidenceRowsFromAnalyses([analysis]),
+    found: true,
+    schedule: target
+  };
 }
 
 function seasonAnalysisPool(schedule = {}, analyses = []) {
@@ -1133,6 +1168,15 @@ self.onmessage = (event) => {
 
     const canonical = A.canonicalizeImportedAirings(rawAirings);
     const cutoff = S.evidenceCutoff(schedule, now);
+    const effectiveOverrides = payload.mode === 'backtest'
+      ? overrides.filter((row) => {
+        const when = text(row?.rated_at || row?.updated_at || '').slice(0, 10);
+        return Boolean(when && cutoff && when <= cutoff);
+      })
+      : overrides;
+    diagnostics.overrideRows = overrides.length;
+    diagnostics.effectiveOverrideRows = effectiveOverrides.length;
+    diagnostics.excludedPostCutoffOverrides = overrides.length - effectiveOverrides.length;
     const historical = completedHistoricalAnalyses(scheduleRows, canonical, library, cutoff);
     const analyses = historical.analyses;
     const rows = strategyEvidenceRowsFromAnalyses(analyses);
@@ -1153,11 +1197,28 @@ self.onmessage = (event) => {
       schedule,
       library,
       evidenceRows: rows,
-      overrides,
+      overrides: effectiveOverrides,
       performanceStats,
       now
     });
     diagnostics.strategyMs = Math.round(nowMs() - phase);
+
+    let backtest = null;
+    if (payload.mode === 'backtest') {
+      progress(requestId, 'backtest', 'Comparing frozen recommendations with the fundraiser that actually aired…');
+      phase = nowMs();
+      const actual = targetBacktestRows(scheduleRows, canonical, library, schedule);
+      diagnostics.backtestTargetFound = actual.found;
+      diagnostics.backtestActualRows = actual.rows.length;
+      backtest = B.evaluate({
+        strategy,
+        actualRows: actual.rows,
+        schedule,
+        recommendationLimit: payload.recommendationLimit || 20
+      });
+      backtest.targetScheduleFound = actual.found;
+      diagnostics.backtestMs = Math.round(nowMs() - phase);
+    }
 
     progress(requestId, 'days', 'Calculating fundraiser-day and day/time patterns…');
     phase = nowMs();
@@ -1180,6 +1241,7 @@ self.onmessage = (event) => {
       hourlyPatterns,
       opportunities,
       peerPractices,
+      backtest,
       diagnostics
     });
   } catch (error) {
