@@ -259,9 +259,9 @@
         html += '<div><strong>' + esc(example.station || 'Other station') + '</strong><span>';
         if (example.programTitle) html += esc(example.programTitle) + ' · ';
         html += esc(example.summary || '');
-        if (Number.isFinite(Number(example.actualDollars))) html += ' · ' + esc(money(example.actualDollars));
-        if (Number.isFinite(Number(example.goalDollars))) html += ' on ' + esc(money(example.goalDollars)) + ' goal';
-        if (Number.isFinite(Number(example.pledgeCount))) html += ' · ' + Number(example.pledgeCount) + ' pledge' + (Number(example.pledgeCount) === 1 ? '' : 's');
+        if (example.actualDollars != null && Number.isFinite(Number(example.actualDollars))) html += ' · ' + esc(money(example.actualDollars));
+        if (example.goalDollars != null && Number.isFinite(Number(example.goalDollars))) html += ' on ' + esc(money(example.goalDollars)) + ' goal';
+        if (example.pledgeCount != null && Number.isFinite(Number(example.pledgeCount))) html += ' · ' + Number(example.pledgeCount) + ' pledge' + (Number(example.pledgeCount) === 1 ? '' : 's');
         html += '</span></div>';
       });
 

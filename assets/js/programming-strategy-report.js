@@ -151,42 +151,30 @@ function dayOutlookSection(outlook){
 }
 
 function hourlyPatternsSection(hourly){
-  const data=hourly||{season:'selected',fallback:false,rows:[],overviewRows:[]};
+  const data=hourly||{season:'selected',rows:[]};
   const groups=new Map();
   for(const row of data.rows||[]){
     if(!groups.has(row.weekday))groups.set(row.weekday,[]);
     groups.get(row.weekday).push(row);
   }
   const order=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const overview=new Map((data.overviewRows||[]).map(group=>[group.group,group]));
-  const weekdayRows=overview.get('Weekday')?.rows||[];
-  const weekendRows=overview.get('Weekend')?.rows||[];
-  const overviewSlots=[...new Set([...weekdayRows,...weekendRows]
-    .filter(row=>Number(row.fundraiserSamples||0)>0)
-    .map(row=>Number(row.startMinutes)))]
-    .sort((a,b)=>a-b);
-  const byStart=(rows,start)=>rows.find(row=>Number(row.startMinutes)===Number(start))||{};
-  const metric=(row)=>{
-    if(!Number(row.fundraiserSamples||0))return'<span class="strategy-no-history">No history</span>';
+  const metric=(row,label)=>{
+    if(!row||!Number(row.fundraiserSamples||0))return`<span class="strategy-no-history">No ${esc(label)} history</span>`;
     return`<span class="strategy-rate">Avg $${Math.round(row.averageRate)}/pledge hr</span><small>${row.fundraiserSamples} fundraiser${row.fundraiserSamples===1?'':'s'} · ${row.airings} airing${row.airings===1?'':'s'}</small>`;
   };
-  const overviewTable=overviewSlots.length
-    ?`<div class="strategy-dayclass-table">
-        <div class="strategy-dayclass-row strategy-dayclass-head"><span>Start time</span><span>Weekdays · Mon–Fri</span><span>Weekend · Sat–Sun</span></div>
-        ${overviewSlots.map(start=>{
-          const weekday=byStart(weekdayRows,start);
-          const weekend=byStart(weekendRows,start);
-          return`<div class="strategy-dayclass-row"><strong>${clock(start)}</strong><span>${metric(weekday)}</span><span>${metric(weekend)}</span></div>`;
-        }).join('')}
-      </div>`
-    :'<p>No rate-valid weekday/weekend start-time history is available.</p>';
+  const span=data.historyStartDate&&data.historyEndDate
+    ?`${fmt(data.historyStartDate,false)}–${fmt(data.historyEndDate,false)}`
+    :'available history';
 
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Values use fundraiser-balanced Avg $ / Pledge Hour for the ${esc(data.season||'selected')} season${data.fallback?' with all-season fallback because same-season history is thin':''}. Empty half-hour buckets are omitted.</p></div></div>
-    <div class="strategy-dayclass-overview"><h3>General weekday / weekend pattern</h3><p>Start here for the broad pattern, then use the daily cards below to see where individual weekdays depart from it.</p>${overviewTable}</div>
-    <div class="strategy-daily-breakdown-head"><h3>Daily breakdown</h3><p>Each start time is its own 30-minute bucket.</p></div>
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Each daily row shows <strong>${esc(data.season||'selected')} fundraiser history first</strong>, with <strong>all fundraiser history</strong> beside it for sample-size context. All-history span: ${esc(span)}. Regular-program boundary/end-break fundraising is excluded from these pledge-program averages.</p></div></div>
+    <div class="strategy-daily-breakdown-head"><h3>Daily breakdown</h3><p>Season-specific evidence is primary; all-history evidence is context.</p></div>
     <div class="strategy-hourly-grid">${order.map(day=>{
-      const rows=(groups.get(day)||[]).filter(x=>Number(x.fundraiserSamples||0)>0).sort((a,b)=>a.startMinutes-b.startMinutes);
-      return`<section class="strategy-hourly-day"><h3>${day}</h3><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-rate">Avg $${Math.round(x.averageRate)}/pledge hr</span><small>${x.fundraiserSamples} fundraiser${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}</small></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
+      const allRows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);
+      const observed=allRows.filter(x=>Number(x.targetSeason?.fundraiserSamples||0)>0||Number(x.allHistory?.fundraiserSamples||0)>0);
+      const minStart=observed.length?Math.min(...observed.map(x=>Number(x.startMinutes))):null;
+      const maxStart=observed.length?Math.max(...observed.map(x=>Number(x.startMinutes))):null;
+      const rows=observed.length?allRows.filter(x=>Number(x.startMinutes)>=minStart&&Number(x.startMinutes)<=maxStart):[];
+      return`<section class="strategy-hourly-day"><h3>${day}</h3><div class="strategy-hourly-compare-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-compare-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-hourly-scope">${metric(x.targetSeason,data.season||'season')}</span><span class="strategy-hourly-scope">${metric(x.allHistory,'all-history')}</span></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
     }).join('')}</div></section>`;
 }
 
@@ -236,7 +224,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.198');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.199');
     }catch(error){
       reject(error);
       return;
