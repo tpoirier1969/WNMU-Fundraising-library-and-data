@@ -2,6 +2,7 @@
   'use strict';
 
   const A = window.WNMUPremiumAnalysis;
+  const H = window.WNMUPremiumHistoricalEvidence;
   const O = window.WNMUOneSheetAnalysis;
   const cfg = window.PLEDGE_MANAGER_CONFIG || {};
   const STORAGE_KEY = 'wnmuPremiumAnalyticsHistoryV1';
@@ -15,6 +16,7 @@
     analyses: [],
     performanceRows: [],
     mappedRows: [],
+    historicalEvidence: H?.loadEvidence ? H.loadEvidence() : { schema:'wnmu-premium-historical-evidence-v1', offers:[] },
     email: ''
   };
 
@@ -108,8 +110,26 @@
 
   function remapImports() {
     const flattened = A.flattenImports(state.imports);
-    state.mappedRows = A.addMappings(flattened.rows, state.library);
+    const baseRows = A.addMappings(flattened.rows, state.library);
+    state.mappedRows = H?.applyMappings
+      ? H.applyMappings(baseRows, state.library, state.historicalEvidence)
+      : baseRows;
     return state.mappedRows;
+  }
+
+  function setHistoricalEvidence(document = {}) {
+    if (!H?.saveEvidence) throw new Error('Historical premium evidence module did not load.');
+    state.historicalEvidence = H.saveEvidence(document);
+    remapImports();
+    return state.historicalEvidence;
+  }
+
+  function clearHistoricalEvidence() {
+    state.historicalEvidence = H?.clearEvidence
+      ? H.clearEvidence()
+      : { schema:'wnmu-premium-historical-evidence-v1', offers:[] };
+    remapImports();
+    return state.historicalEvidence;
   }
 
   async function parseFile(file) {
@@ -160,6 +180,8 @@
       combinedPrograms: A.combinedProgramAnalysis(state.mappedRows, state.performanceRows),
       combinedTopics: A.combinedTopicAnalysis(state.mappedRows, state.performanceRows),
       premiumImpact: A.premiumImpactEvidence(state.mappedRows, flat.summaries, state.performanceRows),
+      historicalEvidence: state.historicalEvidence,
+      historicalEvidenceSummary: H?.summary ? H.summary(state.historicalEvidence) : { offerCount:0, fundraiserCount:0, programCount:0, offerSetCount:0, selectedMappingCount:0 },
       mappingQuality: A.mappingQuality(state.mappedRows)
     };
   }
@@ -175,6 +197,8 @@
     clearStoredImports,
     initializeStoredData,
     setImports,
+    setHistoricalEvidence,
+    clearHistoricalEvidence,
     remapImports,
     snapshot
   };
