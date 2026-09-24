@@ -421,8 +421,13 @@ function summarizeTimeslotRows(rows = []) {
 }
 
 function pairedStartTimeCheck(rows = [], options = {}) {
-  const hourA = Number.isFinite(Number(options.hourA)) ? Number(options.hourA) : 20;
-  const hourB = Number.isFinite(Number(options.hourB)) ? Number(options.hourB) : 21;
+  const bucketMinutes = Number.isFinite(Number(options.bucketMinutes)) ? Number(options.bucketMinutes) : 30;
+  const startA = Number.isFinite(Number(options.startA))
+    ? Number(options.startA)
+    : (Number.isFinite(Number(options.hourA)) ? Number(options.hourA) * 60 : 20 * 60);
+  const startB = Number.isFinite(Number(options.startB))
+    ? Number(options.startB)
+    : (Number.isFinite(Number(options.hourB)) ? Number(options.hourB) * 60 : 21 * 60);
   const weekdayIndex = Number.isFinite(Number(options.weekdayIndex)) ? Number(options.weekdayIndex) : null;
   const season = text(options.season);
   const byFundraiser = new Map();
@@ -436,8 +441,8 @@ function pairedStartTimeCheck(rows = [], options = {}) {
     if (season && S.rowSeason(row) !== season) continue;
 
     let bucket = '';
-    if (start >= hourA * 60 && start < (hourA + 1) * 60) bucket = 'a';
-    else if (start >= hourB * 60 && start < (hourB + 1) * 60) bucket = 'b';
+    if (start >= startA && start < startA + bucketMinutes) bucket = 'a';
+    else if (start >= startB && start < startB + bucketMinutes) bucket = 'b';
     else continue;
 
     const key = row.fundraiserId || row.dateKey;
@@ -474,8 +479,9 @@ function pairedStartTimeCheck(rows = [], options = {}) {
   };
 
   return {
-    hourA,
-    hourB,
+    startA,
+    startB,
+    bucketMinutes,
     pairedFundraisers: pairs.length,
     hourAWins: pairs.filter((item) => item.rateA > item.rateB).length,
     hourBWins: pairs.filter((item) => item.rateB > item.rateA).length,
@@ -500,17 +506,42 @@ function buildStartTimeReconciliation(schedule = {}, rows = []) {
     { day: 6, weekday: 'Saturday' },
     { day: 0, weekday: 'Sunday' }
   ];
+  const exactOptions = { startA: 20 * 60, startB: 21 * 60, bucketMinutes: 30 };
 
   return {
     targetSeason,
-    overall: pairedStartTimeCheck(rows, { hourA: 20, hourB: 21 }),
+    bucketMinutes: 30,
+    startA: 20 * 60,
+    startB: 21 * 60,
+    overall: pairedStartTimeCheck(rows, exactOptions),
     weekdays: weekdays.map((item) => ({
       weekday: item.weekday,
       weekdayIndex: item.day,
-      allHistory: pairedStartTimeCheck(rows, { hourA: 20, hourB: 21, weekdayIndex: item.day }),
-      targetSeason: pairedStartTimeCheck(rows, { hourA: 20, hourB: 21, weekdayIndex: item.day, season: targetSeason })
+      allHistory: pairedStartTimeCheck(rows, { ...exactOptions, weekdayIndex: item.day }),
+      targetSeason: pairedStartTimeCheck(rows, { ...exactOptions, weekdayIndex: item.day, season: targetSeason })
     }))
   };
+}
+
+function buildHalfHourRows(poolRows = [], dayMatcher = () => true) {
+  const rows = [];
+  for (let slot = 12 * 60; slot <= 22 * 60 + 30; slot += 30) {
+    const matched = poolRows.filter((row) => {
+      const date = S.parseDate(row.dateKey);
+      const start = Number(row.startMinutes);
+      return date
+        && dayMatcher(date.getDay())
+        && Number.isFinite(start)
+        && start >= slot
+        && start < slot + 30;
+    });
+    rows.push({
+      startMinutes: slot,
+      endMinutes: slot + 30,
+      ...summarizeTimeslotRows(matched)
+    });
+  }
+  return rows;
 }
 
 function buildHourlyPatterns(schedule = {}, rows = []) {
@@ -524,27 +555,38 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
     { day: 6, weekday: 'Saturday' },
     { day: 0, weekday: 'Sunday' }
   ];
+
   const resultRows = [];
   for (const item of weekdays) {
-    for (let hour = 12; hour <= 22; hour += 1) {
-      const matched = pool.rows.filter((row) => {
-        const date = S.parseDate(row.dateKey);
-        const start = Number(row.startMinutes);
-        return date && date.getDay() === item.day && start >= hour * 60 && start < (hour + 1) * 60;
-      });
+    const dayRows = buildHalfHourRows(pool.rows, (day) => day === item.day);
+    for (const row of dayRows) {
       resultRows.push({
         weekday: item.weekday,
         weekdayIndex: item.day,
-        startMinutes: hour * 60,
-        endMinutes: (hour + 1) * 60,
-        ...summarizeTimeslotRows(matched)
+        ...row
       });
     }
   }
+
+  const overviewRows = [
+    {
+      group: 'Weekday',
+      days: 'Monday–Friday',
+      rows: buildHalfHourRows(pool.rows, (day) => day >= 1 && day <= 5)
+    },
+    {
+      group: 'Weekend',
+      days: 'Saturday–Sunday',
+      rows: buildHalfHourRows(pool.rows, (day) => day === 0 || day === 6)
+    }
+  ];
+
   return {
     season: pool.targetSeason,
     fallback: pool.fallback,
+    bucketMinutes: 30,
     rows: resultRows,
+    overviewRows,
     reconciliation: buildStartTimeReconciliation(schedule, rows)
   };
 }
