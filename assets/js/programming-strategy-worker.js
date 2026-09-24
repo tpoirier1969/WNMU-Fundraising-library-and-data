@@ -77,18 +77,36 @@ function strategyBoundaryBreakClassification(placement = {}, airing = null) {
 }
 
 function prepareStrategySchedules(scheduleRows = [], canonicalAirings = []) {
+  const airings = canonicalAirings || [];
   const byHash = new Map(
-    (canonicalAirings || [])
+    airings
       .map((row) => [text(row?.row_hash || ''), row])
       .filter(([key]) => key)
   );
+  const airingForPlacement = (placement = {}) => {
+    const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+    if (hash && byHash.has(hash)) return byHash.get(hash);
+    const dateKey = text(placement.dateKey || placement.date_key || '');
+    const start = Number(placement.startMinutes ?? placement.start_minutes);
+    const titleKey = S.lookupKey(placement.programTitle || placement.program_title || placement.title || '');
+    const candidates = airings.filter((row) => {
+      const rowDate = text(row?.air_date || row?.drive_date || '').slice(0,10);
+      const time = text(row?.air_time || '');
+      const match = time.match(/^(\d{1,2}):(\d{2})/);
+      const rowStart = match ? Number(match[1]) * 60 + Number(match[2]) : null;
+      if (rowDate !== dateKey || !Number.isFinite(start) || rowStart !== start) return false;
+      if (!titleKey) return true;
+      const rowTitle = S.lookupKey(row?.matched_library_title || row?.program_title || row?.title || row?.imported_program_title || '');
+      return !rowTitle || rowTitle === titleKey;
+    });
+    return candidates.length === 1 ? candidates[0] : null;
+  };
   let excludedBoundaryBreaks = 0;
   const excludedExamples = [];
 
   const schedules = (scheduleRows || []).map(A.normalizeSchedule).map((schedule) => {
     const placements = (schedule.placements || []).map((placement) => {
-      const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
-      const airing = hash ? byHash.get(hash) || null : null;
+      const airing = airingForPlacement(placement);
       const classification = strategyBoundaryBreakClassification(placement, airing);
       if (!classification.exclude || placement?.isNonPledge) return placement;
 
