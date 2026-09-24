@@ -6,9 +6,11 @@
   <title>Premium Analytics · WNMU-TV PBS</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.194">
+  <link rel="stylesheet" href="assets/standalone-navigation.css?v=0.22.200">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="config.js"></script>
+  <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
   <script defer src="assets/js/one-sheet-analysis.js?v=0.22.194"></script>
   <script defer src="assets/js/premium-analysis.js?v=0.22.194"></script>
   <script defer src="assets/js/premium-historical-evidence.js?v=0.22.194"></script>
@@ -25,8 +27,9 @@
   <div id="premium-app" class="premium-shell hidden">
     <header class="premium-topbar">
       <div class="premium-brand"><img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo"><div><h1>Premium Analytics</h1><p>Exact premium packages, costs, category patterns, and program/topic relationships</p></div></div>
-      <div class="premium-actions"><span id="premium-role" class="premium-role">Checking access…</span><a class="premium-button" href="premium-report.html">Premium report</a><a class="premium-button" href="reports.html">Report Center</a><a class="premium-button" href="./">Program Library</a></div>
+      <div class="premium-actions"><span id="premium-role" class="premium-role">Checking access…</span></div>
     </header>
+    <div data-standalone-navigation data-active="premium" data-extras="reports,strategy,premium,premium-report"></div>
     <main class="premium-main">
       <section class="premium-toolbar">
         <label class="premium-field"><span>Import premium-cost reports (.xls/.xlsx)</span><input id="premium-file-input" type="file" multiple accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>

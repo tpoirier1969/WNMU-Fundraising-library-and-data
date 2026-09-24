@@ -6,6 +6,7 @@
   <title>WNMU One-Sheet Reports</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.177">
+  <link rel="stylesheet" href="assets/standalone-navigation.css?v=0.22.200">
   <style>
     .report-selection{position:relative;min-width:280px}
     .report-fundraiser-picker{position:relative;width:100%}
@@ -72,6 +73,7 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
+  <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
   <script defer src="assets/js/one-sheet-analysis.js?v=0.22.177"></script>
   <script defer src="assets/js/one-sheet-reports.js?v=0.22.177"></script>
   <script defer src="assets/js/report-hub-programming-strategy.js?v=0.22.177"></script>
@@ -88,12 +90,9 @@
           <p id="report-page-subtitle">Printable retrospective fundraiser analysis</p>
         </div>
       </div>
-      <div class="report-top-actions">
-        <span id="report-role" class="report-role">Checking access…</span>
-        <a class="report-button" href="reports.html">Report hub</a>
-        <a class="report-button" href="./">Pledge Program Library</a>
-      </div>
+      <div class="report-top-actions"><span id="report-role" class="report-role">Checking access…</span></div>
     </header>
+    <div data-standalone-navigation data-active="reports" data-extras="reports,strategy,premium"></div>
     <main class="report-main">
       <div class="report-toolbar">
         <div id="report-controls"></div>

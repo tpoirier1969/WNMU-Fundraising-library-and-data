@@ -7,8 +7,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.194">
   <link rel="stylesheet" href="assets/premium-analytics.css?v=0.22.194">
+  <link rel="stylesheet" href="assets/standalone-navigation.css?v=0.22.200">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="config.js"></script>
+  <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
   <script defer src="assets/js/one-sheet-analysis.js?v=0.22.194"></script>
   <script defer src="assets/js/premium-analysis.js?v=0.22.194"></script>
   <script defer src="assets/js/premium-historical-evidence.js?v=0.22.194"></script>
@@ -24,8 +26,9 @@
   <div id="premium-report-app" class="report-shell hidden">
     <header class="report-topbar">
       <div class="report-brand"><img src="assets/WNMU-TV-logo-head2019.png" alt="WNMU-TV PBS logo"><div><h1>Premium Performance &amp; Economics</h1><p>Exact package, category, program and topic analysis</p></div></div>
-      <div class="report-top-actions"><span id="premium-report-role" class="report-role">Checking access…</span><a class="report-button" href="premium-analytics.html">Premium Analytics</a><a class="report-button" href="reports.html">Report hub</a><a class="report-button" href="./">Program Library</a></div>
+      <div class="report-top-actions"><span id="premium-report-role" class="report-role">Checking access…</span></div>
     </header>
+    <div data-standalone-navigation data-active="premium-report" data-extras="reports,strategy,premium,premium-report"></div>
     <main class="report-main">
       <div class="report-toolbar"><div class="report-control-row"><label class="report-field"><span>Fundraiser</span><select id="premium-report-fundraiser"></select></label><button id="premium-report-print" class="report-button" type="button">Print report</button></div><div id="premium-report-status" class="premium-status">Checking administrator access…</div></div>
       <div id="premium-report-output"></div>
