@@ -1022,6 +1022,33 @@ if(titleHistory.rows){let a=rateAdjustment(titleHistory.averageRate);const title
 if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.averageRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} in this weekday/window.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none in this exact weekday/window.`);
 const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustments.push(['weekdayWindow',dayAdj]);if(dayHistory.fundraisers>=2&&Number.isFinite(dayHistory.averageRate))reasons.push(`${slot.weekday} ${slot.label.toLowerCase()} history: ${dayHistory.fundraisers} fundraiser samples, Avg ${Math.round(dayHistory.averageRate)}/pledge hr.`);if(dayAdj<=-6)cautions.push(`${slot.weekday} ${slot.label.toLowerCase()} is historically weaker than WNMU's ${useSeasonWindowEvidence?context.targetSeason+' season':'overall'} pledge baseline.`);
 let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);reasons.push(`${topic} has ${exactTopic.rates.length} rate-valid airing${exactTopic.rates.length===1?'':'s'} in this weekday/window${Number.isFinite(exactTopic.averageRate)?`, Avg ${Math.round(exactTopic.averageRate)}/pledge hr`:''}.`);}else if(!slot.experimental){topicAdj=exactTopic.rates.length===1?-4:-9;cautions.push(exactTopic.rates.length?`Only one ${topic} result exists in this weekday/window.`:`No WNMU ${topic} evidence exists in this weekday/window; treat this as exploratory.`);if(broadTopic.rates.length)reasons.push(`${topic} has ${broadTopic.rates.length} comparable results elsewhere, but not enough here.`);}score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
+const secondaryLabel=programSecondary(program);
+const primaryTopicKey=lookupKey(topic);
+if(primaryTopicKey==='music'&&secondaryLabel){
+  const secondaryKey=lookupKey(secondaryLabel)||'unassigned';
+  const subStats=context.performanceStats?.subtopicByTopic?.get?.('music')?.get?.(secondaryKey)||null;
+  const subReliability=context.performanceStats?.subtopicReliabilityByTopic?.get?.('music')?.get?.(secondaryKey)||subStats;
+  const primaryStats=context.performanceStats?.topic?.get?.('music')||null;
+  const enoughSeason=Number(subStats?.fundraiserSamples||0)>=3&&Number(subStats?.testedTitleCount||0)>=2;
+  const enoughDepth=Number(subReliability?.fundraiserSamples||0)>=6;
+  const subAvg=Number(subStats?.averageRate);
+  const primaryAvg=Number(primaryStats?.averageRate);
+  if(enoughSeason&&enoughDepth&&Number.isFinite(subAvg)&&Number.isFinite(primaryAvg)&&primaryAvg>0){
+    const ratio=subAvg/primaryAvg;
+    let a=0;
+    if(ratio>=1.5)a=5;
+    else if(ratio>=1.2)a=3;
+    else if(ratio<=0.5)a=-5;
+    else if(ratio<=0.75)a=-3;
+    if(a){
+      score+=a;
+      adjustments.push(['musicSubgenre',a]);
+      const detail=`${secondaryLabel} seasonal music history: ${subStats.fundraiserSamples} fundraiser samples, Avg ${Math.round(subAvg)}/pledge hr.`;
+      if(a>0)reasons.push(detail);
+      else cautions.push(detail);
+    }
+  }
+}
 if(titleHistory.latest){const d=daysBetween(titleHistory.latest,scheduleStart(schedule));let a=0;if(d>=730)a=titleHistory.rows===1?2:8;else if(d>=365)a=6;else if(d>=180)a=2;else if(d<90)a=-10;else if(d<180)a=-5;score+=a;adjustments.push(['rest',a]);if(a>0)reasons.push(`Rested ${d} days since the latest known airing.`);if(a<0)cautions.push(`Short rest: ${d} days since the latest known airing.`);}
 let fatigue=0;if(titleHistory.rows>=12)fatigue=-8;else if(titleHistory.rows>=8)fatigue=-5;else if(titleHistory.rows>=5)fatigue=-2;else if(titleHistory.rows>0&&titleHistory.rows<=2)fatigue=3;score+=fatigue;adjustments.push(['lifetimeExposure',fatigue]);if(titleHistory.rows>=8)cautions.push(`Heavy lifetime exposure: ${titleHistory.rows} known airings.`);
 score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push('Current-cycle Drama Doc proxy based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push('Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc cycle is unknown because rights-start timing is unavailable.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
