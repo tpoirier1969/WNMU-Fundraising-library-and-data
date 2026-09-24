@@ -43,7 +43,7 @@
       '<tr>' +
         '<td><strong>' + esc(item.programTitle) + '</strong></td>' +
         '<td>' + num(item.fundraiserCount) + '</td>' +
-        '<td>' + esc(item.compositions.join(' · ')) + '</td>' +
+        '<td>' + esc((item.verifiedOfferSummaries?.length ? item.verifiedOfferSummaries : item.verifiedOfferSetIds || []).join(' · ')) + '</td>' +
         '<td>' + money(item.totalPremiumLinkedDollars) + '</td>' +
         '<td>' + money(item.totalPremiumCost) + '</td>' +
         '<td>' + money(item.totalBroadcastDollars) + '</td>' +
@@ -52,7 +52,7 @@
     ).join('');
 
     return '<div class="premium-table-wrap"><table style="min-width:1050px">' +
-      '<thead><tr><th>Program</th><th>Fundraisers</th><th>Package compositions</th><th>Premium-linked $</th><th>Premium cost</th><th>Broadcast $</th><th>Mapping evidence</th></tr></thead>' +
+      '<thead><tr><th>Program</th><th>Fundraisers</th><th>Verified offer sets</th><th>Premium-linked $</th><th>Premium cost</th><th>Broadcast $</th><th>Mapping evidence</th></tr></thead>' +
       '<tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -61,6 +61,7 @@
     const association = impact.association || {};
     const coverage = impact.coverage || {};
     const causal = impact.causal || {};
+    const comparisons = impact.differentOfferComparisons || impact.differentPackageComparisons || [];
     const delta = Number(association.averagePledgeDifference || 0);
     const deltaPct = association.averagePledgeDifferencePercent;
     const deltaText = (delta >= 0 ? '+' : '') + money(delta) + (deltaPct == null ? '' : ', ' + (deltaPct >= 0 ? '+' : '') + pct(deltaPct));
@@ -68,7 +69,7 @@
     const status = '<div class="premium-impact-status-grid">' +
       '<article><span>Observed premium economics</span><strong>' + esc(impact.status?.observedEconomics || 'Not available') + '</strong><small>What actually happened in the imported reports.</small></article>' +
       '<article><span>Premium association</span><strong>' + esc(impact.status?.associationAnalysis || 'Limited') + '</strong><small>Descriptive relationships, not estimated lift.</small></article>' +
-      '<article><span>Same-title / different-package</span><strong>' + num(coverage.sameTitleDifferentPackageComparisons || 0) + '</strong><small>Comparative opportunities across fundraiser history.</small></article>' +
+      '<article><span>Same-title / different-offer</span><strong>' + num(coverage.sameTitleDifferentOfferComparisons || coverage.sameTitleDifferentPackageComparisons || 0) + '</strong><small>Verified changes in the actual offer set, not merely different items selected.</small></article>' +
       '<article class="premium-impact-causal"><span>Causal premium effect</span><strong>' + esc(causal.status || 'Not established') + '</strong><small>No valid counterfactual yet.</small></article>' +
     '</div>';
 
@@ -90,9 +91,10 @@
 
     const causalNote = '<div class="premium-impact-causal-note"><strong>Causal estimate: Not established.</strong> ' + esc(causal.reason || '') + '</div>';
 
-    if (compact) return status + callout + coverageGrid + causalNote;
-    return status + callout + coverageGrid + direction + '<h3>Best historical comparisons available</h3>' +
-      comparisonsTable(impact.differentPackageComparisons || []) + causalNote;
+    const offerBoundary = '<p class="premium-note"><strong>Offer-set rule:</strong> different premiums selected in two drives do not prove that the station offered different packages. A same-title comparison is counted as a changed offer only when historical evidence identifies different offer sets.</p>';
+    if (compact) return status + callout + coverageGrid + offerBoundary + causalNote;
+    return status + callout + coverageGrid + direction + offerBoundary + '<h3>Best historical comparisons available</h3>' +
+      comparisonsTable(comparisons) + causalNote;
   }
 
   function renderAnalyticsImpact() {
