@@ -1283,3 +1283,11 @@ test('strategy print controls clearly state that collapsed sections will not pri
   assert.match(page,/Print visible sections/);
   assert.match(page,/Collapsed sections will not print\./);
 });
+
+
+test('nearby peer timing evidence does not convert missing dollars or pledge counts to zero', () => {
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  assert.match(enhancements,/item\.actualDollars != null/);
+  assert.match(enhancements,/item\.pledgeCount != null/);
+  assert.doesNotMatch(enhancements,/if \(Number\.isFinite\(Number\(item\.pledgeCount\)\)\)/);
+});
