@@ -15,14 +15,119 @@ function progress(requestId, stage, message) {
   self.postMessage({ type: 'progress', requestId, stage, message });
 }
 
+function rawBreakCount(row = {}) {
+  const raw = row?.raw_payload && typeof row.raw_payload === 'object' ? row.raw_payload : {};
+  const value = Number(raw.break_count ?? raw.breaks ?? raw.breakCount);
+  return Number.isFinite(value) ? value : null;
+}
+
+function strategyBoundaryBreakClassification(placement = {}, airing = null) {
+  if (placement?.isNonPledge) {
+    return { exclude: true, reason: 'Explicitly marked non-pledge.' };
+  }
+
+  const scheduledMinutes = Number(
+    placement.lengthMinutes
+    ?? placement.programMinutes
+    ?? placement.program_minutes
+    ?? placement.durationMinutes
+    ?? 0
+  );
+  const reportedMinutes = Number(airing?.program_minutes || 0);
+  const breakCount = rawBreakCount(airing);
+  const startMinutes = Number(placement.startMinutes ?? placement.start_minutes);
+  const date = S.parseDate(placement.dateKey || placement.date_key || '');
+  const titleKey = S.lookupKey(
+    placement.programTitle
+    || placement.program_title
+    || placement.title
+    || airing?.matched_library_title
+    || airing?.imported_program_title
+    || ''
+  );
+
+  const shortSingleBreak =
+    scheduledMinutes >= 30
+    && reportedMinutes > 0
+    && reportedMinutes <= 10
+    && breakCount === 1;
+
+  if (shortSingleBreak) {
+    return {
+      exclude: true,
+      reason: 'Boundary-break fundraising: ' + reportedMinutes + ' reported fundraising minute' + (reportedMinutes === 1 ? '' : 's') + ' / one break attached to a ' + scheduledMinutes + '-minute scheduled program.'
+    };
+  }
+
+  const regularRoadshowBoundaryBreak =
+    titleKey === 'antiques roadshow'
+    && date?.getDay() === 1
+    && Number.isFinite(startMinutes)
+    && startMinutes >= 20 * 60
+    && startMinutes < 21 * 60;
+
+  if (regularRoadshowBoundaryBreak) {
+    return {
+      exclude: true,
+      reason: 'Boundary-break fundraising: regular Monday 8 PM Antiques Roadshow remained normal programming with an end pledge break.'
+    };
+  }
+
+  return { exclude: false, reason: '' };
+}
+
+function prepareStrategySchedules(scheduleRows = [], canonicalAirings = []) {
+  const byHash = new Map(
+    (canonicalAirings || [])
+      .map((row) => [text(row?.row_hash || ''), row])
+      .filter(([key]) => key)
+  );
+  let excludedBoundaryBreaks = 0;
+  const excludedExamples = [];
+
+  const schedules = (scheduleRows || []).map(A.normalizeSchedule).map((schedule) => {
+    const placements = (schedule.placements || []).map((placement) => {
+      const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
+      const airing = hash ? byHash.get(hash) || null : null;
+      const classification = strategyBoundaryBreakClassification(placement, airing);
+      if (!classification.exclude || placement?.isNonPledge) return placement;
+
+      excludedBoundaryBreaks += 1;
+      if (excludedExamples.length < 12) {
+        excludedExamples.push({
+          dateKey: text(placement.dateKey || placement.date_key || ''),
+          startMinutes: Number(placement.startMinutes ?? placement.start_minutes),
+          title: text(placement.programTitle || placement.program_title || placement.title || ''),
+          reason: classification.reason
+        });
+      }
+      return {
+        ...placement,
+        isNonPledge: true,
+        strategyBoundaryBreakOnly: true,
+        strategyBoundaryBreakReason: classification.reason
+      };
+    });
+    return { ...schedule, placements };
+  });
+
+  return { schedules, excludedBoundaryBreaks, excludedExamples };
+}
 function completedHistoricalAnalyses(scheduleRows = [], canonicalAirings = [], library = [], cutoff = '') {
   const indexes = A.buildLibraryIndexes(library);
-  const schedules = A.prepareSchedules((scheduleRows || []).map(A.normalizeSchedule))
+  const prepared = prepareStrategySchedules(scheduleRows, canonicalAirings);
+  const schedules = A.prepareSchedules(prepared.schedules)
     .filter((item) => item?.startDate && item?.endDate && (!cutoff || item.endDate <= cutoff));
   const analyses = schedules
     .map((item) => A.analyzeSchedule(item, canonicalAirings, indexes))
     .filter((analysis) => (analysis?.importedRows || []).length || Number(analysis?.broadcastDollars || 0) > 0);
-  return { schedules, analyses, indexes };
+  return {
+    schedules,
+    analyses,
+    indexes,
+    excludedBoundaryBreaks: prepared.excludedBoundaryBreaks,
+    excludedBoundaryBreakExamples: prepared.excludedExamples
+  };
 }
 
 function strategyEvidenceRowsFromAnalyses(analyses = []) {
@@ -977,6 +1082,8 @@ self.onmessage = (event) => {
     diagnostics.historicalSchedules = historical.schedules.length;
     diagnostics.historicalAnalyses = analyses.length;
     diagnostics.evidenceRows = rows.length;
+    diagnostics.excludedBoundaryBreakRows = Number(historical.excludedBoundaryBreaks || 0);
+    diagnostics.excludedBoundaryBreakExamples = historical.excludedBoundaryBreakExamples || [];
 
     progress(requestId, 'score', 'Scoring eligible titles against reconciled WNMU history…');
     phase = nowMs();
