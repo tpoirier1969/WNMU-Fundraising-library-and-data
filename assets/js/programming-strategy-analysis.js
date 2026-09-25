@@ -1044,10 +1044,18 @@ const result={program,programId:programId(program),title:programTitle(program),t
 context.scoreCache?.set(scoreKey,result);
 return result;}
   function rankProgramsForSlot(library = [], slot = {}, context = {}) {
-    return (library || [])
+    const ranked = (library || [])
       .map((program) => scoreProgramForSlot(program, slot, context))
       .filter(Boolean)
       .sort((a, b) => b.score - a.score || b.evidenceCount - a.evidenceCount || a.title.localeCompare(b.title));
+
+    const seenTitles = new Set();
+    return ranked.filter((item) => {
+      const key = lookupKey(item.title) || `id:${item.programId}`;
+      if (seenTitles.has(key)) return false;
+      seenTitles.add(key);
+      return true;
+    });
   }
 
   function selectRecommendationsForSlot(ranked = [], limit = 4) {
