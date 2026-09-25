@@ -502,7 +502,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.207'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.208'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -510,7 +510,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.207', 'programming-strategy-backtest\.js\?v=0\.22\.206'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.208', 'programming-strategy-backtest\.js\?v=0\.22\.208'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1397,4 +1397,23 @@ test('historical backtest freezes recommendations before the target fundraiser a
   assert.equal(result.backtest.drive.titleCount, 2);
   assert.ok(result.backtest.topActual.some((item) => item.title === 'History Winner'));
   assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'backtest'));
+});
+
+
+test('strategy recommendation ranking collapses duplicate Program Library rows with the same title', () => {
+  const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime' && !entry.blocked);
+  const library = [
+    baseProgram({ id:'dup-old', title:'Final Run: Storms of the Century', topic_primary:'Michigan', rights_end:'2026-12-31' }),
+    baseProgram({ id:'dup-current', title:'Final Run: Storms of the Century', topic_primary:'Michigan', rights_end:'2049-12-31' }),
+    baseProgram({ id:'other', title:'Different Michigan Program', topic_primary:'Michigan', rights_end:'2049-12-31' })
+  ];
+  const ranked = S.rankProgramsForSlot(library, slot, {
+    schedule,
+    evidenceRows:[],
+    overrideByProgramId:new Map(),
+    baselineRate:null
+  });
+  assert.equal(ranked.filter((item) => item.title === 'Final Run: Storms of the Century').length, 1);
+  const recommendations = S.selectRecommendationsForSlot(ranked, 4);
+  assert.equal(recommendations.filter((item) => item.title === 'Final Run: Storms of the Century').length, 1);
 });

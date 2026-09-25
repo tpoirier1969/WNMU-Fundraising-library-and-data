@@ -8,8 +8,10 @@
   const rowTitle = (r) => txt(r.title ?? r.programTitle ?? r.program_title ?? r.matched_library_title ?? r.imported_program_title ?? 'Untitled program');
   const rowId = (r) => txt(r.programId ?? r.program_id ?? r.pledge_program_id ?? r.manual_match_program_id);
   const itemKey = (x) => {
+    const title = keyTitle(x.title ?? x.programTitle ?? x.program_title);
+    if (title) return `title:${title}`;
     const id = txt(x.programId ?? x.program_id ?? x.id);
-    return id ? `id:${id}` : `title:${keyTitle(x.title ?? x.programTitle ?? x.program_title)}`;
+    return id ? `id:${id}` : '';
   };
   const median = (values) => {
     const a = values.filter(Number.isFinite).slice().sort((x, y) => x - y);
@@ -38,7 +40,7 @@
     for (const row of rows) {
       const date = rowDate(row), minutes = num(row.minutes ?? row.programMinutes ?? row.program_minutes) || 0;
       if (!date || (start && date < start) || (end && date > end) || minutes <= 0 || row.durationMissing || row.countsTowardScheduleMinutes === false || row.known === false || row.unmatchedImported) continue;
-      const programId = rowId(row), title = rowTitle(row), key = programId ? `id:${programId}` : `title:${keyTitle(title)}`;
+      const programId = rowId(row), title = rowTitle(row), titleKey = keyTitle(title), key = titleKey ? `title:${titleKey}` : `id:${programId}`;
       const x = groups.get(key) || { key, programId, title, topic: txt(row.topic ?? row.topic_primary ?? 'Uncategorized') || 'Uncategorized', airings: 0, minutes: 0, dollars: 0, pledges: 0 };
       x.airings += 1;
       x.minutes += minutes;
