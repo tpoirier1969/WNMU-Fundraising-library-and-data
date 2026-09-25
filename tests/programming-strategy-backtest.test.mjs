@@ -112,3 +112,27 @@ test('zero-dollar titles are not counted as above-median or top-quartile hits wh
   assert.equal(beta.topQuartile, true);
   assert.ok(!result.topActual.some((item) => item.title === 'Alpha Zero'));
 });
+
+
+test('title-level backtest collapses duplicate program IDs for the same title', () => {
+  const duplicateStrategy = {
+    cutoff:'2025-11-30',
+    windows:[
+      { experimental:false, blocked:false, recommendations:[
+        { programId:'old-id', title:'Duplicate Title', topic:'Michigan', score:70 },
+        { programId:'current-id', title:'Duplicate Title', topic:'Michigan', score:90 }
+      ]}
+    ]
+  };
+  const duplicateRows = [
+    { programId:'old-id', title:'Duplicate Title', dateKey:'2025-12-01', minutes:60, dollars:100, known:true, countsTowardScheduleMinutes:true },
+    { programId:'current-id', title:'Duplicate Title', dateKey:'2025-12-02', minutes:60, dollars:200, known:true, countsTowardScheduleMinutes:true }
+  ];
+  const result = B.evaluate({ strategy:duplicateStrategy, actualRows:duplicateRows, schedule });
+  assert.equal(result.summary.recommendedTitles, 1);
+  assert.equal(result.summary.testedRecommendations, 1);
+  assert.equal(result.drive.titleCount, 1);
+  assert.equal(result.recommendationResults[0].score, 90);
+  assert.equal(result.recommendationResults[0].actualDollars, 300);
+  assert.equal(result.recommendationResults[0].actualRate, 150);
+});
