@@ -161,3 +161,35 @@ test('strong performers outside schedulable recommendation windows do not count 
   assert.equal(result.strongOutsideRecommendationInventory[0].title, 'Fixed Regular');
   assert.equal(result.strongOutsideRecommendationInventory[0].inRecommendationInventory, false);
 });
+
+
+test('slot-level backtest gives scheduling credit only when the title airs inside a recommended window', () => {
+  const slotSchedule = { id:'slot-drive', title:'Slot drive', startDate:'2025-12-01', endDate:'2025-12-02' };
+  const slotStrategy = {
+    cutoff:'2025-11-30',
+    windows:[
+      { date:'2025-12-01', startMinutes:19*60, endMinutes:22*60, blocked:false, experimental:false, recommendations:[
+        { programId:'a', title:'Right Night', topic:'Music', score:80 },
+        { programId:'b', title:'Wrong Night', topic:'Music', score:75 }
+      ]},
+      { date:'2025-12-02', startMinutes:19*60, endMinutes:22*60, blocked:false, experimental:false, recommendations:[] }
+    ]
+  };
+  const rows = [
+    { programId:'a', title:'Right Night', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:300, known:true, countsTowardScheduleMinutes:true },
+    { programId:'b', title:'Wrong Night', dateKey:'2025-12-02', startMinutes:20*60, minutes:60, dollars:500, known:true, countsTowardScheduleMinutes:true },
+    { programId:'c', title:'Baseline', dateKey:'2025-12-02', startMinutes:19*60, minutes:60, dollars:100, known:true, countsTowardScheduleMinutes:true }
+  ];
+  const result = B.evaluate({ strategy:slotStrategy, actualRows:rows, schedule:slotSchedule });
+  const right = result.recommendationResults.find((item) => item.title === 'Right Night');
+  const wrong = result.recommendationResults.find((item) => item.title === 'Wrong Night');
+  assert.equal(right.observed, true);
+  assert.equal(right.observedInRecommendedWindow, true);
+  assert.equal(right.matchedWindowAirings, 1);
+  assert.equal(right.matchedWindowRate, 300);
+  assert.equal(wrong.observed, true);
+  assert.equal(wrong.observedInRecommendedWindow, false);
+  assert.equal(wrong.matchedWindowAirings, 0);
+  assert.equal(result.summary.testedRecommendations, 2);
+  assert.equal(result.summary.windowTestedRecommendations, 1);
+});

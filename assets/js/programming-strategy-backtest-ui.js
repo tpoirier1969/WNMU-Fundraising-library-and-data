@@ -76,7 +76,7 @@ function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);stat
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.210');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.211');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
@@ -94,7 +94,9 @@ function recommendationRows(rows=[]){
   return `<table class="backtest-table"><thead><tr><th class="num">#</th><th>Recommended title</th><th class="num">Model score</th><th>What actually happened</th></tr></thead><tbody>${rows.map(x=>{
     const outcome=!x.observed
       ?'<span class="backtest-outcome-untested">Not aired · untestable</span>'
-      :`<span class="${x.aboveMedian?'backtest-outcome-good':'backtest-outcome-low'}">${esc(rate(x.actualRate))}</span><span class="backtest-sub">${esc(money(x.actualDollars))} · ${x.actualAirings} airing${x.actualAirings===1?'':'s'}${x.topQuartile?' · top quartile':''}</span>`;
+      : x.observedInRecommendedWindow
+        ?`<span class="${x.matchedWindowAboveMedian?'backtest-outcome-good':'backtest-outcome-low'}">Recommended-window: ${esc(rate(x.matchedWindowRate))}</span><span class="backtest-sub">${esc(money(x.matchedWindowDollars))} · ${x.matchedWindowAirings} matched airing${x.matchedWindowAirings===1?'':'s'}${x.matchedWindowTopQuartile?' · top quartile':''}</span><span class="backtest-sub">Overall title: ${esc(rate(x.actualRate))} · ${esc(money(x.actualDollars))} · ${x.actualAirings} airing${x.actualAirings===1?'':'s'}</span>`
+        :`<span class="backtest-outcome-untested">Aired, but not in a recommended window</span><span class="backtest-sub">Overall title: ${esc(rate(x.actualRate))} · ${esc(money(x.actualDollars))} · ${x.actualAirings} airing${x.actualAirings===1?'':'s'}</span>`;
     return `<tr><td class="num">${x.recommendationRank}</td><td><span class="backtest-title">${esc(x.title)}</span><span class="backtest-sub">${esc(x.topic)} · ${x.normalWindows} normal window${x.normalWindows===1?'':'s'}${x.experimentalWindows?` · ${x.experimentalWindows} experimental`:''}</span></td><td class="num">${Number.isFinite(Number(x.score))?Math.round(Number(x.score)):'—'}</td><td>${outcome}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -120,13 +122,14 @@ function render(result){
       <div class="backtest-cutoff"><span class="backtest-badge ${safe?'good':'bad'}">${safe?'No future leakage detected':'Cutoff problem detected'}</span><span class="backtest-badge">Evidence through ${esc(fmtDate(b.cutoff))}</span></div>
     </section>
     <section class="backtest-metrics">
-      ${metric(`${s.testedRecommendations}/${s.recommendedTitles}`,'recommended titles that actually aired and can be tested')}
-      ${metric(`${s.aboveMedianHits}/${s.testedRecommendations||0}`,'tested recommendations above this drive’s median title rate')}
-      ${metric(`${s.topQuartileHits}/${s.testedRecommendations||0}`,'tested recommendations that landed in the drive’s top quartile')}
+      ${metric(`${s.testedRecommendations}/${s.recommendedTitles}`,'recommended titles that aired somewhere in the fundraiser')}
+      ${metric(`${s.windowTestedRecommendations}/${s.testedRecommendations||0}`,'observed recommendations actually tested in a recommended window')}
+      ${metric(`${s.windowAboveMedianHits}/${s.windowTestedRecommendations||0}`,'recommended-window tests above this drive’s median title rate')}
+      ${metric(`${s.windowTopQuartileHits}/${s.windowTestedRecommendations||0}`,'recommended-window tests that reached the drive’s top quartile')}
       ${metric(s.topActualTitles?pct(s.topActualCoverage):'—','top-quartile performers inside recommendation inventory covered by the recommendation set')}
-      ${metric(corr(correlation),'model-score / actual-rate correlation; requires at least 3 tested titles')}
+      ${metric(corr(correlation),'title-level model-score / actual-rate correlation')}
     </section>
-    <section class="backtest-section"><h2>Recommendation answer sheet</h2><p>This is the useful comparison. “Not aired” is not a miss; it is a counterfactual we cannot grade.</p>${recommendationRows(b.recommendationResults)}</section>
+    <section class="backtest-section"><h2>Recommendation answer sheet</h2><p>The stricter result is “Recommended-window.” A title that did well elsewhere in the drive is useful evidence about the title, but it does not validate the model’s day/time recommendation.</p>${recommendationRows(b.recommendationResults)}</section>
     <section class="backtest-section"><h2>Strong actual performers the model missed</h2><p>Top-quartile titles that aired inside a window the model was allowed to schedule, but did not appear in its top recommendation set. These are the cleanest places to look for weak weighting or missing context.</p>${simpleList(b.missedTopPerformers,'missed')}</section>
     <section class="backtest-section"><h2>Strong performers outside recommendation inventory</h2><p>These titles performed strongly, but only in times the recommendation engine was not allowed to fill. They remain valid pledge-performance evidence without counting as missed scheduling choices.</p>${simpleList(b.strongOutsideRecommendationInventory,'missed')}</section>
     <section class="backtest-section"><h2>High-score recommendations that underperformed</h2><p>Recommended titles that actually aired but finished below the fundraiser’s median title rate. These can expose over-weighted history, insufficient fatigue penalties, poor seasonal logic, or a bad-night anomaly.</p>${simpleList(b.underperformingRecommendations,'under')}</section>
