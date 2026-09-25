@@ -297,6 +297,56 @@ test('day-map selector favors new titles and keeps previously aired anchors at o
   assert.ok(selected.some((item) => item.programId === 'old-anchor'));
 });
 
+test('day-map selector avoids duplicate-equivalent fresh-title bets before filling clones', () => {
+  const make = (id, score, topic, confidence='Medium', newTitle=true) => ({
+    programId:id,
+    title:id,
+    topic,
+    score,
+    confidence,
+    newTitle,
+    reviewedNew:false,
+    programmer:{ rating:'' },
+    season:{ holidayOutOfSeason:false }
+  });
+  const ranked = [
+    make('michigan-a',75,'Michigan'),
+    make('michigan-b',75,'Michigan'),
+    make('michigan-c',75,'Michigan'),
+    make('music-a',67,'Music'),
+    make('travel-a',64,'Travel'),
+    make('old-anchor',89,'Music','High',false)
+  ];
+  const selected=S.selectRecommendationsForSlot(ranked,4);
+  assert.deepEqual(
+    Array.from(selected,(item)=>item.programId),
+    ['michigan-a','music-a','travel-a','old-anchor']
+  );
+  assert.equal(selected.filter((item)=>item.newTitle).length,3);
+});
+
+test('day-map selector can still fill with equivalent bets when alternatives run out', () => {
+  const make = (id, score, topic='Music', confidence='Medium', newTitle=true) => ({
+    programId:id,
+    title:id,
+    topic,
+    score,
+    confidence,
+    newTitle,
+    reviewedNew:false,
+    programmer:{ rating:'' },
+    season:{ holidayOutOfSeason:false }
+  });
+  const ranked=[
+    make('music-a',67),
+    make('music-b',67),
+    make('music-c',67),
+    make('old-anchor',85,'Music','High',false)
+  ];
+  const selected=S.selectRecommendationsForSlot(ranked,4);
+  assert.deepEqual(Array.from(selected,(item)=>item.programId),['music-a','music-b','music-c','old-anchor']);
+});
+
 test('lowercase ordinary "up" does not create Local / U.P. relevance', () => {
   assert.equal(S.isLocal(baseProgram({ title: 'Growing Up Together', program_notes: 'A look up the road.' })), false);
   assert.equal(S.isLocal(baseProgram({ title: 'UP Stories' })), true);
