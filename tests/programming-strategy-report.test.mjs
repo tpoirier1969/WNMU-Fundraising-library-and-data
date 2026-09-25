@@ -1398,3 +1398,22 @@ test('historical backtest freezes recommendations before the target fundraiser a
   assert.ok(result.backtest.topActual.some((item) => item.title === 'History Winner'));
   assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'backtest'));
 });
+
+
+test('strategy recommendation ranking collapses duplicate Program Library rows with the same title', () => {
+  const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime' && !entry.blocked);
+  const library = [
+    baseProgram({ id:'dup-old', title:'Final Run: Storms of the Century', topic_primary:'Michigan', rights_end:'2026-12-31' }),
+    baseProgram({ id:'dup-current', title:'Final Run: Storms of the Century', topic_primary:'Michigan', rights_end:'2049-12-31' }),
+    baseProgram({ id:'other', title:'Different Michigan Program', topic_primary:'Michigan', rights_end:'2049-12-31' })
+  ];
+  const ranked = S.rankProgramsForSlot(library, slot, {
+    schedule,
+    evidenceRows:[],
+    overrideByProgramId:new Map(),
+    baselineRate:null
+  });
+  assert.equal(ranked.filter((item) => item.title === 'Final Run: Storms of the Century').length, 1);
+  const recommendations = S.selectRecommendationsForSlot(ranked, 4);
+  assert.equal(recommendations.filter((item) => item.title === 'Final Run: Storms of the Century').length, 1);
+});
