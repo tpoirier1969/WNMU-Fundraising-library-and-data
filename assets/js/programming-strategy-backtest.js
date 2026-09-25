@@ -34,15 +34,29 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
-  function actualTitleOutcomes(rows = [], schedule = {}) {
+  function rowInRecommendationInventory(row = {}, strategy = {}) {
+    const date = rowDate(row);
+    const start = num(row.startMinutes ?? row.start_minutes);
+    if (!date || start == null) return false;
+    return (strategy.windows || []).some((slot) =>
+      !slot.blocked
+      && txt(slot.date) === date
+      && start >= Number(slot.startMinutes)
+      && start < Number(slot.endMinutes)
+    );
+  }
+
+  function actualTitleOutcomes(rows = [], schedule = {}, strategy = {}) {
     const start = txt(schedule.startDate ?? schedule.start_date), end = txt(schedule.endDate ?? schedule.end_date);
     const groups = new Map();
     for (const row of rows) {
       const date = rowDate(row), minutes = num(row.minutes ?? row.programMinutes ?? row.program_minutes) || 0;
       if (!date || (start && date < start) || (end && date > end) || minutes <= 0 || row.durationMissing || row.countsTowardScheduleMinutes === false || row.known === false || row.unmatchedImported) continue;
       const programId = rowId(row), title = rowTitle(row), titleKey = keyTitle(title), key = titleKey ? `title:${titleKey}` : `id:${programId}`;
-      const x = groups.get(key) || { key, programId, title, topic: txt(row.topic ?? row.topic_primary ?? 'Uncategorized') || 'Uncategorized', airings: 0, minutes: 0, dollars: 0, pledges: 0 };
+      const x = groups.get(key) || { key, programId, title, topic: txt(row.topic ?? row.topic_primary ?? 'Uncategorized') || 'Uncategorized', airings: 0, recommendationInventoryAirings: 0, outsideRecommendationInventoryAirings: 0, minutes: 0, dollars: 0, pledges: 0 };
       x.airings += 1;
+      if (rowInRecommendationInventory(row, strategy)) x.recommendationInventoryAirings += 1;
+      else x.outsideRecommendationInventoryAirings += 1;
       x.minutes += minutes;
       x.dollars += num(row.dollars ?? row.on_air_dollars) || 0;
       x.pledges += num(row.pledges ?? row.pledge_count ?? row.on_air_pledges) || 0;
@@ -79,7 +93,7 @@
   }
 
   function evaluate({ strategy = {}, actualRows = [], schedule = {}, recommendationLimit = 20 } = {}) {
-    const outcomes = actualTitleOutcomes(actualRows, schedule), recommendations = flattenRecommendations(strategy, recommendationLimit);
+    const outcomes = actualTitleOutcomes(actualRows, schedule, strategy), recommendations = flattenRecommendations(strategy, recommendationLimit);
     const byKey = new Map(outcomes.map((x) => [x.key, x])), byTitle = new Map(outcomes.map((x) => [keyTitle(x.title), x]));
     const rates = outcomes.map((x) => x.rate), medianRate = median(rates), topThreshold = percentile(rates, .75);
     const actualRank = new Map(outcomes.map((x, i) => [x.key, i + 1]));
@@ -88,10 +102,12 @@
       return { ...rec, recommendationRank: i + 1, observed: !!actual, actualRate: actual?.rate ?? null, actualDollars: actual?.dollars ?? null, actualPledges: actual?.pledges ?? null, actualAirings: actual?.airings ?? null, actualRank: actual ? actualRank.get(actual.key) : null, aboveMedian: actual && medianRate != null ? actual.rate > medianRate : null, topQuartile: actual && topThreshold != null ? actual.rate > 0 && actual.rate >= topThreshold : null };
     });
     const recKeys = new Set(recommendations.map((x) => x.key)), recTitles = new Set(recommendations.map((x) => keyTitle(x.title)));
-    const topActual = outcomes.filter((x) => topThreshold != null && x.rate > 0 && x.rate >= topThreshold).map((x) => {
+    const topActualAll = outcomes.filter((x) => topThreshold != null && x.rate > 0 && x.rate >= topThreshold).map((x) => {
       const rec = recommendationResults.find((r) => r.key === x.key || keyTitle(r.title) === keyTitle(x.title));
-      return { ...x, recommended: recKeys.has(x.key) || recTitles.has(keyTitle(x.title)), recommendationRank: rec?.recommendationRank ?? null };
+      return { ...x, recommended: recKeys.has(x.key) || recTitles.has(keyTitle(x.title)), recommendationRank: rec?.recommendationRank ?? null, inRecommendationInventory: x.recommendationInventoryAirings > 0 };
     });
+    const topActual = topActualAll.filter((x) => x.inRecommendationInventory);
+    const strongOutsideRecommendationInventory = topActualAll.filter((x) => !x.inRecommendationInventory);
     const tested = recommendationResults.filter((x) => x.observed), missed = topActual.filter((x) => !x.recommended);
     const driveMinutes = outcomes.reduce((s, x) => s + x.minutes, 0), driveDollars = outcomes.reduce((s, x) => s + x.dollars, 0);
     const expectedCutoff = dayBefore(schedule.startDate ?? schedule.start_date), cutoff = txt(strategy.cutoff);
@@ -99,20 +115,22 @@
       schedule: { id: txt(schedule.id), title: txt(schedule.title), startDate: txt(schedule.startDate ?? schedule.start_date), endDate: txt(schedule.endDate ?? schedule.end_date) },
       cutoff, expectedCutoff, leakageSafe: !!(cutoff && expectedCutoff && cutoff <= expectedCutoff),
       drive: { titleCount: outcomes.length, dollars: driveDollars, minutes: driveMinutes, rate: driveMinutes ? driveDollars / (driveMinutes / 60) : null, medianTitleRate: medianRate, topQuartileThreshold: topThreshold },
-      summary: { recommendedTitles: recommendations.length, testedRecommendations: tested.length, untestedRecommendations: recommendations.length - tested.length, aboveMedianHits: tested.filter((x) => x.aboveMedian).length, topQuartileHits: tested.filter((x) => x.topQuartile).length, topActualTitles: topActual.length, topActualCovered: topActual.length - missed.length, topActualCoverage: topActual.length ? (topActual.length - missed.length) / topActual.length : null, scoreRateCorrelation: correlation(tested.map((x) => ({ score: x.score, rate: x.actualRate }))) },
+      summary: { recommendedTitles: recommendations.length, testedRecommendations: tested.length, untestedRecommendations: recommendations.length - tested.length, aboveMedianHits: tested.filter((x) => x.aboveMedian).length, topQuartileHits: tested.filter((x) => x.topQuartile).length, allTopActualTitles: topActualAll.length, topActualTitles: topActual.length, strongOutsideRecommendationInventory: strongOutsideRecommendationInventory.length, topActualCovered: topActual.length - missed.length, topActualCoverage: topActual.length ? (topActual.length - missed.length) / topActual.length : null, scoreRateCorrelation: correlation(tested.map((x) => ({ score: x.score, rate: x.actualRate }))) },
       recommendationResults,
       topActual,
       missedTopPerformers: missed,
+      strongOutsideRecommendationInventory,
       underperformingRecommendations: tested.filter((x) => medianRate != null && x.actualRate < medianRate).sort((a, b) => (b.score ?? -999) - (a.score ?? -999)),
       untestedRecommendations: recommendationResults.filter((x) => !x.observed),
       notes: [
         'Only titles actually aired during the backtested fundraiser can validate or contradict a recommendation.',
         'Recommended titles that were not aired remain counterfactuals and are not scored as wins or losses.',
+        'Strong actual performers that aired only outside the model’s eligible recommendation windows are shown separately and do not count as missed scheduling choices.',
         'The recommendation cutoff must be no later than the day before the fundraiser begins.',
         'Historical title availability depends on titles and rights dates still present in the current Program Library.'
       ]
     };
   }
 
-  globalThis.WNMUStrategyBacktest = Object.freeze({ actualTitleOutcomes, flattenRecommendations, evaluate });
+  globalThis.WNMUStrategyBacktest = Object.freeze({ rowInRecommendationInventory, actualTitleOutcomes, flattenRecommendations, evaluate });
 })();
