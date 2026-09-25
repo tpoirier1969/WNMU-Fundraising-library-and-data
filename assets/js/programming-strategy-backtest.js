@@ -35,10 +35,16 @@
   }
 
   function rowInRecommendationInventory(row = {}, strategy = {}) {
+    const windows = (strategy.windows || []).filter((slot) =>
+      txt(slot.date)
+      && Number.isFinite(Number(slot.startMinutes))
+      && Number.isFinite(Number(slot.endMinutes))
+    );
+    if (!windows.length) return true;
     const date = rowDate(row);
     const start = num(row.startMinutes ?? row.start_minutes);
     if (!date || start == null) return false;
-    return (strategy.windows || []).some((slot) =>
+    return windows.some((slot) =>
       !slot.blocked
       && txt(slot.date) === date
       && start >= Number(slot.startMinutes)
