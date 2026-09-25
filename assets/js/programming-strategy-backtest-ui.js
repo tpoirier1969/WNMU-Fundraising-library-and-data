@@ -76,7 +76,7 @@ function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);stat
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.209');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.210');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
@@ -123,11 +123,12 @@ function render(result){
       ${metric(`${s.testedRecommendations}/${s.recommendedTitles}`,'recommended titles that actually aired and can be tested')}
       ${metric(`${s.aboveMedianHits}/${s.testedRecommendations||0}`,'tested recommendations above this drive’s median title rate')}
       ${metric(`${s.topQuartileHits}/${s.testedRecommendations||0}`,'tested recommendations that landed in the drive’s top quartile')}
-      ${metric(s.topActualTitles?pct(s.topActualCoverage):'—','top-quartile actual performers covered by the recommendation set')}
+      ${metric(s.topActualTitles?pct(s.topActualCoverage):'—','top-quartile performers inside recommendation inventory covered by the recommendation set')}
       ${metric(corr(correlation),'model-score / actual-rate correlation; requires at least 3 tested titles')}
     </section>
     <section class="backtest-section"><h2>Recommendation answer sheet</h2><p>This is the useful comparison. “Not aired” is not a miss; it is a counterfactual we cannot grade.</p>${recommendationRows(b.recommendationResults)}</section>
-    <section class="backtest-section"><h2>Strong actual performers the model missed</h2><p>Titles in the fundraiser’s top quartile that did not appear in the model’s top recommendation set. These are the first places to look for weak weighting or missing context.</p>${simpleList(b.missedTopPerformers,'missed')}</section>
+    <section class="backtest-section"><h2>Strong actual performers the model missed</h2><p>Top-quartile titles that aired inside a window the model was allowed to schedule, but did not appear in its top recommendation set. These are the cleanest places to look for weak weighting or missing context.</p>${simpleList(b.missedTopPerformers,'missed')}</section>
+    <section class="backtest-section"><h2>Strong performers outside recommendation inventory</h2><p>These titles performed strongly, but only in times the recommendation engine was not allowed to fill. They remain valid pledge-performance evidence without counting as missed scheduling choices.</p>${simpleList(b.strongOutsideRecommendationInventory,'missed')}</section>
     <section class="backtest-section"><h2>High-score recommendations that underperformed</h2><p>Recommended titles that actually aired but finished below the fundraiser’s median title rate. These can expose over-weighted history, insufficient fatigue penalties, poor seasonal logic, or a bad-night anomaly.</p>${simpleList(b.underperformingRecommendations,'under')}</section>
     <section class="backtest-section"><h2>Untestable recommendations</h2><p>These were recommended by the frozen model but WNMU did not air them in this fundraiser. They remain hypotheses, not losses.</p>${simpleList(b.untestedRecommendations,'untested')}</section>
     <section class="backtest-section backtest-method"><h2>Method and limitations</h2><ul>${(b.notes||[]).map(x=>`<li>${esc(x)}</li>`).join('')}<li>${Number(result.diagnostics?.excludedPostCutoffOverrides||0)} programmer rating${Number(result.diagnostics?.excludedPostCutoffOverrides||0)===1?' was':'s were'} entered after the evidence cutoff and excluded from this historical run.</li><li>Actual performance is aggregated by title using reconciled fundraiser schedule duration and broadcast dollars.</li><li>The top-quartile and median comparisons are within this fundraiser, so they help diagnose ranking behavior without pretending every drive has the same dollar scale.</li></ul></section>
