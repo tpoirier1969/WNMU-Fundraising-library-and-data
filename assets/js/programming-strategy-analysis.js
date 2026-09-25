@@ -1069,22 +1069,37 @@ return result;}
     const unreviewedNew = acceptableNew.filter((item) => !item.reviewedNew);
     const chosen = [];
     const seen = new Set();
+    const seenBetKeys = new Set();
+    const betKey = (item) => `${lookupKey(item?.topic)}|${Math.round(Number(item?.score)||0)}|${text(item?.confidence)}`;
     const add = (item) => {
       if (!item || seen.has(item.programId)) return false;
       chosen.push(item);
       seen.add(item.programId);
+      if (item.newTitle) seenBetKeys.add(betKey(item));
       return true;
     };
+    const addDistinctBets = (items, target) => {
+      for (const item of items) {
+        if (chosen.length >= target) break;
+        if (seenBetKeys.has(betKey(item))) continue;
+        add(item);
+      }
+    };
+    const fill = (items, target) => {
+      for (const item of items) {
+        if (chosen.length >= target) break;
+        add(item);
+      }
+    };
 
-    // Favor reviewed new titles first, then other credible unaired titles.
-    for (const item of reviewedNew) {
-      if (chosen.length >= Math.min(3, limit)) break;
-      add(item);
-    }
-    for (const item of unreviewedNew) {
-      if (chosen.length >= Math.min(3, limit)) break;
-      add(item);
-    }
+    const newTarget = Math.min(3, limit);
+
+    // Favor fresh titles, but do not spend all three new-title slots on
+    // statistically indistinguishable bets before showing other credible options.
+    addDistinctBets(reviewedNew, newTarget);
+    addDistinctBets(unreviewedNew, newTarget);
+    fill(reviewedNew, newTarget);
+    fill(unreviewedNew, newTarget);
 
     // A previously aired standby is an anchor, not the bulk of the plan.
     // Add one only when at least two new titles are already present:
@@ -1100,12 +1115,7 @@ return result;}
     }
 
     // If there are more strong new titles and room remains, keep the remainder new.
-    if (chosen.length < limit) {
-      for (const item of acceptableNew) {
-        if (chosen.length >= limit) break;
-        add(item);
-      }
-    }
+    if (chosen.length < limit) fill(acceptableNew, limit);
     return chosen;
   }
 
