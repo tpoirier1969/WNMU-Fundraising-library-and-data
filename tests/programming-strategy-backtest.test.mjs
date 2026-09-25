@@ -136,3 +136,28 @@ test('title-level backtest collapses duplicate program IDs for the same title', 
   assert.equal(result.recommendationResults[0].actualDollars, 300);
   assert.equal(result.recommendationResults[0].actualRate, 150);
 });
+
+
+test('strong performers outside schedulable recommendation windows do not count as missed choices', () => {
+  const blockedSchedule = { id:'blocked-drive', title:'Blocked drive', startDate:'2025-12-05', endDate:'2025-12-05' };
+  const blockedStrategy = {
+    cutoff:'2025-12-04',
+    windows:[
+      { date:'2025-12-05', startMinutes:19*60, endMinutes:20*60, blocked:false, experimental:false, recommendations:[
+        { programId:'choice', title:'Schedulable Choice', topic:'Music', score:80 }
+      ]},
+      { date:'2025-12-05', startMinutes:20*60, endMinutes:21*60, blocked:true, experimental:false, recommendations:[] }
+    ]
+  };
+  const rows = [
+    { programId:'choice', title:'Schedulable Choice', dateKey:'2025-12-05', startMinutes:19*60, minutes:60, dollars:100, known:true, countsTowardScheduleMinutes:true },
+    { programId:'fixed', title:'Fixed Regular', dateKey:'2025-12-05', startMinutes:20*60, minutes:30, dollars:500, known:true, countsTowardScheduleMinutes:true }
+  ];
+  const result = B.evaluate({ strategy:blockedStrategy, actualRows:rows, schedule:blockedSchedule });
+  assert.equal(result.summary.allTopActualTitles, 1);
+  assert.equal(result.summary.topActualTitles, 0);
+  assert.equal(result.summary.strongOutsideRecommendationInventory, 1);
+  assert.equal(result.missedTopPerformers.length, 0);
+  assert.equal(result.strongOutsideRecommendationInventory[0].title, 'Fixed Regular');
+  assert.equal(result.strongOutsideRecommendationInventory[0].inRecommendationInventory, false);
+});
