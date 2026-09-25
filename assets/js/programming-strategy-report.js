@@ -224,7 +224,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.209');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.210');
     }catch(error){
       reject(error);
       return;
