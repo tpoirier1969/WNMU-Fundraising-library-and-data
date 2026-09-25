@@ -175,6 +175,42 @@ test('older Drama Docs are penalized relative to current-cycle Drama Docs', () =
   assert.ok(currentScore.score > oldScore.score);
 });
 
+test('new-title confidence requires repeatable fundraiser evidence, not just multiple airings', () => {
+  const fresh = baseProgram({ id:'fresh-doc', title:'Fresh Documentary', topic_primary:'Documentary' });
+  const slot = S.planningWindows(schedule).find((entry) => entry.weekday === 'Saturday' && entry.label === 'Prime');
+
+  const thinEvidence = [
+    row({ programId:'other-a', title:'Other Documentary A', topic:'Documentary', dateKey:'2025-12-06', startMinutes:19*60, dollars:300, fundraiserId:'dec25' }),
+    row({ programId:'other-b', title:'Other Documentary B', topic:'Documentary', dateKey:'2025-12-06', startMinutes:20*60, dollars:320, fundraiserId:'dec25' })
+  ];
+  const thin = S.scoreProgramForSlot(fresh, slot, {
+    schedule,
+    evidenceRows: thinEvidence,
+    overrideByProgramId:new Map(),
+    baselineRate:250
+  });
+  assert.equal(thin.newTitle, true);
+  assert.equal(thin.topicHistory.rates.length, 2);
+  assert.equal(thin.topicHistory.fundraisers, 1);
+  assert.equal(thin.confidence, 'Low');
+  assert.equal(thin.fit, 'Exploratory new title');
+  assert.ok(thin.cautions.some((item) => /fresh-title test, not a proven pattern/i.test(item)));
+
+  const repeatableEvidence = [
+    row({ programId:'other-a', title:'Other Documentary A', topic:'Documentary', dateKey:'2025-12-06', startMinutes:19*60, dollars:300, fundraiserId:'dec25' }),
+    row({ programId:'other-b', title:'Other Documentary B', topic:'Documentary', dateKey:'2024-12-07', startMinutes:19*60, dollars:320, fundraiserId:'dec24' }),
+    row({ programId:'other-c', title:'Other Documentary C', topic:'Documentary', dateKey:'2023-12-02', startMinutes:19*60, dollars:340, fundraiserId:'dec23' })
+  ];
+  const repeatable = S.scoreProgramForSlot(fresh, slot, {
+    schedule,
+    evidenceRows: repeatableEvidence,
+    overrideByProgramId:new Map(),
+    baselineRate:250
+  });
+  assert.equal(repeatable.topicHistory.fundraisers, 3);
+  assert.equal(repeatable.confidence, 'Medium');
+});
+
 test('holiday season fit rewards December and strongly penalizes out-of-season use', () => {
   const holiday = baseProgram({ id: 'holiday', title: 'Christmas at the Lake', topic_primary: 'Music' });
   const december = S.seasonEvidence(holiday, [], schedule);
@@ -502,7 +538,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.208'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.209'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -510,7 +546,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.208', 'programming-strategy-backtest\.js\?v=0\.22\.208'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.209', 'programming-strategy-backtest\.js\?v=0\.22\.209'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
