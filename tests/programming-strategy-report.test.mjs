@@ -297,6 +297,35 @@ test('day-map selector favors new titles and keeps previously aired anchors at o
   assert.ok(selected.some((item) => item.programId === 'old-anchor'));
 });
 
+test('unrated new-title score clusters are labeled as equivalent until programmer review', () => {
+  const make = (id, score, topic, rating = '') => ({
+    programId:id,
+    title:id,
+    topic,
+    score,
+    newTitle:true,
+    reviewedNew:false,
+    programmer:{rating},
+    season:{holidayOutOfSeason:false},
+    cautions:[]
+  });
+  const ranked = [
+    make('music-a',67,'Music'),
+    make('music-b',67,'Music'),
+    make('music-c',67,'Music'),
+    make('music-d',66,'Music'),
+    make('doc-a',67,'Documentary')
+  ];
+  const selected = S.selectRecommendationsForSlot(ranked, 3);
+  const tied = selected.find((item) => item.programId === 'music-a');
+  assert.ok(tied);
+  assert.equal(tied.newTitleTieCount,3);
+  assert.deepEqual(Array.from(tied.newTitleTieExamples),['music-a','music-b','music-c']);
+  assert.ok(tied.cautions.some((item) => /3 unrated new Music titles share this score/i.test(item)));
+  const doc = selected.find((item) => item.programId === 'doc-a');
+  if (doc) assert.equal(doc.newTitleTieCount,undefined);
+});
+
 test('lowercase ordinary "up" does not create Local / U.P. relevance', () => {
   assert.equal(S.isLocal(baseProgram({ title: 'Growing Up Together', program_notes: 'A look up the road.' })), false);
   assert.equal(S.isLocal(baseProgram({ title: 'UP Stories' })), true);
@@ -538,7 +567,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.211'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.212'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -546,7 +575,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.209', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.212', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);

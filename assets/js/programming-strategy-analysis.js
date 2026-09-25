@@ -1106,7 +1106,26 @@ return result;}
         add(item);
       }
     }
-    return chosen;
+
+    // Untested, unrated titles can collapse into large same-score clusters because
+    // their evidence is topic/window level rather than title-specific. Surface that
+    // uncertainty instead of implying the alphabetical tie-break is meaningful.
+    return chosen.map((item) => {
+      if (!item?.newTitle || item?.reviewedNew) return item;
+      const topicKey = lookupKey(item.topic);
+      const tied = unreviewedNew.filter((peer) =>
+        lookupKey(peer.topic) === topicKey
+        && Number(peer.score) === Number(item.score)
+      );
+      if (tied.length < 3) return item;
+      const caution = `${tied.length} unrated new ${item.topic || 'program'} titles share this score in this window; their individual order is not title-specific. Add a programmer rating to distinguish them.`;
+      return {
+        ...item,
+        cautions: [...new Set([...(item.cautions || []), caution])],
+        newTitleTieCount: tied.length,
+        newTitleTieExamples: tied.slice(0, 8).map((peer) => peer.title)
+      };
+    });
   }
 
   function topicChoicesForSlot(ranked = []) {
