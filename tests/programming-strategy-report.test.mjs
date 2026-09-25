@@ -297,6 +297,35 @@ test('day-map selector favors new titles and keeps previously aired anchors at o
   assert.ok(selected.some((item) => item.programId === 'old-anchor'));
 });
 
+test('unrated new-title score clusters are labeled as equivalent until programmer review', () => {
+  const make = (id, score, topic, rating = '') => ({
+    programId:id,
+    title:id,
+    topic,
+    score,
+    newTitle:true,
+    reviewedNew:false,
+    programmer:{rating},
+    season:{holidayOutOfSeason:false},
+    cautions:[]
+  });
+  const ranked = [
+    make('music-a',67,'Music'),
+    make('music-b',67,'Music'),
+    make('music-c',67,'Music'),
+    make('music-d',66,'Music'),
+    make('doc-a',67,'Documentary')
+  ];
+  const selected = S.selectRecommendationsForSlot(ranked, 3);
+  const tied = selected.find((item) => item.programId === 'music-a');
+  assert.ok(tied);
+  assert.equal(tied.newTitleTieCount,3);
+  assert.deepEqual(Array.from(tied.newTitleTieExamples),['music-a','music-b','music-c']);
+  assert.ok(tied.cautions.some((item) => /3 unrated new Music titles share this score/i.test(item)));
+  const doc = selected.find((item) => item.programId === 'doc-a');
+  if (doc) assert.equal(doc.newTitleTieCount,undefined);
+});
+
 test('lowercase ordinary "up" does not create Local / U.P. relevance', () => {
   assert.equal(S.isLocal(baseProgram({ title: 'Growing Up Together', program_notes: 'A look up the road.' })), false);
   assert.equal(S.isLocal(baseProgram({ title: 'UP Stories' })), true);
