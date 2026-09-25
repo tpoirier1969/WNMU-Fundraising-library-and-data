@@ -76,7 +76,7 @@ function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);stat
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.208');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.209');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
