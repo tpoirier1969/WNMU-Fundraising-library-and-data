@@ -297,6 +297,56 @@ test('day-map selector favors new titles and keeps previously aired anchors at o
   assert.ok(selected.some((item) => item.programId === 'old-anchor'));
 });
 
+test('day-map selector diversifies new-title topics before repeating the same bet', () => {
+  const make = (id, score, topic, newTitle = true) => ({
+    programId:id,
+    title:id,
+    topic,
+    score,
+    newTitle,
+    reviewedNew:false,
+    programmer:{ rating:'' },
+    season:{ holidayOutOfSeason:false }
+  });
+  const ranked = [
+    make('michigan-a', 80, 'Michigan'),
+    make('michigan-b', 79, 'Michigan'),
+    make('michigan-c', 78, 'Michigan'),
+    make('music-a', 77, 'Music'),
+    make('travel-a', 76, 'Travel'),
+    make('old-history', 90, 'History', false)
+  ];
+
+  const selected = S.selectRecommendationsForSlot(ranked, 4);
+  assert.deepEqual(
+    Array.from(selected, (item) => item.programId),
+    ['michigan-a', 'music-a', 'travel-a', 'old-history']
+  );
+  assert.equal(selected.filter((item) => item.newTitle).length, 3);
+  assert.equal(new Set(selected.map((item) => item.topic)).size, 4);
+});
+
+test('day-map selector still permits same-topic new titles when no credible topic alternatives exist', () => {
+  const make = (id, score, newTitle = true) => ({
+    programId:id,
+    title:id,
+    topic:'Music',
+    score,
+    newTitle,
+    reviewedNew:false,
+    programmer:{ rating:'' },
+    season:{ holidayOutOfSeason:false }
+  });
+  const ranked = [
+    make('music-a', 80),
+    make('music-b', 79),
+    make('music-c', 78),
+    make('old-music', 88, false)
+  ];
+  const selected = S.selectRecommendationsForSlot(ranked, 4);
+  assert.deepEqual(Array.from(selected, (item) => item.programId), ['music-a','music-b','music-c','old-music']);
+});
+
 test('lowercase ordinary "up" does not create Local / U.P. relevance', () => {
   assert.equal(S.isLocal(baseProgram({ title: 'Growing Up Together', program_notes: 'A look up the road.' })), false);
   assert.equal(S.isLocal(baseProgram({ title: 'UP Stories' })), true);
