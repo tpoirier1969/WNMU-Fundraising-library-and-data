@@ -1069,43 +1069,58 @@ return result;}
     const unreviewedNew = acceptableNew.filter((item) => !item.reviewedNew);
     const chosen = [];
     const seen = new Set();
+    const seenTopics = new Set();
     const add = (item) => {
       if (!item || seen.has(item.programId)) return false;
       chosen.push(item);
       seen.add(item.programId);
+      const topicKey = lookupKey(item.topic);
+      if (topicKey) seenTopics.add(topicKey);
       return true;
     };
+    const addDistinctTopics = (items, target) => {
+      for (const item of items) {
+        if (chosen.length >= target) break;
+        const topicKey = lookupKey(item.topic);
+        if (topicKey && seenTopics.has(topicKey)) continue;
+        add(item);
+      }
+    };
+    const fill = (items, target) => {
+      for (const item of items) {
+        if (chosen.length >= target) break;
+        add(item);
+      }
+    };
 
-    // Favor reviewed new titles first, then other credible unaired titles.
-    for (const item of reviewedNew) {
-      if (chosen.length >= Math.min(3, limit)) break;
-      add(item);
-    }
-    for (const item of unreviewedNew) {
-      if (chosen.length >= Math.min(3, limit)) break;
-      add(item);
-    }
+    const newTarget = Math.min(3, limit);
+
+    // Keep the fundraiser fresh, but diversify the first-test portfolio before
+    // spending multiple slots on the same topic. Programmer-reviewed new titles
+    // retain first priority within that diversification pass.
+    addDistinctTopics(reviewedNew, newTarget);
+    addDistinctTopics(unreviewedNew, newTarget);
+    fill(reviewedNew, newTarget);
+    fill(unreviewedNew, newTarget);
 
     // A previously aired standby is an anchor, not the bulk of the plan.
-    // Add one only when at least two new titles are already present:
-    // 2 new + 1 old = 33%, 3 new + 1 old = 25%.
+    // Prefer an anchor that adds another topic when a credible one exists.
     if (chosen.length >= 2 && chosen.length < limit) {
-      const anchor = ranked.find((item) =>
+      const eligibleAnchors = ranked.filter((item) =>
         !item.newTitle &&
         item.score >= 48 &&
         !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
         !item.season?.holidayOutOfSeason
       );
-      add(anchor);
+      const diverseAnchor = eligibleAnchors.find((item) => {
+        const topicKey = lookupKey(item.topic);
+        return topicKey && !seenTopics.has(topicKey);
+      });
+      add(diverseAnchor || eligibleAnchors[0]);
     }
 
     // If there are more strong new titles and room remains, keep the remainder new.
-    if (chosen.length < limit) {
-      for (const item of acceptableNew) {
-        if (chosen.length >= limit) break;
-        add(item);
-      }
-    }
+    if (chosen.length < limit) fill(acceptableNew, limit);
     return chosen;
   }
 
