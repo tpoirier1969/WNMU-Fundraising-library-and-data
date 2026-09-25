@@ -267,6 +267,52 @@ test('lowercase ordinary "up" does not create Local / U.P. relevance', () => {
   assert.equal(S.isLocal(baseProgram({ title: 'Lake Superior Stories' })), true);
 });
 
+test('secondary Michigan metadata alone does not make a national PBS title local', () => {
+  assert.equal(S.isLocal(baseProgram({
+    title:'PBS Newshour',
+    topic_primary:'News',
+    topic_secondary:'Michigan',
+    distributor:'PBS',
+    program_notes:''
+  })), false);
+  assert.equal(S.isLocal(baseProgram({
+    title:'Washington Week In Review',
+    topic_primary:'News',
+    topic_secondary:'Michigan',
+    distributor:'PBS',
+    program_notes:''
+  })), false);
+  assert.equal(S.isLocal(baseProgram({
+    title:'Finance for the People',
+    topic_primary:'Financial',
+    topic_secondary:'Michigan',
+    distributor:'PBS',
+    program_notes:'National personal-finance advice.'
+  })), false);
+});
+
+test('genuine Michigan and U.P. programming still receives local relevance', () => {
+  assert.equal(S.isLocal(baseProgram({
+    title:'Pelkie',
+    topic_primary:'Loukinen',
+    topic_secondary:'Michigan',
+    distributor:'LOUKINEN'
+  })), true);
+  assert.equal(S.isLocal(baseProgram({
+    title:'Off the Record',
+    topic_primary:'News',
+    topic_secondary:'Michigan',
+    distributor:'WKAR'
+  })), true);
+  assert.equal(S.isLocal(baseProgram({
+    title:'Great Lakes Stories',
+    topic_primary:'Documentary',
+    topic_secondary:'History',
+    distributor:'PBS',
+    program_notes:'A documentary about Michigan and Lake Superior.'
+  })), true);
+});
+
 test('rights constraints separate fully unavailable titles from partial-drive rights', () => {
   const library = [
     baseProgram({ id: 'x', title: 'Expired Before Drive', rights_end: '2026-12-01' }),
@@ -502,7 +548,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.208'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.209'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -510,7 +556,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.208', 'programming-strategy-backtest\.js\?v=0\.22\.208'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.209', 'programming-strategy-backtest\.js\?v=0\.22\.209'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1416,4 +1462,49 @@ test('strategy recommendation ranking collapses duplicate Program Library rows w
   assert.equal(ranked.filter((item) => item.title === 'Final Run: Storms of the Century').length, 1);
   const recommendations = S.selectRecommendationsForSlot(ranked, 4);
   assert.equal(recommendations.filter((item) => item.title === 'Final Run: Storms of the Century').length, 1);
+});
+
+
+test('long-rest former performers are not put in Avoid solely for lifetime exposure', () => {
+  const target = { id:'dec26-rest', title:'December 2026', startDate:'2026-12-05', endDate:'2026-12-13' };
+  const rested = baseProgram({
+    id:'rested-heavy',
+    title:'Rested Heavy Performer',
+    topic_primary:'Music',
+    rights_start:'2018-01-01',
+    rights_end:'2030-12-31'
+  });
+  const recent = baseProgram({
+    id:'recent-heavy',
+    title:'Recent Heavy Performer',
+    topic_primary:'Music',
+    rights_start:'2018-01-01',
+    rights_end:'2030-12-31'
+  });
+  const history = [];
+  for (let i=0;i<9;i++) {
+    history.push(row({
+      programId:'rested-heavy',
+      title:'Rested Heavy Performer',
+      dateKey:`2019-12-${String(1+i).padStart(2,'0')}`,
+      dollars:400,
+      fundraiserId:'dec19'
+    }));
+    history.push(row({
+      programId:'recent-heavy',
+      title:'Recent Heavy Performer',
+      dateKey:`2026-09-${String(1+i).padStart(2,'0')}`,
+      dollars:400,
+      fundraiserId:'sep26'
+    }));
+  }
+
+  const strategy = S.buildStrategy({ schedule:target, library:[rested,recent], evidenceRows:history, now:new Date('2026-09-25T12:00:00') });
+  const restedAvoid = strategy.avoid.find((item) => item.title === 'Rested Heavy Performer');
+  const recentAvoid = strategy.avoid.find((item) => item.title === 'Recent Heavy Performer');
+
+  assert.equal(restedAvoid, undefined, 'two-plus years of rest should prevent lifetime exposure alone from forcing Avoid');
+  assert.ok(recentAvoid);
+  assert.ok(recentAvoid.reasons.some((reason) => /Heavy lifetime exposure/.test(reason)));
+  assert.ok(recentAvoid.reasons.some((reason) => /quick return|Short rest/i.test(reason)));
 });
