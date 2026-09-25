@@ -187,8 +187,18 @@
   }
 
   function isLocal(program = {}) {
-    const value = programText(program);
-    return LOCAL_WORD_PATTERN.test(value) || LOCAL_UP_PATTERN.test(value);
+    const primary = lookupKey(programTopic(program));
+    if (['michigan', 'wnmu', 'loukinen'].includes(primary)) return true;
+
+    const explicitText = [programTitle(program), programDescription(program)]
+      .filter(Boolean)
+      .join(' ');
+    if (LOCAL_WORD_PATTERN.test(explicitText) || LOCAL_UP_PATTERN.test(explicitText)) return true;
+
+    const secondary = lookupKey(programSecondary(program));
+    const distributor = lookupKey(first(program.distributor, program.source_distributor, ''));
+    const regionalSecondary = secondary === 'michigan' && distributor && distributor !== 'pbs';
+    return regionalSecondary;
   }
 
   function holidayCategory(program = {}) {
@@ -1490,7 +1500,7 @@ return result;}
       const reasons = [];
       if (rating === 'dont_air') reasons.push("Programmer rating: Don't air");
       if (rating === 'low_confidence') reasons.push('Programmer rating: Low confidence');
-      if (history.rows >= 8) reasons.push(`Heavy lifetime exposure (${history.rows} airings)`);
+      if (history.rows >= 8 && (rest == null || rest < 730)) reasons.push(`Heavy lifetime exposure (${history.rows} airings)`);
       if (rest != null && rest < 90) reasons.push(`Very quick return (${rest} days)`);
       else if (rest != null && rest < 180) reasons.push(`Short rest (${rest} days)`);
       if (drama.olderCycle) reasons.push('Older Drama Doc cycle');
