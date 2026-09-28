@@ -1647,3 +1647,57 @@
   .strategy-program-opportunity-list{gap:4px}
   .strategy-program-opportunity-list>article{padding:4px 5px}
 }
+
+
+/* v0.22.225 compact multi-title choices */
+.strategy-plan-programs>.strategy-plan-window{
+  display:block;
+  padding:0 0 5px;
+  border-bottom:1px solid #e6ecef;
+}
+.strategy-plan-window-head{
+  display:flex;
+  justify-content:space-between;
+  gap:8px;
+  align-items:baseline;
+  margin-bottom:2px;
+}
+.strategy-plan-window-head strong{
+  color:#17384a;
+  font-size:.71rem;
+}
+.strategy-plan-window-head small{
+  color:#75868d;
+  font-size:.59rem;
+  text-align:right;
+}
+.strategy-plan-window ol{
+  margin:0;
+  padding-left:18px;
+  display:grid;
+  gap:1px;
+}
+.strategy-plan-window li{
+  padding-left:1px;
+  color:#536c77;
+  font-size:.68rem;
+  line-height:1.25;
+}
+.strategy-plan-window li b{color:#284f62}
+.strategy-plan-window li span{
+  margin-left:5px;
+  color:#71828a;
+  font-size:.61rem;
+}
+@media print{
+  .strategy-plan-programs>.strategy-plan-window{
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+    padding-bottom:3px;
+  }
+  .strategy-plan-window-head strong{font-size:5.9pt}
+  .strategy-plan-window-head small{font-size:5pt}
+  .strategy-plan-window ol{padding-left:14px}
+  .strategy-plan-window li{font-size:5.7pt}
+  .strategy-plan-window li span{font-size:5.1pt}
+}
