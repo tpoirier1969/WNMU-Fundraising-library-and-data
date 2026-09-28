@@ -1208,6 +1208,8 @@ test('strategy report keeps the meeting brief concise and day/topic advice decis
   assert.match(reportUi, /Consider fewer discretionary pledge hours/);
   assert.match(styles, /\.strategy-day-topic-action/);
   assert.match(reportUi, /Saturday 3–5 PM:/);
+  assert.match(reportUi, /Programs with an attached pledge break count as pledge programs/);
+  assert.doesNotMatch(reportUi, /boundary\/end-break fundraising is excluded/);
   assert.match(reportUi, /strategy-opportunity-summary/);
   assert.match(reportUi, /Under-tested windows supported by peers/);
   assert.match(reportUi, /scheduleOccurrenceForDate/);
