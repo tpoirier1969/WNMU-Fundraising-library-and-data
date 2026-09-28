@@ -388,6 +388,7 @@ function seasonPlanningPool(schedule = {}, rows = []) {
 function summarizeTimeslotRows(rows = []) {
   const byFundraiser = new Map();
   const topicCounts = new Map();
+  const titleKeys = new Set();
   for (const row of rows) {
     const key = row.fundraiserId || row.dateKey;
     if (!byFundraiser.has(key)) byFundraiser.set(key, { dollars: 0, minutes: 0 });
@@ -396,6 +397,8 @@ function summarizeTimeslotRows(rows = []) {
     group.minutes += Number(row.minutes || 0);
     const topic = text(row.topic || 'Uncategorized');
     topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+    const titleKey = S.lookupKey(row.title || '');
+    if (titleKey) titleKeys.add(titleKey);
   }
   const rates = [...byFundraiser.values()]
     .filter((group) => group.minutes > 0)
@@ -406,6 +409,7 @@ function summarizeTimeslotRows(rows = []) {
   return {
     airings: rows.length,
     fundraiserSamples: rates.length,
+    titleCount: titleKeys.size,
     averageRate: S.mean(rates),
     dominantTopic: dominant[0],
     dominantShare: rows.length ? dominant[1] / rows.length : 0
@@ -601,6 +605,83 @@ const STRATEGY_WEEKDAYS = Object.freeze([
   { day: 0, weekday: 'Sunday' }
 ]);
 
+
+function fundraiserWeekdayOccurrence(row = {}) {
+  const start = S.parseDate(row.driveStartDate);
+  const date = S.parseDate(row.dateKey);
+  if (!start || !date || date < start) return null;
+  let occurrence = 0;
+  const targetDay = date.getDay();
+  for (let cursor = new Date(start); cursor <= date; cursor.setDate(cursor.getDate() + 1)) {
+    if (cursor.getDay() === targetDay) occurrence += 1;
+  }
+  return occurrence || null;
+}
+
+function summarizeTopicRows(rows = []) {
+  const local = summarizeTimeslotRows(rows);
+  const topicGroups = new Map();
+  for (const row of rows) {
+    const topic = text(row.topic || 'Uncategorized');
+    if (!topicGroups.has(topic)) topicGroups.set(topic, []);
+    topicGroups.get(topic).push(row);
+  }
+  const localTopics = [...topicGroups.entries()]
+    .map(([topic, topicRows]) => {
+      const summary = summarizeTimeslotRows(topicRows);
+      return {
+        topic,
+        airings: summary.airings,
+        fundraiserSamples: summary.fundraiserSamples,
+        titleCount: summary.titleCount,
+        averageRate: summary.averageRate
+      };
+    })
+    .filter((item) => item.fundraiserSamples > 0 && Number.isFinite(item.averageRate))
+    .sort((a, b) => b.averageRate - a.averageRate || b.fundraiserSamples - a.fundraiserSamples || b.airings - a.airings)
+    .slice(0, 6);
+  return { local, localTopics };
+}
+
+function localProductionSnapshot(rows = []) {
+  const localRows = reportableProgrammingRows(rows).filter((row) => {
+    const topic = S.lookupKey(row.topic);
+    return topic === 'wnmu' || topic === 'loukinen' || topic === 'local';
+  });
+  if (!localRows.length) return null;
+
+  const byTitle = new Map();
+  for (const row of localRows) {
+    const key = S.lookupKey(row.title || '');
+    if (!key) continue;
+    if (!byTitle.has(key)) byTitle.set(key, { title: text(row.title || ''), rows: [] });
+    byTitle.get(key).rows.push(row);
+  }
+
+  const titles = [...byTitle.values()]
+    .map((item) => {
+      const summary = summarizeTimeslotRows(item.rows);
+      return {
+        title: item.title,
+        airings: summary.airings,
+        fundraiserSamples: summary.fundraiserSamples,
+        averageRate: summary.averageRate
+      };
+    })
+    .filter((item) => item.fundraiserSamples >= 2 && Number.isFinite(item.averageRate))
+    .sort((a, b) => b.averageRate - a.averageRate || b.fundraiserSamples - a.fundraiserSamples);
+
+  const overall = summarizeTimeslotRows(localRows);
+  return {
+    airings: overall.airings,
+    fundraiserSamples: overall.fundraiserSamples,
+    titleCount: overall.titleCount,
+    averageRate: overall.averageRate,
+    strongest: titles.slice(0, 3),
+    weakest: [...titles].sort((a, b) => a.averageRate - b.averageRate || b.fundraiserSamples - a.fundraiserSamples).slice(0, 3)
+  };
+}
+
 function peerWindowSummary(schedule = {}, observations = [], weekday = '', startMinutes = 0, endMinutes = 0) {
   const targetSeason = S.seasonForDate(schedule.startDate);
   const matched = [];
@@ -703,28 +784,36 @@ function buildTopicTimeMatrix(schedule = {}, rows = [], peerObservations = []) {
           && start >= part.startMinutes
           && start < part.endMinutes;
       });
-      const local = summarizeTimeslotRows(localRows);
-      const topicGroups = new Map();
+      const localSummary = summarizeTopicRows(localRows);
+      const local = localSummary.local;
+      const localTopics = localSummary.localTopics;
 
+      const byOccurrence = new Map();
       for (const row of localRows) {
-        const topic = text(row.topic || 'Uncategorized');
-        if (!topicGroups.has(topic)) topicGroups.set(topic, []);
-        topicGroups.get(topic).push(row);
+        const occurrence = fundraiserWeekdayOccurrence(row);
+        if (!Number.isFinite(occurrence)) continue;
+        if (!byOccurrence.has(occurrence)) byOccurrence.set(occurrence, []);
+        byOccurrence.get(occurrence).push(row);
       }
-
-      const localTopics = [...topicGroups.entries()]
-        .map(([topic, topicRows]) => {
-          const summary = summarizeTimeslotRows(topicRows);
+      const positionBreakdown = [...byOccurrence.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([occurrence, positionRows]) => {
+          const summary = summarizeTopicRows(positionRows);
           return {
-            topic,
-            airings: summary.airings,
-            fundraiserSamples: summary.fundraiserSamples,
-            averageRate: summary.averageRate
+            occurrence,
+            label: `${ordinalWord(occurrence)} ${day.weekday}`,
+            local: {
+              airings: summary.local.airings,
+              fundraiserSamples: summary.local.fundraiserSamples,
+              titleCount: summary.local.titleCount,
+              averageRate: summary.local.averageRate,
+              dominantTopic: summary.local.dominantTopic,
+              dominantShare: summary.local.dominantShare
+            },
+            localTopics: summary.localTopics
           };
         })
-        .filter((item) => item.fundraiserSamples > 0 && Number.isFinite(item.averageRate))
-        .sort((a, b) => b.averageRate - a.averageRate || b.fundraiserSamples - a.fundraiserSamples || b.airings - a.airings)
-        .slice(0, 4);
+        .filter((item) => item.local.airings > 0);
 
       const peer = peerWindowSummary(schedule, peerObservations, day.weekday, part.startMinutes, part.endMinutes);
       if (!local.airings && !peer.stations) continue;
@@ -748,11 +837,13 @@ function buildTopicTimeMatrix(schedule = {}, rows = [], peerObservations = []) {
         local: {
           airings: local.airings,
           fundraiserSamples: local.fundraiserSamples,
+          titleCount: local.titleCount,
           averageRate: local.averageRate,
           dominantTopic: local.dominantTopic,
           dominantShare: local.dominantShare
         },
         localTopics,
+        positionBreakdown,
         peer
       });
     }
@@ -764,7 +855,6 @@ function buildTopicTimeMatrix(schedule = {}, rows = [], peerObservations = []) {
     rows: result
   };
 }
-
 
 function daypartRange(label = '') {
   const key = text(label).toLowerCase();
@@ -967,7 +1057,7 @@ function flagOn(item = {}, ...keys) {
   return keys.some((key) => Boolean(flags[key]));
 }
 
-function buildPeerPracticeGaps(schedule = {}, observations = []) {
+function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = []) {
   const definitions = [
     {
       id: 'challenge-grants',
@@ -994,8 +1084,8 @@ function buildPeerPracticeGaps(schedule = {}, observations = []) {
       id: 'local-programming',
       label: 'Local productions as pledge anchors',
       match: (item) => flagOn(item, 'local') || text(item.topic_primary).toLowerCase() === 'local',
-      wnmuStatus: 'WNMU does use local programming, but the strategy does not yet measure local-event treatment as a separate fundraising tactic.',
-      testIdea: 'Separate ordinary local-title performance from locally produced pledge events with guests, premieres, special premiums or community framing.'
+      wnmuStatus: 'Peer evidence here is about local specials/events, not proof that routine local series are pledge anchors at WNMU.',
+      testIdea: 'Test locally produced specials, documentaries or event treatment separately from recurring local series. WNMU performance should outrank peer anecdotes when the two conflict.'
     },
     {
       id: 'off-drive',
@@ -1028,6 +1118,7 @@ function buildPeerPracticeGaps(schedule = {}, observations = []) {
   ];
 
   const positive = (observations || []).filter(positivePeerObservation);
+  const localSnapshot = localProductionSnapshot(evidenceRows);
   const rows = [];
 
   for (const definition of definitions) {
@@ -1067,6 +1158,7 @@ function buildPeerPracticeGaps(schedule = {}, observations = []) {
       averageStrength: matches.reduce((sum, item) => sum + Number(item.evidence_strength || 0), 0) / matches.length,
       wnmuStatus: definition.wnmuStatus,
       testIdea: definition.testIdea,
+      wnmuEvidence: definition.id === 'local-programming' ? localSnapshot : null,
       examples
     });
   }
@@ -1414,7 +1506,7 @@ self.onmessage = (event) => {
     const dayOutlook = buildDayOutlook(schedule, analyses);
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns, peerObservations);
-    const peerPractices = buildPeerPracticeGaps(schedule, peerObservations);
+    const peerPractices = buildPeerPracticeGaps(schedule, peerObservations, rows);
     const topicTimeMatrix = buildTopicTimeMatrix(schedule, rows, peerObservations);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 
