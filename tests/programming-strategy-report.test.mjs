@@ -1260,7 +1260,8 @@ test('strategy report renders one brief, one fundraiser plan, and one combined p
   assert.match(reportUi,/assignedBySlot\.get\(slot\.id\)\.push\(rec\)/);
   assert.match(reportUi,/strategy-plan-window/);
   assert.match(reportUi,/WEB-ONLY EXPERIMENT/);
-  assert.match(reportUi,/Track these results separately from staffed pledge windows/);
+  assert.match(reportUi,/Break mode is recorded on each scheduled program for later comparison/);
+  assert.doesNotMatch(reportUi,/Track these results separately from staffed pledge windows/);
   assert.match(reportUi,/rec\.webOnlyReason/);
   assert.match(reportUi,/options\.map\(rec=>/);
   assert.match(reportUi,/compactTimingForSlot/);
