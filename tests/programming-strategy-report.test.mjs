@@ -466,14 +466,16 @@ test('historical matching does not fall back to title when both program IDs disa
   assert.equal(S.rowsForProgram(program, [nolaOnly]).length, 1);
 });
 
-test('Report 5 omits topics with no titles eligible for the selected fundraiser', () => {
+test('Report 5 keeps all library topics while separating current eligibility', () => {
   const library = [
     baseProgram({ id: 'music', title: 'Music', topic_primary: 'Music' }),
     baseProgram({ id: 'history-expired', title: 'History', topic_primary: 'History', rights_end: '2026-01-01' })
   ];
   const rows = S.topicComparison(library, S.planningWindows(schedule), { schedule, evidenceRows: [] });
-  assert.deepEqual(Array.from(rows, (item) => item.topic), ['Music']);
-  assert.equal(rows[0].eligibleProgramCount, 1);
+  assert.ok(rows.some((item) => item.topic === 'Music'));
+  assert.ok(rows.some((item) => item.topic === 'History'));
+  assert.equal(rows.find((item) => item.topic === 'Music').eligibleProgramCount, 1);
+  assert.equal(rows.find((item) => item.topic === 'History').eligibleProgramCount, 0);
 });
 
 test('topic performance uses full historical topic evidence, excludes Uncategorized, and details key subtopics', () => {
@@ -671,31 +673,28 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
 
-test('long subtopic groups collapse with strongest and weakest measured summaries', () => {
+test('topic cards show every topic with optional expandable subtopics', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
-  assert.match(reportUi, /items\.length<=4/);
-  assert.match(reportUi, /strategy-subtopics-collapsible/);
-  assert.match(reportUi, /Top measured:/);
-  assert.match(reportUi, /Weakest measured:/);
-  assert.match(reportUi, /Show all subtopics/);
-  assert.match(styles, /\.strategy-subtopics-collapsible/);
-  assert.match(styles, /\.strategy-subtopic-summary-line/);
+  assert.match(reportUi, /strategy-topic-card-grid/);
+  assert.match(reportUi, /strategy-topic-subtopics/);
+  assert.match(reportUi, /Show subtopics/);
+  assert.match(reportUi, /All Program Library topics are shown/);
+  assert.match(styles, /\.strategy-topic-card-grid/);
+  assert.match(styles, /\.strategy-topic-subtopics/);
 });
 
-test('Report 5 presentation removes visible median language and evidence-through card', () => {
+test('Report 5 presentation keeps the concise style while restoring analytical depth', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   assert.doesNotMatch(reportUi, /median about|median Broadcast|Established/);
   assert.doesNotMatch(reportUi, /strategy-summary/);
-  assert.doesNotMatch(reportUi, /sheet-stamp">Evidence through/);
-  assert.match(reportUi, /Avg \$.*\/pledge hr/);
-  assert.match(reportUi, /All-season depth/);
-  assert.match(reportUi, /subtopics/);
-  assert.match(reportUi, /Day\/time performance/);
-  assert.match(reportUi, /Why explore this\?/);
+  assert.doesNotMatch(reportUi, /sheet-stamp\">Evidence through/);
+  assert.match(reportUi, /Topic performance/);
+  assert.match(reportUi, /Show subtopics/);
+  assert.match(reportUi, /Time-of-day comparisons/);
+  assert.match(reportUi, /Half-hour program-start buckets/);
+  assert.match(reportUi, /Peer practices worth testing/);
   assert.match(reportUi, /pledge_peer_evidence_observations/);
-  assert.doesNotMatch(reportUi, /Structured peer-station results are not yet loaded/);
-  assert.doesNotMatch(reportUi, /strategy\.peerEvidence\.note/);
 });
 
 test('main Program Library list shows secondary topic under primary topic', () => {
