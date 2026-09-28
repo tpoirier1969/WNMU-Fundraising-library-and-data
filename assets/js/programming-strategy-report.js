@@ -493,36 +493,26 @@ function calendarRowsForDate(rows=[],dateKey=''){
 }
 
 function briefSection(result={},opportunities={},schedule={}){
-  const strategy=result.strategy||{};
-  const peer=(result.peerPractices||[]).slice(0,4);
+  const peerRows=Array.isArray(result.peerPractices)?result.peerPractices:[];
+  const sunday=peerRows.find(item=>item.id==='sunday-morning');
+  const peer=sunday&&!peerRows.slice(0,4).includes(sunday)?[...peerRows.slice(0,3),sunday]:peerRows.slice(0,4);
   const localIdeas=(opportunities.rows||[]).slice(0,4);
-
   const ideaCards=[
     ...localIdeas.map(item=>({
       source:'WNMU',
-      title:`${item.weekday} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}`,
+      title:item.weekday+' · '+clock(item.startMinutes)+'–'+clock(item.endMinutes),
       text:item.rationale||item.label||'Worth testing.',
-      meta:Number.isFinite(item.averageRate)?`Avg ${Math.round(item.averageRate)}/pledge hr`:(item.label||'')
+      meta:Number.isFinite(item.averageRate)?'Avg '+Math.round(item.averageRate)+'/pledge hr':(item.label||'')
     })),
     ...peer.map(item=>({
       source:'Peer',
       title:item.label||'Peer-station practice',
       text:item.testIdea||item.wnmuStatus||'Worth a bounded WNMU test.',
-      meta:`${Number(item.stationCount||0)} station${Number(item.stationCount||0)===1?'':'s'}`
+      meta:[Number(item.stationCount||0)+' station'+(Number(item.stationCount||0)===1?'':'s'),(item.topTopics||[]).length?'Topics: '+item.topTopics.map(x=>x.topic).join(', '):''].filter(Boolean).join(' · ')
     }))
   ].slice(0,8);
-
-  const promotion=[
-    ['Vermont Public','Build anticipation before the drive across broadcast, web, email, social and text.'],
-    ['Houston Public Media','Promote a specific program/event, then reinforce it with targeted email, a match and a local break.'],
-    ['WLRN','Segment email/SMS audiences and test messages instead of sending one generic appeal.'],
-    ['Vegas PBS','Brand pledge as a local television event with personalities, stories and community identity.']
-  ];
-
-  return`<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built.</p></div></div>
-    <div class="strategy-brief-block"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">${ideaCards.length?ideaCards.map(item=>`<article><span class="strategy-source-tag">${esc(item.source)}</span><strong>${esc(item.title)}</strong><p>${esc(item.text)}</p>${item.meta?`<small>${esc(item.meta)}</small>`:''}</article>`).join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>'}</div></div>
-    <div class="strategy-brief-block"><h3>Promotion</h3><div class="strategy-promotion-compact">${promotion.map(([station,text])=>`<div><strong>${esc(station)}</strong><span>${esc(text)}</span></div>`).join('')}</div></div>
-  </section>`;
+  const cards=ideaCards.length?ideaCards.map(item=>'<article><span class="strategy-source-tag">'+esc(item.source)+'</span><strong>'+esc(item.title)+'</strong><p>'+esc(item.text)+'</p>'+(item.meta?'<small>'+esc(item.meta)+'</small>':'')+'</article>').join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>';
+  return '<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built.</p></div></div><div class="strategy-brief-card"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">'+cards+'</div></div></section>';
 }
 
 function compactTimingForSlot(hourlyIndex,slot={}){
