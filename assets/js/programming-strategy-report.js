@@ -624,15 +624,23 @@ function programOpportunitiesSection(strategy={}){
     if(Number.isFinite(Number(item.score)))row.score=Math.max(Number.isFinite(row.score)?row.score:-Infinity,Number(item.score));
     return row;
   };
+  (strategy.windows||[]).forEach(slot=>{
+    if(slot.blocked)return;
+    (slot.recommendations||[]).forEach(item=>{
+      const row=ensure(item); if(!row)return;
+      row.badges.push(item.newTitle?'New':'Recommended');
+      if(item.fit)row.notes.push(item.fit);
+    });
+  });
   (strategy.repeats||[]).forEach(item=>{
     const row=ensure(item); if(!row)return;
     row.badges.push('Repeat');
-    if(item.slots?.length)row.notes.push(`Works across ${item.slots.length} separated prime windows`);
+    if(item.slots?.length)row.notes.push('Works across '+item.slots.length+' separated prime windows');
   });
   (strategy.seasonal||[]).forEach(item=>{
     const row=ensure(item); if(!row)return;
     row.badges.push('Seasonal');
-    const note=item.season?.notes?.[0]||`${item.season?.targetSeason||'Seasonal'} fit`;
+    const note=item.season?.notes?.[0]||((item.season?.targetSeason||'Seasonal')+' fit');
     if(note)row.notes.push(note);
   });
   (strategy.local||[]).forEach(item=>{
@@ -642,10 +650,19 @@ function programOpportunitiesSection(strategy={}){
   });
   const rows=[...byKey.values()]
     .map(row=>({...row,badges:[...new Set(row.badges)],notes:[...new Set(row.notes)]}))
-    .sort((a,b)=>b.badges.length-a.badges.length||(Number(b.score)||0)-(Number(a.score)||0)||a.title.localeCompare(b.title))
-    .slice(0,12);
-
-  return`<section class="sheet-section strategy-program-opportunities"><div class="strategy-section-head"><div><h2>Program opportunities</h2><p>Repeat, seasonal and Local/U.P. candidates combined. A title can qualify in more than one way.</p></div></div><div class="strategy-program-opportunity-list">${rows.length?rows.map(item=>`<article><div><strong>${esc(item.title)}</strong><span>${esc(item.topic)}</span></div><div class="strategy-opportunity-badges">${item.badges.map(badge=>`<span>${esc(badge)}</span>`).join('')}</div><p>${esc(item.notes.slice(0,2).join(' · ')||'Worth considering in the current fundraiser mix.')}</p>${Number.isFinite(item.score)?`<small>Best-window score ${Math.round(item.score)}</small>`:''}</article>`).join(''):'<p>No repeat, seasonal or Local/U.P. program opportunity currently clears the filters.</p>'}</div></section>`;
+    .sort((a,b)=>{
+      const as=Number.isFinite(Number(a.score))?Number(a.score):-Infinity;
+      const bs=Number.isFinite(Number(b.score))?Number(b.score):-Infinity;
+      return bs-as||a.title.localeCompare(b.title);
+    })
+    .slice(0,20);
+  const html=rows.length?rows.map((item,index)=>{
+    const badgeHtml=item.badges.map(badge=>'<span>'+esc(badge)+'</span>').join('');
+    const note=esc(item.notes.slice(0,2).join(' · ')||'Worth considering in the current fundraiser mix.');
+    const score=Number.isFinite(item.score)?'<small>Score '+Math.round(item.score)+'</small>':'';
+    return '<article><div class="strategy-opportunity-rank">'+(index+1)+'</div><div class="strategy-opportunity-title"><strong>'+esc(item.title)+'</strong><span>'+esc(item.topic)+'</span></div><div class="strategy-opportunity-badges">'+badgeHtml+'</div><p>'+note+'</p>'+score+'</article>';
+  }).join(''):'<p>No program opportunity currently clears the filters.</p>';
+  return '<section class="sheet-section strategy-program-opportunities"><div class="strategy-section-head"><div><h2>Program opportunities</h2><p>Up to 20 current candidates, sorted by best-window score. Badges explain why a title is surfacing.</p></div></div><div class="strategy-program-opportunity-list">'+html+'</div></section>';
 }
 
 function compact(items,renderer,empty){return items?.length?`<div class="strategy-compact-list">${items.map(renderer).join('')}</div>`:`<p>${esc(empty)}</p>`;}
