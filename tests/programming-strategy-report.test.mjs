@@ -541,7 +541,7 @@ test('strategy UI keeps the Report Hub card, future-only picker, compact map, an
   assert.match(hubUi, /card\.className = 'report-card-link'/);
   assert.match(reportUi, /schedule_data/);
   assert.match(reportUi, /strategy-program-row/);
-  assert.match(reportUi, /Anticipated day strength/);
+  assert.match(reportUi, /Fundraiser day & topic takeaways/);
   assert.match(reportUi, /Scheduling opportunities \/ tests/);
   assert.match(ratingsUi, />Unrated</);
   assert.match(ratingsUi, /value="neutral"[^>]*>Neutral</);
@@ -1159,17 +1159,16 @@ test('strategy report renders an explained meeting brief and simplified topic-ti
   assert.match(reportUi, /Interpretation guardrails/);
   assert.match(reportUi, /at least two different titles/);
   assert.match(reportUi, /How to read this:/);
-  assert.match(reportUi, /Topic × time takeaways/);
-  assert.match(reportUi, /WNMU topic\/time signals/);
-  assert.match(reportUi, /Same weekday, different fundraiser position/);
-  assert.match(reportUi, /Peer-supported gaps/);
-  assert.match(reportUi, /Not promoted as topic signals/);
-  assert.match(reportUi, /Show full weekday\/daypart evidence/);
+  assert.match(reportUi, /Fundraiser day & topic takeaways/);
+  assert.match(reportUi, /actual dates in this selected fundraiser/);
+  assert.match(reportUi, /No multi-title topic\/time signal clears the threshold for this exact fundraiser position/);
+  assert.match(reportUi, /Under-tested windows supported by peers/);
+  assert.match(reportUi, /scheduleOccurrenceForDate/);
   assert.match(reportUi, /item\.rationale/);
   assert.match(styles, /\.strategy-meeting-grid/);
-  assert.match(styles, /\.strategy-time-takeaway-grid/);
-  assert.match(styles, /\.strategy-time-takeaway-row/);
-  assert.match(styles, /\.strategy-topic-time-detail/);
+  assert.match(styles, /\.strategy-day-topic-list/);
+  assert.match(styles, /\.strategy-day-topic-row/);
+  assert.match(styles, /\.strategy-day-topic-peer/);
   assert.match(styles, /\.opportunity-peer-gap/);
 });
 
@@ -1438,12 +1437,15 @@ test('topic-time matrix keeps first and second Saturdays separate', () => {
     row({ fundraiserId:'dec25', driveStartDate:'2025-12-05', dateKey:'2025-12-06', startMinutes:19*60, topic:'Music', title:'First Music', dollars:600 }),
     row({ fundraiserId:'dec25', driveStartDate:'2025-12-05', dateKey:'2025-12-13', startMinutes:19*60, topic:'Health', title:'Second Health', dollars:900 }),
     row({ fundraiserId:'dec24', driveStartDate:'2024-12-06', dateKey:'2024-12-07', startMinutes:19*60, topic:'Music', title:'First Music 2', dollars:500 }),
-    row({ fundraiserId:'dec24', driveStartDate:'2024-12-06', dateKey:'2024-12-14', startMinutes:19*60, topic:'Health', title:'Second Health 2', dollars:800 })
+    row({ fundraiserId:'dec24', driveStartDate:'2024-12-06', dateKey:'2024-12-14', startMinutes:19*60, topic:'Health', title:'Second Health 2', dollars:800 }),
+    row({ fundraiserId:'long23', driveStartDate:'2023-11-24', dateKey:'2023-12-09', startMinutes:19*60, topic:'News', title:'Third Saturday History', dollars:5000 }),
+    row({ fundraiserId:'long23', driveStartDate:'2023-11-24', dateKey:'2023-12-16', startMinutes:19*60, topic:'Drama', title:'Fourth Saturday History', dollars:6000 })
   ];
   const matrix = workerContext.buildTopicTimeMatrix(schedule, rows, []);
   const saturdayPrime = matrix.rows.find((item) => item.weekday === 'Saturday' && item.daypart === 'Prime');
   assert.ok(saturdayPrime);
   assert.deepEqual(Array.from(saturdayPrime.positionBreakdown, (item) => item.label), ['First Saturday','Second Saturday']);
+  assert.ok(!saturdayPrime.positionBreakdown.some((item) => /Third|Fourth/.test(item.label)), 'target drive has only two Saturdays, so longer historical drives must not leak third/fourth Saturday labels');
   assert.equal(saturdayPrime.positionBreakdown[0].localTopics[0].topic, 'Music');
   assert.equal(saturdayPrime.positionBreakdown[1].localTopics[0].topic, 'Health');
   assert.equal(saturdayPrime.positionBreakdown[0].localTopics[0].fundraiserSamples, 2);
