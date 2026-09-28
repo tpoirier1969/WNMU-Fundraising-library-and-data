@@ -1203,6 +1203,10 @@ test('strategy report keeps the meeting brief concise and day/topic advice decis
   assert.match(reportUi, /Fundraiser day & topic takeaways/);
   assert.match(reportUi, /actual dates in this selected fundraiser/);
   assert.match(reportUi, /topicSignals\.slice\(0,3\)/);
+  assert.match(reportUi, /Scheduling implication:/);
+  assert.match(reportUi, /Concentrate pledge hours in the strongest topic\/time pockets/);
+  assert.match(reportUi, /Consider fewer discretionary pledge hours/);
+  assert.match(styles, /\.strategy-day-topic-action/);
   assert.match(reportUi, /Saturday 3–5 PM:/);
   assert.match(reportUi, /strategy-opportunity-summary/);
   assert.match(reportUi, /Under-tested windows supported by peers/);
