@@ -610,8 +610,8 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
     const strength = Number(item.evidence_strength || 0);
     if (strength < 3) continue;
 
-    const itemStart = Number(item.start_time_minutes);
-    const itemEnd = Number(item.end_time_minutes);
+    const itemStart = nullableNumber(item.start_time_minutes);
+    const itemEnd = nullableNumber(item.end_time_minutes);
     const range = daypartRange(item.daypart);
     let matches = false;
     let specificity = 0;
@@ -787,8 +787,8 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
   for (const item of observations || []) {
     if (text(item.day_of_week).toLowerCase() !== text(weekday).toLowerCase()) continue;
 
-    const itemStart = Number(item.start_time_minutes);
-    const itemEnd = Number(item.end_time_minutes);
+    const itemStart = nullableNumber(item.start_time_minutes);
+    const itemEnd = nullableNumber(item.end_time_minutes);
     const range = daypartRange(item.daypart);
     let timeMatch = false;
     let timeSpecificity = 0;
@@ -879,7 +879,7 @@ function peerTimingAlternatives(schedule = {}, observations = [], weekday = '', 
 
   for (const item of observations || []) {
     if (text(item.day_of_week).toLowerCase() !== text(weekday).toLowerCase()) continue;
-    const start = Number(item.start_time_minutes);
+    const start = nullableNumber(item.start_time_minutes);
     if (!Number.isFinite(start) || start < minStart || start > maxStart) continue;
     const strength = Number(item.evidence_strength || 0);
     if (strength < 3) continue;
