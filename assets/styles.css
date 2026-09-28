@@ -6227,3 +6227,59 @@ input.goal-difference-negative {
   font-weight:600;
   opacity:.78;
 }
+
+
+/* v0.22.227 per-program pledge break modes */
+.schedule-break-mode-row{
+  display:grid;
+  grid-template-columns:minmax(180px,240px) minmax(220px,1fr);
+  gap:10px 14px;
+  align-items:end;
+}
+.schedule-break-mode-field{
+  margin:0;
+  min-width:0;
+}
+.schedule-break-mode-field select{
+  width:100%;
+  min-width:0;
+}
+.schedule-break-mode-help{
+  padding-bottom:7px;
+  line-height:1.3;
+}
+.schedule-placement .schedule-break-mode-calendar-badge{
+  position:absolute;
+  left:3px;
+  bottom:3px;
+  z-index:7;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:fit-content;
+  max-width:calc(100% - 26px);
+  padding:1px 5px;
+  border-radius:999px;
+  background:rgba(255,255,255,.92);
+  border:1px solid rgba(255,255,255,.72);
+  box-shadow:0 1px 3px rgba(0,0,0,.18);
+  font-size:clamp(.38rem,.42vw,.5rem);
+  font-weight:900;
+  letter-spacing:.04em;
+  line-height:1.05;
+  pointer-events:none;
+}
+.schedule-placement .schedule-break-mode-calendar-badge.break-mode-phones-staffed{
+  color:#245a78;
+}
+.schedule-placement .schedule-break-mode-calendar-badge.break-mode-web-only{
+  color:#755719;
+}
+.schedule-placement.break-mode-web-only:not(.live-break){
+  outline:1px dashed rgba(117,87,25,.45);
+  outline-offset:-2px;
+}
+@media(max-width:760px){
+  .schedule-break-mode-row{grid-template-columns:1fr}
+  .schedule-break-mode-help{padding-bottom:0}
+}
