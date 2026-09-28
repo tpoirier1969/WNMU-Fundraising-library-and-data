@@ -81,15 +81,15 @@
 
   function decorateDayMap(root, strategy) {
     if (!root || !strategy || !Array.isArray(strategy.windows)) return;
-    const mapSection = Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
+    const mapSection = root.querySelector('.strategy-day-map-section') || Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
       const heading = section.querySelector(':scope > h2');
-      return heading && heading.textContent.trim() === 'Day-by-day programming map';
+      return heading && heading.textContent.trim().startsWith('Day-by-day programming map');
     });
     if (!mapSection) return;
 
     const intro = mapSection.querySelector(':scope > p');
     if (intro) {
-      intro.textContent = 'These are planning windows, not automatic exact start times. Evidence-thin windows now explain why the window exists and show nearby peer timing examples before you treat a boundary such as 5:00 PM as a schedule recommendation.';
+      intro.textContent = 'These are planning windows, not automatic exact start times. Each window now carries its WNMU half-hour start-time history beside the title recommendations; evidence-thin windows also explain why the window exists and may show nearby peer timing examples.';
     }
 
     const headTime = mapSection.querySelector('.strategy-program-head > span:first-child');
@@ -196,12 +196,12 @@
 
   function insertPeerPractices(root, rows) {
     if (!root) return;
-    const mapSection = Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
-      const heading = section.querySelector(':scope > h2');
-      return heading && heading.textContent.trim() === 'Day-by-day programming map';
+    const opportunitySection = root.querySelector('.strategy-opportunities-section') || Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
+      const heading = section.querySelector('.strategy-section-head h2, :scope > h2');
+      return heading && heading.textContent.trim() === 'Scheduling opportunities / tests';
     });
-    if (!mapSection) return;
-    mapSection.insertAdjacentHTML('beforebegin', peerPracticesHtml(rows));
+    if (!opportunitySection) return;
+    opportunitySection.insertAdjacentHTML('afterend', peerPracticesHtml(rows));
   }
 
   function splitCompoundSections(root) {
