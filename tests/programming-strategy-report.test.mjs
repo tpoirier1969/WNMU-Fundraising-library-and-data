@@ -1202,7 +1202,7 @@ test('strategy report renders one brief, one fundraiser plan, and one combined p
   assert.match(reportUi,/<h2>Brief<\/h2>/);
   assert.match(reportUi,/<h3>Ideas & tests<\/h3>/);
   assert.match(reportUi,/<h3>Promotion<\/h3>/);
-  assert.match(reportUi,/<h3>Calendar watch<\/h3>/);
+  assert.doesNotMatch(reportUi,/<h3>Calendar watch<\/h3>/);
   assert.match(reportUi,/Vermont Public/);
   assert.match(reportUi,/Houston Public Media/);
   assert.match(reportUi,/WLRN/);
@@ -1212,7 +1212,10 @@ test('strategy report renders one brief, one fundraiser plan, and one combined p
   assert.match(reportUi,/<h2>Fundraiser plan<\/h2>/);
   assert.match(reportUi,/Topic snapshot/);
   assert.match(reportUi,/topicSignals\.slice\(0,2\)/);
-  assert.match(reportUi,/slot\.recommendations\?\.\[0\]/);
+  assert.match(reportUi,/const leadTitles=new Set\(\)/);
+  assert.match(reportUi,/const options=\[\.\.\.fresh,\.\.\.repeated\]\.slice\(0,3\)/);
+  assert.match(reportUi,/strategy-plan-window/);
+  assert.match(reportUi,/options\.map\(rec=>/);
   assert.match(reportUi,/compactTimingForSlot/);
   assert.match(reportUi,/calendarRowsForDate/);
 
@@ -1230,6 +1233,7 @@ test('strategy report renders one brief, one fundraiser plan, and one combined p
   assert.match(styles,/\.strategy-brief-section/);
   assert.match(styles,/\.strategy-fundraiser-plan/);
   assert.match(styles,/\.strategy-program-opportunities/);
+  assert.match(styles,/\.strategy-plan-window/);
   assert.match(calendar,/Hanukkah/);
   assert.match(calendar,/Big Ten Football Championship/);
   assert.match(calendar,/NMU vs\. Augustana hockey/);
