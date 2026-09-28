@@ -1302,18 +1302,37 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerO
   });
   const saturdayAfternoon = summarizeTimeslotRows(saturdayAfternoonRows);
   if (saturdayAfternoon.airings >= 2 && saturdayAfternoon.dominantShare >= 0.5) {
+    const directPeers = peerEvidenceForWindow(schedule, peerObservations, 'Saturday', 15 * 60, 17 * 60)
+      .filter((item) => item.signal > 0);
+    const nearbyPeers = peerTimingAlternatives(schedule, peerObservations, 'Saturday', 17 * 60)
+      .filter((item) => item.signal > 0 && item.startMinutes >= 16 * 60 && item.startMinutes <= 18 * 60);
+    const peerMap = new Map();
+    [...directPeers, ...nearbyPeers].forEach((item) => {
+      const key = S.lookupKey(item.stationKey || item.sourceLabel);
+      if (!peerMap.has(key)) peerMap.set(key, item);
+    });
+    const positivePeers = [...peerMap.values()];
+    const peerSentence = positivePeers.length
+      ? ` Peer evidence strengthens the case for a different-programming test: ${positivePeers.slice(0,2).map((item) => `${item.sourceLabel}: ${item.text}`).join(' ')}`
+      : '';
     opportunities.push({
       weekday: 'Saturday',
       startMinutes: 15 * 60,
       endMinutes: 17 * 60,
       kind: 'narrow-test',
-      label: 'Needs a broader test',
+      label: 'Broader Saturday-afternoon pledge test',
       averageRate: saturdayAfternoon.averageRate,
       fundraiserSamples: saturdayAfternoon.fundraiserSamples,
       airings: saturdayAfternoon.airings,
       dominantTopic: saturdayAfternoon.dominantTopic,
       dominantShare: saturdayAfternoon.dominantShare,
-      rationale: `WNMU has ${saturdayAfternoon.airings} historical starts from 3–5 PM, but ${Math.round(saturdayAfternoon.dominantShare * 100)}% were ${saturdayAfternoon.dominantTopic || 'one programming type'}. That is not a broad test of normal pledge programming, so weak local results should not disqualify the timeslot.`
+      positivePeerStations: positivePeers.length,
+      additionalEvidence: positivePeers.slice(0,3).map((item) => ({
+        sourceLabel: item.sourceLabel,
+        text: item.text,
+        tone: 'positive'
+      })),
+      rationale: `WNMU has ${saturdayAfternoon.airings} historical starts from 3–5 PM, but ${Math.round(saturdayAfternoon.dominantShare * 100)}% were ${saturdayAfternoon.dominantTopic || 'one programming type'}. The zero/weak history therefore tests that recurring program mix more than it tests Saturday afternoon itself.${peerSentence}`
     });
   }
 
@@ -1450,6 +1469,7 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerO
         text: item.rationale,
         tone: item.kind === 'underused-positive' ? 'positive' : 'neutral'
       },
+      ...(item.additionalEvidence || []),
       ...peerEvidenceForWindow(schedule, peerObservations, item.weekday, item.startMinutes, item.endMinutes)
     ]
   }));
