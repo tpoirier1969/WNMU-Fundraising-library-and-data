@@ -92,9 +92,14 @@ function prepareStrategySchedules(scheduleRows = [], canonicalAirings = []) {
   return { schedules, excludedBoundaryBreaks, excludedExamples };
 }
 
-function selectedFixedSchedulePrograms(scheduleRows = [], canonicalAirings = [], targetSchedule = {}) {
-  const prepared = prepareStrategySchedules(scheduleRows, canonicalAirings);
-  const schedules = A.prepareSchedules(prepared.schedules);
+function selectedFixedSchedulePrograms(scheduleRows = [], targetSchedule = {}) {
+  const schedules = A.prepareSchedules((scheduleRows || []).map((row) =>
+    row?.schedule_data
+      ? A.normalizeSchedule(row)
+      : (row?.startDate || Array.isArray(row?.placements)
+        ? { ...row, placements: Array.isArray(row?.placements) ? row.placements : [] }
+        : A.normalizeSchedule(row))
+  ));
   const targetId = text(targetSchedule.id || '');
   const targetStart = text(targetSchedule.startDate || targetSchedule.start_date || '').slice(0, 10);
   const targetEnd = text(targetSchedule.endDate || targetSchedule.end_date || '').slice(0, 10);
@@ -1506,7 +1511,7 @@ self.onmessage = (event) => {
     const analyses = historical.analyses;
     const rows = strategyEvidenceRowsFromAnalyses(analyses);
     const performanceStats = buildHistoricalPerformanceStats(schedule, analyses);
-    const fixedSchedule = selectedFixedSchedulePrograms(scheduleRows, canonical, schedule);
+    const fixedSchedule = selectedFixedSchedulePrograms(scheduleRows, schedule);
 
     diagnostics.prepareMs = Math.round(nowMs() - phase);
     diagnostics.rawAirings = rawAirings.length;
