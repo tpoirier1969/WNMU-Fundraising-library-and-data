@@ -587,6 +587,18 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
 
+test('long subtopic groups collapse with strongest and weakest measured summaries', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+  assert.match(reportUi, /items\.length<=4/);
+  assert.match(reportUi, /strategy-subtopics-collapsible/);
+  assert.match(reportUi, /Top measured:/);
+  assert.match(reportUi, /Weakest measured:/);
+  assert.match(reportUi, /Show all subtopics/);
+  assert.match(styles, /\.strategy-subtopics-collapsible/);
+  assert.match(styles, /\.strategy-subtopic-summary-line/);
+});
+
 test('Report 5 presentation removes visible median language and evidence-through card', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   assert.doesNotMatch(reportUi, /median about|median Broadcast|Established/);
