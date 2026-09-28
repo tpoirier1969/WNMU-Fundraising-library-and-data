@@ -554,7 +554,6 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
   });
 
   const topicSnapshot=(strategy.topicComparison||[]).slice(0,6);
-  const leadTitles=new Set();
   const days=(outlook.rows||[]).map(day=>{
     const date=new Date(String(day.date||'')+'T12:00:00');
     const weekdayIndex=Number.isNaN(date.getTime())?null:date.getDay();
@@ -572,21 +571,38 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
     });
     topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
 
-    const programs=(windowsByDate.get(day.date)||[])
+    const daySlots=(windowsByDate.get(day.date)||[])
       .filter(slot=>!slot.blocked)
-      .sort((a,b)=>a.startMinutes-b.startMinutes)
+      .sort((a,b)=>a.startMinutes-b.startMinutes);
+
+    // A title belongs to the one window where its slot-specific score is highest.
+    // This prevents a strong title from being repeated across several windows just
+    // because it happens to rank well everywhere.
+    const bestSlotByTitle=new Map();
+    daySlots.forEach(slot=>{
+      (slot.recommendations||[]).forEach(rec=>{
+        const key=String(rec?.programId||rec?.title||'').trim().toLowerCase();
+        if(!key)return;
+        const current=bestSlotByTitle.get(key);
+        const score=Number(rec?.score);
+        const currentScore=Number(current?.rec?.score);
+        if(!current||(!Number.isFinite(currentScore)&&Number.isFinite(score))||(Number.isFinite(score)&&score>currentScore)){
+          bestSlotByTitle.set(key,{slot,rec});
+        }
+      });
+    });
+
+    const assignedBySlot=new Map(daySlots.map(slot=>[slot.id,[]]));
+    bestSlotByTitle.forEach(({slot,rec})=>{
+      if(!assignedBySlot.has(slot.id))assignedBySlot.set(slot.id,[]);
+      assignedBySlot.get(slot.id).push(rec);
+    });
+
+    const programs=daySlots
       .map(slot=>{
-        const seen=new Set();
-        const ranked=(slot.recommendations||[]).filter(rec=>{
-          const key=String(rec?.programId||rec?.title||'').trim().toLowerCase();
-          if(!key||seen.has(key))return false;
-          seen.add(key);
-          return true;
-        });
-        const fresh=ranked.filter(rec=>!leadTitles.has(String(rec?.programId||rec?.title||'').trim().toLowerCase()));
-        const repeated=ranked.filter(rec=>leadTitles.has(String(rec?.programId||rec?.title||'').trim().toLowerCase()));
-        const options=[...fresh,...repeated].slice(0,3);
-        if(options[0])leadTitles.add(String(options[0]?.programId||options[0]?.title||'').trim().toLowerCase());
+        const options=(assignedBySlot.get(slot.id)||[])
+          .sort((a,b)=>Number(b.score||0)-Number(a.score||0)||String(a.title||'').localeCompare(String(b.title||'')))
+          .slice(0,3);
         return{slot,options};
       })
       .filter(item=>item.options.length)
