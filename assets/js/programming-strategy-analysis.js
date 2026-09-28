@@ -1537,7 +1537,7 @@ return result;}
         'For a future fundraiser, evidence is capped at today. Only completed historical fundraiser schedules are used by the report worker.',
         'Visible performance rates use fundraiser-balanced Avg $ / Pledge Hour so one heavily scheduled drive does not dominate the history.',
         'Topic performance is season-specific and its displayed average matches the Historical Analytics fundraiser-balanced average for that topic; Uncategorized / incidental pledge activity is excluded from programming rankings.',
-        'Day/time performance uses the same reconciled history in hourly program-start buckets from noon onward; half-hour starts are included in the hour they begin.',
+        'Day/time performance uses the same reconciled history in half-hour program-start buckets from 6 AM through late evening; exact half-hour starts stay distinct.',
         'Time-window recommendation evidence uses starts inside the actual planning window rather than the former ±90-minute / broad-daypart approximation.',
         'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
