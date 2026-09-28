@@ -1866,6 +1866,15 @@ function outlierSummary(values = []) {
     return true;
   }
 
+  function breakModeFilterMatches(record = {}) {
+    const selected = state.advancedLive || 'all';
+    if (selected === 'all') return true;
+    const mode = normalizeBreakMode(record.breakMode);
+    if (selected === 'unclassified') return !mode;
+    if (selected === 'nonlive') return mode === 'phones_staffed' || mode === 'web_only';
+    return mode === selected;
+  }
+
   function filteredRecordsFor(questionId = state.question) {
     const question = QUESTIONS[questionId] || QUESTIONS.programs;
     const searchKey = lookupKey(state.search);
@@ -1882,7 +1891,7 @@ function outlierSummary(values = []) {
       if (question.useSeason !== false && state.season !== 'all' && record.season !== state.season) return false;
       if (question.useYear !== false && !yearFilterMatches(record.year)) return false;
       if (state.advancedDistributor !== 'all' && (record.distributor || 'Unknown') !== state.advancedDistributor) return false;
-      if (questionId !== 'live' && state.advancedLive !== 'all' && record.liveState !== state.advancedLive) return false;
+      if (questionId !== 'live' && !breakModeFilterMatches(record)) return false;
       if (state.advancedDaypart !== 'all' && record.daypart !== state.advancedDaypart) return false;
       if (state.advancedWeekpart !== 'all' && record.weekpart !== state.advancedWeekpart) return false;
       if (!durationFilterMatches(record)) return false;
@@ -2773,6 +2782,7 @@ function outlierSummary(values = []) {
     dom.advDistributor.innerHTML = '<option value="all">All distributors</option>' + distributors.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('');
     if (distributors.includes(state.advancedDistributor)) dom.advDistributor.value = state.advancedDistributor; else { state.advancedDistributor = 'all'; dom.advDistributor.value = 'all'; }
     dom.advMetric.value = state.metric;
+    if (!['all','live','phones_staffed','web_only','unclassified'].includes(state.advancedLive)) state.advancedLive = 'all';
     dom.advLive.value = state.advancedLive;
     dom.advDaypart.value = state.advancedDaypart;
     dom.advWeekpart.value = state.advancedWeekpart;
@@ -3162,7 +3172,7 @@ function outlierSummary(values = []) {
         <div class="stat"><div class="v">${formatNumber(rows.length)}</div><div>Broadcasts</div></div>
         <div class="stat"><div class="v">${escapeHtml(mix.label)}</div><div>Season mix</div></div>
       </div>
-      ${recentRows.length ? `<div class="program-detail-table-wrap"><table><thead><tr><th>Date</th><th>Fundraiser</th><th class="money">Dollars</th><th class="num">Pledges</th><th>Live break</th></tr></thead><tbody>${recentRows.map((record) => `<tr><td>${escapeHtml(record.date ? record.date.toLocaleDateString() : '—')}</td><td>${escapeHtml(record.fundraiser || record.seasonYear || '—')}</td><td class="money">${formatMoney(record.dollars)}</td><td class="num">${formatNumber(record.pledges)}</td><td>${escapeHtml(record.liveState === 'live' ? 'Yes' : record.liveState === 'nonlive' ? 'No' : 'Unknown')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No pledge-airing detail rows found for this title.</div>'}
+      ${recentRows.length ? `<div class="program-detail-table-wrap"><table><thead><tr><th>Date</th><th>Fundraiser</th><th class="money">Dollars</th><th class="num">Pledges</th><th>Break mode</th></tr></thead><tbody>${recentRows.map((record) => `<tr><td>${escapeHtml(record.date ? record.date.toLocaleDateString() : '—')}</td><td>${escapeHtml(record.fundraiser || record.seasonYear || '—')}</td><td class="money">${formatMoney(record.dollars)}</td><td class="num">${formatNumber(record.pledges)}</td><td>${escapeHtml(breakModeLabel(record.breakMode) || 'Unclassified')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No pledge-airing detail rows found for this title.</div>'}
       <div class="program-detail-note">This popup stays inside Performance Analytics. It uses the analytics page’s loaded library row plus pledge-airing history; it does not jump back to the Program Library.</div>`;
     dom.programModal.classList.remove('hidden');
   }
