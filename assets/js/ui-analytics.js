@@ -1631,7 +1631,7 @@ function outlierSummary(values = []) {
   }
 
   function liveMatchEligibility(live = {}, candidate = {}) {
-    if (!candidate || candidate.liveState !== 'nonlive') return { ok: false, reason: 'not a non-live airing' };
+    if (!candidate || candidate.breakMode !== 'phones_staffed') return { ok: false, reason: 'not a Phones-staffed airing' };
     const liveIntrinsic = intrinsicLiveFormatReason(live);
     if (liveIntrinsic) return { ok: false, reason: liveIntrinsic };
     const candidateIntrinsic = intrinsicLiveFormatReason(candidate);
@@ -1735,7 +1735,7 @@ function outlierSummary(values = []) {
       const match = best?.candidate || null;
       const difference = match ? Number(live.dollars || 0) - Number(match.dollars || 0) : null;
       const percent = match && Number(match.dollars || 0) > 0 ? (difference / Number(match.dollars || 0)) * 100 : null;
-      return { live, match, difference, percent, basis: best?.match?.notes || [], score: best?.match?.score ?? null, noMatchReason: bestRejected?.match?.notes?.[0] || 'no strong non-live match' };
+      return { live, match, difference, percent, basis: best?.match?.notes || [], score: best?.match?.score ?? null, noMatchReason: bestRejected?.match?.notes?.[0] || 'no strong Phones-staffed match' };
     });
   }
 
@@ -1839,7 +1839,7 @@ function outlierSummary(values = []) {
   function seasonOverviewModeText() {
     return seasonOverviewUsesDriveTotals()
       ? 'This view is using full fundraiser totals from saved schedules: broadcast dollars plus Online $ and Mail $. Rank-by/evidence filters do not apply to full drive totals.'
-      : 'This view is using content-level airing rows because a program/topic/distributor/live/daypart/weekpart filter is active. Online $ and Mail $ cannot be attributed to specific content in this mode.';
+      : 'This view is using content-level airing rows because a program/topic/distributor/break-mode/daypart/weekpart filter is active. Online $ and Mail $ cannot be attributed to specific content in this mode.';
   }
 
   function yearFilterMatches(year) {
@@ -2737,7 +2737,8 @@ function outlierSummary(values = []) {
     state.driveSeasonRecords = buildDriveSeasonRecords(state.schedules, state.records);
     rebuildFilterOptions();
     render();
-    const scheduleLiveCount = state.scheduleRecords.filter((record) => record.liveState === 'live').length;
+    const scheduleLiveCount = state.scheduleRecords.filter((record) => record.breakMode === 'live').length;
+    const scheduleBreakModeCount = state.scheduleRecords.filter((record) => normalizeBreakMode(record.breakMode)).length;
     const schedulePlacementCount = state.scheduleRecords.length;
     const scheduleMatchedCount = state.records.filter((record) => record.scheduleMatched).length;
     const durationMismatchCount = state.records.filter((record) => record.durationMismatch).length;
@@ -2754,7 +2755,7 @@ function outlierSummary(values = []) {
       const placementDuplicateNote = Number(diag.duplicatePlacementsSuppressed || 0)
         ? ` ${formatNumber(diag.duplicatePlacementsSuppressed || 0)} exact duplicate saved placement(s) were suppressed from schedule-derived analytics.`
         : '';
-      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote}${placementDuplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Live-break rows from saved schedules: ${formatNumber(scheduleLiveCount)}. Live-break source: ${LIVE_BREAK_ANALYTICS_SOURCE}.${durationNote}`);
+      note(`Loaded ${formatNumber(state.records.length)} usable pledge airing records. Unambiguous schedules: ${formatNumber(state.scheduleAudit.activeSchedules || 0)} of ${formatNumber(state.scheduleAudit.rawSchedules || 0)}.${duplicateNote}${placementDuplicateNote} Schedule-derived rows: ${formatNumber(schedulePlacementCount)}. Explicit break-mode rows: ${formatNumber(scheduleBreakModeCount)} (${formatNumber(scheduleLiveCount)} Live). Break-mode source: saved program placements.${durationNote}`);
     }
   }
 
