@@ -554,6 +554,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
   });
 
   const topicSnapshot=(strategy.topicComparison||[]).slice(0,6);
+  const leadTitles=new Set();
   const days=(outlook.rows||[]).map(day=>{
     const date=new Date(String(day.date||'')+'T12:00:00');
     const weekdayIndex=Number.isNaN(date.getTime())?null:date.getDay();
@@ -571,7 +572,6 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
     });
     topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
 
-    const leadTitles=new Set();
     const programs=(windowsByDate.get(day.date)||[])
       .filter(slot=>!slot.blocked)
       .sort((a,b)=>a.startMinutes-b.startMinutes)
