@@ -1701,35 +1701,17 @@ function outlierSummary(values = []) {
   }
 
   function nonLiveCandidatesForLiveComparison(scheduleRows = []) {
-    // Saved non-live schedule placements are the cleanest comparison source.
-    // If that pool is too small, include historical imported airing rows that have no saved live flag.
-    // These are labeled as historical candidates and still have to pass the strict same-topic/daypart/weekpart/length/title checks.
-    const unique = [];
-    const seen = new Set();
-    const addCandidate = (record, sourceLabel = '') => {
-      if (!record || !(Number(record.dollars || 0) > 0)) return;
-      const key = liveComparisonCandidateKey(record);
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      unique.push(sourceLabel ? { ...record, liveState: 'nonlive', liveSource: sourceLabel, comparisonSourceLabel: sourceLabel } : record);
-    };
-
-    scheduleRows
-      .filter((record) => record.liveState === 'nonlive')
-      .forEach((record) => addCandidate(record));
-
-    (state.records || [])
-      .filter((record) => record.liveState !== 'live')
-      .filter((record) => !record.isNonSpecific)
-      .filter((record) => recordMatchesLiveComparisonFilters(record))
-      .forEach((record) => addCandidate(record, record.scheduleMatched ? 'saved non-live schedule' : 'historical non-live airing'));
-
-    return unique;
+    // For the matched comparison, only explicitly saved Phones-staffed
+    // placements are valid controls. Web-only and legacy unclassified
+    // airings are distinct/unknown modes and must not be blended in.
+    return (scheduleRows || [])
+      .filter((record) => record.breakMode === 'phones_staffed')
+      .filter((record) => Number(record.dollars || 0) > 0);
   }
 
   function buildLiveMatchedPairs() {
-    const rows = filteredRecordsFor('live').filter((record) => record.liveState === 'live' || record.liveState === 'nonlive');
-    const liveRows = rows.filter((record) => record.liveState === 'live').sort((a, b) => (a.date || 0) - (b.date || 0) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+    const rows = filteredRecordsFor('live').filter((record) => record.breakMode === 'live' || record.breakMode === 'phones_staffed');
+    const liveRows = rows.filter((record) => record.breakMode === 'live').sort((a, b) => (a.date || 0) - (b.date || 0) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
     const nonLiveRows = nonLiveCandidatesForLiveComparison(rows);
     const used = new Set();
     return liveRows.map((live) => {
@@ -1772,11 +1754,11 @@ function outlierSummary(values = []) {
     const pairs = buildLiveMatchedPairs();
     const matched = pairs.filter((pair) => pair.match);
     if (!pairs.length) {
-      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>1:1 live vs non-live comparison</h4><p class="matched-note">No saved live-break airings fit the current filters, so there is nothing to compare.</p></div>');
+      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>1:1 Live vs Phones staffed comparison</h4><p class="matched-note">No saved Live break-mode airings fit the current filters, so there is nothing to compare.</p></div>');
       return;
     }
     if (!matched.length) {
-      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>1:1 live vs non-live comparison</h4><p class="matched-note">Saved live-break airings exist, but no comparable non-live scheduled airings fit the current filters closely enough to compare. Try clearing topic/daypart/weekpart filters.</p></div>');
+      dom.table.insertAdjacentHTML('beforeend', '<div class="matched-section"><h4>1:1 Live vs Phones staffed comparison</h4><p class="matched-note">Saved Live airings exist, but no comparable Phones-staffed airings fit the current filters closely enough to compare. Try clearing topic/daypart/weekpart filters.</p></div>');
       return;
     }
     const summary = liveMatchedSummary(pairs);
@@ -1793,20 +1775,20 @@ function outlierSummary(values = []) {
         <td class="money emphasis">${formatMoney(pair.live.dollars)}</td>
         <td class="money">${formatMoney(pair.match.dollars)}</td>
         <td class="money ${diffClass}">${formatMoney(pair.difference)}${escapeHtml(pctText)}</td>
-        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : 'Comparable non-live airing')}</span></td>
+        <td><span class="match-basis">${escapeHtml(pair.basis.length ? pair.basis.join(' · ') : 'Comparable Phones-staffed airing')}</span></td>
       </tr>`;
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
-      <h4>1:1 live vs non-live comparison</h4>
-      <p class="matched-note">This lists only live-break airings that have a strong comparable non-live airing. Saved non-live schedule placements are preferred; if none fit, historical imported airings with no saved live flag may be used, but they still must pass primary topic, daypart, weekday/weekend, start time, program length, season/year, and title/performer checks. Live airings with no good comparison are counted above but not listed as fake pairs.</p>
+      <h4>1:1 Live vs Phones staffed comparison</h4>
+      <p class="matched-note">This lists only live-break airings that have a strong comparable non-live airing. Only explicitly saved Phones-staffed placements are eligible controls. Web-only and legacy unclassified airings are excluded; candidates still must pass primary topic, daypart, weekday/weekend, start time, program length, season/year, and title/performer checks. Live airings with no good comparison are counted above but not listed as fake pairs.</p>
       <div class="matched-summary">
         <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
         <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
         <div class="stat"><div class="v">${formatMoney(summary.liveAvg)}</div><div>Live avg / airing</div></div>
-        <div class="stat"><div class="v">${formatMoney(summary.matchAvg)}</div><div>Non-live avg</div></div>
+        <div class="stat"><div class="v">${formatMoney(summary.matchAvg)}</div><div>Phones staffed avg</div></div>
         <div class="stat"><div class="v">${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</div><div>Avg difference</div></div>
       </div>
-      <table><thead><tr><th>Live break airing</th><th>Closest non-live airing</th><th class="money emphasis">Live $</th><th class="money">Non-live $</th><th class="money">Difference</th><th>Comparison basis</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Live break airing</th><th>Closest Phones-staffed airing</th><th class="money emphasis">Live $</th><th class="money">Phones staffed $</th><th class="money">Difference</th><th>Comparison basis</th></tr></thead><tbody>${rows}</tbody></table>
     </div>`);
     dom.table.querySelectorAll('[data-program-detail-id]').forEach((button) => {
       button.addEventListener('click', () => openProgramDetail(button.dataset.programDetailId || '', button.dataset.programDetailTitle || button.textContent || ''));
@@ -2282,7 +2264,7 @@ function outlierSummary(values = []) {
     const pairs = buildLiveMatchedPairs();
     const summary = liveMatchedSummary(pairs);
     const matchedText = summary.matchedCount
-      ? `<br><br>The 1:1 live vs non-live comparison pairs ${formatNumber(summary.matchedCount)} saved live-break airing(s) to comparable saved non-live scheduled airing(s). It excludes same-source/same-night records, import-only historical rows, and loose title-only pairings. Live average: <b>${formatMoney(summary.liveAvg)}</b>; non-live average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
+      ? `<br><br>The 1:1 Live vs Phones staffed comparison pairs ${formatNumber(summary.matchedCount)} saved live-break airing(s) to comparable saved non-live scheduled airing(s). It excludes same-source/same-night records, import-only historical rows, and loose title-only pairings. Live average: <b>${formatMoney(summary.liveAvg)}</b>; non-live average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
       : '<br><br>No 1:1 non-live comparison is available under the current filters.';
     return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>The raw aggregate is biased: live-break nights were chosen because they were expected to do well, while most historical non-live nights were not planned the same way. Raw live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Raw difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.${matchedText}`;
   }
