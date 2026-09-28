@@ -656,7 +656,7 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
   }
 
   const bestByStation = new Map();
-  for (const item of matched.sort((a, b) => b.relevance - a.relevance || b.strength - a.strength || Math.abs(b.signal) - Math.abs(a.signal))) {
+  for (const item of matched.sort((a, b) => b.relevance - a.relevance || b.strength - a.strength || Math.abs(b.signal) - Math.abs(a.signal) || a.signal - b.signal)) {
     if (!bestByStation.has(item.stationKey)) bestByStation.set(item.stationKey, item);
   }
   const independent = [...bestByStation.values()];
@@ -665,7 +665,7 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
   const neutral = independent.filter((item) => item.signal === 0);
 
   const topicStations = new Map();
-  for (const item of positive) {
+  for (const item of matched.filter((entry) => entry.signal > 0)) {
     const topic = text(item.topic);
     if (!topic) continue;
     if (!topicStations.has(topic)) topicStations.set(topic, new Set());
