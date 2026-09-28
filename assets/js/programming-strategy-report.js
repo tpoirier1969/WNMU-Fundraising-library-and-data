@@ -119,34 +119,31 @@ const selectedSchedule=()=>state.schedules.find(x=>String(x.id)===String(state.s
 
 function topicComparisonSection(strategy){
   const rows=strategy.topicComparison||[];
-  if(!rows.length)return'<section class="sheet-section"><h2>Topic performance in selected season</h2><p>No eligible topic data is available.</p></section>';
+  if(!rows.length)return '<section class="sheet-section strategy-topic-performance-section"><h2>Topic performance</h2><p>No topic data is available.</p></section>';
   const season=rows[0]?.season||seasonForDate(strategy.schedule?.startDate)||'selected';
-  const evidenceLine=(item)=>{
-    if(!item.fundraiserSamples)return'No rate-valid seasonal fundraiser sample yet';
-    const seasonalTitles=Number(item.testedTitleCount||0);
-    const seasonalFundraisers=Number(item.fundraiserSamples||0);
-    const confidenceTitles=Number(item.confidenceTitleCount||seasonalTitles);
-    const confidenceFundraisers=Number(item.confidenceFundraiserSamples||seasonalFundraisers);
-    const success=Number.isFinite(item.successRate)?Math.round(item.successRate*100):null;
-    return `Season: ${seasonalTitles} title${seasonalTitles===1?'':'s'} · ${seasonalFundraisers} fundraiser${seasonalFundraisers===1?'':'s'}${success!=null?` · ${success}% non-zero tests`:''} · All-season depth: ${confidenceTitles} title${confidenceTitles===1?'':'s'} / ${confidenceFundraisers} fundraiser${confidenceFundraisers===1?'':'s'}`;
+  const topicCard=(item)=>{
+    const numericRate=Number(item.averageRate);
+    const rate=Number.isFinite(numericRate)?'&#36;'+Math.round(numericRate)+'/hr':'No seasonal history';
+    const samples=Number(item.fundraiserSamples||0);
+    const tested=Number(item.testedTitleCount||0);
+    const eligible=Number(item.eligibleProgramCount||0);
+    const allTitles=Number(item.programCount||0);
+    const subtopics=Array.isArray(item.subtopicDetails)?item.subtopicDetails:[];
+    const subtopicHtml=subtopics.length
+      ? '<details class="strategy-topic-subtopics"><summary>Show subtopics ('+subtopics.length+')</summary><div>'+subtopics.map(sub=>{
+          const sr=Number(sub.averageRate);
+          const subRate=Number.isFinite(sr)?'&#36;'+Math.round(sr)+'/hr':'—';
+          const count=Number(sub.programCount||0);
+          const elig=Number(sub.eligibleProgramCount||0);
+          return '<span><b>'+esc(sub.label)+'</b><strong class="strategy-rate">'+subRate+'</strong><small>'+count+' title'+(count===1?'':'s')+' · '+elig+' eligible</small></span>';
+        }).join('')+'</div></details>'
+      : '';
+    const evidence=samples
+      ? samples+' fundraiser'+(samples===1?'':'s')+' · '+tested+' tested title'+(tested===1?'':'s')
+      : 'No rate-valid seasonal fundraiser sample';
+    return '<article class="strategy-topic-card"><header><strong>'+esc(item.topic)+'</strong><span class="strategy-rate">'+rate+'</span></header><p>'+allTitles+' Library title'+(allTitles===1?'':'s')+' · '+eligible+' eligible</p><small>'+evidence+'</small>'+subtopicHtml+'</article>';
   };
-  const subtopicBreakdown=(topic,items=[])=>{
-    if(!items.length)return'';
-    const rowHtml=items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg ${Math.round(item.averageRate)}/pledge hr`:'No seasonal performance history'}</span>${item.fundraiserSamples?` · ${esc(evidenceLine(item))}`:''}</span></div>`).join('');
-    if(items.length<=4){
-      return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${rowHtml}</div>`;
-    }
-
-    const measured=items.filter(item=>Number.isFinite(item.averageRate));
-    const best=[...measured].sort((a,b)=>b.averageRate-a.averageRate).slice(0,2);
-    const weakest=[...measured].sort((a,b)=>a.averageRate-b.averageRate).slice(0,2);
-    const compact=(list=[])=>list.length
-      ?list.map(item=>`${esc(item.label)} <span class="strategy-rate">$ ${Math.round(item.averageRate)}/hr</span>`).join(' · ')
-      :'Not enough measured history';
-
-    return`<details class="strategy-documentary-subtopics strategy-subtopics-collapsible"><summary><span class="strategy-documentary-subtopics-title">${esc(topic)} subtopics · ${items.length}</span><span class="strategy-subtopic-summary-line"><b>Top measured:</b> ${compact(best)}</span><span class="strategy-subtopic-summary-line"><b>Weakest measured:</b> ${compact(weakest)}</span><span class="strategy-subtopic-toggle-label"><span class="when-closed">Show all subtopics</span><span class="when-open">Hide subtopics</span></span></summary><div class="strategy-subtopic-expanded">${rowHtml}</div></details>`;
-  };
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Only topics with at least one title eligible for this fundraiser are shown. Ranking combines this season’s Avg $ / Pledge Hour, seasonal consistency and sample support, plus the topic’s full all-season WNMU testing depth.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${esc(evidenceLine(x))}</span></div>${subtopicBreakdown(x.topic,x.subtopicDetails||[])}</div>`).join('')}</div></section>`;
+  return '<section class="sheet-section strategy-topic-performance-section"><div class="strategy-section-head"><div><h2>Topic performance · '+esc(season)+' season</h2><p>All Program Library topics are shown. Current eligibility is listed separately from historical performance, and subtopics can be expanded when you want the extra detail.</p></div></div><div class="strategy-topic-card-grid">'+rows.map(topicCard).join('')+'</div></section>';
 }
 
 function dayTone(outlook=''){
