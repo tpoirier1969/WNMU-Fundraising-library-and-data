@@ -699,7 +699,7 @@ function programOpportunitiesSection(strategy={}){
     const badgeHtml=item.badges.map(badge=>'<span>'+esc(badge)+'</span>').join('');
     const note=esc(item.notes.slice(0,2).join(' · ')||'Worth considering in the current fundraiser mix.');
     const score=Number.isFinite(item.score)?'<small>Score '+Math.round(item.score)+'</small>':'';
-    return '<article><div class="strategy-opportunity-rank">'+(index+1)+'</div><div class="strategy-opportunity-title"><strong>'+esc(item.title)+'</strong><span>'+esc(item.topic)+'</span></div><div class="strategy-opportunity-badges">'+badgeHtml+'</div><p>'+note+'</p>'+score+'</article>';
+    return '<article><div class="strategy-opportunity-rank">'+(index+1)+'</div><div class="strategy-opportunity-body"><div class="strategy-opportunity-title"><strong>'+esc(item.title)+'</strong><span>'+esc(item.topic)+'</span></div><div class="strategy-opportunity-badges">'+badgeHtml+'</div><p>'+note+'</p>'+score+'</div></article>';
   }).join(''):'<p>No program opportunity currently clears the filters.</p>';
   return '<section class="sheet-section strategy-program-opportunities"><div class="strategy-section-head"><div><h2>Program opportunities</h2><p>Up to 20 current candidates, sorted by best-window score. Badges explain why a title is surfacing.</p></div></div><div class="strategy-program-opportunity-list">'+html+'</div></section>';
 }
