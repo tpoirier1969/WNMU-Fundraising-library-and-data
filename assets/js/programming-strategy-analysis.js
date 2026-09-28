@@ -9,6 +9,7 @@
   const NEW_YEAR_PATTERN = /\bnew year(?:'s|s)?\b/i;
   const LOCAL_WORD_PATTERN = /\b(?:michigan|upper peninsula|yooper|marquette|negaunee|ishpeming|keweenaw|mackinac|lake superior|great lakes|pelkie)\b/i;
   const LOCAL_UP_PATTERN = /(?:^|\W)(?:UP|U\.P\.?)(?=\W|$)/;
+  const FIXED_SCHEDULE_TITLE_PATTERN = /\b(?:pbs\s*newshour(?:\s+weekend)?|michigan\s+out\s+of\s+doors|high\s+school\s+bowl)\b/i;
   const PROGRAMMER_WEIGHTS = Object.freeze({
     dont_air: -30,
     low_confidence: -14,
@@ -189,6 +190,22 @@
   function isLocal(program = {}) {
     const value = programText(program);
     return LOCAL_WORD_PATTERN.test(value) || LOCAL_UP_PATTERN.test(value);
+  }
+
+  function excludedFromAvoidList(program = {}, history = {}, drama = {}, baselineRate = null, rating = '') {
+    // Explicit editorial cautions remain visible even when performance is healthy.
+    if (rating === 'dont_air' || rating === 'low_confidence') return false;
+
+    const title = programTitle(program);
+    if (FIXED_SCHEDULE_TITLE_PATTERN.test(title)) return true;
+    if (drama?.isDramaDoc) return true;
+
+    const averageRate = Number(history?.averageRate);
+    if (Number.isFinite(averageRate) && Number.isFinite(Number(baselineRate)) && Number(baselineRate) > 0 && averageRate >= Number(baselineRate)) {
+      return true;
+    }
+
+    return false;
   }
 
   function holidayCategory(program = {}) {
@@ -1505,6 +1522,9 @@ return result;}
       const rating = normalizeRating(overrideByProgramId.get(programId(program))?.rating);
       const drama = cached.drama;
       const season = cached.season;
+
+      if (excludedFromAvoidList(program, history, drama, baselineRate, rating)) return null;
+
       const rest = history.latest ? daysBetween(history.latest, scheduleStart(schedule)) : null;
       const reasons = [];
       if (rating === 'dont_air') reasons.push("Programmer rating: Don't air");
@@ -1512,9 +1532,19 @@ return result;}
       if (history.rows >= 8) reasons.push(`Heavy lifetime exposure (${history.rows} airings)`);
       if (rest != null && rest < 90) reasons.push(`Very quick return (${rest} days)`);
       else if (rest != null && rest < 180) reasons.push(`Short rest (${rest} days)`);
-      if (drama.olderCycle) reasons.push('Older Drama Doc cycle');
       if (season.holidayOutOfSeason) reasons.push(`${season.holidayCategory || 'Holiday'} title out of seasonal window`);
-      return reasons.length ? { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), reasons, history, rating, drama, season } : null;
+      return reasons.length ? {
+        program,
+        title: programTitle(program),
+        programId: programId(program),
+        topic: programTopic(program),
+        reasons,
+        history,
+        rating,
+        drama,
+        season,
+        baselineRate
+      } : null;
     }).filter(Boolean).sort((a, b) => b.reasons.length - a.reasons.length || b.history.rows - a.history.rows || a.title.localeCompare(b.title)).slice(0, 20);
     return {
       schedule,
@@ -1543,6 +1573,7 @@ return result;}
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
+        'The avoid/rest list is limited to discretionary pledge titles: fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
         'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
         'Islamic-calendar holiday windows are planning approximations and may differ by local moon sighting.',
         'Friday 8–9 PM is protected regular programming and excluded from pledge recommendations.'
