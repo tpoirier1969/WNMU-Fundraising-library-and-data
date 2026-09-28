@@ -1355,3 +1355,295 @@
   .strategy-window-time-row small{font-size:5.2pt}
   .strategy-window-time-empty{font-size:5.9pt}
 }
+
+
+/* v0.22.224 concise three-section strategy report */
+.strategy-brief-section,
+.strategy-fundraiser-plan,
+.strategy-program-opportunities{display:grid;gap:12px}
+
+.strategy-brief-block{display:grid;gap:6px}
+.strategy-brief-block>h3,
+.strategy-topic-snapshot>h3{
+  margin:0;
+  color:#31586e;
+  font-size:.82rem;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.strategy-brief-ideas{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+}
+.strategy-brief-ideas>article{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:2px 7px;
+  align-items:start;
+  padding:8px 9px;
+  border:1px solid #dbe5e9;
+  border-radius:7px;
+  background:#fbfcfd;
+}
+.strategy-source-tag{
+  grid-row:1 / span 2;
+  align-self:start;
+  padding:2px 5px;
+  border-radius:999px;
+  background:#e7f0f4;
+  color:#31586e;
+  font-size:.62rem;
+  font-weight:850;
+  text-transform:uppercase;
+}
+.strategy-brief-ideas strong{color:#17384a}
+.strategy-brief-ideas p{
+  grid-column:2;
+  margin:0;
+  color:#4f6874;
+  font-size:.77rem;
+  line-height:1.35;
+}
+.strategy-brief-ideas small{
+  grid-column:2;
+  color:#71838b;
+  font-size:.68rem;
+}
+.strategy-promotion-compact{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:5px 12px;
+}
+.strategy-promotion-compact>div{
+  display:grid;
+  grid-template-columns:120px 1fr;
+  gap:7px;
+  padding:4px 0;
+  border-bottom:1px solid #edf1f3;
+  font-size:.76rem;
+}
+.strategy-promotion-compact strong{color:#31586e}
+.strategy-promotion-compact span{color:#526d79}
+
+.strategy-calendar-watch{display:grid;gap:5px}
+.strategy-calendar-watch>article{
+  display:grid;
+  grid-template-columns:minmax(170px,.8fr) minmax(0,2fr) auto;
+  gap:9px;
+  align-items:center;
+  padding:6px 8px;
+  border:1px solid #dce5e9;
+  border-left:4px solid #9cafb8;
+  border-radius:6px;
+  background:#fff;
+}
+.strategy-calendar-watch>article.impact-high{border-left-color:#a85246;background:#fff6f4}
+.strategy-calendar-watch>article.impact-medium{border-left-color:#c08a2e;background:#fffaf0}
+.strategy-calendar-watch>article.impact-context{border-left-color:#6f8fa0;background:#f6fafc}
+.strategy-calendar-watch>article>div{display:grid;gap:1px}
+.strategy-calendar-watch strong{color:#17384a}
+.strategy-calendar-watch span,
+.strategy-calendar-watch p{
+  margin:0;
+  color:#536c77;
+  font-size:.72rem;
+  line-height:1.3;
+}
+.strategy-calendar-watch a{font-size:.68rem;white-space:nowrap}
+
+.strategy-topic-snapshot{
+  display:grid;
+  gap:5px;
+  padding:7px 9px;
+  border:1px solid #dbe5e9;
+  border-radius:7px;
+  background:#fafcfd;
+}
+.strategy-topic-snapshot>div{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:5px;
+}
+.strategy-topic-snapshot>div>span{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:1px 6px;
+  padding:5px 6px;
+  border:1px solid #e5ecef;
+  border-radius:5px;
+  background:#fff;
+}
+.strategy-topic-snapshot b{color:#17384a;font-size:.76rem}
+.strategy-topic-snapshot strong{font-size:.75rem}
+.strategy-topic-snapshot small{
+  grid-column:1/-1;
+  color:#70828a;
+  font-size:.63rem;
+}
+.strategy-plan-days{display:grid;gap:7px}
+.strategy-plan-day{
+  border:1px solid #d9e3e7;
+  border-left:5px solid #a8bac3;
+  border-radius:7px;
+  overflow:hidden;
+  background:#fff;
+}
+.strategy-plan-day.tone-good{border-left-color:#679b70}
+.strategy-plan-day.tone-fair{border-left-color:#c19b47}
+.strategy-plan-day.tone-weak{border-left-color:#b96558}
+.strategy-plan-day>header{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:6px 8px;
+  background:#f5f8fa;
+}
+.strategy-plan-day>header>div{display:flex;gap:7px;align-items:baseline}
+.strategy-plan-day>header strong{color:#17384a}
+.strategy-plan-day>header span,
+.strategy-plan-day>header b{font-size:.72rem}
+.strategy-day-calendar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+  padding:4px 8px;
+  border-top:1px solid #e7edef;
+  background:#fffdf7;
+}
+.strategy-day-calendar>span{
+  padding:2px 5px;
+  border-radius:999px;
+  background:#edf3f6;
+  color:#526d79;
+  font-size:.64rem;
+}
+.strategy-day-calendar>span.impact-high{background:#f8dfdb;color:#8a443b}
+.strategy-day-calendar>span.impact-medium{background:#f8ecd2;color:#7e6127}
+.strategy-plan-day-body{
+  display:grid;
+  grid-template-columns:minmax(210px,.9fr) minmax(170px,.7fr) minmax(280px,1.2fr);
+  gap:10px;
+  padding:7px 8px;
+  align-items:start;
+}
+.strategy-plan-action{
+  margin:0;
+  color:#435f6c;
+  font-size:.74rem;
+  line-height:1.35;
+}
+.strategy-plan-signals,
+.strategy-plan-programs{display:grid;gap:3px}
+.strategy-plan-signals>span{
+  display:flex;
+  justify-content:space-between;
+  gap:6px;
+  font-size:.7rem;
+}
+.strategy-plan-signals b{color:#31586e}
+.strategy-plan-programs>div{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:1px 7px;
+  padding-bottom:3px;
+  border-bottom:1px solid #edf1f3;
+  font-size:.7rem;
+}
+.strategy-plan-programs strong{color:#17384a}
+.strategy-plan-programs span{color:#536c77}
+.strategy-plan-programs small{
+  grid-column:1/-1;
+  color:#75868d;
+  font-size:.61rem;
+}
+
+.strategy-program-opportunity-list{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+}
+.strategy-program-opportunity-list>article{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:3px 8px;
+  padding:7px 8px;
+  border:1px solid #dbe4e8;
+  border-radius:6px;
+  background:#fbfcfd;
+}
+.strategy-program-opportunity-list>article>div:first-child{display:grid;gap:1px}
+.strategy-program-opportunity-list strong{color:#17384a}
+.strategy-program-opportunity-list span,
+.strategy-program-opportunity-list p,
+.strategy-program-opportunity-list small{font-size:.7rem}
+.strategy-program-opportunity-list p{
+  grid-column:1/-1;
+  margin:0;
+  color:#526d79;
+  line-height:1.3;
+}
+.strategy-program-opportunity-list small{
+  grid-column:1/-1;
+  color:#74858c;
+}
+.strategy-opportunity-badges{
+  display:flex;
+  gap:3px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+.strategy-opportunity-badges span{
+  padding:2px 5px;
+  border-radius:999px;
+  background:#e7f0f4;
+  color:#31586e;
+  font-size:.61rem;
+  font-weight:800;
+}
+
+@media(max-width:900px){
+  .strategy-brief-ideas,
+  .strategy-promotion-compact,
+  .strategy-program-opportunity-list{grid-template-columns:1fr}
+  .strategy-topic-snapshot>div{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .strategy-plan-day-body{grid-template-columns:1fr}
+  .strategy-calendar-watch>article{grid-template-columns:1fr}
+}
+@media print{
+  .strategy-brief-section,
+  .strategy-fundraiser-plan,
+  .strategy-program-opportunities{gap:6px}
+  .strategy-brief-block{gap:3px}
+  .strategy-brief-ideas{gap:4px}
+  .strategy-brief-ideas>article,
+  .strategy-calendar-watch>article,
+  .strategy-plan-day,
+  .strategy-program-opportunity-list>article{
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-brief-ideas>article{padding:4px 5px}
+  .strategy-brief-ideas p,
+  .strategy-promotion-compact>div,
+  .strategy-calendar-watch span,
+  .strategy-calendar-watch p,
+  .strategy-plan-action,
+  .strategy-plan-signals>span,
+  .strategy-plan-programs>div,
+  .strategy-program-opportunity-list span,
+  .strategy-program-opportunity-list p,
+  .strategy-program-opportunity-list small{font-size:6pt}
+  .strategy-brief-ideas small,
+  .strategy-plan-programs small,
+  .strategy-topic-snapshot small{font-size:5.4pt}
+  .strategy-calendar-watch>article{padding:3px 5px}
+  .strategy-topic-snapshot{padding:4px 5px}
+  .strategy-topic-snapshot>div{grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+  .strategy-topic-snapshot>div>span{padding:3px 4px}
+  .strategy-plan-day>header{padding:3px 5px}
+  .strategy-day-calendar{padding:2px 5px}
+  .strategy-plan-day-body{grid-template-columns:1fr .72fr 1.15fr;gap:5px;padding:4px 5px}
+  .strategy-program-opportunity-list{gap:4px}
+  .strategy-program-opportunity-list>article{padding:4px 5px}
+}
