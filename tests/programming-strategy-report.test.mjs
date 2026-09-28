@@ -1156,7 +1156,9 @@ test('strategy report renders an explained meeting brief and simplified topic-ti
   assert.match(reportUi, /not “the top four slots”/);
   assert.match(reportUi, /ordered by dollars per pledge hour/);
   assert.match(reportUi, /Strongest multi-title WNMU topic\/time signals/);
-  assert.match(reportUi, /Interpretation guardrails/);\n  assert.match(reportUi, /at least two different titles/);\n  assert.match(reportUi, /How to read this:/);
+  assert.match(reportUi, /Interpretation guardrails/);
+  assert.match(reportUi, /at least two different titles/);
+  assert.match(reportUi, /How to read this:/);
   assert.match(reportUi, /Topic × time takeaways/);
   assert.match(reportUi, /WNMU topic\/time signals/);
   assert.match(reportUi, /Same weekday, different fundraiser position/);
