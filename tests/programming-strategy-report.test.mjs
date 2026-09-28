@@ -567,7 +567,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.212'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.213'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -575,7 +575,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.212', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.213', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -666,7 +666,9 @@ test('strategy worker returns a complete result without blocking report code pat
   assert.ok(Array.isArray(result.dayOutlook.rows));
   assert.ok(Array.isArray(result.hourlyPatterns.rows));
   assert.ok(Array.isArray(result.opportunities.rows));
+  assert.ok(Array.isArray(result.topicTimeMatrix.rows));
   assert.ok(result.hourlyPatterns.rows.some((item) => item.weekday === 'Saturday' && item.startMinutes === 19 * 60));
+  assert.ok(result.hourlyPatterns.rows.some((item) => item.weekday === 'Saturday' && item.startMinutes === 6 * 60), 'all-day timing analysis should begin at 6 AM');
   assert.equal(result.diagnostics.rawAirings, 1);
   assert.equal(result.diagnostics.evidenceRows, 1);
   assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'score'));
@@ -1083,7 +1085,67 @@ test('worker surfaces positive peer fundraising practices separately from title 
   assert.ok(labels.has('Ticket-linked fundraising'));
   assert.ok(labels.has('Sunday-morning pledge'));
   const sunday = result.peerPractices.find((item) => item.label === 'Sunday-morning pledge');
-  assert.match(sunday.wnmuStatus, /do not include Sunday morning/i);
+  assert.match(sunday.wnmuStatus, /peer-led test/i);
+});
+
+
+test('peer daypart evidence surfaces Sunday morning as an explicit WNMU test gap', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  workerContext.onmessage({
+    data: {
+      requestId: 197,
+      schedule,
+      library: [baseProgram({ id: 1, title: 'How-To Test', topic_primary: 'How-to', nola_code: 'HOWT' })],
+      airings: [],
+      scheduleRows: [],
+      overrides: [],
+      peerObservations: [
+        {
+          station_code: 'SOPT', station_name: 'Southern Oregon Public Television',
+          day_of_week: 'Sunday', daypart: 'Morning', start_time_minutes: null,
+          topic_primary: 'How-to', assessment_signal: 2, evidence_strength: 4,
+          summary: 'Long-running Sunday-morning pledge reaches a different audience.'
+        },
+        {
+          station_code: 'KIXE', station_name: 'KIXE Redding',
+          day_of_week: 'Sunday', daypart: 'Morning', start_time_minutes: null,
+          topic_primary: 'How-to', assessment_signal: 2, evidence_strength: 3,
+          summary: 'Another station reports a long-running Sunday-morning pledge practice.'
+        }
+      ],
+      now: '2026-09-28T12:00:00Z'
+    }
+  });
+
+  const result = workerMessages.find((message) => message.type === 'result');
+  assert.ok(result);
+  const sundayMorning = result.opportunities.rows.find((item) =>
+    item.weekday === 'Sunday' && item.startMinutes === 6 * 60 && item.endMinutes === 12 * 60
+  );
+  assert.ok(sundayMorning, JSON.stringify(result.opportunities.rows));
+  assert.equal(sundayMorning.kind, 'peer-gap');
+  assert.equal(sundayMorning.positivePeerStations, 2);
+  assert.match(sundayMorning.rationale, /no rate-valid pledge-program history/i);
+  assert.match(sundayMorning.rationale, /reason to test, not a WNMU performance claim/i);
+
+  const matrix = result.topicTimeMatrix.rows.find((item) =>
+    item.weekday === 'Sunday' && item.daypart === 'Morning'
+  );
+  assert.ok(matrix);
+  assert.equal(matrix.evidenceState, 'Peer-led test');
+  assert.equal(matrix.peer.positiveStations, 2);
+  assert.ok(matrix.peer.topTopics.some((item) => item.topic === 'How-to'));
+});
+
+test('strategy report renders the meeting brief and topic-time map', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+  assert.match(reportUi, /Meeting brief/);
+  assert.match(reportUi, /Topic × time map/);
+  assert.match(reportUi, /Peer-led gaps to consider/);
+  assert.match(styles, /\.strategy-meeting-grid/);
+  assert.match(styles, /\.strategy-topic-time-row/);
+  assert.match(styles, /\.opportunity-peer-gap/);
 });
 
 test('strategy enhancement layer makes top-level and compound sections collapsible and labels times as planning windows', () => {
