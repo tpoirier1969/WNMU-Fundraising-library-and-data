@@ -508,7 +508,7 @@ function briefSection(result={},opportunities={},schedule={}){
       source:'WNMU',
       title:`${item.weekday} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}`,
       text:item.rationale||item.label||'Worth testing.',
-      meta:Number.isFinite(item.averageRate)?`Avg &#36;${Math.round(item.averageRate)}/pledge hr`:(item.label||'')
+      meta:Number.isFinite(item.averageRate)?`Avg ${Math.round(item.averageRate)}/pledge hr`:(item.label||'')
     })),
     ...peer.map(item=>({
       source:'Peer',
@@ -526,9 +526,9 @@ function briefSection(result={},opportunities={},schedule={}){
   ];
 
   return`<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built.</p></div></div>
-    <div class="strategy-brief-block"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">${ideaCards.length?ideaCards.map(item=>`<article><span class="strategy-source-tag">${esc(item.source)}</span><strong>${esc(item.title)}</strong><p>${esc(item.text)}</p>${item.meta?`<small>${item.meta}</small>`:''}</article>`).join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>'}</div></div>
+    <div class="strategy-brief-block"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">${ideaCards.length?ideaCards.map(item=>`<article><span class="strategy-source-tag">${esc(item.source)}</span><strong>${esc(item.title)}</strong><p>${esc(item.text)}</p>${item.meta?`<small>${esc(item.meta)}</small>`:''}</article>`).join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>'}</div></div>
     <div class="strategy-brief-block"><h3>Promotion</h3><div class="strategy-promotion-compact">${promotion.map(([station,text])=>`<div><strong>${esc(station)}</strong><span>${esc(text)}</span></div>`).join('')}</div></div>
-    <div class="strategy-brief-block"><h3>Calendar watch</h3><div class="strategy-calendar-watch">${calendar.length?calendar.map(item=>`<article class="impact-${esc(item.impact||'context')}"><div><strong>${esc(item.title)}</strong><span>${esc(item.scope||'')}</span></div><p>${esc(item.date)}${item.time?` · ${esc(item.time)}`:''} · ${esc(item.detail||'')}</p>${item.sourceUrl?`<a href="${esc(item.sourceUrl)}" target="_blank" rel="noopener">${esc(item.sourceLabel||'Source')}</a>`:''}</article>`).join(''):'<p>No major calendar conflict is currently loaded for these fundraiser dates.</p>'}</div></div>
+    <div class="strategy-brief-block"><h3>Calendar watch</h3><div class="strategy-calendar-watch">${calendar.length?calendar.map(item=>`<article class="impact-${esc(item.impact||'context')}"><div><strong>${esc(item.title)}</strong><span>${esc(item.scope||'')}</span></div><p>${esc(fmt(item.date,false))}${item.endDate&&item.endDate!==item.date?`–${esc(fmt(item.endDate,false))}`:''}${item.time?` · ${esc(item.time)}`:''} · ${esc(item.detail||'')}</p>${item.sourceUrl?`<a href="${esc(item.sourceUrl)}" target="_blank" rel="noopener">${esc(item.sourceLabel||'Source')}</a>`:''}</article>`).join(''):'<p>No major calendar conflict is currently loaded for these fundraiser dates.</p>'}</div></div>
   </section>`;
 }
 
