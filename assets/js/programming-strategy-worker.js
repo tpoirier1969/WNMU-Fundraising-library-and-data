@@ -567,10 +567,12 @@ function buildHalfHourRows(poolRows = [], dayMatcher = () => true) {
         && start >= slot
         && start < slot + 30;
     });
+    const topicSummary = summarizeTopicRows(matched);
     rows.push({
       startMinutes: slot,
       endMinutes: slot + 30,
-      ...summarizeTimeslotRows(matched)
+      ...topicSummary.local,
+      topTopics: topicSummary.localTopics.slice(0, 3)
     });
   }
   return rows;
@@ -1198,6 +1200,17 @@ function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = 
       }
     }
 
+    const topicCounts = new Map();
+    matches.forEach((item) => {
+      const topic = text(item.topic_primary || item.topic || '');
+      if (!topic) return;
+      topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+    });
+    const topTopics = [...topicCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 4)
+      .map(([topic, count]) => ({ topic, count }));
+
     const examples = [...bestByStation.values()].slice(0, 4);
     rows.push({
       id: definition.id,
@@ -1207,6 +1220,7 @@ function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = 
       averageStrength: matches.reduce((sum, item) => sum + Number(item.evidence_strength || 0), 0) / matches.length,
       wnmuStatus: definition.wnmuStatus,
       testIdea: definition.testIdea,
+      topTopics,
       wnmuEvidence: definition.id === 'local-programming' ? localSnapshot : null,
       examples
     });
