@@ -166,6 +166,57 @@
     return false;
   }
 
+  const BREAK_MODES = Object.freeze({
+    PHONES_STAFFED: 'phones_staffed',
+    WEB_ONLY: 'web_only',
+    LIVE: 'live'
+  });
+
+  function normalizeBreakMode(value = '') {
+    const raw = utils.normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_');
+    if (['phones_staffed', 'phones', 'phone', 'staffed', 'phone_staffed'].includes(raw)) return BREAK_MODES.PHONES_STAFFED;
+    if (['web_only', 'web', 'online_only', 'webonly'].includes(raw)) return BREAK_MODES.WEB_ONLY;
+    if (['live', 'live_break', 'live_breaks'].includes(raw)) return BREAK_MODES.LIVE;
+    return '';
+  }
+
+  function breakModeLabel(value = '') {
+    const mode = normalizeBreakMode(value);
+    if (mode === BREAK_MODES.LIVE) return 'Live';
+    if (mode === BREAK_MODES.WEB_ONLY) return 'Web-only';
+    if (mode === BREAK_MODES.PHONES_STAFFED) return 'Phones staffed';
+    return '';
+  }
+
+  function defaultBreakModeForMinutes(startMinutes = 0) {
+    const minutes = ((Number(startMinutes || 0) % 1440) + 1440) % 1440;
+    return minutes >= (17 * 60) && minutes < (19 * 60)
+      ? BREAK_MODES.WEB_ONLY
+      : BREAK_MODES.PHONES_STAFFED;
+  }
+
+  function canonicalScheduleBreakMode(placement = {}) {
+    const sources = liveBreakSourceObjects(placement);
+    const modeKeys = [
+      'breakMode', 'break_mode', 'pledgeBreakMode', 'pledge_break_mode',
+      'fundraisingMode', 'fundraising_mode', 'responseMode', 'response_mode'
+    ];
+    for (const source of sources) {
+      for (const key of modeKeys) {
+        const mode = normalizeBreakMode(source?.[key]);
+        if (mode) return mode;
+      }
+    }
+    if (canonicalScheduleLiveBreakFlag(placement)) return BREAK_MODES.LIVE;
+    return '';
+  }
+
+  function breakModeSourceValue(placement = {}) {
+    const raw = utils.normalizeText(placement?.breakModeSource || placement?.break_mode_source || '');
+    if (raw) return raw;
+    return canonicalScheduleBreakMode(placement) ? 'legacy' : '';
+  }
+
   function placementLooksNonSpecific(placement = {}) {
     return utils.isNonSpecificRow({
       isNonSpecific: placement?.isNonSpecific,
@@ -192,8 +243,12 @@
     next.dayEndHour = Math.floor(next.dayEndMinutes / 60);
     next.placements = (Array.isArray(next.placements) ? next.placements : []).map((placement) => ({
       ...placement,
-      liveBreakFlag: canonicalScheduleLiveBreakFlag(placement),
-      liveBreakNotes: utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || ''),
+      breakMode: canonicalScheduleBreakMode(placement),
+      breakModeSource: breakModeSourceValue(placement),
+      liveBreakFlag: canonicalScheduleBreakMode(placement) === BREAK_MODES.LIVE,
+      liveBreakNotes: canonicalScheduleBreakMode(placement) === BREAK_MODES.LIVE
+        ? utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '')
+        : '',
       isNonPledge: normalizePlacementBoolean(placement?.isNonPledge, Boolean(placement?.isNonPledge)),
       importedFromReport: normalizePlacementBoolean(placement?.importedFromReport, Boolean(placement?.importedFromReport)),
       manualResultRecorded: normalizePlacementBoolean(placement?.manualResultRecorded, Boolean(placement?.manualResultRecorded)),
