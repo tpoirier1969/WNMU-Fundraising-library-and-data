@@ -611,6 +611,45 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
   </section>`;
 }
 
+function timeOfDayComparisonSection(hourly={}){
+  const data=hourly||{rows:[]};
+  const order=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const groups=new Map(order.map(day=>[day,[]]));
+  (data.rows||[]).forEach(row=>{
+    const season=row.targetSeason||{};
+    const all=row.allHistory||{};
+    const useSeason=Number(season.fundraiserSamples||0)>0&&Number.isFinite(Number(season.averageRate));
+    const metric=useSeason?season:all;
+    if(!Number(metric.fundraiserSamples||0)||!Number.isFinite(Number(metric.averageRate)))return;
+    const topics=(metric.topTopics||[]).slice(0,2).map(item=>item.topic).filter(Boolean);
+    if(!groups.has(row.weekday))groups.set(row.weekday,[]);
+    groups.get(row.weekday).push({
+      startMinutes:row.startMinutes,
+      rate:Number(metric.averageRate),
+      fundraisers:Number(metric.fundraiserSamples||0),
+      topics,
+      source:useSeason?(data.season||'Season'):'All history'
+    });
+  });
+  const dayCards=order.map(day=>{
+    const rows=groups.get(day)||[];
+    if(!rows.length)return '';
+    const body=rows.map(row=>'<div class="strategy-half-hour-row"><b>'+clock(row.startMinutes)+'</b><strong class="strategy-rate">&#36;'+Math.round(row.rate)+'/hr</strong><span>'+esc(row.topics.length?row.topics.join(' · '):'Mixed / no repeat topic')+'</span><small>'+row.fundraisers+' drive'+(row.fundraisers===1?'':'s')+' · '+esc(row.source)+'</small></div>').join('');
+    return '<article class="strategy-time-day-card"><h3>'+esc(day)+'</h3>'+body+'</article>';
+  }).join('');
+  return '<section class="sheet-section strategy-time-of-day-section"><div class="strategy-section-head"><div><h2>Time-of-day comparisons</h2><p>Half-hour program-start buckets. Each row shows the fundraiser-balanced average and the strongest topics in that exact bucket. The selected pledge season is used when available; otherwise the row is clearly marked as all-history context.</p></div></div><div class="strategy-time-day-grid">'+(dayCards||'<p>No rate-valid half-hour history is available.</p>')+'</div></section>';
+}
+
+function peerPracticesCompactSection(rows=[]){
+  if(!Array.isArray(rows)||!rows.length)return '<section class="sheet-section strategy-peer-practices-compact"><div class="strategy-section-head"><div><h2>Peer practices</h2><p>No strong positive peer-practice evidence is loaded yet.</p></div></div></section>';
+  const html=rows.map(item=>{
+    const topics=(item.topTopics||[]).map(x=>x.topic).filter(Boolean);
+    const topicLine=topics.length?'<p><b>Observed peer topics:</b> '+esc(topics.join(', '))+'</p>':'';
+    const examples=(item.examples||[]).slice(0,2).map(example=>'<small><b>'+esc(example.station||'Other station')+'</b>'+ (example.programTitle?' · '+esc(example.programTitle):'') +(example.summary?' · '+esc(example.summary):'')+'</small>').join('');
+    return '<article><header><strong>'+esc(item.label||'Peer practice')+'</strong><span>'+Number(item.stationCount||0)+' station'+(Number(item.stationCount||0)===1?'':'s')+'</span></header>'+topicLine+'<p>'+esc(item.testIdea||item.wnmuStatus||'Worth a bounded WNMU test.')+'</p>'+examples+'</article>';
+  }).join('');
+  return '<section class="sheet-section strategy-peer-practices-compact"><div class="strategy-section-head"><div><h2>Peer practices worth testing</h2><p>Positive practices reported by other public-TV stations. Topic labels are retained so a signal such as Sunday-morning Drama does not disappear into a generic daypart label.</p></div></div><div class="strategy-peer-compact-grid">'+html+'</div></section>';
+}
 function programOpportunitiesSection(strategy={}){
   const byKey=new Map();
   const keyFor=(item)=>String(item?.programId||item?.title||'').trim().toLowerCase();
