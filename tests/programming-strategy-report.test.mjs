@@ -136,13 +136,25 @@ test('rights exclude a title from a slot where it cannot legally air', () => {
   assert.equal(S.titleEligibleForDate(future, laterSlot.date), true);
 });
 
-test('normal pledge windows are present and experimental opportunities are visibly distinct', () => {
+test('December 2026 5–7 PM is web-only experimental while staffed prime windows stay normal', () => {
   const windows = S.planningWindows(schedule);
-  assert.ok(windows.some((entry) => entry.confidenceClass === 'normal' && entry.label === 'Early evening'));
+  const early = windows.filter((entry) => entry.startMinutes === 17 * 60 && entry.endMinutes === 19 * 60);
+  assert.ok(early.length > 0);
+  assert.ok(early.every((entry) => entry.label === 'Early evening'));
+  assert.ok(early.every((entry) => entry.webOnlyExperimental === true));
+  assert.ok(early.every((entry) => entry.fundraisingMode === 'web-only'));
+  assert.ok(early.every((entry) => entry.experimental === true && entry.confidenceClass === 'experimental'));
   assert.ok(windows.some((entry) => entry.confidenceClass === 'normal' && entry.label === 'Prime'));
-  const experimental = windows.filter((entry) => entry.experimental);
-  assert.ok(experimental.length >= 1);
-  assert.ok(experimental.every((entry) => entry.weekday === 'Saturday' && entry.label === 'Late afternoon' && entry.confidenceClass === 'experimental'));
+
+  const saturdayLate = windows.filter((entry) => entry.weekday === 'Saturday' && entry.label === 'Late afternoon');
+  assert.ok(saturdayLate.length >= 1);
+  assert.ok(saturdayLate.every((entry) => entry.experimental && entry.confidenceClass === 'experimental'));
+
+  const june = S.planningWindows({ startDate:'2027-06-05', endDate:'2027-06-13' });
+  const juneEarly = june.filter((entry) => entry.startMinutes === 17 * 60 && entry.endMinutes === 19 * 60);
+  assert.ok(juneEarly.length > 0);
+  assert.ok(juneEarly.every((entry) => !entry.webOnlyExperimental && entry.fundraisingMode === 'staffed'));
+  assert.ok(juneEarly.every((entry) => !entry.experimental && entry.confidenceClass === 'normal'));
 });
 
 test('Friday 8–9 PM is protected regular programming, not pledge inventory', () => {
@@ -336,6 +348,37 @@ test('day-map selector favors new titles and keeps previously aired anchors at o
   assert.equal(selected.filter((item) => !item.newTitle).length, 1);
   assert.equal(selected[0].programId, 'new-promising');
   assert.ok(selected.some((item) => item.programId === 'old-anchor'));
+});
+
+test('web-only selector favors rested repeats and protects stronger staffed-slot opportunities', () => {
+  const make = (id, score, newTitle, latest = null) => ({
+    programId:id,
+    title:id,
+    topic:'Music',
+    score,
+    newTitle,
+    reviewedNew:false,
+    programmer:{rating:''},
+    season:{holidayOutOfSeason:false},
+    titleHistory:{rows:newTitle?0:3, latest}
+  });
+  const ranked = [
+    make('protected-prime',82,false,'2025-01-01'),
+    make('rested-repeat',66,false,'2025-02-01'),
+    make('recent-repeat',63,false,'2026-10-01'),
+    make('exploratory-new',58,true,null)
+  ];
+  const staffedBest = new Map([
+    ['protected-prime',{score:86}],
+    ['rested-repeat',{score:58}],
+    ['recent-repeat',{score:55}],
+    ['exploratory-new',{score:52}]
+  ]);
+  const selected = S.selectWebOnlyRecommendationsForSlot(ranked, staffedBest, {date:'2026-12-05'}, 4);
+  assert.equal(selected[0].programId,'rested-repeat');
+  assert.match(selected[0].webOnlyReason,/Rested repeat/i);
+  assert.ok(selected.findIndex((item)=>item.programId==='protected-prime') > selected.findIndex((item)=>item.programId==='exploratory-new'));
+  assert.equal(selected.find((item)=>item.programId==='protected-prime').webOnlyReason,'Also has a stronger staffed-slot opportunity');
 });
 
 test('unrated new-title score clusters are labeled as equivalent until programmer review', () => {
@@ -1216,6 +1259,9 @@ test('strategy report renders one brief, one fundraiser plan, and one combined p
   assert.match(reportUi,/score>currentScore/);
   assert.match(reportUi,/assignedBySlot\.get\(slot\.id\)\.push\(rec\)/);
   assert.match(reportUi,/strategy-plan-window/);
+  assert.match(reportUi,/WEB-ONLY EXPERIMENT/);
+  assert.match(reportUi,/Track these results separately from staffed pledge windows/);
+  assert.match(reportUi,/rec\.webOnlyReason/);
   assert.match(reportUi,/options\.map\(rec=>/);
   assert.match(reportUi,/compactTimingForSlot/);
   assert.match(reportUi,/calendarRowsForDate/);
