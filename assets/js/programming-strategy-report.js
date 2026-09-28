@@ -595,7 +595,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
       .filter(item=>item.options.length)
       .slice(0,3);
 
-    return{...day,topicSignals:topicSignals.slice(0,2),programs,calendar:calendarRowsForDate(calendar,day.date)};
+    return{...day,topicSignals:topicSignals.slice(0,5),programs,calendar:calendarRowsForDate(calendar,day.date)};
   });
 
   return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>Day, topic, timing and program direction in one compact planning view.</p></div></div>
