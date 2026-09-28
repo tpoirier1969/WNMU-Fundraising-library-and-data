@@ -1701,3 +1701,34 @@
   .strategy-plan-window li{font-size:5.7pt}
   .strategy-plan-window li span{font-size:5.1pt}
 }
+
+
+/* v0.22.226 December 5–7 PM web-only experiment */
+.strategy-web-only-window{
+  padding:6px 7px!important;
+  border:1px solid #d9e4e9!important;
+  border-left:4px solid #8a9da7!important;
+  border-radius:6px;
+  background:#f8fafb;
+}
+.strategy-web-only-note{
+  margin:2px 0 5px;
+  color:#526d79;
+  font-size:.64rem;
+  line-height:1.3;
+}
+.strategy-web-only-window li small{
+  display:block;
+  margin-top:1px;
+  color:#7a898f;
+  font-size:.56rem;
+}
+@media print{
+  .strategy-web-only-window{
+    padding:4px 5px!important;
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-web-only-note{font-size:5.2pt;margin:1px 0 3px}
+  .strategy-web-only-window li small{font-size:4.8pt}
+}
