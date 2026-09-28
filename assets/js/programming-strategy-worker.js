@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.218', 'programming-strategy-backtest.js?v=0.22.211');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.220', 'programming-strategy-backtest.js?v=0.22.211');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -90,6 +90,37 @@ function prepareStrategySchedules(scheduleRows = [], canonicalAirings = []) {
   });
 
   return { schedules, excludedBoundaryBreaks, excludedExamples };
+}
+
+function selectedFixedSchedulePrograms(scheduleRows = [], canonicalAirings = [], targetSchedule = {}) {
+  const prepared = prepareStrategySchedules(scheduleRows, canonicalAirings);
+  const schedules = A.prepareSchedules(prepared.schedules);
+  const targetId = text(targetSchedule.id || '');
+  const targetStart = text(targetSchedule.startDate || targetSchedule.start_date || '').slice(0, 10);
+  const targetEnd = text(targetSchedule.endDate || targetSchedule.end_date || '').slice(0, 10);
+
+  const target = schedules.find((item) => targetId && text(item.id || '') === targetId)
+    || schedules.find((item) =>
+      targetStart
+      && targetEnd
+      && text(item.startDate || '').slice(0, 10) === targetStart
+      && text(item.endDate || '').slice(0, 10) === targetEnd
+    );
+
+  if (!target) return { programIds: [], titles: [], placements: 0 };
+
+  const programIds = new Set();
+  const titles = new Set();
+  let placements = 0;
+  for (const placement of target.placements || []) {
+    if (!placement?.isNonPledge) continue;
+    placements += 1;
+    const id = text(placement.programId || placement.program_id || '');
+    const title = text(placement.programTitle || placement.program_title || placement.title || '');
+    if (id) programIds.add(id);
+    if (title) titles.add(title);
+  }
+  return { programIds: [...programIds], titles: [...titles], placements };
 }
 function completedHistoricalAnalyses(scheduleRows = [], canonicalAirings = [], library = [], cutoff = '') {
   const indexes = A.buildLibraryIndexes(library);
@@ -1475,6 +1506,7 @@ self.onmessage = (event) => {
     const analyses = historical.analyses;
     const rows = strategyEvidenceRowsFromAnalyses(analyses);
     const performanceStats = buildHistoricalPerformanceStats(schedule, analyses);
+    const fixedSchedule = selectedFixedSchedulePrograms(scheduleRows, canonical, schedule);
 
     diagnostics.prepareMs = Math.round(nowMs() - phase);
     diagnostics.rawAirings = rawAirings.length;
@@ -1484,6 +1516,8 @@ self.onmessage = (event) => {
     diagnostics.evidenceRows = rows.length;
     diagnostics.excludedBoundaryBreakRows = Number(historical.excludedBoundaryBreaks || 0);
     diagnostics.excludedBoundaryBreakExamples = historical.excludedBoundaryBreakExamples || [];
+    diagnostics.fixedSchedulePlacements = Number(fixedSchedule.placements || 0);
+    diagnostics.fixedSchedulePrograms = Math.max(fixedSchedule.programIds.length, fixedSchedule.titles.length);
 
     progress(requestId, 'score', 'Scoring eligible titles against reconciled WNMU history…');
     phase = nowMs();
@@ -1493,6 +1527,8 @@ self.onmessage = (event) => {
       evidenceRows: rows,
       overrides: effectiveOverrides,
       performanceStats,
+      fixedScheduleProgramIds: fixedSchedule.programIds,
+      fixedScheduleTitles: fixedSchedule.titles,
       now
     });
     diagnostics.strategyMs = Math.round(nowMs() - phase);
