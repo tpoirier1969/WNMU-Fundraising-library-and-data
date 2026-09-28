@@ -472,7 +472,20 @@
         windows.push({ ...base, id: `${base.date}-1500`, label: 'Late afternoon', startMinutes: 15 * 60, endMinutes: 17 * 60, confidenceClass: 'experimental', experimental: true });
         experimentalDates.add(base.date);
       }
-      windows.push({ ...base, id: `${base.date}-1700`, label: 'Early evening', startMinutes: 17 * 60, endMinutes: 19 * 60, confidenceClass: 'normal', experimental: false, blocked: false });
+      const targetStart = parseDate(scheduleStart(schedule));
+      const webOnlyEarlyEvening = seasonForDate(scheduleStart(schedule)) === 'December' && targetStart?.getFullYear() === 2026;
+      windows.push({
+        ...base,
+        id: `${base.date}-1700`,
+        label: webOnlyEarlyEvening ? 'Early evening · web-only' : 'Early evening',
+        startMinutes: 17 * 60,
+        endMinutes: 19 * 60,
+        confidenceClass: webOnlyEarlyEvening ? 'experimental' : 'normal',
+        experimental: webOnlyEarlyEvening,
+        webOnlyExperimental: webOnlyEarlyEvening,
+        fundraisingMode: webOnlyEarlyEvening ? 'web-only' : 'staffed',
+        blocked: false
+      });
       if (day === 5) {
         windows.push({ ...base, id: `${base.date}-1900`, label: 'Prime', startMinutes: 19 * 60, endMinutes: 20 * 60, confidenceClass: 'normal', experimental: false, blocked: false });
         windows.push({ ...base, id: `${base.date}-2000-protected`, label: 'Protected regular programming', startMinutes: 20 * 60, endMinutes: 21 * 60, confidenceClass: 'blocked', experimental: false, blocked: true });
@@ -1076,6 +1089,62 @@ return result;}
     });
   }
 
+  function selectWebOnlyRecommendationsForSlot(ranked = [], staffedBestByProgram = new Map(), slot = {}, limit = 8) {
+    const keyFor = (item) => text(item?.programId || lookupKey(item?.title || ''));
+    const acceptable = (ranked || []).filter((item) =>
+      !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
+      !item.season?.holidayOutOfSeason &&
+      item.score >= 40
+    );
+
+    const prepared = acceptable.map((item) => {
+      const key = keyFor(item);
+      const staffedBest = staffedBestByProgram.get(key);
+      const staffedScore = Number(staffedBest?.score);
+      const restDays = item.titleHistory?.latest ? daysBetween(item.titleHistory.latest, slot.date) : null;
+      const protectedForStaffed = Number.isFinite(staffedScore) && staffedScore >= 65 && staffedScore >= Number(item.score || 0) - 5;
+      let webOnlyPriority = 4;
+      let webOnlyReason = 'Lower-opportunity-cost test';
+
+      if (!item.newTitle && Number.isFinite(restDays) && restDays >= 180 && !protectedForStaffed) {
+        webOnlyPriority = 0;
+        webOnlyReason = `Rested repeat · ${restDays} days since last airing`;
+      } else if (!item.newTitle && !protectedForStaffed) {
+        webOnlyPriority = 1;
+        webOnlyReason = 'Repeat / lower-opportunity-cost inventory';
+      } else if (item.newTitle && item.score < 65 && !protectedForStaffed) {
+        webOnlyPriority = 2;
+        webOnlyReason = 'Exploratory title better suited to a low-risk test';
+      } else if (!protectedForStaffed) {
+        webOnlyPriority = 3;
+        webOnlyReason = 'Supported option without a stronger staffed-slot claim';
+      } else {
+        webOnlyPriority = 5;
+        webOnlyReason = 'Also has a stronger staffed-slot opportunity';
+      }
+
+      return { ...item, webOnlyPriority, webOnlyReason, staffedBestScore: Number.isFinite(staffedScore) ? staffedScore : null };
+    });
+
+    const lowCost = prepared
+      .filter((item) => item.webOnlyPriority < 5)
+      .sort((a, b) =>
+        a.webOnlyPriority - b.webOnlyPriority ||
+        Number(b.score || 0) - Number(a.score || 0) ||
+        Number(b.titleHistory?.rows || 0) - Number(a.titleHistory?.rows || 0) ||
+        a.title.localeCompare(b.title)
+      );
+
+    // Protected titles are fallbacks only. They remain available if the web-only
+    // window otherwise has too few reasonable choices, but are deliberately pushed
+    // behind repeats and lower-opportunity-cost tests.
+    const protectedFallback = prepared
+      .filter((item) => item.webOnlyPriority === 5)
+      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0) || a.title.localeCompare(b.title));
+
+    return [...lowCost, ...protectedFallback].slice(0, limit);
+  }
+
   function selectRecommendationsForSlot(ranked = [], limit = 4) {
     const acceptableNew = ranked.filter((item) =>
       item.newTitle &&
@@ -1489,18 +1558,37 @@ return result;}
       evidenceFundraiserCount: fundraiserCount(historicalRows)
     };
     context.seasonSlotEvidenceIndex = buildSlotEvidenceIndex(context.seasonRows);
-    const windows = planningWindows(schedule).map((slot) => {
+    const plannedWindows = planningWindows(schedule);
+    const rankedWindows = plannedWindows.map((slot) => ({
+      slot,
+      ranked: slot.blocked ? [] : rankProgramsForSlot(viable, slot, context)
+    }));
+
+    const staffedBestByProgram = new Map();
+    rankedWindows.forEach(({ slot, ranked }) => {
+      if (slot.blocked || slot.webOnlyExperimental) return;
+      ranked.forEach((item) => {
+        const key = text(item?.programId || lookupKey(item?.title || ''));
+        if (!key) return;
+        const current = staffedBestByProgram.get(key);
+        if (!current || Number(item.score || 0) > Number(current.score || 0)) staffedBestByProgram.set(key, item);
+      });
+    });
+
+    const windows = rankedWindows.map(({ slot, ranked }) => {
       if (slot.blocked) return { ...slot, recommendations: [], strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
-      const ranked = rankProgramsForSlot(viable, slot, context);
       const topics = topicChoicesForSlot(ranked);
       const slotEvidence = seasonFundraiserCount >= 2
         ? cachedSeasonSlotEvidence(slot, context)
         : cachedSlotEvidence(slot, context);
       const exactRows = slotEvidence.exactRows;
       const experimentalRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
+      const recommendations = slot.webOnlyExperimental
+        ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 8)
+        : selectRecommendationsForSlot(ranked, 4);
       return {
         ...slot,
-        recommendations: selectRecommendationsForSlot(ranked, 4),
+        recommendations,
         windowHistory: slotEvidence.exactSummary,
         strongestTopics: topics.slice(0, 3),
         alternativeTopics: topics.slice(3, 6),
@@ -1631,6 +1719,7 @@ return result;}
     scoreProgramForSlot,
     rankProgramsForSlot,
     selectRecommendationsForSlot,
+    selectWebOnlyRecommendationsForSlot,
     mixFromSlots,
     topicComparison,
     experimentalEvidence,
