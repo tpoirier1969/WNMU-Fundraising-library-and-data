@@ -587,6 +587,18 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
 
+test('long subtopic groups collapse with strongest and weakest measured summaries', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+  assert.match(reportUi, /items\.length<=4/);
+  assert.match(reportUi, /strategy-subtopics-collapsible/);
+  assert.match(reportUi, /Top measured:/);
+  assert.match(reportUi, /Weakest measured:/);
+  assert.match(reportUi, /Show all subtopics/);
+  assert.match(styles, /\.strategy-subtopics-collapsible/);
+  assert.match(styles, /\.strategy-subtopic-summary-line/);
+});
+
 test('Report 5 presentation removes visible median language and evidence-through card', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   assert.doesNotMatch(reportUi, /median about|median Broadcast|Established/);
@@ -1137,7 +1149,7 @@ test('peer daypart evidence surfaces Sunday morning as an explicit WNMU test gap
   assert.ok(matrix.peer.topTopics.some((item) => item.topic === 'How-to'));
 });
 
-test('strategy report renders an explained meeting brief and fundraiser-position topic map', () => {
+test('strategy report renders an explained meeting brief and simplified topic-time takeaways', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
   assert.match(reportUi, /Meeting brief/);
@@ -1145,12 +1157,17 @@ test('strategy report renders an explained meeting brief and fundraiser-position
   assert.match(reportUi, /ordered by dollars per pledge hour/);
   assert.match(reportUi, /WNMU evidence worth discussing/);
   assert.match(reportUi, /Interpretation guardrails/);
-  assert.match(reportUi, /Fundraiser-position split/);
-  assert.match(reportUi, /First vs\. second occurrences/);
+  assert.match(reportUi, /Topic × time takeaways/);
+  assert.match(reportUi, /WNMU topic\/time signals/);
+  assert.match(reportUi, /Same weekday, different fundraiser position/);
+  assert.match(reportUi, /Peer-supported gaps/);
+  assert.match(reportUi, /Not promoted as topic signals/);
+  assert.match(reportUi, /Show full weekday\/daypart evidence/);
   assert.match(reportUi, /item\.rationale/);
   assert.match(styles, /\.strategy-meeting-grid/);
-  assert.match(styles, /\.strategy-topic-time-row/);
-  assert.match(styles, /\.strategy-topic-time-positions/);
+  assert.match(styles, /\.strategy-time-takeaway-grid/);
+  assert.match(styles, /\.strategy-time-takeaway-row/);
+  assert.match(styles, /\.strategy-topic-time-detail/);
   assert.match(styles, /\.opportunity-peer-gap/);
 });
 

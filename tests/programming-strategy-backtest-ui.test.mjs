@@ -13,9 +13,9 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.214/);
   assert.match(page, /Fundraiser Strategy Backtest/);
   assert.match(strategyPage, /href="programming-strategy-backtest\.html">Historical backtest/);
-  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.214/);
+  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.215/);
   assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.214/);
   assert.match(ui, /mode:'backtest'/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.214');
+  assert.equal(version.appVersion, '0.22.215');
 });

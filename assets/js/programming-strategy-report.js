@@ -132,7 +132,19 @@ function topicComparisonSection(strategy){
   };
   const subtopicBreakdown=(topic,items=[])=>{
     if(!items.length)return'';
-    return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg $${Math.round(item.averageRate)}/pledge hr`:'No seasonal performance history'}</span>${item.fundraiserSamples?` · ${esc(evidenceLine(item))}`:''}</span></div>`).join('')}</div>`;
+    const rowHtml=items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg ${Math.round(item.averageRate)}/pledge hr`:'No seasonal performance history'}</span>${item.fundraiserSamples?` · ${esc(evidenceLine(item))}`:''}</span></div>`).join('');
+    if(items.length<=4){
+      return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${rowHtml}</div>`;
+    }
+
+    const measured=items.filter(item=>Number.isFinite(item.averageRate));
+    const best=[...measured].sort((a,b)=>b.averageRate-a.averageRate).slice(0,2);
+    const weakest=[...measured].sort((a,b)=>a.averageRate-b.averageRate).slice(0,2);
+    const compact=(list=[])=>list.length
+      ?list.map(item=>`${esc(item.label)} <span class="strategy-rate">$ ${Math.round(item.averageRate)}/hr</span>`).join(' · ')
+      :'Not enough measured history';
+
+    return`<details class="strategy-documentary-subtopics strategy-subtopics-collapsible"><summary><span class="strategy-documentary-subtopics-title">${esc(topic)} subtopics · ${items.length}</span><span class="strategy-subtopic-summary-line"><b>Top measured:</b> ${compact(best)}</span><span class="strategy-subtopic-summary-line"><b>Weakest measured:</b> ${compact(weakest)}</span><span class="strategy-subtopic-toggle-label"><span class="when-closed">Show all subtopics</span><span class="when-open">Hide subtopics</span></span></summary><div class="strategy-subtopic-expanded">${rowHtml}</div></details>`;
   };
   return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Only topics with at least one title eligible for this fundraiser are shown. Ranking combines this season’s Avg $ / Pledge Hour, seasonal consistency and sample support, plus the topic’s full all-season WNMU testing depth.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${esc(evidenceLine(x))}</span></div>${subtopicBreakdown(x.topic,x.subtopicDetails||[])}</div>`).join('')}</div></section>`;
 }
@@ -179,7 +191,7 @@ function hourlyPatternsSection(hourly){
 function topicTimeMatrixSection(matrix){
   const data=matrix||{rows:[]};
   const rows=Array.isArray(data.rows)?data.rows:[];
-  if(!rows.length)return'<section class="sheet-section"><h2>Topic × time map</h2><p>No WNMU or structured peer timing evidence is available for the analyzed dayparts.</p></section>';
+  if(!rows.length)return'<section class="sheet-section"><h2>Topic × time takeaways</h2><p>No WNMU or structured peer timing evidence is available for the analyzed dayparts.</p></section>';
 
   const topicText=(items=[],limit=3)=>{
     if(!items.length)return'<span class="strategy-no-history">No rate-valid WNMU topic result</span>';
@@ -197,11 +209,84 @@ function topicTimeMatrixSection(matrix){
     return `<div class="strategy-topic-time-positions"><strong>Fundraiser-position split</strong>${positions.map(pos=>`<div><span><b>${esc(pos.label)}</b>${Number.isFinite(Number(pos.local?.averageRate))?` · Avg &#36;${Math.round(Number(pos.local.averageRate))}/pledge hr`:''} · ${Number(pos.local?.fundraiserSamples||0)} fundraiser${Number(pos.local?.fundraiserSamples||0)===1?'':'s'}</span><span>${topicText(pos.localTopics||[],2)}</span></div>`).join('')}</div>`;
   };
 
+  const localCandidates=[];
+  const singleTitleCandidates=[];
+  rows.forEach(row=>{
+    const positions=Array.isArray(row.positionBreakdown)&&row.positionBreakdown.length
+      ?row.positionBreakdown
+      :[{label:row.weekday,local:row.local||{},localTopics:row.localTopics||[]}];
+    positions.forEach(pos=>{
+      (pos.localTopics||[]).forEach(topic=>{
+        const samples=Number(topic.fundraiserSamples||0);
+        const titles=Number(topic.titleCount||0);
+        const rate=Number(topic.averageRate);
+        if(samples<2||!Number.isFinite(rate))return;
+        const item={
+          weekday:row.weekday,
+          daypart:row.daypart,
+          positionLabel:pos.label||row.weekday,
+          topic:topic.topic,
+          rate,
+          samples,
+          titles
+        };
+        if(titles>=2)localCandidates.push(item);
+        else singleTitleCandidates.push(item);
+      });
+    });
+  });
+  localCandidates.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
+  singleTitleCandidates.sort((a,b)=>b.rate-a.rate||b.samples-a.samples);
+
+  const splitTakeaways=[];
+  rows.forEach(row=>{
+    const positions=(row.positionBreakdown||[]).filter(pos=>Number.isFinite(Number(pos.local?.averageRate))&&Number(pos.local?.fundraiserSamples||0)>0);
+    if(positions.length<2)return;
+    const sorted=[...positions].sort((a,b)=>Number(b.local.averageRate)-Number(a.local.averageRate));
+    const high=sorted[0],low=sorted[sorted.length-1];
+    const highRate=Number(high.local.averageRate),lowRate=Number(low.local.averageRate);
+    const spread=highRate>0?Math.abs(highRate-lowRate)/highRate:0;
+    if(spread<0.20)return;
+    splitTakeaways.push({
+      weekday:row.weekday,
+      daypart:row.daypart,
+      high,
+      low,
+      spread,
+      weight:Number(high.local.fundraiserSamples||0)+Number(low.local.fundraiserSamples||0)
+    });
+  });
+  splitTakeaways.sort((a,b)=>b.spread-a.spread||b.weight-a.weight);
+
+  const peerGaps=rows
+    .filter(row=>row.evidenceState==='Peer-led test'||(Number(row.peer?.positiveStations||0)>=2&&Number(row.local?.fundraiserSamples||0)<2))
+    .sort((a,b)=>Number(b.peer?.positiveStations||0)-Number(a.peer?.positiveStations||0)
+      || Number(a.local?.fundraiserSamples||0)-Number(b.local?.fundraiserSamples||0));
+
+  const localHtml=localCandidates.length
+    ?localCandidates.slice(0,6).map(item=>`<div class="strategy-time-takeaway-row"><strong>${esc(item.positionLabel)} · ${esc(item.daypart)}</strong><span><b>${esc(item.topic)}</b> · <span class="strategy-rate">Avg &#36;${Math.round(item.rate)}/pledge hr</span></span><small>${item.samples} fundraisers · ${item.titles} titles</small></div>`).join('')
+    :'<p>No topic/time pattern has repeat evidence from at least two different titles yet.</p>';
+
+  const splitHtml=splitTakeaways.length
+    ?splitTakeaways.slice(0,5).map(item=>{
+      const highTop=item.high.localTopics?.[0]?.topic||'mixed topics';
+      const lowTop=item.low.localTopics?.[0]?.topic||'mixed topics';
+      return`<div class="strategy-time-takeaway-row"><strong>${esc(item.weekday)} · ${esc(item.daypart)}</strong><span>${esc(item.high.label)}: <span class="strategy-rate">&#36;${Math.round(Number(item.high.local.averageRate))}/hr</span> (${esc(highTop)})</span><span>${esc(item.low.label)}: <span class="strategy-rate">&#36;${Math.round(Number(item.low.local.averageRate))}/hr</span> (${esc(lowTop)})</span><small>${Math.round(item.spread*100)}% spread between fundraiser positions. Treat those occurrences separately.</small></div>`;
+    }).join('')
+    :'<p>No first-vs-later weekday difference is large enough to call out separately.</p>';
+
+  const peerHtml=peerGaps.length
+    ?peerGaps.slice(0,5).map(row=>`<div class="strategy-time-takeaway-row"><strong>${esc(row.weekday)} · ${esc(row.daypart)}</strong><span>${Number(row.peer?.positiveStations||0)} positive independent peer station${Number(row.peer?.positiveStations||0)===1?'':'s'}${(row.peer?.topTopics||[]).length?` · ${esc(row.peer.topTopics.map(x=>x.topic).join(', '))}`:''}</span><small>${Number(row.local?.fundraiserSamples||0)?`Only ${Number(row.local.fundraiserSamples)} WNMU fundraiser sample${Number(row.local.fundraiserSamples)===1?'':'s'} here.`:'No rate-valid WNMU pledge history here.'} Peer evidence supports testing, not a revenue forecast.</small></div>`).join('')
+    :'<p>No peer-supported timing gap currently clears the threshold.</p>';
+
+  const singleTitleNote=singleTitleCandidates.length
+    ?`<p class="strategy-time-watchout"><strong>Not promoted as topic signals:</strong> ${singleTitleCandidates.slice(0,3).map(item=>`${esc(item.topic)} at ${esc(item.positionLabel)} ${esc(item.daypart)}`).join('; ')}. Each is currently driven by only one title, so the report treats it as title evidence rather than proof that the whole topic works there.</p>`
+    :'';
+
   const order=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const groups=new Map(order.map(day=>[day,[]]));
   rows.forEach(row=>{if(!groups.has(row.weekday))groups.set(row.weekday,[]);groups.get(row.weekday).push(row);});
-
-  return`<section class="sheet-section strategy-topic-time-section"><div class="strategy-section-head"><div><h2>Topic × time map</h2><p>Shows measured WNMU performance by weekday and daypart, with peer context alongside it. <strong>The weekday row is the broad aggregate.</strong> When a drive contains more than one occurrence of that weekday, the report now splits first vs. second occurrence underneath so, for example, two Saturdays are not treated as interchangeable.</p></div></div><div class="strategy-topic-time-groups">${order.map(day=>{
+  const detailed=`<div class="strategy-topic-time-groups">${order.map(day=>{
     const dayRows=groups.get(day)||[];
     if(!dayRows.length)return'';
     return`<section class="strategy-topic-time-day"><h3>${esc(day)}</h3><div class="strategy-topic-time-head"><span>Daypart</span><span>WNMU use</span><span>WNMU topic signals</span><span>Peer context</span></div>${dayRows.map(row=>{
@@ -211,7 +296,9 @@ function topicTimeMatrixSection(matrix){
         :'<span class="strategy-no-history">No rate-valid WNMU history</span>';
       return`<div class="strategy-topic-time-row evidence-${esc(String(row.evidenceState||'').toLowerCase().replace(/[^a-z0-9]+/g,'-'))}"><span class="strategy-topic-time-window"><b>${clock(row.startMinutes)}–${clock(row.endMinutes)}</b><small>${esc(row.daypart)} · ${esc(row.evidenceState||'')}</small></span><span class="strategy-topic-time-use">${localUse}</span><span class="strategy-topic-time-topics">${topicText(row.localTopics||[])}</span><span class="strategy-topic-time-peer">${peerText(peer)}</span>${positionText(row)}</div>`;
     }).join('')}</section>`;
-  }).join('')}</div></section>`;
+  }).join('')}</div>`;
+
+  return`<section class="sheet-section strategy-topic-time-section"><div class="strategy-section-head"><div><h2>Topic × time takeaways</h2><p>A short interpretation of the timing evidence. The default view only calls out patterns that could change a programming decision. Single-title results are not promoted as broad topic conclusions, and repeated weekdays inside a fundraiser are separated when their results materially differ.</p></div></div><div class="strategy-time-takeaway-grid"><article><h3>WNMU topic/time signals</h3>${localHtml}</article><article><h3>Same weekday, different fundraiser position</h3>${splitHtml}</article><article><h3>Peer-supported gaps</h3>${peerHtml}</article></div>${singleTitleNote}<details class="strategy-topic-time-detail"><summary>Show full weekday/daypart evidence</summary>${detailed}</details></section>`;
 }
 
 function meetingBriefSection(result){
