@@ -1039,7 +1039,8 @@
     diagnostics.duplicatePlacementsSuppressed += placementSet.suppressed;
     placementSet.placements.forEach((placement) => {
       diagnostics.schedulePlacements += 1;
-      const liveFlag = placementLive(placement);
+      const breakMode = placementBreakMode(placement);
+      const liveFlag = breakMode === 'live';
       if (liveFlag) diagnostics.livePlacements += 1;
       const scheduledDateKey = text(placement.dateKey || placement.date_key || '');
       const scheduledDate = parseLocalDate(scheduledDateKey);
@@ -1187,9 +1188,10 @@
         dollars,
         pledges,
         resultSource,
+        breakMode,
         live: liveFlag,
-        liveState: liveFlag ? 'live' : 'nonlive',
-        liveSource: 'schedule-placement',
+        liveState: liveFlag ? 'live' : (breakMode ? 'nonlive' : 'unknown'),
+        liveSource: breakMode ? 'schedule-placement' : 'none',
         scheduleMatched: true,
         scheduleTitle: schedule.title || ''
       });
