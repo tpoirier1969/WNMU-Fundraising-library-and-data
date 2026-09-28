@@ -1780,7 +1780,7 @@ function outlierSummary(values = []) {
     }).join('');
     dom.table.insertAdjacentHTML('beforeend', `<div class="matched-section">
       <h4>1:1 Live vs Phones staffed comparison</h4>
-      <p class="matched-note">This lists only live-break airings that have a strong comparable non-live airing. Only explicitly saved Phones-staffed placements are eligible controls. Web-only and legacy unclassified airings are excluded; candidates still must pass primary topic, daypart, weekday/weekend, start time, program length, season/year, and title/performer checks. Live airings with no good comparison are counted above but not listed as fake pairs.</p>
+      <p class="matched-note">This lists only Live airings that have a strong comparable Phones-staffed airing. Only explicitly saved Phones-staffed placements are eligible controls. Web-only and legacy unclassified airings are excluded; candidates still must pass primary topic, daypart, weekday/weekend, start time, program length, season/year, and title/performer checks. Live airings with no good comparison are counted above but not listed as fake pairs.</p>
       <div class="matched-summary">
         <div class="stat"><div class="v">${formatNumber(summary.matchedCount)}</div><div>Comparable pairs</div></div>
         <div class="stat"><div class="v">${formatNumber(summary.unmatchedCount)}</div><div>Unmatched live airings</div></div>
@@ -2256,17 +2256,20 @@ function outlierSummary(values = []) {
   }
 
   function liveRead(rows) {
-    const live = rows.find((row) => row.title === 'Live break');
-    const nonlive = rows.find((row) => row.title === 'No live break');
-    if (!live || !nonlive) return 'No saved-schedule live-break comparison is available for this filter. This view intentionally ignores imported live-break guesses and uses saved Scheduling flags only.';
-    const diff = live.avg - nonlive.avg;
-    const diffText = `${diff >= 0 ? '+' : ''}${formatMoney(diff).replace('$-', '-$')}`;
+    if (!rows.length) {
+      return 'No explicitly saved break-mode observations match the current filters. Legacy placements without a recorded mode are excluded rather than guessed.';
+    }
+    const modeLines = rows.map((row) =>
+      `<b>${escapeHtml(row.title)}</b>: ${formatMoney(row.avg)} average per airing · ${formatNumber(row.broadcasts)} broadcast(s) · ${formatMoney(row.dollars)} total · season mix ${escapeHtml(row.mix)}`
+    ).join('<br>');
+
     const pairs = buildLiveMatchedPairs();
     const summary = liveMatchedSummary(pairs);
     const matchedText = summary.matchedCount
-      ? `<br><br>The 1:1 Live vs Phones staffed comparison pairs ${formatNumber(summary.matchedCount)} saved live-break airing(s) to comparable saved non-live scheduled airing(s). It excludes same-source/same-night records, import-only historical rows, and loose title-only pairings. Live average: <b>${formatMoney(summary.liveAvg)}</b>; non-live average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>.`
-      : '<br><br>No 1:1 non-live comparison is available under the current filters.';
-    return `This view uses <b>saved Scheduling placements only</b>. The live-break filter is ignored here on purpose, because filtering to “No live-break flag” would remove the live rows and recreate the old false $0 answer.<br><br>The raw aggregate is biased: live-break nights were chosen because they were expected to do well, while most historical non-live nights were not planned the same way. Raw live-break airings average <b>${formatMoney(live.avg)}</b>; non-live scheduled airings average <b>${formatMoney(nonlive.avg)}</b>. Raw difference: <b>${diffText}</b> per airing. Live season mix: <b>${escapeHtml(live.mix)}</b>. Non-live season mix: <b>${escapeHtml(nonlive.mix)}</b>.${matchedText}`;
+      ? `<br><br><b>Live vs Phones staffed matched check:</b> ${formatNumber(summary.matchedCount)} comparable pair(s). Live average: <b>${formatMoney(summary.liveAvg)}</b>; Phones staffed average: <b>${formatMoney(summary.matchAvg)}</b>; difference: <b>${formatMoney(summary.diff)}${Number.isFinite(summary.pct) ? ` · ${formatPercent(summary.pct)}` : ''}</b>. Web-only is not folded into this control group.`
+      : '<br><br>No strong 1:1 Live vs Phones staffed comparison is available under the current filters. Web-only remains a separate mode rather than being used as a generic non-Live control.';
+
+    return `This view uses <b>explicit break modes saved on individual Scheduling placements</b>: Live, Phones staffed, and Web-only. Older placements with no recorded mode remain unclassified and are excluded. These are observational results, so differences may also reflect program choice, time of day, season, and other scheduling decisions.<br><br>${modeLines}${matchedText}`;
   }
 
   function trendId(row) {
