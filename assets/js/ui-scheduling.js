@@ -959,8 +959,15 @@
     return false;
   }
 
+  function calendarPlacementBreakMode(schedule = {}, placement = {}) {
+    const direct = canonicalScheduleBreakMode(placement);
+    if (direct) return direct;
+    if (scheduleLevelLiveBreakFlag(schedule, placement)) return BREAK_MODES.LIVE;
+    return '';
+  }
+
   function calendarPlacementIsLive(schedule = {}, placement = {}) {
-    return hasLiveBreakFlag(placement) || scheduleLevelLiveBreakFlag(schedule, placement);
+    return calendarPlacementBreakMode(schedule, placement) === BREAK_MODES.LIVE;
   }
 
   async function ensureScheduleBroadcastTotal(schedule) {
@@ -2492,7 +2499,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
   function hasLiveBreakFlag(placement = {}) {
-    return canonicalScheduleLiveBreakFlag(placement);
+    return canonicalScheduleBreakMode(placement) === BREAK_MODES.LIVE || canonicalScheduleLiveBreakFlag(placement);
   }
 
   function liveBreakFlagLabel(placement = {}) {
