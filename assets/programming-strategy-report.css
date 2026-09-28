@@ -939,3 +939,84 @@
     page-break-inside:avoid;
   }
 }
+
+
+/* v0.22.214 collapsible long subtopic groups */
+.strategy-subtopics-collapsible{
+  padding-top:0;
+}
+.strategy-subtopics-collapsible>summary{
+  cursor:pointer;
+  list-style:none;
+  display:grid;
+  grid-template-columns:minmax(180px,.8fr) minmax(220px,1fr) minmax(220px,1fr) auto;
+  gap:8px 14px;
+  align-items:center;
+  padding:8px 6px 8px 2px;
+  border-radius:6px;
+}
+.strategy-subtopics-collapsible>summary::-webkit-details-marker{display:none}
+.strategy-subtopics-collapsible>summary:hover{background:#f3f7f9}
+.strategy-subtopics-collapsible>summary::before{
+  content:'▸';
+  grid-column:1;
+  grid-row:1;
+  width:14px;
+  color:#315a6e;
+  font-weight:900;
+  transform:translateX(-1px);
+}
+.strategy-subtopics-collapsible[open]>summary::before{content:'▾'}
+.strategy-subtopics-collapsible>summary .strategy-documentary-subtopics-title{
+  grid-column:1;
+  grid-row:1;
+  padding-left:17px;
+  margin:0;
+}
+.strategy-subtopic-summary-line{
+  color:#526d79;
+  font-size:.76rem;
+  line-height:1.35;
+}
+.strategy-subtopic-summary-line b{color:#31586e}
+.strategy-subtopic-toggle-label{
+  color:#315a6e;
+  font-size:.72rem;
+  font-weight:850;
+  white-space:nowrap;
+  justify-self:end;
+}
+.strategy-subtopic-toggle-label .when-open{display:none}
+.strategy-subtopics-collapsible[open] .strategy-subtopic-toggle-label .when-closed{display:none}
+.strategy-subtopics-collapsible[open] .strategy-subtopic-toggle-label .when-open{display:inline}
+.strategy-subtopic-expanded{
+  display:grid;
+  gap:4px;
+  padding-top:4px;
+}
+@media(max-width:900px){
+  .strategy-subtopics-collapsible>summary{
+    grid-template-columns:1fr;
+    gap:4px;
+  }
+  .strategy-subtopics-collapsible>summary::before,
+  .strategy-subtopics-collapsible>summary .strategy-documentary-subtopics-title{
+    grid-column:1;
+    grid-row:auto;
+  }
+  .strategy-subtopics-collapsible>summary::before{
+    position:absolute;
+  }
+  .strategy-subtopic-toggle-label{justify-self:start;padding-left:17px}
+  .strategy-subtopic-summary-line{padding-left:17px}
+}
+@media print{
+  .strategy-subtopics-collapsible>summary{
+    display:block;
+    padding:4px 0;
+  }
+  .strategy-subtopics-collapsible>summary::before,
+  .strategy-subtopic-toggle-label{display:none!important}
+  .strategy-subtopic-expanded{display:grid!important}
+  .strategy-subtopics-collapsible:not([open])>.strategy-subtopic-expanded{display:grid!important}
+}
