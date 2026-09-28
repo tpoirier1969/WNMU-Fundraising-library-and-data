@@ -763,6 +763,9 @@ test('strategy worker returns a complete result without blocking report code pat
   assert.ok(Array.isArray(result.opportunities.rows));
   assert.ok(Array.isArray(result.topicTimeMatrix.rows));
   assert.ok(result.hourlyPatterns.rows.some((item) => item.weekday === 'Saturday' && item.startMinutes === 19 * 60));
+  const saturdaySeven = result.hourlyPatterns.rows.find((item) => item.weekday === 'Saturday' && item.startMinutes === 19 * 60);
+  assert.ok(Array.isArray(saturdaySeven.targetSeason.topTopics));
+  assert.equal(saturdaySeven.targetSeason.topTopics[0].topic, 'Music');
   assert.ok(result.hourlyPatterns.rows.some((item) => item.weekday === 'Saturday' && item.startMinutes === 6 * 60), 'all-day timing analysis should begin at 6 AM');
   assert.equal(result.diagnostics.rawAirings, 1);
   assert.equal(result.diagnostics.evidenceRows, 1);
@@ -1165,8 +1168,9 @@ test('worker surfaces positive peer fundraising practices separately from title 
         {
           station_code: 'MORNING', station_name: 'Morning PBS', season: 'December',
           evidence_scope: 'timeslot', assessment_signal: 2, evidence_strength: 4,
-          day_of_week: 'Sunday', daypart: 'Morning',
-          summary: 'Sunday-morning pledge reaches a different audience and produces regular revenue.'
+          day_of_week: 'Sunday', daypart: 'Morning', topic_primary: 'Drama',
+          program_title_raw: 'Sunday Drama',
+          summary: 'Sunday-morning Drama reaches a different audience and produces regular revenue.'
         }
       ],
       now: '2026-09-24T12:00:00Z'
@@ -1181,6 +1185,8 @@ test('worker surfaces positive peer fundraising practices separately from title 
   assert.ok(labels.has('Sunday-morning pledge'));
   const sunday = result.peerPractices.find((item) => item.label === 'Sunday-morning pledge');
   assert.match(sunday.wnmuStatus, /peer-led test/i);
+  assert.equal(sunday.topTopics[0].topic, 'Drama');
+  assert.equal(sunday.examples[0].programTitle, 'Sunday Drama');
 });
 
 
