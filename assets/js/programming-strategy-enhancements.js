@@ -264,8 +264,9 @@
 
   function decorate(root, result) {
     if (!root || !result) return;
-    insertPeerPractices(root, result.peerPractices || []);
-    decorateDayMap(root, result.strategy || {});
+    // v0.22.224 renders peer practices and planning evidence directly inside
+    // the three concise report sections. The enhancement layer now only
+    // handles structural UI behavior.
     splitCompoundSections(root);
     enableCollapsibleSections(root);
   }
