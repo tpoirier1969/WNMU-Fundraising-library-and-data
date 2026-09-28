@@ -260,31 +260,46 @@ function combinedDayTopicSection(outlook,matrix,schedule){
   }).join('')}</div>${peerHtml}</section>`;
 }
 
-function hourlyPatternsSection(hourly){
+function hourlyPatternIndex(hourly){
   const data=hourly||{season:'selected',rows:[]};
   const groups=new Map();
   for(const row of data.rows||[]){
     if(!groups.has(row.weekday))groups.set(row.weekday,[]);
     groups.get(row.weekday).push(row);
   }
-  const order=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const metric=(row,label)=>{
-    if(!row||!Number(row.fundraiserSamples||0))return`<span class="strategy-no-history">No ${esc(label)} history</span>`;
-    return`<span class="strategy-rate">Avg $${Math.round(row.averageRate)}/pledge hr</span><small>${row.fundraiserSamples} fundraiser${row.fundraiserSamples===1?'':'s'} · ${row.airings} airing${row.airings===1?'':'s'}</small>`;
-  };
+  groups.forEach(rows=>rows.sort((a,b)=>a.startMinutes-b.startMinutes));
   const span=data.historyStartDate&&data.historyEndDate
     ?`${fmt(data.historyStartDate,false)}–${fmt(data.historyEndDate,false)}`
     :'available history';
+  return{data,groups,span};
+}
 
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Each daily row shows <strong>${esc(data.season||'selected')} fundraiser history first</strong>, with <strong>all fundraiser history</strong> beside it for sample-size context. All-history span: ${esc(span)}. Programs with an attached pledge break count as pledge programs whether the break is internal or follows the program. Only explicitly non-pledge placements are excluded from these averages.</p></div></div>
-    <div class="strategy-daily-breakdown-head"><h3>Daily breakdown</h3><p>Season-specific evidence is primary; all-history evidence is context.</p></div>
-    <div class="strategy-hourly-grid">${order.map(day=>{
-      const allRows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);
-      const observed=allRows.filter(x=>Number(x.targetSeason?.fundraiserSamples||0)>0||Number(x.allHistory?.fundraiserSamples||0)>0);
-      const rows=observed;
-      const weekend=day==='Saturday'||day==='Sunday';
-      return`<section class="strategy-hourly-day strategy-hourly-day-${day.toLowerCase()}"><h3>${day}</h3><div class="strategy-hourly-compare-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-compare-row${!weekend&&Number(x.startMinutes)<17*60?' strategy-hourly-print-hide':''}"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-hourly-scope">${metric(x.targetSeason,data.season||'season')}</span><span class="strategy-hourly-scope">${metric(x.allHistory,'all-history')}</span></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
-    }).join('')}</div></section>`;
+function timingHistoryForWindow(index,slot){
+  const data=index?.data||{season:'selected'};
+  const allRows=index?.groups?.get(slot.weekday)||[];
+  const rows=allRows.filter(row=>
+    Number(row.startMinutes)>=Number(slot.startMinutes)
+    && Number(row.startMinutes)<Number(slot.endMinutes)
+    && (Number(row.targetSeason?.fundraiserSamples||0)>0||Number(row.allHistory?.fundraiserSamples||0)>0)
+  );
+  if(!rows.length)return`<div class="strategy-window-time-history strategy-window-time-empty"><strong>Timing history</strong><span>No rate-valid half-hour start history inside this planning window.</span></div>`;
+
+  const metric=(row)=>{
+    if(!row||!Number(row.fundraiserSamples||0))return'<span class="strategy-no-history">No history</span>';
+    return`<span class="strategy-rate">&#36;${Math.round(row.averageRate)}/hr</span><small>${row.fundraiserSamples} drive${row.fundraiserSamples===1?'':'s'} · ${row.airings} airing${row.airings===1?'':'s'}</small>`;
+  };
+
+  return`<div class="strategy-window-time-history"><strong>Timing history · 30-minute start buckets</strong><div class="strategy-window-time-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div class="strategy-window-time-grid">${rows.map(row=>`<div class="strategy-window-time-row"><span class="strategy-window-time-clock">${clock(row.startMinutes)}</span><span>${metric(row.targetSeason)}</span><span>${metric(row.allHistory)}</span></div>`).join('')}</div></div>`;
+}
+
+function promotionExamplesSection(){
+  const examples=[
+    {station:'Vermont Public',idea:'Build the campaign before the event across TV/radio spots, podcast pre-rolls, the website, social, email/newsletters and text messaging.'},
+    {station:'Houston Public Media',idea:'Tie promotion to a specific program or event, then reinforce it with targeted email, a matching challenge and a locally produced pledge break.'},
+    {station:'WLRN',idea:'Use segmented email and SMS, suppress very recent donors where appropriate, and test message variants instead of sending one generic appeal to everyone.'},
+    {station:'Vegas PBS',idea:'Brand pledge as a local television event, using local personalities, community stories and social promotion to create anticipation rather than simply announcing a drive.'}
+  ];
+  return`<section class="sheet-section strategy-promotion-examples"><div class="strategy-section-head"><div><h2>Fundraiser promotion ideas already worth discussing</h2><p>Initial examples already identified, not a full promotion study yet. The useful common thread is to build awareness around <strong>what is happening during the fundraiser</strong>, not only the fact that a fundraiser is coming.</p></div></div><div class="strategy-promotion-grid">${examples.map(item=>`<article><strong>${esc(item.station)}</strong><span>${esc(item.idea)}</span></article>`).join('')}</div></section>`;
 }
 
 function topicTimeMatrixSection(matrix){
@@ -443,18 +458,22 @@ function opportunitiesSection(opportunities){
     if(!items.length)return'';
     return`<div class="strategy-opportunity-evidence"><strong>Why explore this?</strong><ul>${items.map(item=>`<li class="evidence-${esc(item.tone||'neutral')}"><b>${esc(item.sourceLabel||'Evidence')}:</b> ${esc(item.text||'')}</li>`).join('')}</ul></div>`;
   };
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}${x.kind==='peer-gap'?` · ${Number(x.positivePeerStations||0)} positive peer stations`:''}</small></div><div class="strategy-opportunity-summary"><p>${esc(x.rationale||'')}</p></div>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
+  return`<section class="sheet-section strategy-opportunities-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}${x.kind==='peer-gap'?` · ${Number(x.positivePeerStations||0)} positive peer stations`:''}</small></div><div class="strategy-opportunity-summary"><p>${esc(x.rationale||'')}</p></div>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
 }
 
-function dayMapSection(strategy){
+function dayMapSection(strategy,hourly){
   const byDate=new Map();
-  for(const slot of strategy.windows){if(!byDate.has(slot.date))byDate.set(slot.date,[]);byDate.get(slot.date).push(slot);}
-  return`<section class="sheet-section"><h2>Day-by-day programming map</h2><p>Compact planning view. Each candidate is one row; evidence and cautions stay visible without large title cards.</p><div class="strategy-days-compact">${[...byDate.entries()].map(([date,slots])=>`<section class="strategy-day-compact"><header><strong>${esc(slots[0].weekday)}</strong><span>${fmt(date)}</span></header><div class="strategy-program-table"><div class="strategy-program-row strategy-program-head"><span>Time</span><span>Title / topic</span><span>Evidence</span><span>Fit</span></div>${slots.map(slot=>{
+  const timingIndex=hourlyPatternIndex(hourly);
+  for(const slot of strategy.windows){
+    if(!byDate.has(slot.date))byDate.set(slot.date,[]);
+    byDate.get(slot.date).push(slot);
+  }
+  return`<section class="sheet-section strategy-day-map-section"><h2>Day-by-day programming map + timing history</h2><p>Planning decisions and historical start-time performance are shown together. Each planning window includes WNMU's 30-minute start buckets, with ${esc(timingIndex.data.season||'season')} history first and all-history context beside it. History span: ${esc(timingIndex.span)}.</p><div class="strategy-days-compact">${[...byDate.entries()].map(([date,slots])=>`<section class="strategy-day-compact"><header><strong>${esc(slots[0].weekday)}</strong><span>${fmt(date)}</span></header><div class="strategy-program-table"><div class="strategy-program-row strategy-program-head"><span>Time</span><span>Title / topic</span><span>Evidence</span><span>Fit</span></div>${slots.map(slot=>{
     if(slot.blocked)return`<div class="strategy-window-divider is-blocked"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · Protected regular programming</strong><span>Not pledge inventory.</span></div>`;
-    const exp=slot.experimentalEvidence||{};
     const divider=`<div class="strategy-window-divider ${slot.experimental?'is-experimental':''}"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · ${esc(slot.label)}${slot.experimental?' · Test window':''}</strong><span>${slot.experimental?'See scheduling opportunities / tests above.':(slot.evidenceRows?`${slot.evidenceRows} exact-weekday comparable historical row${slot.evidenceRows===1?'':'s'}`:'No exact-weekday slot history')}</span></div>`;
+    const timing=timingHistoryForWindow(timingIndex,slot);
     const rows=slot.recommendations.slice(0,4).map(x=>`<div class="strategy-program-row"><span class="strategy-program-time">${clock(slot.startMinutes)}</span><span class="strategy-program-title"><strong>${esc(x.title)}${x.newTitle?'<span class="strategy-new-title">NEW</span>':''}</strong><small>${esc(x.topic)}${x.secondary?` · ${esc(x.secondary)}`:''}${x.programmer?.rating?` · Programmer: ${esc(x.programmer.label)}`:''}</small></span><span class="strategy-program-evidence"><b>${esc(x.confidence)}</b> · ${esc((x.newTitle&&x.reviewedNew?x.reasons.find(r=>/^New \/ unaired/i.test(r)):null)||x.reasons[0]||'No direct title history.')}${x.cautions.length?` <em>${esc(x.cautions[0])}</em>`:''}</span><span class="strategy-program-fit"><b>${Math.round(x.score)}</b><small>${esc(x.fit)}</small></span></div>`).join('');
-    return divider+(rows||'<div class="strategy-program-empty">No eligible Program Library title for this slot.</div>');
+    return divider+timing+(rows||'<div class="strategy-program-empty">No eligible Program Library title for this slot.</div>');
   }).join('')}</div></section>`).join('')}</div></section>`;
 }
 
@@ -574,7 +593,7 @@ async function renderStrategy(){
     const diagnostics=result.diagnostics||{};
     const renderStarted=globalThis.performance?.now?.()??Date.now();
 
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${topicComparisonSection(strategy)}${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${limitationsSection(strategy)}</article>`;
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${opportunitiesSection(opportunities)}${promotionExamplesSection()}${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}${topicComparisonSection(strategy)}${dayMapSection(strategy,hourlyPatterns)}${supportingSections(strategy)}${limitationsSection(strategy)}</article>`;
     globalThis.WNMUStrategyEnhancements?.decorate?.(out,result);
 
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
