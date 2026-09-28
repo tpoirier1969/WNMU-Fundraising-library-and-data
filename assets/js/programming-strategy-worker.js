@@ -636,8 +636,7 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
     const seasonNeutral = !season;
     const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0)
       + specificity
-      + Math.min(5, strength) / 10
-      + Math.max(-1, Math.min(1, Number.isFinite(signal) ? signal / 2 : 0));
+      + Math.min(5, strength) / 10;
 
     matched.push({
       station,
