@@ -567,7 +567,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.213'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.214'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1137,14 +1137,20 @@ test('peer daypart evidence surfaces Sunday morning as an explicit WNMU test gap
   assert.ok(matrix.peer.topTopics.some((item) => item.topic === 'How-to'));
 });
 
-test('strategy report renders the meeting brief and topic-time map', () => {
+test('strategy report renders an explained meeting brief and fundraiser-position topic map', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
   assert.match(reportUi, /Meeting brief/);
-  assert.match(reportUi, /Topic × time map/);
-  assert.match(reportUi, /Peer-led gaps to consider/);
+  assert.match(reportUi, /not “the top four slots”/);
+  assert.match(reportUi, /ordered by dollars per pledge hour/);
+  assert.match(reportUi, /WNMU evidence worth discussing/);
+  assert.match(reportUi, /Interpretation guardrails/);
+  assert.match(reportUi, /Fundraiser-position split/);
+  assert.match(reportUi, /First vs\. second occurrences/);
+  assert.match(reportUi, /item\.rationale/);
   assert.match(styles, /\.strategy-meeting-grid/);
   assert.match(styles, /\.strategy-topic-time-row/);
+  assert.match(styles, /\.strategy-topic-time-positions/);
   assert.match(styles, /\.opportunity-peer-gap/);
 });
 
@@ -1155,7 +1161,7 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.202/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.214/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -1405,6 +1411,53 @@ test('Day/Time report explains half-hour buckets and shows season plus all-histo
 });
 
 
+
+test('topic-time matrix keeps first and second Saturdays separate', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.buildTopicTimeMatrix, 'function');
+  const rows = [
+    row({ fundraiserId:'dec25', driveStartDate:'2025-12-05', dateKey:'2025-12-06', startMinutes:19*60, topic:'Music', title:'First Music', dollars:600 }),
+    row({ fundraiserId:'dec25', driveStartDate:'2025-12-05', dateKey:'2025-12-13', startMinutes:19*60, topic:'Health', title:'Second Health', dollars:900 }),
+    row({ fundraiserId:'dec24', driveStartDate:'2024-12-06', dateKey:'2024-12-07', startMinutes:19*60, topic:'Music', title:'First Music 2', dollars:500 }),
+    row({ fundraiserId:'dec24', driveStartDate:'2024-12-06', dateKey:'2024-12-14', startMinutes:19*60, topic:'Health', title:'Second Health 2', dollars:800 })
+  ];
+  const matrix = workerContext.buildTopicTimeMatrix(schedule, rows, []);
+  const saturdayPrime = matrix.rows.find((item) => item.weekday === 'Saturday' && item.daypart === 'Prime');
+  assert.ok(saturdayPrime);
+  assert.deepEqual(Array.from(saturdayPrime.positionBreakdown, (item) => item.label), ['First Saturday','Second Saturday']);
+  assert.equal(saturdayPrime.positionBreakdown[0].localTopics[0].topic, 'Music');
+  assert.equal(saturdayPrime.positionBreakdown[1].localTopics[0].topic, 'Health');
+  assert.equal(saturdayPrime.positionBreakdown[0].localTopics[0].fundraiserSamples, 2);
+  assert.equal(saturdayPrime.positionBreakdown[1].localTopics[0].fundraiserSamples, 2);
+});
+
+test('peer local-production practice carries WNMU title-level counterevidence', () => {
+  const { workerContext } = makeWorkerHarness();
+  const peer = [{
+    station_code:'PEERLOCAL',
+    station_name:'Peer Local PBS',
+    season:'December',
+    assessment_signal:2,
+    evidence_strength:5,
+    context_flags:{ local:true },
+    summary:'A local special was a strong pledge anchor.'
+  }];
+  const evidenceRows = [
+    row({ fundraiserId:'d1', driveStartDate:'2025-12-05', dateKey:'2025-12-06', topic:'WNMU', title:'Local Special', dollars:900, minutes:60 }),
+    row({ fundraiserId:'d2', driveStartDate:'2024-12-06', dateKey:'2024-12-07', topic:'WNMU', title:'Local Special', dollars:700, minutes:60 }),
+    row({ fundraiserId:'d1', driveStartDate:'2025-12-05', dateKey:'2025-12-08', topic:'WNMU', title:'Recurring Local', dollars:20, minutes:60 }),
+    row({ fundraiserId:'d2', driveStartDate:'2024-12-06', dateKey:'2024-12-09', topic:'WNMU', title:'Recurring Local', dollars:40, minutes:60 })
+  ];
+  const practices = workerContext.buildPeerPracticeGaps(schedule, peer, evidenceRows);
+  const local = practices.find((item) => item.id === 'local-programming');
+  assert.ok(local);
+  assert.ok(local.wnmuEvidence);
+  assert.equal(local.wnmuEvidence.strongest[0].title, 'Local Special');
+  assert.equal(local.wnmuEvidence.weakest[0].title, 'Recurring Local');
+  assert.match(local.wnmuStatus, /routine local series/i);
+  assert.match(local.testIdea, /specials, documentaries or event treatment/i);
+});
+
 test('peer-practice evidence preserves missing financials as missing rather than zero', () => {
   const { workerContext } = makeWorkerHarness();
   assert.equal(typeof workerContext.buildPeerPracticeGaps, 'function');
@@ -1437,6 +1490,8 @@ test('peer-practice renderer does not coerce missing financials into $0 or 0 ple
   assert.match(enhancements,/example\.actualDollars != null/);
   assert.match(enhancements,/example\.goalDollars != null/);
   assert.match(enhancements,/example\.pledgeCount != null/);
+  assert.match(enhancements,/WNMU measured local-production history/);
+  assert.match(enhancements,/Do not generalize peer success with local specials\/events/);
 });
 
 

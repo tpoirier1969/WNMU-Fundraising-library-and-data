@@ -843,3 +843,99 @@
   .strategy-topic-time-topic small,
   .strategy-topic-time-peer small{font-size:5.9pt}
 }
+
+
+/* v0.22.214 meeting-brief evidence clarity */
+.strategy-meeting-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.strategy-meeting-list>div{
+  gap:3px;
+  padding-bottom:8px;
+}
+.strategy-meeting-list small{
+  display:block;
+  color:#667b86;
+  font-size:.74rem;
+  line-height:1.4;
+}
+.strategy-topic-time-positions{
+  grid-column:1/-1;
+  display:grid;
+  gap:5px;
+  margin:2px 0 2px 150px;
+  padding:7px 9px;
+  border-left:3px solid #9eb7c4;
+  background:#f7fafb;
+}
+.strategy-topic-time-positions>strong{
+  color:#31586e;
+  font-size:.7rem;
+  text-transform:uppercase;
+  letter-spacing:.035em;
+}
+.strategy-topic-time-positions>div{
+  display:grid;
+  grid-template-columns:minmax(145px,.65fr) minmax(260px,1.35fr);
+  gap:8px;
+  align-items:start;
+  padding-top:4px;
+  border-top:1px solid #e2eaee;
+}
+.strategy-topic-time-positions>div:first-of-type{border-top:0;padding-top:0}
+.strategy-topic-time-positions>div>span:first-child{
+  color:#526d79;
+  font-size:.75rem;
+}
+.strategy-topic-time-positions .strategy-topic-time-topic{
+  display:flex;
+  flex-wrap:wrap;
+  gap:2px 5px;
+  align-items:baseline;
+  margin-bottom:2px;
+}
+.strategy-peer-wnmu-evidence{
+  margin:8px 0;
+  padding:9px 10px;
+  border:1px solid #d6e2e7;
+  border-left:4px solid #315d70;
+  border-radius:6px;
+  background:#f7fafb;
+  color:#405d6a;
+  font-size:.79rem;
+  line-height:1.4;
+}
+.strategy-peer-wnmu-evidence>strong{
+  display:block;
+  color:#17384a;
+  margin-bottom:4px;
+}
+.strategy-peer-wnmu-evidence p{margin:4px 0}
+.strategy-peer-wnmu-evidence div{margin:4px 0}
+
+@media(max-width:1000px){
+  .strategy-meeting-grid{grid-template-columns:1fr}
+  .strategy-topic-time-positions{margin-left:0;grid-column:1/-1}
+  .strategy-topic-time-positions>div{grid-template-columns:1fr}
+}
+@media print{
+  .strategy-meeting-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .strategy-meeting-list small{font-size:6.3pt}
+  .strategy-topic-time-positions{
+    margin-left:45px;
+    padding:3px 5px;
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+  .strategy-topic-time-positions>div{
+    grid-template-columns:90px minmax(0,1fr);
+    gap:4px;
+    padding-top:2px;
+  }
+  .strategy-peer-wnmu-evidence{
+    padding:4px 5px;
+    font-size:6.5pt;
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+}

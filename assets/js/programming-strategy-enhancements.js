@@ -148,13 +148,31 @@
 
     let html = '<section class="sheet-section strategy-peer-practices-section">';
     html += '<div class="strategy-section-head"><div><h2>Peer practices WNMU may be leaving on the table</h2>';
-    html += '<p>Positive reports from other public-TV stations. “Not represented” means the tactic is absent from the structured WNMU strategy data, not proof that staff never use it.</p></div></div>';
+    html += '<p>Positive reports from other public-TV stations. Peer practices are test ideas, not proof that they will work at WNMU. WNMU history remains the stronger evidence when the two conflict.</p></div></div>';
     html += '<div class="strategy-peer-practice-grid">';
 
     rows.forEach(function (item) {
       html += '<article class="strategy-peer-practice">';
       html += '<header><strong>' + esc(item.label || '') + '</strong><span>' + Number(item.stationCount || 0) + ' station' + (Number(item.stationCount || 0) === 1 ? '' : 's') + ' · ' + Number(item.observationCount || 0) + ' positive observation' + (Number(item.observationCount || 0) === 1 ? '' : 's') + '</span></header>';
       html += '<p class="strategy-peer-status"><b>WNMU status:</b> ' + esc(item.wnmuStatus || 'Not classified.') + '</p>';
+      if (item.wnmuEvidence) {
+        const local = item.wnmuEvidence || {};
+        html += '<div class="strategy-peer-wnmu-evidence"><strong>WNMU measured local-production history</strong>';
+        if (Number.isFinite(Number(local.averageRate))) {
+          html += '<p>Across ' + Number(local.fundraiserSamples || 0) + ' fundraiser samples and ' + Number(local.titleCount || 0) + ' local titles, the broad average is about $' + Math.round(Number(local.averageRate)) + '/pledge hr. The spread matters more than the overall average.</p>';
+        }
+        if (Array.isArray(local.strongest) && local.strongest.length) {
+          html += '<div><b>Stronger multi-drive examples:</b> ' + local.strongest.slice(0, 3).map(function (x) {
+            return esc(x.title) + ' ($' + Math.round(Number(x.averageRate || 0)) + '/hr; ' + Number(x.fundraiserSamples || 0) + ' fundraisers)';
+          }).join(' · ') + '</div>';
+        }
+        if (Array.isArray(local.weakest) && local.weakest.length) {
+          html += '<div><b>Lower multi-drive examples:</b> ' + local.weakest.slice(0, 3).map(function (x) {
+            return esc(x.title) + ' ($' + Math.round(Number(x.averageRate || 0)) + '/hr; ' + Number(x.fundraiserSamples || 0) + ' fundraisers)';
+          }).join(' · ') + '</div>';
+        }
+        html += '<p><b>Interpretation:</b> Do not generalize peer success with local specials/events to WNMU recurring series. Those are different fundraising products and should be analyzed separately.</p></div>';
+      }
       html += '<div class="strategy-peer-examples">';
 
       (item.examples || []).forEach(function (example) {
