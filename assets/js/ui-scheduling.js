@@ -865,10 +865,15 @@
   function collectLiveBreakPreserveMap(schedule = {}, importedKey = '') {
     const map = new Map();
     (Array.isArray(schedule?.placements) ? schedule.placements : []).forEach((placement) => {
-      if (!hasLiveBreakFlag(placement)) return;
+      const mode = canonicalScheduleBreakMode(placement);
+      if (!mode) return;
       const value = {
-        liveBreakFlag: true,
-        liveBreakNotes: utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '')
+        breakMode: mode,
+        breakModeSource: breakModeSourceValue(placement) || 'legacy',
+        liveBreakFlag: mode === BREAK_MODES.LIVE,
+        liveBreakNotes: mode === BREAK_MODES.LIVE
+          ? utils.normalizeText(placement?.liveBreakNotes || placement?.live_break_notes || placement?.liveNotes || placement?.live_notes || '')
+          : ''
       };
       liveBreakPreserveKeys(placement, importedKey).forEach((key) => map.set(key, value));
     });
@@ -879,8 +884,10 @@
     if (!placement || !preserveMap?.size) return placement;
     const match = liveBreakPreserveKeys(placement, importedKey).map((key) => preserveMap.get(key)).find(Boolean);
     if (!match) return placement;
-    placement.liveBreakFlag = true;
-    placement.liveBreakNotes = match.liveBreakNotes || placement.liveBreakNotes || '';
+    placement.breakMode = normalizeBreakMode(match.breakMode);
+    placement.breakModeSource = match.breakModeSource || 'legacy';
+    placement.liveBreakFlag = placement.breakMode === BREAK_MODES.LIVE;
+    placement.liveBreakNotes = placement.liveBreakFlag ? (match.liveBreakNotes || placement.liveBreakNotes || '') : '';
     return placement;
   }
 
@@ -1775,6 +1782,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       startMinutes,
       endMinutes,
       startSlotKey: `${dateKey}|${startMinutes}`,
+      breakMode: '',
+      breakModeSource: '',
       liveBreakFlag: false,
       liveBreakNotes: '',
       isNonPledge: false,
@@ -1837,8 +1846,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           ...existing,
           ...placement,
           id: existing.id || placement.id,
+          breakMode: canonicalScheduleBreakMode(existing),
+          breakModeSource: breakModeSourceValue(existing),
           liveBreakFlag: hasLiveBreakFlag(existing),
-          liveBreakNotes: existing.liveBreakNotes || '',
+          liveBreakNotes: hasLiveBreakFlag(existing) ? (existing.liveBreakNotes || '') : '',
           isNonPledge: Boolean(existing.isNonPledge),
           transferredToStation: Boolean(existing.transferredToStation),
           importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
@@ -2086,8 +2097,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
               ...existingPlacement,
               ...placement,
               id: existingPlacement.id || placement.id,
+              breakMode: canonicalScheduleBreakMode(existingPlacement) || canonicalScheduleBreakMode(placement),
+              breakModeSource: breakModeSourceValue(existingPlacement) || breakModeSourceValue(placement),
               liveBreakFlag: hasLiveBreakFlag(existingPlacement) || hasLiveBreakFlag(placement),
-              liveBreakNotes: existingPlacement.liveBreakNotes || placement.liveBreakNotes || '',
+              liveBreakNotes: hasLiveBreakFlag(existingPlacement)
+                ? (existingPlacement.liveBreakNotes || '')
+                : (hasLiveBreakFlag(placement) ? (placement.liveBreakNotes || '') : ''),
               isNonPledge: Boolean(existingPlacement.isNonPledge),
               transferredToStation: Boolean(existingPlacement.transferredToStation),
               importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
@@ -4651,6 +4666,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       startMinutes: slot.minutes,
       endMinutes: slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES),
       startSlotKey: slot.key,
+      breakMode: '',
+      breakModeSource: '',
       liveBreakFlag: false,
       liveBreakNotes: '',
       isNonPledge: false,
