@@ -820,7 +820,7 @@ async function renderStrategy(){
     const diagnostics=result.diagnostics||{};
     const renderStarted=globalThis.performance?.now?.()??Date.now();
 
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${briefSection(result,opportunities,schedule)}${fundraiserPlanSection(strategy,dayOutlook,result.topicTimeMatrix,hourlyPatterns,schedule)}${programOpportunitiesSection(strategy)}</article>`;
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${briefSection(result,opportunities,schedule)}${promotionExamplesSection()}${fundraiserPlanSection(strategy,dayOutlook,result.topicTimeMatrix,hourlyPatterns,schedule)}${topicComparisonSection(strategy)}${timeOfDayComparisonSection(hourlyPatterns)}${peerPracticesCompactSection(result.peerPractices||[])}${programOpportunitiesSection(strategy)}</article>`;
     globalThis.WNMUStrategyEnhancements?.decorate?.(out,result);
 
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
