@@ -1232,55 +1232,62 @@ test('peer daypart evidence surfaces Sunday morning as an explicit WNMU test gap
   assert.ok(matrix.peer.topTopics.some((item) => item.topic === 'How-to'));
 });
 
-test('strategy report renders one brief, one fundraiser plan, and one combined program-opportunity section', () => {
+test('strategy report restores topic, timing, peer, promotion, and ranked opportunity depth', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
-  const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const calendar = fs.readFileSync(new URL('../assets/js/programming-strategy-calendar.js', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(calendar, { filename:'programming-strategy-calendar.js' }));
-  assert.match(page,/programming-strategy-calendar\.js\?v=0\.22\.224/);
   assert.match(reportUi,/function briefSection/);
   assert.match(reportUi,/<h2>Brief<\/h2>/);
   assert.match(reportUi,/<h3>Ideas & tests<\/h3>/);
-  assert.match(reportUi,/<h3>Promotion<\/h3>/);
-  assert.doesNotMatch(reportUi,/<h3>Calendar watch<\/h3>/);
-  assert.match(reportUi,/Vermont Public/);
-  assert.match(reportUi,/Houston Public Media/);
-  assert.match(reportUi,/WLRN/);
-  assert.match(reportUi,/Vegas PBS/);
+  assert.doesNotMatch(reportUi,/<h3>Promotion<\/h3>/);
+  assert.match(reportUi,/function promotionExamplesSection/);
+  assert.match(reportUi,/Fundraiser promotion ideas already worth discussing/);
 
   assert.match(reportUi,/function fundraiserPlanSection/);
   assert.match(reportUi,/<h2>Fundraiser plan<\/h2>/);
-  assert.match(reportUi,/Topic snapshot/);
-  assert.match(reportUi,/topicSignals\.slice\(0,2\)/);
-  assert.match(reportUi,/const bestSlotByTitle=new Map\(\)/);
-  assert.match(reportUi,/score>currentScore/);
-  assert.match(reportUi,/assignedBySlot\.get\(slot\.id\)\.push\(rec\)/);
+  assert.match(reportUi,/topicSignals\.slice\(0,5\)/);
   assert.match(reportUi,/strategy-plan-window/);
   assert.match(reportUi,/WEB-ONLY EXPERIMENT/);
   assert.match(reportUi,/Break mode is recorded on each scheduled program for later comparison/);
-  assert.doesNotMatch(reportUi,/Track these results separately from staffed pledge windows/);
-  assert.match(reportUi,/rec\.webOnlyReason/);
-  assert.match(reportUi,/options\.map\(rec=>/);
-  assert.match(reportUi,/compactTimingForSlot/);
-  assert.match(reportUi,/calendarRowsForDate/);
+
+  assert.match(reportUi,/function topicComparisonSection/);
+  assert.match(reportUi,/strategy-topic-card-grid/);
+  assert.match(reportUi,/function timeOfDayComparisonSection/);
+  assert.match(reportUi,/strategy-time-day-grid/);
+  assert.match(reportUi,/function peerPracticesCompactSection/);
+  assert.match(reportUi,/Observed peer topics/);
 
   assert.match(reportUi,/function programOpportunitiesSection/);
   assert.match(reportUi,/<h2>Program opportunities<\/h2>/);
+  assert.match(reportUi,/\.slice\(0,20\)/);
+  assert.match(reportUi,/strategy-opportunity-body/);
   assert.match(reportUi,/row\.badges\.push\('Repeat'\)/);
   assert.match(reportUi,/row\.badges\.push\('Seasonal'\)/);
   assert.match(reportUi,/row\.badges\.push\('Local \/ U\.P\.'\)/);
 
-  assert.ok(reportUi.includes('${briefSection(result,opportunities,schedule)}'));
-  assert.ok(reportUi.includes('${fundraiserPlanSection(strategy,dayOutlook,result.topicTimeMatrix,hourlyPatterns,schedule)}'));
-  assert.ok(reportUi.includes('${programOpportunitiesSection(strategy)}'));
-  assert.ok(!reportUi.includes('${supportingSections(strategy)}'));
-  assert.ok(!reportUi.includes('${limitationsSection(strategy)}'));
-  assert.match(styles,/\.strategy-brief-section/);
-  assert.match(styles,/\.strategy-fundraiser-plan/);
-  assert.match(styles,/\.strategy-program-opportunities/);
-  assert.match(styles,/\.strategy-plan-window/);
+  const renderStart=reportUi.indexOf('out.innerHTML=`<article');
+  const renderEnd=reportUi.indexOf('globalThis.WNMUStrategyEnhancements',renderStart);
+  const render=reportUi.slice(renderStart,renderEnd);
+  const needles=[
+    '${briefSection(result,opportunities,schedule)}',
+    '${promotionExamplesSection()}',
+    '${fundraiserPlanSection(strategy,dayOutlook,result.topicTimeMatrix,hourlyPatterns,schedule)}',
+    '${topicComparisonSection(strategy)}',
+    '${timeOfDayComparisonSection(hourlyPatterns)}',
+    '${peerPracticesCompactSection(result.peerPractices||[])}',
+    '${programOpportunitiesSection(strategy)}'
+  ];
+  const positions=needles.map((needle)=>render.indexOf(needle));
+  assert.ok(positions.every((position)=>position>=0));
+  assert.deepEqual([...positions].sort((a,b)=>a-b),positions);
+
+  assert.match(styles,/\.strategy-brief-card/);
+  assert.match(styles,/\.strategy-promotion-examples/);
+  assert.match(styles,/\.strategy-topic-card-grid/);
+  assert.match(styles,/\.strategy-time-day-grid/);
+  assert.match(styles,/\.strategy-program-opportunity-list/);
   assert.match(calendar,/Hanukkah/);
   assert.match(calendar,/Big Ten Football Championship/);
   assert.match(calendar,/NMU vs\. Augustana hockey/);
@@ -1344,16 +1351,15 @@ test('strategy report no longer renders a separate 8 PM vs 9 PM cross-check', ()
   assert.doesNotMatch(enhancements,/decorateHourlySection/);
 });
 
-test('strategy print CSS keeps the three concise decision sections compact and staple-safe', () => {
+test('strategy print CSS starts each section on a new page and keeps dense four-column timing', () => {
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
   assert.match(styles,/@page\{[\s\S]*?margin:0\.85in 0\.58in 0\.70in 0\.82in/);
-  assert.match(styles,/\.strategy-brief-ideas/);
-  assert.match(styles,/\.strategy-plan-day/);
-  assert.match(styles,/\.strategy-program-opportunity-list/);
-  assert.match(styles,/\.strategy-plan-day-body\{grid-template-columns:1fr \.72fr 1\.15fr/);
+  assert.match(styles,/\.strategy-sheet>section\.sheet-section\+section\.sheet-section[\s\S]*?page-break-before:always/);
+  assert.match(styles,/\.strategy-time-day-grid\{[\s\S]*?grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(styles,/\.strategy-plan-signals\{gap:1px\}/);
+  assert.match(styles,/\.strategy-day-calendar>span,[\s\S]*?background:#f8dfdf/);
   assert.match(styles,/break-inside:avoid-page/);
 });
-
 
 test('strategy keeps attached external and end pledge breaks as pledge-program performance', () => {
   const { workerContext } = makeWorkerHarness();
