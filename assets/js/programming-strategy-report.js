@@ -132,7 +132,19 @@ function topicComparisonSection(strategy){
   };
   const subtopicBreakdown=(topic,items=[])=>{
     if(!items.length)return'';
-    return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg $${Math.round(item.averageRate)}/pledge hr`:'No seasonal performance history'}</span>${item.fundraiserSamples?` · ${esc(evidenceLine(item))}`:''}</span></div>`).join('')}</div>`;
+    const rowHtml=items.map(item=>`<div class="strategy-documentary-subtopic"><strong>${esc(item.label)}</strong><span>${item.programCount} title${item.programCount===1?'':'s'} · ${item.eligibleProgramCount} eligible</span><span><span class="strategy-rate">${Number.isFinite(item.averageRate)?`Avg ${Math.round(item.averageRate)}/pledge hr`:'No seasonal performance history'}</span>${item.fundraiserSamples?` · ${esc(evidenceLine(item))}`:''}</span></div>`).join('');
+    if(items.length<=4){
+      return`<div class="strategy-documentary-subtopics"><div class="strategy-documentary-subtopics-title">${esc(topic)} subtopics</div>${rowHtml}</div>`;
+    }
+
+    const measured=items.filter(item=>Number.isFinite(item.averageRate));
+    const best=[...measured].sort((a,b)=>b.averageRate-a.averageRate).slice(0,2);
+    const weakest=[...measured].sort((a,b)=>a.averageRate-b.averageRate).slice(0,2);
+    const compact=(list=[])=>list.length
+      ?list.map(item=>`${esc(item.label)} <span class="strategy-rate">$ ${Math.round(item.averageRate)}/hr</span>`).join(' · ')
+      :'Not enough measured history';
+
+    return`<details class="strategy-documentary-subtopics strategy-subtopics-collapsible"><summary><span class="strategy-documentary-subtopics-title">${esc(topic)} subtopics · ${items.length}</span><span class="strategy-subtopic-summary-line"><b>Top measured:</b> ${compact(best)}</span><span class="strategy-subtopic-summary-line"><b>Weakest measured:</b> ${compact(weakest)}</span><span class="strategy-subtopic-toggle-label"><span class="when-closed">Show all subtopics</span><span class="when-open">Hide subtopics</span></span></summary><div class="strategy-subtopic-expanded">${rowHtml}</div></details>`;
   };
   return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Topic performance · ${esc(season)} season</h2><p>Only topics with at least one title eligible for this fundraiser are shown. Ranking combines this season’s Avg $ / Pledge Hour, seasonal consistency and sample support, plus the topic’s full all-season WNMU testing depth.</p></div></div><div class="strategy-topic-list">${rows.map(x=>`<div class="strategy-topic-list-row"><div class="strategy-topic-main"><strong>${esc(x.topic)}</strong><small>${x.programCount} Library title${x.programCount===1?'':'s'} · ${x.eligibleProgramCount} eligible for this fundraiser</small></div><div class="strategy-topic-performance"><strong class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg $${Math.round(x.averageRate)}/pledge hr`:'No seasonal history'}</strong><span>${esc(evidenceLine(x))}</span></div>${subtopicBreakdown(x.topic,x.subtopicDetails||[])}</div>`).join('')}</div></section>`;
 }
