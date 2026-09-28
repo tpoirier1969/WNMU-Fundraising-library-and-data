@@ -2659,6 +2659,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       programTitle: placeholder ? placeholderTitle(placement) : placement.programTitle,
       placeholderTitle: placeholder ? placeholderTitle(placement) : '',
       lengthMinutes: placeholderLengthMinutes(placement.lengthMinutes),
+      breakMode: placeholder ? '' : canonicalScheduleBreakMode(placement),
+      breakModeSource: placeholder ? '' : breakModeSourceValue(placement),
       liveBreakFlag: placeholder ? false : hasLiveBreakFlag(placement),
       isNonPledge: Boolean(!placeholder && placement.isNonPledge),
       isPlaceholder: placeholder,
@@ -4814,6 +4816,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     placement.startMinutes = targetMinutes;
     placement.endMinutes = targetMinutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     placement.startSlotKey = `${targetDateKey}|${targetMinutes}`;
+    if (breakModeSourceValue(placement) === 'default') {
+      placement.breakMode = defaultBreakModeForMinutes(targetMinutes);
+      placement.liveBreakFlag = placement.breakMode === BREAK_MODES.LIVE;
+      if (!placement.liveBreakFlag) placement.liveBreakNotes = '';
+    }
     await persistSchedules(schedule);
     renderScheduleGrid();
     setNotice(`Moved ${placement.programTitle} to ${slotLabel(targetDateKey, targetMinutes)}. ${state.scheduleSyncMessage}`);
@@ -4865,6 +4872,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const lengthMinutes = placeholder ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
+    const copiedMode = normalizeBreakMode(clip.breakMode) || (clip.liveBreakFlag ? BREAK_MODES.LIVE : '');
+    const copiedModeSource = utils.normalizeText(clip.breakModeSource || '');
+    const pastedMode = placeholder
+      ? ''
+      : (copiedMode && copiedModeSource && copiedModeSource !== 'default'
+        ? copiedMode
+        : defaultBreakModeForMinutes(slot.minutes));
+    const pastedModeSource = placeholder ? '' : (copiedMode && copiedModeSource && copiedModeSource !== 'default' ? copiedModeSource : 'default');
     schedule.placements.push({
       id: utils.makeId(placeholder ? 'placeholder' : 'placement'),
       programId: placeholder ? '' : derive.programId(row),
@@ -4877,8 +4892,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       endMinutes,
       startSlotKey: slot.key,
       lengthMinutes,
-      liveBreakFlag: placeholder ? false : Boolean(clip.liveBreakFlag),
-      liveBreakNotes: placeholder ? '' : (Boolean(clip.liveBreakFlag) ? (clip.liveBreakNotes || '') : ''),
+      breakMode: pastedMode,
+      breakModeSource: pastedModeSource,
+      liveBreakFlag: pastedMode === BREAK_MODES.LIVE,
+      liveBreakNotes: pastedMode === BREAK_MODES.LIVE ? (clip.liveBreakNotes || '') : '',
       isNonPledge: Boolean(!placeholder && (clip.isNonPledge || row?.__external_source_name)),
       sourceName: placeholder ? '' : (clip.sourceName || row?.__external_source_name || ''),
       sourceLabel: placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')
