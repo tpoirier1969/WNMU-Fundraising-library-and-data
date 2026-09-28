@@ -477,7 +477,7 @@
       windows.push({
         ...base,
         id: `${base.date}-1700`,
-        label: webOnlyEarlyEvening ? 'Early evening · web-only' : 'Early evening',
+        label: 'Early evening',
         startMinutes: 17 * 60,
         endMinutes: 19 * 60,
         confidenceClass: webOnlyEarlyEvening ? 'experimental' : 'normal',
