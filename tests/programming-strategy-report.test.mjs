@@ -1208,8 +1208,10 @@ test('strategy report keeps the meeting brief concise and day/topic advice decis
   assert.match(reportUi, /Consider fewer discretionary pledge hours/);
   assert.match(styles, /\.strategy-day-topic-action/);
   assert.match(reportUi, /Saturday 3–5 PM:/);
-  assert.match(reportUi, /Programs with an attached pledge break count as pledge programs/);
-  assert.doesNotMatch(reportUi, /boundary\/end-break fundraising is excluded/);
+  assert.doesNotMatch(reportUi, /<h2>Day\/time performance<\/h2>/);
+  assert.match(reportUi, /Day-by-day programming map \+ timing history/);
+  assert.match(reportUi, /timingHistoryForWindow/);
+  assert.match(reportUi, /strategy-window-time-history/);
   assert.match(reportUi, /strategy-opportunity-summary/);
   assert.match(reportUi, /Under-tested windows supported by peers/);
   assert.match(reportUi, /scheduleOccurrenceForDate/);
@@ -1220,6 +1222,16 @@ test('strategy report keeps the meeting brief concise and day/topic advice decis
   assert.match(styles, /\.strategy-day-topic-row/);
   assert.match(styles, /\.strategy-day-topic-peer/);
   assert.match(styles, /\.opportunity-peer-gap/);
+  assert.match(reportUi, /Fundraiser promotion ideas already worth discussing/);
+  assert.match(reportUi, /Vermont Public/);
+  assert.match(reportUi, /Houston Public Media/);
+  assert.match(reportUi, /WLRN/);
+  assert.match(reportUi, /Vegas PBS/);
+  const meetingAt=reportUi.indexOf('${meetingBriefSection(result)}');
+  const opportunitiesAt=reportUi.indexOf('${opportunitiesSection(opportunities)}');
+  const promotionAt=reportUi.indexOf('${promotionExamplesSection()}');
+  const dayTopicAt=reportUi.indexOf('${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}');
+  assert.ok(meetingAt>=0 && opportunitiesAt>meetingAt && promotionAt>opportunitiesAt && dayTopicAt>promotionAt);
 });
 
 test('strategy enhancement layer makes top-level and compound sections collapsible and labels times as planning windows', () => {
@@ -1229,13 +1241,15 @@ test('strategy enhancement layer makes top-level and compound sections collapsib
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.214/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.223/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
   assert.match(enhancements, /Planning window/);
   assert.match(enhancements, /Why this window\?/);
   assert.match(enhancements, /Peer practices WNMU may be leaving on the table/);
+  assert.match(enhancements, /strategy-opportunities-section/);
+  assert.match(enhancements, /opportunitySection\.insertAdjacentHTML\('afterend'/);
   assert.match(styles, /\.sheet-section\.is-collapsed/);
   assert.match(styles, /\.strategy-collapse-toggle/);
   assert.match(styles, /\.strategy-window-rationale/);
@@ -1281,13 +1295,16 @@ test('strategy report no longer renders a separate 8 PM vs 9 PM cross-check', ()
   assert.doesNotMatch(enhancements,/decorateHourlySection/);
 });
 
-test('strategy print CSS uses staple-safe margins and compact Day/Time tables', () => {
+test('strategy print CSS keeps staple-safe margins and timing history attached to planning windows', () => {
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   assert.match(styles,/@page\{[\s\S]*?margin:0\.85in 0\.58in 0\.70in 0\.82in/);
-  assert.match(styles,/\.strategy-hourly-grid\{[\s\S]*?display:grid!important;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/);
-  assert.match(styles,/\.strategy-hourly-print-hide\{display:none!important\}/);
-  assert.match(reportUi,/!weekend&&Number\(x\.startMinutes\)<17\*60\?' strategy-hourly-print-hide'/);
+  assert.match(styles,/\.strategy-window-time-history/);
+  assert.match(styles,/\.strategy-window-time-row/);
+  assert.match(styles,/\.strategy-promotion-grid/);
+  assert.match(reportUi,/timingHistoryForWindow\(timingIndex,slot\)/);
+  assert.match(reportUi,/30-minute start buckets/);
+  assert.doesNotMatch(reportUi,/function hourlyPatternsSection/);
   assert.match(styles,/\.strategy-program-row,[\s\S]*?break-inside:avoid-page!important/);
 });
 
