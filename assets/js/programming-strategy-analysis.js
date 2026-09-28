@@ -1274,12 +1274,6 @@ return result;}
       if (eligibleSomewhereInFundraiser(program, context.schedule || {})) group.eligiblePrograms.push(program);
     }
 
-    const detailedTopicKeys = new Set([
-      lookupKey('Documentary'),
-      lookupKey('Music'),
-      lookupKey('Holiday - Christmas')
-    ]);
-
     const titleKeyForRow = (row) => {
       const id = rowProgramId(row);
       if (id) return `id:${id}`;
@@ -1357,7 +1351,6 @@ return result;}
     };
 
     return [...groups.entries()]
-      .filter(([, group]) => group.eligiblePrograms.length > 0)
       .map(([topicKey, group]) => {
         // Eligibility decides whether the topic belongs in this planning report.
         // Performance itself uses the full historical topic record, including
@@ -1374,7 +1367,7 @@ return result;}
         const metrics = evidenceMetrics(topicRows, history, rankingBaseline, sharedTopicStats, sharedReliabilityStats);
 
         let subtopicDetails = [];
-        if (detailedTopicKeys.has(topicKey)) {
+        {
           const subgroups = new Map();
           for (const program of group.programs) {
             const label = programSecondary(program) || 'Unassigned';
@@ -1390,7 +1383,6 @@ return result;}
             : rankingBaseline;
 
           subtopicDetails = [...subgroups.entries()]
-            .filter(([, sub]) => sub.eligiblePrograms.length > 0)
             .map(([subKey, sub]) => {
               const rows = topicRows.filter((row) => {
                 const secondary = rowSecondary(row) || 'Unassigned';
