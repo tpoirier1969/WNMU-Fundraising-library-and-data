@@ -499,9 +499,6 @@ function briefSection(result={},opportunities={},schedule={}){
   const strategy=result.strategy||{};
   const peer=(result.peerPractices||[]).slice(0,4);
   const localIdeas=(opportunities.rows||[]).slice(0,4);
-  const calendar=calendarRowsForSchedule(schedule)
-    .filter(item=>item.kind==='observance'||item.impact==='high'||item.impact==='medium')
-    .slice(0,9);
 
   const ideaCards=[
     ...localIdeas.map(item=>({
@@ -528,7 +525,6 @@ function briefSection(result={},opportunities={},schedule={}){
   return`<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built.</p></div></div>
     <div class="strategy-brief-block"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">${ideaCards.length?ideaCards.map(item=>`<article><span class="strategy-source-tag">${esc(item.source)}</span><strong>${esc(item.title)}</strong><p>${esc(item.text)}</p>${item.meta?`<small>${esc(item.meta)}</small>`:''}</article>`).join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>'}</div></div>
     <div class="strategy-brief-block"><h3>Promotion</h3><div class="strategy-promotion-compact">${promotion.map(([station,text])=>`<div><strong>${esc(station)}</strong><span>${esc(text)}</span></div>`).join('')}</div></div>
-    <div class="strategy-brief-block"><h3>Calendar watch</h3><div class="strategy-calendar-watch">${calendar.length?calendar.map(item=>`<article class="impact-${esc(item.impact||'context')}"><div><strong>${esc(item.title)}</strong><span>${esc(item.scope||'')}</span></div><p>${esc(fmt(item.date,false))}${item.endDate&&item.endDate!==item.date?`–${esc(fmt(item.endDate,false))}`:''}${item.time?` · ${esc(item.time)}`:''} · ${esc(item.detail||'')}</p>${item.sourceUrl?`<a href="${esc(item.sourceUrl)}" target="_blank" rel="noopener">${esc(item.sourceLabel||'Source')}</a>`:''}</article>`).join(''):'<p>No major calendar conflict is currently loaded for these fundraiser dates.</p>'}</div></div>
   </section>`;
 }
 
@@ -575,11 +571,25 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
     });
     topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
 
+    const leadTitles=new Set();
     const programs=(windowsByDate.get(day.date)||[])
       .filter(slot=>!slot.blocked)
       .sort((a,b)=>a.startMinutes-b.startMinutes)
-      .map(slot=>({slot,rec:slot.recommendations?.[0]||null}))
-      .filter(item=>item.rec)
+      .map(slot=>{
+        const seen=new Set();
+        const ranked=(slot.recommendations||[]).filter(rec=>{
+          const key=String(rec?.programId||rec?.title||'').trim().toLowerCase();
+          if(!key||seen.has(key))return false;
+          seen.add(key);
+          return true;
+        });
+        const fresh=ranked.filter(rec=>!leadTitles.has(String(rec?.programId||rec?.title||'').trim().toLowerCase()));
+        const repeated=ranked.filter(rec=>leadTitles.has(String(rec?.programId||rec?.title||'').trim().toLowerCase()));
+        const options=[...fresh,...repeated].slice(0,3);
+        if(options[0])leadTitles.add(String(options[0]?.programId||options[0]?.title||'').trim().toLowerCase());
+        return{slot,options};
+      })
+      .filter(item=>item.options.length)
       .slice(0,3);
 
     return{...day,topicSignals:topicSignals.slice(0,2),programs,calendar:calendarRowsForDate(calendar,day.date)};
@@ -592,7 +602,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
       ${day.calendar.length?`<div class="strategy-day-calendar">${day.calendar.map(item=>`<span class="impact-${esc(item.impact||'context')}"><b>${esc(item.title)}</b>${item.time?` · ${esc(item.time)}`:''}</span>`).join('')}</div>`:''}
       <div class="strategy-plan-day-body"><p class="strategy-plan-action">${esc(daySchedulingAction(day,day.topicSignals))}</p>
         <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
-        <div class="strategy-plan-programs">${day.programs.length?day.programs.map(({slot,rec})=>`<div><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · ${esc(rec.title)}</strong><span>${esc(rec.topic)}${slot.experimental?' · TEST':''}</span>${compactTimingForSlot(timingIndex,slot)?`<small>${compactTimingForSlot(timingIndex,slot)}</small>`:''}</div>`).join(''):'<span class="strategy-no-history">No discretionary pledge recommendation for this date.</span>'}</div>
+        <div class="strategy-plan-programs">${day.programs.length?day.programs.map(({slot,options})=>`<div class="strategy-plan-window"><div class="strategy-plan-window-head"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)}${slot.experimental?' · TEST':''}</strong>${compactTimingForSlot(timingIndex,slot)?`<small>${compactTimingForSlot(timingIndex,slot)}</small>`:''}</div><ol>${options.map(rec=>`<li><b>${esc(rec.title)}</b><span>${esc(rec.topic)}</span></li>`).join('')}</ol></div>`).join(''):'<span class="strategy-no-history">No discretionary pledge recommendation for this date.</span>'}</div>
       </div>
     </article>`).join('')}</div>
   </section>`;
