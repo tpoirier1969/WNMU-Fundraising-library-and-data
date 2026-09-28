@@ -614,6 +614,35 @@
     return false;
   }
 
+  function normalizeBreakMode(value = '') {
+    const raw = text(value).toLowerCase().replace(/[\s-]+/g, '_');
+    if (['phones_staffed', 'phones', 'phone', 'staffed', 'phone_staffed'].includes(raw)) return 'phones_staffed';
+    if (['web_only', 'web', 'online_only', 'webonly'].includes(raw)) return 'web_only';
+    if (['live', 'live_break', 'live_breaks'].includes(raw)) return 'live';
+    return '';
+  }
+
+  function breakModeForPlacement(placement = {}) {
+    const objects = [placement, placement.meta, placement.flags, placement.scheduleFlags, placement.liveBreakMeta]
+      .filter((value) => value && typeof value === 'object');
+    const keys = ['breakMode', 'break_mode', 'pledgeBreakMode', 'pledge_break_mode', 'fundraisingMode', 'fundraising_mode', 'responseMode', 'response_mode'];
+    for (const object of objects) {
+      for (const key of keys) {
+        const mode = normalizeBreakMode(object?.[key]);
+        if (mode) return mode;
+      }
+    }
+    return liveBreakFlag(placement) ? 'live' : '';
+  }
+
+  function breakModeLabel(value = '') {
+    const mode = normalizeBreakMode(value);
+    if (mode === 'live') return 'Live';
+    if (mode === 'phones_staffed') return 'Phones staffed';
+    if (mode === 'web_only') return 'Web-only';
+    return '';
+  }
+
   function addGroup(map, key, minutes, result, durationMissing = false) {
     const label = canonicalCategory(key);
     const groupKey = lookupKey(label) || label;
@@ -665,6 +694,7 @@
       pledges: Number(row.pledge_count || row.pledges || 0) || 0,
       source: 'report-unmatched',
       unmatchedImported: true,
+      breakMode: '',
       liveBreak: false,
       rowHash: text(row.row_hash || ''),
       importedSourceTitle: text(row.imported_program_title || row.program_title || row.title || ''),
@@ -742,7 +772,8 @@
         dollars: Number(result.dollars || 0),
         pledges: Number(result.pledges || 0),
         source: result.source || 'none',
-        liveBreak: liveBreakFlag(placement),
+        breakMode: breakModeForPlacement(placement),
+        liveBreak: breakModeForPlacement(placement) === 'live',
         programId: text(lib.id || placement.programId || placement.program_id || '')
       });
     });
@@ -1059,7 +1090,7 @@
           startBucket: Number.isFinite(Number(row.startMinutes))
             ? Math.floor(((((Number(row.startMinutes) % 1440) + 1440) % 1440) / 30)) * 30
             : null,
-          breakType: row.unmatchedImported ? '' : (row.liveBreak ? 'Live break' : 'Pre-recorded break')
+          breakType: row.unmatchedImported ? '' : breakModeLabel(row.breakMode || (row.liveBreak ? 'live' : ''))
         });
       });
     });
@@ -1143,7 +1174,7 @@
           startBucket: Number.isFinite(Number(row?.startMinutes))
             ? Math.floor(((((Number(row.startMinutes) % 1440) + 1440) % 1440) / 30)) * 30
             : null,
-          breakType: row?.liveBreak ? 'Live break' : 'Pre-recorded break'
+          breakType: breakModeLabel(row?.breakMode || (row?.liveBreak ? 'live' : ''))
         };
         const key = historicalGroupValue(enriched, dimension);
         if (!key) return;
