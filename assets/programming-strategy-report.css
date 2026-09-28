@@ -1226,3 +1226,14 @@
   .strategy-meeting-live{grid-column:1/-1}
   .strategy-opportunity-summary p{font-size:6.5pt}
 }
+
+.strategy-day-topic-action{
+  display:block;
+  margin-top:4px;
+  color:#405d6a!important;
+  line-height:1.38!important;
+}
+.strategy-day-topic-action b{color:#31586e}
+@media print{
+  .strategy-day-topic-action{font-size:5.9pt!important;margin-top:2px}
+}
