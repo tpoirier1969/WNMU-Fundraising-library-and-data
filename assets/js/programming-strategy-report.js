@@ -477,6 +477,164 @@ function dayMapSection(strategy,hourly){
   }).join('')}</div></section>`).join('')}</div></section>`;
 }
 
+function calendarRowsForSchedule(schedule={}){
+  try{
+    return globalThis.WNMUStrategyCalendar?.forSchedule?.(schedule)||[];
+  }catch(_error){
+    return[];
+  }
+}
+
+function calendarRowsForDate(rows=[],dateKey=''){
+  const target=new Date(String(dateKey||'')+'T12:00:00');
+  if(Number.isNaN(target.getTime()))return[];
+  return rows.filter(item=>{
+    const start=new Date(String(item.date||'')+'T12:00:00');
+    const end=new Date(String(item.endDate||item.date||'')+'T12:00:00');
+    return !Number.isNaN(start.getTime())&&!Number.isNaN(end.getTime())&&target>=start&&target<=end;
+  });
+}
+
+function briefSection(result={},opportunities={},schedule={}){
+  const strategy=result.strategy||{};
+  const peer=(result.peerPractices||[]).slice(0,4);
+  const localIdeas=(opportunities.rows||[]).slice(0,4);
+  const calendar=calendarRowsForSchedule(schedule)
+    .filter(item=>item.kind==='observance'||item.impact==='high'||item.impact==='medium')
+    .slice(0,9);
+
+  const ideaCards=[
+    ...localIdeas.map(item=>({
+      source:'WNMU',
+      title:`${item.weekday} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}`,
+      text:item.rationale||item.label||'Worth testing.',
+      meta:Number.isFinite(item.averageRate)?`Avg &#36;${Math.round(item.averageRate)}/pledge hr`:(item.label||'')
+    })),
+    ...peer.map(item=>({
+      source:'Peer',
+      title:item.label||'Peer-station practice',
+      text:item.testIdea||item.wnmuStatus||'Worth a bounded WNMU test.',
+      meta:`${Number(item.stationCount||0)} station${Number(item.stationCount||0)===1?'':'s'}`
+    }))
+  ].slice(0,8);
+
+  const promotion=[
+    ['Vermont Public','Build anticipation before the drive across broadcast, web, email, social and text.'],
+    ['Houston Public Media','Promote a specific program/event, then reinforce it with targeted email, a match and a local break.'],
+    ['WLRN','Segment email/SMS audiences and test messages instead of sending one generic appeal.'],
+    ['Vegas PBS','Brand pledge as a local television event with personalities, stories and community identity.']
+  ];
+
+  return`<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built.</p></div></div>
+    <div class="strategy-brief-block"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">${ideaCards.length?ideaCards.map(item=>`<article><span class="strategy-source-tag">${esc(item.source)}</span><strong>${esc(item.title)}</strong><p>${esc(item.text)}</p>${item.meta?`<small>${item.meta}</small>`:''}</article>`).join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>'}</div></div>
+    <div class="strategy-brief-block"><h3>Promotion</h3><div class="strategy-promotion-compact">${promotion.map(([station,text])=>`<div><strong>${esc(station)}</strong><span>${esc(text)}</span></div>`).join('')}</div></div>
+    <div class="strategy-brief-block"><h3>Calendar watch</h3><div class="strategy-calendar-watch">${calendar.length?calendar.map(item=>`<article class="impact-${esc(item.impact||'context')}"><div><strong>${esc(item.title)}</strong><span>${esc(item.scope||'')}</span></div><p>${esc(item.date)}${item.time?` · ${esc(item.time)}`:''} · ${esc(item.detail||'')}</p>${item.sourceUrl?`<a href="${esc(item.sourceUrl)}" target="_blank" rel="noopener">${esc(item.sourceLabel||'Source')}</a>`:''}</article>`).join(''):'<p>No major calendar conflict is currently loaded for these fundraiser dates.</p>'}</div></div>
+  </section>`;
+}
+
+function compactTimingForSlot(hourlyIndex,slot={}){
+  const rows=hourlyIndex?.groups?.get(slot.weekday)||[];
+  const row=rows.find(item=>Number(item.startMinutes)===Number(slot.startMinutes));
+  if(!row)return'';
+  const season=row.targetSeason||{};
+  const all=row.allHistory||{};
+  if(Number(season.fundraiserSamples||0)>0&&Number.isFinite(Number(season.averageRate))){
+    return`Timing &#36;${Math.round(Number(season.averageRate))}/hr · ${Number(season.fundraiserSamples)} drive${Number(season.fundraiserSamples)===1?'':'s'}`;
+  }
+  if(Number(all.fundraiserSamples||0)>0&&Number.isFinite(Number(all.averageRate))){
+    return`All-history timing &#36;${Math.round(Number(all.averageRate))}/hr · ${Number(all.fundraiserSamples)} drive${Number(all.fundraiserSamples)===1?'':'s'}`;
+  }
+  return'';
+}
+
+function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedule={}){
+  const calendar=calendarRowsForSchedule(schedule);
+  const timingIndex=hourlyPatternIndex(hourly);
+  const matrixRows=Array.isArray(matrix?.rows)?matrix.rows:[];
+  const windowsByDate=new Map();
+  (strategy.windows||[]).forEach(slot=>{
+    if(!windowsByDate.has(slot.date))windowsByDate.set(slot.date,[]);
+    windowsByDate.get(slot.date).push(slot);
+  });
+
+  const topicSnapshot=(strategy.topicComparison||[]).slice(0,6);
+  const days=(outlook.rows||[]).map(day=>{
+    const date=new Date(String(day.date||'')+'T12:00:00');
+    const weekdayIndex=Number.isNaN(date.getTime())?null:date.getDay();
+    const occurrence=scheduleOccurrenceForDate(schedule,day.date);
+    const topicSignals=[];
+    matrixRows.filter(row=>row.weekdayIndex===weekdayIndex).forEach(row=>{
+      const position=(row.positionBreakdown||[]).find(item=>Number(item.occurrence)===Number(occurrence));
+      (position?.localTopics||[]).forEach(topic=>{
+        const samples=Number(topic.fundraiserSamples||0);
+        const titles=Number(topic.titleCount||0);
+        const rate=Number(topic.averageRate);
+        if(samples<2||titles<2||!Number.isFinite(rate))return;
+        topicSignals.push({daypart:row.daypart,topic:topic.topic,rate,samples,titles});
+      });
+    });
+    topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
+
+    const programs=(windowsByDate.get(day.date)||[])
+      .filter(slot=>!slot.blocked)
+      .sort((a,b)=>a.startMinutes-b.startMinutes)
+      .map(slot=>({slot,rec:slot.recommendations?.[0]||null}))
+      .filter(item=>item.rec)
+      .slice(0,3);
+
+    return{...day,topicSignals:topicSignals.slice(0,2),programs,calendar:calendarRowsForDate(calendar,day.date)};
+  });
+
+  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>Day, topic, timing and program direction in one compact planning view.</p></div></div>
+    <div class="strategy-topic-snapshot"><h3>Topic snapshot</h3><div>${topicSnapshot.length?topicSnapshot.map(item=>`<span><b>${esc(item.topic)}</b><strong class="strategy-rate">${Number.isFinite(item.averageRate)?`&#36;${Math.round(item.averageRate)}/hr`:'No seasonal history'}</strong><small>${Number(item.fundraiserSamples||0)} drive${Number(item.fundraiserSamples||0)===1?'':'s'} · ${Number(item.eligibleProgramCount||0)} eligible</small></span>`).join(''):'<p>No eligible seasonal topic history.</p>'}</div></div>
+    <div class="strategy-plan-days">${days.map(day=>`<article class="strategy-plan-day tone-${dayTone(day.outlook)}">
+      <header><div><strong>${esc(day.label)}</strong><span>${esc(fmt(day.date,false))}</span></div><div><b>${esc(day.outlook)}</b>${Number.isFinite(day.averageRate)?`<span class="strategy-rate">Avg &#36;${Math.round(day.averageRate)}/pledge hr</span>`:''}</div></header>
+      ${day.calendar.length?`<div class="strategy-day-calendar">${day.calendar.map(item=>`<span class="impact-${esc(item.impact||'context')}"><b>${esc(item.title)}</b>${item.time?` · ${esc(item.time)}`:''}</span>`).join('')}</div>`:''}
+      <div class="strategy-plan-day-body"><p class="strategy-plan-action">${esc(daySchedulingAction(day,day.topicSignals))}</p>
+        <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
+        <div class="strategy-plan-programs">${day.programs.length?day.programs.map(({slot,rec})=>`<div><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · ${esc(rec.title)}</strong><span>${esc(rec.topic)}${slot.experimental?' · TEST':''}</span>${compactTimingForSlot(timingIndex,slot)?`<small>${compactTimingForSlot(timingIndex,slot)}</small>`:''}</div>`).join(''):'<span class="strategy-no-history">No discretionary pledge recommendation for this date.</span>'}</div>
+      </div>
+    </article>`).join('')}</div>
+  </section>`;
+}
+
+function programOpportunitiesSection(strategy={}){
+  const byKey=new Map();
+  const keyFor=(item)=>String(item?.programId||item?.title||'').trim().toLowerCase();
+  const ensure=(item)=>{
+    const key=keyFor(item);
+    if(!key)return null;
+    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[]});
+    const row=byKey.get(key);
+    if(!row.title&&item.title)row.title=item.title;
+    if(!row.topic&&item.topic)row.topic=item.topic;
+    if(Number.isFinite(Number(item.score)))row.score=Math.max(Number.isFinite(row.score)?row.score:-Infinity,Number(item.score));
+    return row;
+  };
+  (strategy.repeats||[]).forEach(item=>{
+    const row=ensure(item); if(!row)return;
+    row.badges.push('Repeat');
+    if(item.slots?.length)row.notes.push(`Works across ${item.slots.length} separated prime windows`);
+  });
+  (strategy.seasonal||[]).forEach(item=>{
+    const row=ensure(item); if(!row)return;
+    row.badges.push('Seasonal');
+    const note=item.season?.notes?.[0]||`${item.season?.targetSeason||'Seasonal'} fit`;
+    if(note)row.notes.push(note);
+  });
+  (strategy.local||[]).forEach(item=>{
+    const row=ensure(item); if(!row)return;
+    row.badges.push('Local / U.P.');
+    if(item.fit)row.notes.push(item.fit);
+  });
+  const rows=[...byKey.values()]
+    .map(row=>({...row,badges:[...new Set(row.badges)],notes:[...new Set(row.notes)]}))
+    .sort((a,b)=>b.badges.length-a.badges.length||(Number(b.score)||0)-(Number(a.score)||0)||a.title.localeCompare(b.title))
+    .slice(0,12);
+
+  return`<section class="sheet-section strategy-program-opportunities"><div class="strategy-section-head"><div><h2>Program opportunities</h2><p>Repeat, seasonal and Local/U.P. candidates combined. A title can qualify in more than one way.</p></div></div><div class="strategy-program-opportunity-list">${rows.length?rows.map(item=>`<article><div><strong>${esc(item.title)}</strong><span>${esc(item.topic)}</span></div><div class="strategy-opportunity-badges">${item.badges.map(badge=>`<span>${esc(badge)}</span>`).join('')}</div><p>${esc(item.notes.slice(0,2).join(' · ')||'Worth considering in the current fundraiser mix.')}</p>${Number.isFinite(item.score)?`<small>Best-window score ${Math.round(item.score)}</small>`:''}</article>`).join(''):'<p>No repeat, seasonal or Local/U.P. program opportunity currently clears the filters.</p>'}</div></section>`;
+}
+
 function compact(items,renderer,empty){return items?.length?`<div class="strategy-compact-list">${items.map(renderer).join('')}</div>`:`<p>${esc(empty)}</p>`;}
 function supportingSections(strategy){return`<section class="sheet-section strategy-two-column"><div><h2>Repeat candidates</h2>${compact(strategy.repeats,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · score ${Math.round(x.score)} · supported on ${x.slots.length} separated prime windows.</span></div>`,'No repeat candidate clears the threshold.')}<h2>Seasonal opportunities</h2>${compact(strategy.seasonal,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · ${esc(x.season.notes.join(' ')||`${x.season.targetSeason} seasonal support`)}</span></div>`,'No distinct seasonal opportunity identified.')}</div><div><h2>Local / U.P. opportunities</h2>${compact(strategy.local,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · best-window score ${Math.round(x.score)} · ${esc(x.fit)}</span></div>`,'No eligible Local / U.P. title identified.')}<h2>Discretionary titles to avoid / rest</h2><p class="strategy-section-note">Only discretionary pledge titles appear here. Fixed-schedule programs, Drama Docs, and titles still performing at or above WNMU's relevant pledge baseline are omitted unless you explicitly rated them Don't air or Low confidence.</p>${compact(strategy.avoid,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.reasons.join(' · '))}</span></div>`,'No discretionary title currently needs a prominent rest/avoid caution.')}</div></section>`;}
 function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`;}
@@ -593,7 +751,7 @@ async function renderStrategy(){
     const diagnostics=result.diagnostics||{};
     const renderStarted=globalThis.performance?.now?.()??Date.now();
 
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${opportunitiesSection(opportunities)}${promotionExamplesSection()}${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}${topicComparisonSection(strategy)}${dayMapSection(strategy,hourlyPatterns)}${supportingSections(strategy)}${limitationsSection(strategy)}</article>`;
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${briefSection(result,opportunities,schedule)}${fundraiserPlanSection(strategy,dayOutlook,result.topicTimeMatrix,hourlyPatterns,schedule)}${programOpportunitiesSection(strategy)}</article>`;
     globalThis.WNMUStrategyEnhancements?.decorate?.(out,result);
 
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
