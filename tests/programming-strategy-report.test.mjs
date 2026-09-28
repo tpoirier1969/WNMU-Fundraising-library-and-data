@@ -1187,23 +1187,26 @@ test('peer daypart evidence surfaces Sunday morning as an explicit WNMU test gap
   assert.ok(matrix.peer.topTopics.some((item) => item.topic === 'How-to'));
 });
 
-test('strategy report renders an explained meeting brief and simplified topic-time takeaways', () => {
+test('strategy report keeps the meeting brief concise and day/topic advice decision-oriented', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
   assert.match(reportUi, /Meeting brief/);
-  assert.match(reportUi, /not “the top four slots”/);
-  assert.match(reportUi, /ordered by dollars per pledge hour/);
-  assert.match(reportUi, /Strongest multi-title WNMU topic\/time signals/);
-  assert.match(reportUi, /Interpretation guardrails/);
-  assert.match(reportUi, /at least two different titles/);
-  assert.match(reportUi, /How to read this:/);
+  assert.match(reportUi, /Windows worth discussing/);
+  assert.match(reportUi, /Peer-led gaps to consider/);
+  assert.match(reportUi, /Live \/ localized break evidence/);
+  assert.match(reportUi, /live-localized/);
+  assert.doesNotMatch(reportUi, /<h3>Strongest multi-title WNMU topic\/time signals<\/h3>/);
+  assert.doesNotMatch(reportUi, /<h3>Interpretation guardrails<\/h3>/);
   assert.match(reportUi, /Fundraiser day & topic takeaways/);
   assert.match(reportUi, /actual dates in this selected fundraiser/);
-  assert.match(reportUi, /No multi-title topic\/time signal clears the threshold for this exact fundraiser position/);
+  assert.match(reportUi, /topicSignals\.slice\(0,3\)/);
+  assert.match(reportUi, /Saturday 3–5 PM:/);
+  assert.match(reportUi, /strategy-opportunity-summary/);
   assert.match(reportUi, /Under-tested windows supported by peers/);
   assert.match(reportUi, /scheduleOccurrenceForDate/);
-  assert.match(reportUi, /item\.rationale/);
+  assert.doesNotMatch(reportUi, /\$\{rightsSection\(strategy\)\}/);
   assert.match(styles, /\.strategy-meeting-grid/);
+  assert.match(styles, /\.strategy-meeting-live/);
   assert.match(styles, /\.strategy-day-topic-list/);
   assert.match(styles, /\.strategy-day-topic-row/);
   assert.match(styles, /\.strategy-day-topic-peer/);
@@ -1269,12 +1272,14 @@ test('strategy report no longer renders a separate 8 PM vs 9 PM cross-check', ()
   assert.doesNotMatch(enhancements,/decorateHourlySection/);
 });
 
-test('strategy print CSS allows large day and grid containers to fragment across pages', () => {
+test('strategy print CSS uses staple-safe margins and compact Day/Time tables', () => {
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
-  assert.match(styles,/\.strategy-day-compact\{[\s\S]*?break-inside:auto!important/);
-  assert.match(styles,/\.strategy-hourly-grid,[\s\S]*?\.strategy-peer-practice-grid\{[\s\S]*?display:block!important/);
-  assert.match(styles,/\.strategy-program-row\{[\s\S]*?break-inside:avoid-page/);
-  assert.match(styles,/\.strategy-opportunity-row\{[\s\S]*?break-inside:auto!important/);
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  assert.match(styles,/@page\{[\s\S]*?margin:0\.85in 0\.58in 0\.70in 0\.82in/);
+  assert.match(styles,/\.strategy-hourly-grid\{[\s\S]*?display:grid!important;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)!important/);
+  assert.match(styles,/\.strategy-hourly-print-hide\{display:none!important\}/);
+  assert.match(reportUi,/!weekend&&Number\(x\.startMinutes\)<17\*60\?' strategy-hourly-print-hide'/);
+  assert.match(styles,/\.strategy-program-row,[\s\S]*?break-inside:avoid-page!important/);
 });
 
 
