@@ -606,6 +606,18 @@ const STRATEGY_WEEKDAYS = Object.freeze([
 ]);
 
 
+function targetWeekdayOccurrenceCounts(schedule = {}) {
+  const start = S.parseDate(schedule.startDate);
+  const end = S.parseDate(schedule.endDate);
+  const counts = new Map();
+  if (!start || !end || end < start) return counts;
+  for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+    const day = cursor.getDay();
+    counts.set(day, (counts.get(day) || 0) + 1);
+  }
+  return counts;
+}
+
 function fundraiserWeekdayOccurrence(row = {}) {
   const start = S.parseDate(row.driveStartDate);
   const date = S.parseDate(row.dateKey);
@@ -771,6 +783,7 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
 
 function buildTopicTimeMatrix(schedule = {}, rows = [], peerObservations = []) {
   const planningPool = seasonPlanningPool(schedule, rows);
+  const targetOccurrenceCounts = targetWeekdayOccurrenceCounts(schedule);
   const result = [];
 
   for (const day of STRATEGY_WEEKDAYS) {
@@ -813,7 +826,7 @@ function buildTopicTimeMatrix(schedule = {}, rows = [], peerObservations = []) {
             localTopics: summary.localTopics
           };
         })
-        .filter((item) => item.local.airings > 0);
+        .filter((item) => item.local.airings > 0 && item.occurrence <= Number(targetOccurrenceCounts.get(day.day) || 0));
 
       const peer = peerWindowSummary(schedule, peerObservations, day.weekday, part.startMinutes, part.endMinutes);
       if (!local.airings && !peer.stations) continue;
