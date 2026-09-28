@@ -192,12 +192,75 @@
     return LOCAL_WORD_PATTERN.test(value) || LOCAL_UP_PATTERN.test(value);
   }
 
-  function excludedFromAvoidList(program = {}, history = {}, drama = {}, baselineRate = null, rating = '') {
+  function schedulePlacements(schedule = {}) {
+    const direct = schedule.placements;
+    if (Array.isArray(direct)) return direct;
+    const nested = schedule.schedule_data?.placements || schedule.scheduleData?.placements;
+    return Array.isArray(nested) ? nested : [];
+  }
+
+  function placedInTargetSchedule(program = {}, schedule = {}) {
+    const id = programId(program);
+    const titleKey = lookupKey(programTitle(program));
+    return schedulePlacements(schedule).some((placement) => {
+      const placementId = text(first(placement.programId, placement.program_id, ''));
+      const placementTitle = lookupKey(first(placement.programTitle, placement.program_title, placement.title, ''));
+      return Boolean((id && placementId && id === placementId) || (titleKey && placementTitle && titleKey === placementTitle));
+    });
+  }
+
+  function recurringScheduleProfile(rows = []) {
+    const usable = (rows || []).filter((row) => {
+      const date = parseDate(airingDate(row));
+      return Boolean(date && Number.isFinite(rowStartMinutes(row)));
+    });
+    const fundraiserKeys = new Set(usable.map((row) => fundraiserKey(row)).filter(Boolean));
+    if (usable.length < 5 || fundraiserKeys.size < 5) return { fixed: false, fundraisers: fundraiserKeys.size, rows: usable.length };
+
+    const starts = new Map();
+    const weekdays = new Map();
+    const slots = new Map();
+    for (const row of usable) {
+      const date = parseDate(airingDate(row));
+      const start = rowStartMinutes(row);
+      const weekday = date.getDay();
+      const startKey = String(Math.round(start / 15) * 15);
+      const weekdayKey = String(weekday);
+      const slotKey = weekdayKey + '|' + startKey;
+      starts.set(startKey, (starts.get(startKey) || 0) + 1);
+      weekdays.set(weekdayKey, (weekdays.get(weekdayKey) || 0) + 1);
+      slots.set(slotKey, (slots.get(slotKey) || 0) + 1);
+    }
+    const maxShare = (map) => usable.length ? Math.max(0, ...map.values()) / usable.length : 0;
+    const topStartShare = maxShare(starts);
+    const topWeekdayShare = maxShare(weekdays);
+    const topSlotShare = maxShare(slots);
+    const distinctWeekdays = weekdays.size;
+
+    const fixed = topSlotShare >= 0.60
+      || topStartShare >= 0.72
+      || topWeekdayShare >= 0.82
+      || (fundraiserKeys.size >= 12 && distinctWeekdays <= 3);
+
+    return {
+      fixed,
+      fundraisers: fundraiserKeys.size,
+      rows: usable.length,
+      topStartShare,
+      topWeekdayShare,
+      topSlotShare,
+      distinctWeekdays
+    };
+  }
+
+  function excludedFromAvoidList(program = {}, history = {}, drama = {}, baselineRate = null, rating = '', rows = [], schedule = {}) {
     // Explicit editorial cautions remain visible even when performance is healthy.
     if (rating === 'dont_air' || rating === 'low_confidence') return false;
 
     const title = programTitle(program);
+    if (placedInTargetSchedule(program, schedule)) return true;
     if (FIXED_SCHEDULE_TITLE_PATTERN.test(title)) return true;
+    if (recurringScheduleProfile(rows).fixed) return true;
     if (drama?.isDramaDoc) return true;
 
     const averageRate = Number(history?.averageRate);
@@ -1523,7 +1586,7 @@ return result;}
       const drama = cached.drama;
       const season = cached.season;
 
-      if (excludedFromAvoidList(program, history, drama, baselineRate, rating)) return null;
+      if (excludedFromAvoidList(program, history, drama, baselineRate, rating, rows, schedule)) return null;
 
       const rest = history.latest ? daysBetween(history.latest, scheduleStart(schedule)) : null;
       const reasons = [];
@@ -1573,7 +1636,7 @@ return result;}
         'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
-        'The avoid/rest list is limited to discretionary pledge titles: fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
+        'The avoid/rest list is limited to discretionary pledge titles: anything already placed in the target schedule, recurring titles with a strong fixed day/time pattern, known fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
         'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
         'Islamic-calendar holiday windows are planning approximations and may differ by local moon sighting.',
         'Friday 8–9 PM is protected regular programming and excluded from pledge recommendations.'
@@ -1604,6 +1667,8 @@ return result;}
     rightsEnd,
     premiumSummary,
     isLocal,
+    placedInTargetSchedule,
+    recurringScheduleProfile,
     holidayCategory,
     holidaySeasonAdjustment,
     isHoliday,
