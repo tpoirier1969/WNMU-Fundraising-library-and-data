@@ -422,11 +422,16 @@
           </div>
           <div id="schedule-program-results" class="schedule-program-results"></div>
           <div id="schedule-selected-preview" class="schedule-selected-preview"></div>
-          <div class="schedule-live-break-row">
-            <label class="schedule-inline-check">
-              <input id="schedule-live-break-flag" type="checkbox">
-              <span>Mark this scheduled slot as a live-break night</span>
+          <div class="schedule-live-break-row schedule-break-mode-row">
+            <label class="filter-field schedule-break-mode-field">
+              <span class="filter-label">Break mode</span>
+              <select id="schedule-break-mode-select">
+                <option value="phones_staffed">Phones staffed</option>
+                <option value="web_only">Web-only</option>
+                <option value="live">Live</option>
+              </select>
             </label>
+            <div class="muted schedule-break-mode-help">Saved on this program airing. Defaults to Web-only from 5–7 PM and Phones staffed at other times.</div>
           </div>
           <section id="schedule-manual-result-panel" class="schedule-manual-result-panel hidden" aria-label="Manual pledge result">
             <div class="schedule-manual-result-head">
