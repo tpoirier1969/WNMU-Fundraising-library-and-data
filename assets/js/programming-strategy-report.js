@@ -171,9 +171,7 @@ function hourlyPatternsSection(hourly){
     <div class="strategy-hourly-grid">${order.map(day=>{
       const allRows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);
       const observed=allRows.filter(x=>Number(x.targetSeason?.fundraiserSamples||0)>0||Number(x.allHistory?.fundraiserSamples||0)>0);
-      const minStart=observed.length?Math.min(...observed.map(x=>Number(x.startMinutes))):null;
-      const maxStart=observed.length?Math.max(...observed.map(x=>Number(x.startMinutes))):null;
-      const rows=observed.length?allRows.filter(x=>Number(x.startMinutes)>=minStart&&Number(x.startMinutes)<=maxStart):[];
+      const rows=observed;
       return`<section class="strategy-hourly-day"><h3>${day}</h3><div class="strategy-hourly-compare-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-compare-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-hourly-scope">${metric(x.targetSeason,data.season||'season')}</span><span class="strategy-hourly-scope">${metric(x.allHistory,'all-history')}</span></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
     }).join('')}</div></section>`;
 }
