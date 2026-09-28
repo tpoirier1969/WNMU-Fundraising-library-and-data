@@ -1123,7 +1123,7 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerO
       const row = dayRows[index];
       if (row.startMinutes < 6 * 60 || row.startMinutes >= 24 * 60) continue;
 
-      const underused = row.fundraiserSamples > 0
+      const underused = row.fundraiserSamples >= 2
         && row.fundraiserSamples <= Math.max(2, Math.floor(maxSamples * 0.45));
       const productive = underused
         && Number.isFinite(row.averageRate)
