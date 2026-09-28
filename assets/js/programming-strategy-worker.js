@@ -139,7 +139,8 @@ function strategyEvidenceRowsFromAnalyses(analyses = []) {
         known: true,
         durationMissing,
         countsTowardScheduleMinutes: true,
-        durationSource: text(row.durationSource || '')
+        durationSource: text(row.durationSource || ''),
+        liveBreak: Boolean(row.liveBreak)
       });
     }
   }
@@ -416,6 +417,103 @@ function summarizeTimeslotRows(rows = []) {
   };
 }
 
+function simpleBreakStats(rows = []) {
+  const clean = (rows || []).filter((row) => Number(row.minutes) > 0);
+  const byFundraiser = new Map();
+  for (const row of clean) {
+    const key = row.fundraiserId || row.dateKey;
+    if (!byFundraiser.has(key)) byFundraiser.set(key, { dollars: 0, minutes: 0 });
+    const bucket = byFundraiser.get(key);
+    bucket.dollars += Number(row.dollars || 0);
+    bucket.minutes += Number(row.minutes || 0);
+  }
+  const rates = [...byFundraiser.values()]
+    .filter((item) => item.minutes > 0)
+    .map((item) => item.dollars * 60 / item.minutes)
+    .filter(Number.isFinite);
+  const nonzero = clean.filter((row) => Number(row.dollars || 0) > 0).length;
+  return {
+    airings: clean.length,
+    fundraiserSamples: byFundraiser.size,
+    averageRate: S.mean(rates),
+    nonzeroAirings: nonzero,
+    nonzeroShare: clean.length ? nonzero / clean.length : 0
+  };
+}
+
+function buildLiveBreakEvidence(rows = []) {
+  const clean = reportableProgrammingRows(rows);
+  const liveRows = clean.filter((row) => Boolean(row.liveBreak));
+  if (!liveRows.length) {
+    return { live: simpleBreakStats([]), sameTitlesNonLive: simpleBreakStats([]), titleCount: 0, titles: [] };
+  }
+  const liveTitleKeys = new Set(liveRows.map((row) => S.lookupKey(row.title || '')).filter(Boolean));
+  const sameTitlesNonLive = clean.filter((row) => !row.liveBreak && liveTitleKeys.has(S.lookupKey(row.title || '')));
+  const titleGroups = new Map();
+  for (const row of liveRows) {
+    const key = S.lookupKey(row.title || '');
+    if (!key) continue;
+    if (!titleGroups.has(key)) titleGroups.set(key, { title: text(row.title), live: [], nonLive: [] });
+    titleGroups.get(key).live.push(row);
+  }
+  for (const row of sameTitlesNonLive) {
+    const key = S.lookupKey(row.title || '');
+    if (titleGroups.has(key)) titleGroups.get(key).nonLive.push(row);
+  }
+  return {
+    live: simpleBreakStats(liveRows),
+    sameTitlesNonLive: simpleBreakStats(sameTitlesNonLive),
+    titleCount: liveTitleKeys.size,
+    titles: [...titleGroups.values()].map((item) => ({
+      title: item.title,
+      live: simpleBreakStats(item.live),
+      nonLive: simpleBreakStats(item.nonLive)
+    })).sort((a,b)=>b.live.airings-a.live.airings||a.title.localeCompare(b.title))
+  };
+}
+
+function weekdayOccurrenceFromSchedule(schedule = {}, dateValue = '') {
+  const start = S.parseDate(schedule.startDate);
+  const date = S.parseDate(dateValue);
+  if (!start || !date || date < start) return null;
+  const weekday = date.getDay();
+  let occurrence = 0;
+  for (let cursor = new Date(start); cursor <= date; cursor.setDate(cursor.getDate() + 1)) {
+    if (cursor.getDay() === weekday) occurrence += 1;
+  }
+  return occurrence || null;
+}
+
+function buildLongerDriveHistory(schedule = {}, analyses = []) {
+  const pool = seasonAnalysisPool(schedule, analyses);
+  const targetCounts = targetWeekdayOccurrenceCounts(schedule);
+  const rows = [];
+  for (const analysis of pool.analyses || []) {
+    const historicalSchedule = analysis?.schedule || {};
+    const baseline = Number(analysis?.rateEligibleMinutes || 0) > 0
+      ? A.dollarsPerHour(Number(analysis?.rateEligibleDollars || 0), Number(analysis?.rateEligibleMinutes || 0))
+      : null;
+    for (const day of A.calendarDays(analysis) || []) {
+      const date = S.parseDate(day.dateKey);
+      if (!date || !(Number(day.rateMinutes || 0) > 0) || !Number.isFinite(Number(day.dollarsPerHour))) continue;
+      const occurrence = weekdayOccurrenceFromSchedule(historicalSchedule, day.dateKey);
+      const allowed = Number(targetCounts.get(date.getDay()) || 0);
+      if (!occurrence || occurrence <= allowed) continue;
+      const weekday = date.toLocaleDateString(undefined, { weekday: 'long' });
+      rows.push({
+        fundraiser: text(historicalSchedule.title || historicalSchedule.id || 'Historical fundraiser'),
+        date: text(day.dateKey),
+        weekday,
+        weekdayIndex: date.getDay(),
+        occurrence,
+        label: ordinalWord(occurrence) + ' ' + weekday,
+        averageRate: Number(day.dollarsPerHour),
+        relativeIndex: baseline > 0 ? Number(day.dollarsPerHour) / baseline : null
+      });
+    }
+  }
+  return { season: pool.targetSeason, fallback: pool.fallback, rows: rows.sort((a,b)=>a.date.localeCompare(b.date)) };
+}
 function pairedStartTimeCheck(rows = [], options = {}) {
   const bucketMinutes = Number.isFinite(Number(options.bucketMinutes)) ? Number(options.bucketMinutes) : 30;
   const startA = Number.isFinite(Number(options.startA))
@@ -1521,6 +1619,8 @@ self.onmessage = (event) => {
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns, peerObservations);
     const peerPractices = buildPeerPracticeGaps(schedule, peerObservations, rows);
     const topicTimeMatrix = buildTopicTimeMatrix(schedule, rows, peerObservations);
+    const liveBreakEvidence = buildLiveBreakEvidence(rows);
+    const longerDriveHistory = buildLongerDriveHistory(schedule, analyses);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 
     phase = nowMs();
@@ -1537,6 +1637,8 @@ self.onmessage = (event) => {
       opportunities,
       peerPractices,
       topicTimeMatrix,
+      liveBreakEvidence,
+      longerDriveHistory,
       backtest,
       diagnostics
     });
