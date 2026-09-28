@@ -648,6 +648,38 @@
     return false;
   }
 
+  function normalizeBreakMode(value = '') {
+    const raw = text(value).toLowerCase().replace(/[\s-]+/g, '_');
+    if (['phones_staffed', 'phones', 'phone', 'staffed', 'phone_staffed'].includes(raw)) return 'phones_staffed';
+    if (['web_only', 'web', 'online_only', 'webonly'].includes(raw)) return 'web_only';
+    if (['live', 'live_break', 'live_breaks'].includes(raw)) return 'live';
+    return '';
+  }
+
+  function placementBreakMode(placement = {}) {
+    const explicit = normalizeBreakMode(firstNonEmpty(
+      placement?.breakMode,
+      placement?.break_mode,
+      placement?.pledgeBreakMode,
+      placement?.pledge_break_mode,
+      placement?.fundraisingMode,
+      placement?.fundraising_mode,
+      placement?.responseMode,
+      placement?.response_mode,
+      ''
+    ));
+    if (explicit) return explicit;
+    return placementLive(placement) ? 'live' : '';
+  }
+
+  function breakModeLabel(value = '') {
+    const mode = normalizeBreakMode(value);
+    if (mode === 'live') return 'Live';
+    if (mode === 'phones_staffed') return 'Phones staffed';
+    if (mode === 'web_only') return 'Web-only';
+    return '';
+  }
+
   function mapListPush(map, key, row) {
     if (!key) return;
     if (!map.has(key)) map.set(key, []);
@@ -723,7 +755,8 @@
         const nola = nolaKey(firstNonEmpty(lib?.nola_code, rawNola, ''));
         const title = lookupKey(firstNonEmpty(lib?.title, placement.programTitle, placement.program_title, placement.title, placement.name, ''));
         const hash = text(placement.sourceAiringHash || placement.source_airing_hash || '');
-        const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, hash, live: placementLive(placement), placement };
+        const breakMode = placementBreakMode(placement);
+        const entry = { scheduleId: schedule.id, scheduleTitle: schedule.title, dateKey, start, end, pid, nola, title, hash, breakMode, live: breakMode === 'live', placement };
         push(maps.hash, hash, entry);
         push(maps.dateProgram, `${dateKey}|${pid}`, entry);
         push(maps.dateNola, `${dateKey}|${nola}`, entry);
@@ -738,7 +771,7 @@
 
   function findScheduleMatch(record, scheduleIndex) {
     const hashMatch = record.sourceAiringHash ? (scheduleIndex.hash.get(record.sourceAiringHash) || []) : [];
-    if (hashMatch.length) return hashMatch.some((item) => item.live) ? hashMatch.find((item) => item.live) : hashMatch[0];
+    if (hashMatch.length) return hashMatch.find((item) => item.breakMode) || hashMatch[0];
     const keys = [record.programId, record.nola ? nolaKey(record.nola) : '', lookupKey(record.title)].filter(Boolean);
     const candidates = [];
     keys.forEach((key) => {
@@ -758,9 +791,9 @@
     if (!unique.length) return null;
     if (Number.isFinite(record.startMinutes)) {
       const overlapping = unique.filter((item) => record.startMinutes >= Number(item.start || 0) && record.startMinutes < Number(item.end || item.start || 0));
-      if (overlapping.length) return overlapping.some((item) => item.live) ? overlapping.find((item) => item.live) : overlapping[0];
+      if (overlapping.length) return overlapping.find((item) => item.breakMode) || overlapping[0];
     }
-    return unique.some((item) => item.live) ? unique.find((item) => item.live) : unique[0];
+    return unique.find((item) => item.breakMode) || unique[0];
   }
 
 
@@ -855,6 +888,7 @@
         fundraiser: text(row.fundraiser_label) || (season && year ? `${season} ${year}` : ''),
         dollars: Number(firstNonEmpty(row.dollars, row.contribution_amount, 0) || 0),
         pledges: Number(row.pledge_count || 0),
+        breakMode: '',
         live: false,
         liveState: 'unknown',
         liveSource: 'none',
@@ -873,9 +907,10 @@
         const preferredInternalDuration = libraryDuration || scheduleDuration;
         record.durationMismatch = Boolean(preferredInternalDuration && importedDuration
           && Math.abs(preferredInternalDuration - importedDuration) > DURATION_MISMATCH_TOLERANCE_MINUTES);
-        record.live = Boolean(scheduleMatch.live);
-        record.liveState = scheduleMatch.live ? 'live' : 'nonlive';
-        record.liveSource = 'schedule';
+        record.breakMode = normalizeBreakMode(scheduleMatch.breakMode);
+        record.live = record.breakMode === 'live';
+        record.liveState = record.breakMode === 'live' ? 'live' : (record.breakMode ? 'nonlive' : 'unknown');
+        record.liveSource = record.breakMode ? 'schedule' : 'none';
         record.scheduleTitle = scheduleMatch.scheduleTitle || '';
       }
       return record;
@@ -961,7 +996,7 @@
   function schedulePlacementPreferenceScore(placement = {}) {
     let score = 0;
     if (!placement.importedFromReport) score += 1000;
-    if (placementLive(placement)) score += 500;
+    if (placementBreakMode(placement)) score += 500;
     if (placement.transferredToStation) score += 250;
     if (placement.manualResultRecorded) score += 200;
     if (text(placement.sourceAiringHash || placement.source_airing_hash || '')) score += 100;
