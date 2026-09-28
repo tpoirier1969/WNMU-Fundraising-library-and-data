@@ -155,6 +155,342 @@
       html += '<article class="strategy-peer-practice">';
       html += '<header><strong>' + esc(item.label || '') + '</strong><span>' + Number(item.stationCount || 0) + ' station' + (Number(item.stationCount || 0) === 1 ? '' : 's') + ' · ' + Number(item.observationCount || 0) + ' positive observation' + (Number(item.observationCount || 0) === 1 ? '' : 's') + '</span></header>';
       html += '<p class="strategy-peer-status"><b>WNMU status:</b> ' + esc(item.wnmuStatus || 'Not classified.') + '</p>';
+      if (item.wnmuEvidence) {
+        const local = item.wnmuEvidence || {};
+        html += '<div class="strategy-peer-wnmu-evidence"><strong>WNMU measured local-production history</strong>';
+        if (Number.isFinite(Number(local.averageRate))) {
+          html += '<p>Across ' + Number(local.fundraiserSamples || 0) + ' fundraiser samples and ' + Number(local.titleCount || 0) + ' local titles, the broad average is about 
+
+      (item.examples || []).forEach(function (example) {
+        html += '<div><strong>' + esc(example.station || 'Other station') + '</strong><span>';
+        if (example.programTitle) html += esc(example.programTitle) + ' · ';
+        html += esc(example.summary || '');
+        if (example.actualDollars != null && Number.isFinite(Number(example.actualDollars))) html += ' · ' + esc(money(example.actualDollars));
+        if (example.goalDollars != null && Number.isFinite(Number(example.goalDollars))) html += ' on ' + esc(money(example.goalDollars)) + ' goal';
+        if (example.pledgeCount != null && Number.isFinite(Number(example.pledgeCount))) html += ' · ' + Number(example.pledgeCount) + ' pledge' + (Number(example.pledgeCount) === 1 ? '' : 's');
+        html += '</span></div>';
+      });
+
+      html += '</div>';
+      html += '<p class="strategy-peer-test"><b>Possible WNMU test:</b> ' + esc(item.testIdea || '') + '</p>';
+      html += '</article>';
+    });
+
+    html += '</div></section>';
+    return html;
+  }
+
+  function insertPeerPractices(root, rows) {
+    if (!root) return;
+    const mapSection = Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
+      const heading = section.querySelector(':scope > h2');
+      return heading && heading.textContent.trim() === 'Day-by-day programming map';
+    });
+    if (!mapSection) return;
+    mapSection.insertAdjacentHTML('beforebegin', peerPracticesHtml(rows));
+  }
+
+  function splitCompoundSections(root) {
+    if (!root) return;
+    const compounds = Array.from(root.querySelectorAll('section.sheet-section.strategy-two-column'));
+    compounds.forEach(function (compound) {
+      const replacement = document.createDocumentFragment();
+      const columns = Array.from(compound.children);
+
+      columns.forEach(function (column) {
+        let current = null;
+        Array.from(column.childNodes).forEach(function (node) {
+          if (node.nodeType === 1 && node.tagName === 'H2') {
+            current = document.createElement('section');
+            current.className = 'sheet-section strategy-split-section';
+            current.appendChild(node);
+            replacement.appendChild(current);
+          } else if (current) {
+            current.appendChild(node);
+          }
+        });
+      });
+
+      if (replacement.childNodes.length) compound.replaceWith(replacement);
+    });
+  }
+
+  function enableCollapsibleSections(root) {
+    if (!root) return;
+    const sections = Array.from(root.querySelectorAll('section.sheet-section'));
+    sections.forEach(function (section, index) {
+      if (section.dataset.collapseReady === '1') return;
+      section.dataset.collapseReady = '1';
+
+      let head = section.querySelector(':scope > .strategy-section-head');
+      if (!head) {
+        const heading = section.querySelector(':scope > h2');
+        if (!heading) return;
+        head = document.createElement('div');
+        head.className = 'strategy-section-head strategy-generated-head';
+        section.insertBefore(head, heading);
+        head.appendChild(heading);
+      }
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'strategy-collapse-toggle';
+      button.setAttribute('aria-expanded', 'true');
+      button.textContent = 'Hide';
+      head.appendChild(button);
+
+      if (!section.id) section.id = 'strategy-section-' + index;
+      button.addEventListener('click', function () {
+        const collapsed = section.classList.toggle('is-collapsed');
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        button.textContent = collapsed ? 'Show' : 'Hide';
+      });
+    });
+  }
+
+  function decorate(root, result) {
+    if (!root || !result) return;
+    insertPeerPractices(root, result.peerPractices || []);
+    decorateDayMap(root, result.strategy || {});
+    splitCompoundSections(root);
+    enableCollapsibleSections(root);
+  }
+
+  globalThis.WNMUStrategyEnhancements = {
+    decorate,
+    decorateDayMap,
+    insertPeerPractices,
+    splitCompoundSections,
+    enableCollapsibleSections,
+    timingEvidenceHtml,
+    peerPracticesHtml
+  };
+})(); + Math.round(Number(local.averageRate)) + '/pledge hr. The spread matters more than the overall average.</p>';
+        }
+        if (Array.isArray(local.strongest) && local.strongest.length) {
+          html += '<div><b>Stronger multi-drive examples:</b> ' + local.strongest.slice(0, 3).map(function (x) {
+            return esc(x.title) + ' (
+
+      (item.examples || []).forEach(function (example) {
+        html += '<div><strong>' + esc(example.station || 'Other station') + '</strong><span>';
+        if (example.programTitle) html += esc(example.programTitle) + ' · ';
+        html += esc(example.summary || '');
+        if (example.actualDollars != null && Number.isFinite(Number(example.actualDollars))) html += ' · ' + esc(money(example.actualDollars));
+        if (example.goalDollars != null && Number.isFinite(Number(example.goalDollars))) html += ' on ' + esc(money(example.goalDollars)) + ' goal';
+        if (example.pledgeCount != null && Number.isFinite(Number(example.pledgeCount))) html += ' · ' + Number(example.pledgeCount) + ' pledge' + (Number(example.pledgeCount) === 1 ? '' : 's');
+        html += '</span></div>';
+      });
+
+      html += '</div>';
+      html += '<p class="strategy-peer-test"><b>Possible WNMU test:</b> ' + esc(item.testIdea || '') + '</p>';
+      html += '</article>';
+    });
+
+    html += '</div></section>';
+    return html;
+  }
+
+  function insertPeerPractices(root, rows) {
+    if (!root) return;
+    const mapSection = Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
+      const heading = section.querySelector(':scope > h2');
+      return heading && heading.textContent.trim() === 'Day-by-day programming map';
+    });
+    if (!mapSection) return;
+    mapSection.insertAdjacentHTML('beforebegin', peerPracticesHtml(rows));
+  }
+
+  function splitCompoundSections(root) {
+    if (!root) return;
+    const compounds = Array.from(root.querySelectorAll('section.sheet-section.strategy-two-column'));
+    compounds.forEach(function (compound) {
+      const replacement = document.createDocumentFragment();
+      const columns = Array.from(compound.children);
+
+      columns.forEach(function (column) {
+        let current = null;
+        Array.from(column.childNodes).forEach(function (node) {
+          if (node.nodeType === 1 && node.tagName === 'H2') {
+            current = document.createElement('section');
+            current.className = 'sheet-section strategy-split-section';
+            current.appendChild(node);
+            replacement.appendChild(current);
+          } else if (current) {
+            current.appendChild(node);
+          }
+        });
+      });
+
+      if (replacement.childNodes.length) compound.replaceWith(replacement);
+    });
+  }
+
+  function enableCollapsibleSections(root) {
+    if (!root) return;
+    const sections = Array.from(root.querySelectorAll('section.sheet-section'));
+    sections.forEach(function (section, index) {
+      if (section.dataset.collapseReady === '1') return;
+      section.dataset.collapseReady = '1';
+
+      let head = section.querySelector(':scope > .strategy-section-head');
+      if (!head) {
+        const heading = section.querySelector(':scope > h2');
+        if (!heading) return;
+        head = document.createElement('div');
+        head.className = 'strategy-section-head strategy-generated-head';
+        section.insertBefore(head, heading);
+        head.appendChild(heading);
+      }
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'strategy-collapse-toggle';
+      button.setAttribute('aria-expanded', 'true');
+      button.textContent = 'Hide';
+      head.appendChild(button);
+
+      if (!section.id) section.id = 'strategy-section-' + index;
+      button.addEventListener('click', function () {
+        const collapsed = section.classList.toggle('is-collapsed');
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        button.textContent = collapsed ? 'Show' : 'Hide';
+      });
+    });
+  }
+
+  function decorate(root, result) {
+    if (!root || !result) return;
+    insertPeerPractices(root, result.peerPractices || []);
+    decorateDayMap(root, result.strategy || {});
+    splitCompoundSections(root);
+    enableCollapsibleSections(root);
+  }
+
+  globalThis.WNMUStrategyEnhancements = {
+    decorate,
+    decorateDayMap,
+    insertPeerPractices,
+    splitCompoundSections,
+    enableCollapsibleSections,
+    timingEvidenceHtml,
+    peerPracticesHtml
+  };
+})(); + Math.round(Number(x.averageRate || 0)) + '/hr; ' + Number(x.fundraiserSamples || 0) + ' fundraisers)';
+          }).join(' · ') + '</div>';
+        }
+        if (Array.isArray(local.weakest) && local.weakest.length) {
+          html += '<div><b>Lower multi-drive examples:</b> ' + local.weakest.slice(0, 3).map(function (x) {
+            return esc(x.title) + ' (
+
+      (item.examples || []).forEach(function (example) {
+        html += '<div><strong>' + esc(example.station || 'Other station') + '</strong><span>';
+        if (example.programTitle) html += esc(example.programTitle) + ' · ';
+        html += esc(example.summary || '');
+        if (example.actualDollars != null && Number.isFinite(Number(example.actualDollars))) html += ' · ' + esc(money(example.actualDollars));
+        if (example.goalDollars != null && Number.isFinite(Number(example.goalDollars))) html += ' on ' + esc(money(example.goalDollars)) + ' goal';
+        if (example.pledgeCount != null && Number.isFinite(Number(example.pledgeCount))) html += ' · ' + Number(example.pledgeCount) + ' pledge' + (Number(example.pledgeCount) === 1 ? '' : 's');
+        html += '</span></div>';
+      });
+
+      html += '</div>';
+      html += '<p class="strategy-peer-test"><b>Possible WNMU test:</b> ' + esc(item.testIdea || '') + '</p>';
+      html += '</article>';
+    });
+
+    html += '</div></section>';
+    return html;
+  }
+
+  function insertPeerPractices(root, rows) {
+    if (!root) return;
+    const mapSection = Array.from(root.querySelectorAll('section.sheet-section')).find(function (section) {
+      const heading = section.querySelector(':scope > h2');
+      return heading && heading.textContent.trim() === 'Day-by-day programming map';
+    });
+    if (!mapSection) return;
+    mapSection.insertAdjacentHTML('beforebegin', peerPracticesHtml(rows));
+  }
+
+  function splitCompoundSections(root) {
+    if (!root) return;
+    const compounds = Array.from(root.querySelectorAll('section.sheet-section.strategy-two-column'));
+    compounds.forEach(function (compound) {
+      const replacement = document.createDocumentFragment();
+      const columns = Array.from(compound.children);
+
+      columns.forEach(function (column) {
+        let current = null;
+        Array.from(column.childNodes).forEach(function (node) {
+          if (node.nodeType === 1 && node.tagName === 'H2') {
+            current = document.createElement('section');
+            current.className = 'sheet-section strategy-split-section';
+            current.appendChild(node);
+            replacement.appendChild(current);
+          } else if (current) {
+            current.appendChild(node);
+          }
+        });
+      });
+
+      if (replacement.childNodes.length) compound.replaceWith(replacement);
+    });
+  }
+
+  function enableCollapsibleSections(root) {
+    if (!root) return;
+    const sections = Array.from(root.querySelectorAll('section.sheet-section'));
+    sections.forEach(function (section, index) {
+      if (section.dataset.collapseReady === '1') return;
+      section.dataset.collapseReady = '1';
+
+      let head = section.querySelector(':scope > .strategy-section-head');
+      if (!head) {
+        const heading = section.querySelector(':scope > h2');
+        if (!heading) return;
+        head = document.createElement('div');
+        head.className = 'strategy-section-head strategy-generated-head';
+        section.insertBefore(head, heading);
+        head.appendChild(heading);
+      }
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'strategy-collapse-toggle';
+      button.setAttribute('aria-expanded', 'true');
+      button.textContent = 'Hide';
+      head.appendChild(button);
+
+      if (!section.id) section.id = 'strategy-section-' + index;
+      button.addEventListener('click', function () {
+        const collapsed = section.classList.toggle('is-collapsed');
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        button.textContent = collapsed ? 'Show' : 'Hide';
+      });
+    });
+  }
+
+  function decorate(root, result) {
+    if (!root || !result) return;
+    insertPeerPractices(root, result.peerPractices || []);
+    decorateDayMap(root, result.strategy || {});
+    splitCompoundSections(root);
+    enableCollapsibleSections(root);
+  }
+
+  globalThis.WNMUStrategyEnhancements = {
+    decorate,
+    decorateDayMap,
+    insertPeerPractices,
+    splitCompoundSections,
+    enableCollapsibleSections,
+    timingEvidenceHtml,
+    peerPracticesHtml
+  };
+})(); + Math.round(Number(x.averageRate || 0)) + '/hr; ' + Number(x.fundraiserSamples || 0) + ' fundraisers)';
+          }).join(' · ') + '</div>';
+        }
+        html += '<p><b>Interpretation:</b> Do not generalize peer success with local specials/events to WNMU recurring series. Those are different fundraising products and should be analyzed separately.</p></div>';
+      }
       html += '<div class="strategy-peer-examples">';
 
       (item.examples || []).forEach(function (example) {
