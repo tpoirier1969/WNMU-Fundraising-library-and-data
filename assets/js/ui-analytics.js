@@ -2131,16 +2131,19 @@ function outlierSummary(values = []) {
   }
 
   function rowsLive() {
-    const make = (title, records) => {
+    const make = (title, mode, records) => {
+      if (!records.length) return null;
       const row = summarizeGroup(title, records);
+      row.breakMode = mode;
       row.weak = false;
       return row;
     };
-    const scheduleRows = filteredRecordsFor('live').filter((record) => record.liveState === 'live' || record.liveState === 'nonlive');
+    const scheduleRows = filteredRecordsFor('live').filter((record) => normalizeBreakMode(record.breakMode));
     return [
-      make('Live break', scheduleRows.filter((record) => record.liveState === 'live')),
-      make('No live break', scheduleRows.filter((record) => record.liveState === 'nonlive'))
-    ];
+      make('Live', 'live', scheduleRows.filter((record) => record.breakMode === 'live')),
+      make('Phones staffed', 'phones_staffed', scheduleRows.filter((record) => record.breakMode === 'phones_staffed')),
+      make('Web-only', 'web_only', scheduleRows.filter((record) => record.breakMode === 'web_only'))
+    ].filter(Boolean);
   }
 
   function rowsSeasonal() {
