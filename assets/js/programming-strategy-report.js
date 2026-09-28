@@ -159,7 +159,82 @@ function dayTone(outlook=''){
 
 function dayOutlookSection(outlook){
   const data=outlook||{season:'selected',fallback:false,rows:[]};
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Anticipated day strength</h2><p>Compares each fundraiser-day position with the same position in prior ${esc(data.season||'selected')} drives${data.fallback?' (same-season sample was thin, so all historical drives are used as fallback)':''}. Strength is normalized to each historical fundraiser’s own typical day; the displayed Avg $ / Pledge Hour is the factual corresponding-day average.</p></div></div><div class="strategy-day-outlook">${(data.rows||[]).map(x=>`<div class="strategy-day-outlook-row tone-${dayTone(x.outlook)}"><strong>${esc(x.label)}</strong><span class="strategy-day-rating">${esc(x.outlook)}${x.bestBet?' · Best bet':''}</span><span>${x.samples?`${x.samples} comparable historical day${x.samples===1?'':'s'}${Number.isFinite(x.averageRate)?` · <b class="strategy-rate">Avg $${Math.round(x.averageRate)}/pledge hr</b>`:''}`:'No corresponding historical day sample'}</span></div>`).join('')}</div></section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Anticipated day strength</h2><p>Compares each fundraiser-day position with the same position in prior ${esc(data.season||'selected')} drives${data.fallback?' (same-season sample was thin, so all historical drives are used as fallback)':''}. Strength is normalized to each historical fundraiser’s own typical day; the displayed Avg $ / Pledge Hour is the factual corresponding-day average.</p></div></div><div class="strategy-day-outlook">${(data.rows||[]).map(x=>`<div class="strategy-day-outlook-row tone-${dayTone(x.outlook)}"><strong>${esc(x.label)}</strong><span class="strategy-day-rating">${esc(x.outlook)}${x.bestBet?' · Best bet':''}</span><span>${x.samples?`${x.samples} comparable historical day${x.samples===1?'':'s'}${Number.isFinite(x.averageRate)?` · <b class="strategy-rate">Avg ${Math.round(x.averageRate)}/pledge hr</b>`:''}`:'No corresponding historical day sample'}</span></div>`).join('')}</div></section>`;
+}
+
+
+function scheduleOccurrenceForDate(schedule={},dateKey=''){
+  const start=new Date(String(schedule.startDate||'')+'T12:00:00');
+  const target=new Date(String(dateKey||'')+'T12:00:00');
+  if(Number.isNaN(start.getTime())||Number.isNaN(target.getTime())||target<start)return null;
+  let occurrence=0;
+  for(let cursor=new Date(start);cursor<=target;cursor.setDate(cursor.getDate()+1)){
+    if(cursor.getDay()===target.getDay())occurrence+=1;
+  }
+  return occurrence||null;
+}
+
+function combinedDayTopicSection(outlook,matrix,schedule){
+  const dayData=outlook||{season:'selected',fallback:false,rows:[]};
+  const matrixRows=Array.isArray(matrix?.rows)?matrix.rows:[];
+  const actualDays=Array.isArray(dayData.rows)?dayData.rows:[];
+
+  const dayRows=actualDays.map(day=>{
+    const date=new Date(String(day.date||'')+'T12:00:00');
+    const weekdayIndex=Number.isNaN(date.getTime())?null:date.getDay();
+    const occurrence=scheduleOccurrenceForDate(schedule,day.date);
+    const matching=matrixRows.filter(row=>row.weekdayIndex===weekdayIndex);
+    const topicSignals=[];
+
+    matching.forEach(row=>{
+      const position=(row.positionBreakdown||[]).find(item=>Number(item.occurrence)===Number(occurrence));
+      if(!position)return;
+      (position.localTopics||[]).forEach(topic=>{
+        const samples=Number(topic.fundraiserSamples||0);
+        const titles=Number(topic.titleCount||0);
+        const rate=Number(topic.averageRate);
+        if(samples<2||titles<2||!Number.isFinite(rate))return;
+        topicSignals.push({
+          daypart:row.daypart,
+          topic:topic.topic,
+          rate,
+          samples,
+          titles
+        });
+      });
+    });
+    topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
+
+    return{...day,occurrence,topicSignals:topicSignals.slice(0,2)};
+  });
+
+  const peerGaps=[];
+  const seenPeer=new Set();
+  matrixRows.forEach(row=>{
+    const positives=Number(row.peer?.positiveStations||0);
+    if(positives<2)return;
+    const key=`${row.weekdayIndex}|${row.daypartId}`;
+    if(seenPeer.has(key))return;
+    seenPeer.add(key);
+    peerGaps.push({
+      weekday:row.weekday,
+      daypart:row.daypart,
+      positives,
+      topics:(row.peer?.topTopics||[]).map(item=>item.topic).filter(Boolean)
+    });
+  });
+  peerGaps.sort((a,b)=>b.positives-a.positives||a.weekday.localeCompare(b.weekday));
+
+  const peerHtml=peerGaps.length
+    ?`<div class="strategy-day-topic-peer"><strong>Under-tested windows supported by peers</strong>${peerGaps.slice(0,4).map(item=>`<span><b>${esc(item.weekday)} · ${esc(item.daypart)}</b> · ${item.positives} positive independent peer station${item.positives===1?'':'s'}${item.topics.length?` · ${esc(item.topics.join(', '))}`:''}</span>`).join('')}<small>Peer evidence justifies a test; it does not predict WNMU revenue.</small></div>`
+    :'';
+
+  return`<section class="sheet-section strategy-day-topic-section"><div class="strategy-section-head"><div><h2>Fundraiser day & topic takeaways</h2><p>Combines anticipated day strength with topic/time evidence for the <strong>actual dates in this selected fundraiser</strong>. Historical first/second/third weekday evidence is shown only when that occurrence actually exists in this drive. Topic/time callouts require at least two fundraiser samples and two different titles.</p></div></div><div class="strategy-day-topic-list">${dayRows.map(day=>{
+    const topicHtml=day.topicSignals.length
+      ?day.topicSignals.map(item=>`<span class="strategy-day-topic-signal"><b>${esc(item.daypart)} · ${esc(item.topic)}</b><span class="strategy-rate">Avg &#36;${Math.round(item.rate)}/pledge hr</span><small>${item.samples} fundraisers · ${item.titles} titles</small></span>`).join('')
+      :'<span class="strategy-no-history">No multi-title topic/time signal clears the threshold for this exact fundraiser position.</span>';
+    return`<div class="strategy-day-topic-row tone-${dayTone(day.outlook)}"><div class="strategy-day-topic-date"><strong>${esc(day.label)}</strong><small>${esc(fmt(day.date,false))}</small></div><div class="strategy-day-topic-strength"><span class="strategy-day-rating">${esc(day.outlook)}${day.bestBet?' · Best bet':''}</span><small>${day.samples?`${day.samples} comparable historical day${day.samples===1?'':'s'}${Number.isFinite(day.averageRate)?` · Avg &#36;${Math.round(day.averageRate)}/pledge hr`:''}`:'No corresponding historical day sample'}</small></div><div class="strategy-day-topic-signals">${topicHtml}</div></div>`;
+  }).join('')}</div>${peerHtml}</section>`;
 }
 
 function hourlyPatternsSection(hourly){
@@ -406,7 +481,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.214');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.217');
     }catch(error){
       reject(error);
       return;
@@ -500,7 +575,7 @@ async function renderStrategy(){
     const diagnostics=result.diagnostics||{};
     const renderStarted=globalThis.performance?.now?.()??Date.now();
 
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${topicComparisonSection(strategy)}${topicTimeMatrixSection(result.topicTimeMatrix)}${dayOutlookSection(dayOutlook)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${topicComparisonSection(strategy)}${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
     globalThis.WNMUStrategyEnhancements?.decorate?.(out,result);
 
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);

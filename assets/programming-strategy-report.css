@@ -1084,3 +1084,71 @@
   .strategy-time-takeaway-row{font-size:6.5pt;padding:3px 0}
   .strategy-time-watchout{font-size:6.5pt;padding:4px 6px}
 }
+
+
+/* v0.22.217 combined fundraiser-day and topic takeaways */
+.strategy-day-topic-list{
+  display:grid;
+  gap:7px;
+  margin-top:10px;
+}
+.strategy-day-topic-row{
+  display:grid;
+  grid-template-columns:minmax(150px,.7fr) minmax(180px,.9fr) minmax(300px,1.7fr);
+  gap:12px;
+  align-items:start;
+  border:1px solid #d9e4e9;
+  border-left:5px solid #9db2bd;
+  border-radius:8px;
+  background:#fff;
+  padding:9px 10px;
+}
+.strategy-day-topic-row.tone-good{border-left-color:#4f8d65}
+.strategy-day-topic-row.tone-fair{border-left-color:#c29b3b}
+.strategy-day-topic-row.tone-weak{border-left-color:#a96666}
+.strategy-day-topic-date,
+.strategy-day-topic-strength,
+.strategy-day-topic-signal{
+  display:grid;
+  gap:2px;
+}
+.strategy-day-topic-date strong{color:#17384a}
+.strategy-day-topic-date small,
+.strategy-day-topic-strength small,
+.strategy-day-topic-signal small{color:#6b7f89;font-size:.72rem;line-height:1.3}
+.strategy-day-topic-signals{display:grid;gap:6px}
+.strategy-day-topic-signal{
+  border-left:3px solid #d5e2e7;
+  padding-left:8px;
+  color:#526d79;
+  font-size:.78rem;
+}
+.strategy-day-topic-signal b{color:#31586e}
+.strategy-day-topic-peer{
+  margin-top:10px;
+  display:grid;
+  gap:4px;
+  border-left:4px solid #6f9bb2;
+  background:#f2f8fb;
+  padding:8px 10px;
+  color:#526d79;
+  font-size:.78rem;
+}
+.strategy-day-topic-peer>strong{color:#31586e}
+.strategy-day-topic-peer>span{display:block}
+.strategy-day-topic-peer small{color:#6b7f89}
+@media(max-width:900px){
+  .strategy-day-topic-row{grid-template-columns:1fr}
+}
+@media print{
+  .strategy-day-topic-row{
+    grid-template-columns:100px 130px 1fr;
+    gap:6px;
+    padding:4px 5px;
+    font-size:6.5pt;
+    break-inside:avoid-page;
+  }
+  .strategy-day-topic-date small,
+  .strategy-day-topic-strength small,
+  .strategy-day-topic-signal small{font-size:5.9pt}
+}
