@@ -2511,19 +2511,19 @@ function outlierSummary(values = []) {
       ]
     },
     live: {
-      title: 'Are live breaks helping?',
-      summary: 'Compares saved Scheduling live-break flags, plus a 1:1 matched topic/day/time check.',
-      graphTitle: 'Live-break average comparison',
+      title: 'How do break modes perform?',
+      summary: 'Compares explicitly saved per-program break modes: Live, Phones staffed, and Web-only.',
+      graphTitle: 'Break-mode average comparison',
       source: 'schedule',
-      tableTitle: 'Live break split',
-      tableNote: 'Uses saved Scheduling placements only. The raw split is shown first; the 1:1 matched comparison below pairs each live break with the closest non-live airing by topic/day/time.',
+      tableTitle: 'Break mode split',
+      tableNote: 'Uses only Scheduling placements with an explicitly recorded break mode. Legacy unclassified placements are excluded. The matched comparison below is Live vs Phones staffed only; Web-only remains a distinct group.',
       rows: rowsLive,
-      metric: (rows) => rows.find((row) => row.title === 'Live break') ? formatMoney(rows.find((row) => row.title === 'Live break').avg) : '—',
-      tag: 'schedule flags only',
+      metric: (rows) => `${formatNumber(rows.reduce((sum, row) => sum + Number(row.broadcasts || 0), 0))} tracked airings`,
+      tag: 'saved break modes',
       hideWeakStats: true,
       read: liveRead,
       columns: [
-        ['Break type', (row) => escapeHtml(row.title), '', (row) => row.title],
+        ['Break mode', (row) => escapeHtml(row.title), '', (row) => row.title],
         ['Avg / airing', (row) => formatMoney(row.avg), 'money emphasis', (row) => row.avg],
         ['Total $', (row) => formatMoney(row.dollars), 'money', (row) => row.dollars],
         ['Broadcasts', (row) => formatNumber(row.broadcasts), 'num', (row) => row.broadcasts],
@@ -2581,7 +2581,7 @@ function outlierSummary(values = []) {
     live: {
       required: [],
       refine: ['season', 'year', 'topic', 'secondary', 'duration', 'weekpart', 'daypart', 'distributor', 'search'],
-      note: 'No setup filter is required because the matched comparison already controls for topic, day/time, length, and season/year where possible. Refinements can still test narrower hypotheses.'
+      note: 'No setup filter is required. This compares the break mode recorded on each scheduled program. The matched check compares Live only with Phones staffed; Web-only remains distinct.'
     }
   };
 
