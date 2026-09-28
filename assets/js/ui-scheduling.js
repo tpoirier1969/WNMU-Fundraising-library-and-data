@@ -4197,7 +4197,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           return `
           <label class="scheduled-occurrence-row">
             <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
-            <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${hasLiveBreakFlag(item) ? ' · live-break' : ''}</span>
+            <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${canonicalScheduleBreakMode(item) ? ` · ${utils.escapeHtml(breakModeLabel(canonicalScheduleBreakMode(item)))}` : ''}</span>
             ${slotFitHtml}
           </label>
         `;
@@ -5108,7 +5108,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const markerBits = [];
     if (placeholder) markerBits.push('placeholder');
     if (item.isNonPledge) markerBits.push('non-pledge marker');
-    if (hasLiveBreakFlag(item)) markerBits.push('live break');
+    const exportBreakMode = canonicalScheduleBreakMode(item);
+    if (exportBreakMode) markerBits.push(breakModeLabel(exportBreakMode));
     if (item.transferredToStation) markerBits.push('entered in traffic');
     const nola = (item.isNonPledge || placeholder) ? '' : derive.nola(displayRow);
     const topic = (item.isNonPledge || placeholder) ? '' : derive.topicPrimary(displayRow);
@@ -5420,14 +5421,16 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     meta.push(`${Math.max(1, Math.round(Number(placement.lengthMinutes || 0) || constants.DEFAULT_SLOT_MINUTES))} min`);
     if (isPlaceholder) meta.push('placeholder');
     if (placement.isNonPledge) meta.push('non-pledge');
-    if (!isPlaceholder && calendarPlacementIsLive(getActiveSchedule(), placement)) meta.push('live break');
+    const printBreakMode = (!isPlaceholder && !placement.isNonPledge) ? calendarPlacementBreakMode(getActiveSchedule(), placement) : '';
+    if (printBreakMode) meta.push(breakModeLabel(printBreakMode));
     if (placement.transferredToStation) meta.push('entered');
     if (placementStart < visibleStartMin) meta.unshift('continues');
     const classes = [
       'print-placement',
       isPlaceholder ? 'placeholder' : '',
       placement.isNonPledge ? 'non-pledge' : '',
-      calendarPlacementIsLive(getActiveSchedule(), placement) ? 'live-break' : '',
+      printBreakMode === BREAK_MODES.LIVE ? 'live-break' : '',
+      printBreakMode ? `break-mode-${printBreakMode.replace(/_/g, '-')}` : '',
       placement.transferredToStation ? 'transferred' : '',
       rowSpan === 1 ? 'one-slot' : '',
       rowSpan === 2 ? 'two-slot' : ''
