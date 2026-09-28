@@ -1212,8 +1212,9 @@ test('strategy report renders one brief, one fundraiser plan, and one combined p
   assert.match(reportUi,/<h2>Fundraiser plan<\/h2>/);
   assert.match(reportUi,/Topic snapshot/);
   assert.match(reportUi,/topicSignals\.slice\(0,2\)/);
-  assert.match(reportUi,/const leadTitles=new Set\(\)/);
-  assert.match(reportUi,/const options=\[\.\.\.fresh,\.\.\.repeated\]\.slice\(0,3\)/);
+  assert.match(reportUi,/const bestSlotByTitle=new Map\(\)/);
+  assert.match(reportUi,/score>currentScore/);
+  assert.match(reportUi,/assignedBySlot\.get\(slot\.id\)\.push\(rec\)/);
   assert.match(reportUi,/strategy-plan-window/);
   assert.match(reportUi,/options\.map\(rec=>/);
   assert.match(reportUi,/compactTimingForSlot/);
