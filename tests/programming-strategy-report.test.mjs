@@ -1397,8 +1397,9 @@ test('Day/Time report explains half-hour buckets and shows season plus all-histo
   assert.match(reportUi,/Season-specific evidence is primary/);
   assert.match(reportUi,/Daily breakdown/);
   assert.doesNotMatch(reportUi,/General weekday \/ weekend pattern/);
-  assert.match(reportUi,/minStart/);
-  assert.match(reportUi,/maxStart/);
+  assert.match(reportUi,/const rows=observed/);
+  assert.doesNotMatch(reportUi,/minStart/);
+  assert.doesNotMatch(reportUi,/maxStart/);
   assert.doesNotMatch(enhancements,/8:00 PM vs 9:00 PM cross-check/);
   assert.doesNotMatch(enhancements,/startTimeReconciliationHtml/);
 });
