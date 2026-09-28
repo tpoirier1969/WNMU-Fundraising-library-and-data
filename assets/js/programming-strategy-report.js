@@ -185,7 +185,7 @@ function topicTimeMatrixSection(matrix){
 
   const topicText=(items=[])=>{
     if(!items.length)return'<span class="strategy-no-history">No rate-valid WNMU topic result</span>';
-    return items.slice(0,3).map(item=>`<span class="strategy-topic-time-topic"><b>${esc(item.topic)}</b> <span class="strategy-rate">${Number.isFinite(item.averageRate)?`${Math.round(item.averageRate)}/pledge hr`:'—'}</span><small>${item.fundraiserSamples} fundraiser${item.fundraiserSamples===1?'':'s'} · ${item.airings} airing${item.airings===1?'':'s'}</small></span>`).join('');
+    return items.slice(0,3).map(item=>`<span class="strategy-topic-time-topic"><b>${esc(item.topic)}</b> <span class="strategy-rate">${Number.isFinite(item.averageRate)?`&#36;${Math.round(item.averageRate)}/pledge hr`:'—'}</span><small>${item.fundraiserSamples} fundraiser${item.fundraiserSamples===1?'':'s'} · ${item.airings} airing${item.airings===1?'':'s'}</small></span>`).join('');
   };
   const peerText=(peer={})=>{
     const positive=Number(peer.positiveStations||0),negative=Number(peer.negativeStations||0),stations=Number(peer.stations||0);
@@ -204,7 +204,7 @@ function topicTimeMatrixSection(matrix){
     return`<section class="strategy-topic-time-day"><h3>${esc(day)}</h3><div class="strategy-topic-time-head"><span>Daypart</span><span>WNMU use</span><span>WNMU topic signals</span><span>Peer context</span></div>${dayRows.map(row=>{
       const local=row.local||{},peer=row.peer||{};
       const localUse=Number(local.airings||0)
-        ?`<b>${Number(local.fundraiserSamples||0)} fundraiser${Number(local.fundraiserSamples||0)===1?'':'s'}</b><small>${Number(local.airings||0)} airing${Number(local.airings||0)===1?'':'s'}${Number.isFinite(Number(local.averageRate))?` · Avg ${Math.round(Number(local.averageRate))}/pledge hr`:''}</small>`
+        ?`<b>${Number(local.fundraiserSamples||0)} fundraiser${Number(local.fundraiserSamples||0)===1?'':'s'}</b><small>${Number(local.airings||0)} airing${Number(local.airings||0)===1?'':'s'}${Number.isFinite(Number(local.averageRate))?` · Avg &#36;${Math.round(Number(local.averageRate))}/pledge hr`:''}</small>`
         :'<span class="strategy-no-history">No rate-valid WNMU history</span>';
       return`<div class="strategy-topic-time-row evidence-${esc(String(row.evidenceState||'').toLowerCase().replace(/[^a-z0-9]+/g,'-'))}"><span class="strategy-topic-time-window"><b>${clock(row.startMinutes)}–${clock(row.endMinutes)}</b><small>${esc(row.daypart)} · ${esc(row.evidenceState||'')}</small></span><span class="strategy-topic-time-use">${localUse}</span><span class="strategy-topic-time-topics">${topicText(row.localTopics||[])}</span><span class="strategy-topic-time-peer">${peerText(peer)}</span></div>`;
     }).join('')}</section>`;
@@ -219,9 +219,10 @@ function meetingBriefSection(result){
 
   const windows=opportunities.slice(0,4);
   const localSignals=matrix
-    .filter(row=>Number(row?.local?.fundraiserSamples||0)>=2&&(row.localTopics||[]).length)
-    .sort((a,b)=>Number(b.local.fundraiserSamples||0)-Number(a.local.fundraiserSamples||0)
-      || Number(b.localTopics?.[0]?.averageRate||0)-Number(a.localTopics?.[0]?.averageRate||0))
+    .map(row=>({row,topics:(row.localTopics||[]).filter(topic=>Number(topic.fundraiserSamples||0)>=2)}))
+    .filter(item=>item.topics.length)
+    .sort((a,b)=>Number(b.topics[0]?.fundraiserSamples||0)-Number(a.topics[0]?.fundraiserSamples||0)
+      || Number(b.topics[0]?.averageRate||0)-Number(a.topics[0]?.averageRate||0))
     .slice(0,4);
   const peerLed=matrix
     .filter(row=>row.evidenceState==='Peer-led test')
@@ -229,9 +230,9 @@ function meetingBriefSection(result){
     .slice(0,3);
 
   const windowHtml=windows.length?windows.map(item=>`<div><strong>${esc(item.weekday)} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}</strong><span>${esc(item.label)}${item.kind==='peer-gap'?` · ${Number(item.positivePeerStations||0)} positive peer stations`:''}</span></div>`).join(''):'<p>No distinct timing test currently clears the evidence rules.</p>';
-  const signalHtml=localSignals.length?localSignals.map(row=>{
-    const top=row.localTopics[0];
-    return`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)} · ${esc(top.topic)}</strong><span><span class="strategy-rate">Avg ${Math.round(top.averageRate)}/pledge hr</span> · ${top.fundraiserSamples} fundraiser${top.fundraiserSamples===1?'':'s'}</span></div>`;
+  const signalHtml=localSignals.length?localSignals.map(item=>{
+    const row=item.row,top=item.topics[0];
+    return`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)} · ${esc(top.topic)}</strong><span><span class="strategy-rate">Avg &#36;${Math.round(top.averageRate)}/pledge hr</span> · ${top.fundraiserSamples} fundraiser${top.fundraiserSamples===1?'':'s'}</span></div>`;
   }).join(''):'<p>No WNMU topic/time combination has two rate-valid fundraiser samples yet.</p>';
   const peerHtml=(peerLed.length?peerLed.map(row=>`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)}</strong><span>${Number(row.peer.positiveStations||0)} positive independent peer station${Number(row.peer.positiveStations||0)===1?'':'s'}${(row.peer.topTopics||[]).length?` · ${esc(row.peer.topTopics.map(x=>x.topic).join(', '))}`:''}</span></div>`).join(''):practices.slice(0,3).map(item=>`<div><strong>${esc(item.label)}</strong><span>${Number(item.stationCount||0)} peer station${Number(item.stationCount||0)===1?'':'s'} represented</span></div>`).join(''))||'<p>No peer-led test currently clears the evidence rules.</p>';
 
@@ -246,7 +247,7 @@ function opportunitiesSection(opportunities){
     if(!items.length)return'';
     return`<div class="strategy-opportunity-evidence"><strong>Why explore this?</strong><ul>${items.map(item=>`<li class="evidence-${esc(item.tone||'neutral')}"><b>${esc(item.sourceLabel||'Evidence')}:</b> ${esc(item.text||'')}</li>`).join('')}</ul></div>`;
   };
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}</small></div>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}${x.kind==='peer-gap'?` · ${Number(x.positivePeerStations||0)} positive peer stations`:''}</small></div>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
 }
 
 function dayMapSection(strategy){
