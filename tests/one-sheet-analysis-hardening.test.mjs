@@ -281,3 +281,52 @@ console.log('one-sheet analytics hardening tests passed');
   assert.equal(Number(canonical[0].program_minutes), 30);
   assert.equal(Number(canonical[0].__source_row_count), 2);
 }
+
+
+{
+  const schedule = {
+    id:'break-modes',
+    title:'December 2026',
+    startDate:'2026-12-05',
+    endDate:'2026-12-05',
+    placements:[
+      {
+        id:'live', dateKey:'2026-12-05', startMinutes:1200, endMinutes:1260, lengthMinutes:60,
+        programId:'live', programTitle:'Live Program', topicPrimary:'Music',
+        breakMode:'live', liveBreakFlag:true,
+        manualResultRecorded:true, manualBroadcastDollars:300, manualPledgeCount:3
+      },
+      {
+        id:'phones', dateKey:'2026-12-05', startMinutes:1260, endMinutes:1320, lengthMinutes:60,
+        programId:'phones', programTitle:'Phones Program', topicPrimary:'Music',
+        breakMode:'phones_staffed',
+        manualResultRecorded:true, manualBroadcastDollars:200, manualPledgeCount:2
+      },
+      {
+        id:'web', dateKey:'2026-12-05', startMinutes:1020, endMinutes:1080, lengthMinutes:60,
+        programId:'web', programTitle:'Web Program', topicPrimary:'Music',
+        breakMode:'web_only',
+        manualResultRecorded:true, manualBroadcastDollars:100, manualPledgeCount:1
+      },
+      {
+        id:'legacy', dateKey:'2026-12-05', startMinutes:1080, endMinutes:1140, lengthMinutes:60,
+        programId:'legacy', programTitle:'Legacy Program', topicPrimary:'Music',
+        liveBreakFlag:false,
+        manualResultRecorded:true, manualBroadcastDollars:50, manualPledgeCount:1
+      }
+    ]
+  };
+  const analysis=A.analyzeSchedule(schedule,[],A.buildLibraryIndexes([]));
+  const modes=Object.fromEntries(analysis.placementRows.map((row)=>[row.programId,row.breakMode]));
+  assert.equal(modes.live,'live');
+  assert.equal(modes.phones,'phones_staffed');
+  assert.equal(modes.web,'web_only');
+  assert.equal(modes.legacy,'','legacy non-Live rows must stay unclassified');
+
+  const historical=A.historicalRows([analysis]);
+  const types=Object.fromEntries(historical.map((row)=>[row.programId,row.breakType]));
+  assert.equal(types.live,'Live');
+  assert.equal(types.phones,'Phones staffed');
+  assert.equal(types.web,'Web-only');
+  assert.equal(types.legacy,'','historical analytics must not invent a break mode');
+}
