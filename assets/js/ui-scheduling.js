@@ -3959,8 +3959,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
               <span class="schedule-placement-transfer-check" aria-hidden="true"></span>
             </label>`
           : '';
-        const breakModeBadge = isStart && breakMode
-          ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.LIVE ? 'LIVE' : breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES'}</span>`
+        const breakModeBadge = isStart && breakMode && breakMode !== BREAK_MODES.LIVE
+          ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES'}</span>`
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}">
