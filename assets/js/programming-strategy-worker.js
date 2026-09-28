@@ -517,7 +517,7 @@ function buildStartTimeReconciliation(schedule = {}, rows = []) {
 
 function buildHalfHourRows(poolRows = [], dayMatcher = () => true) {
   const rows = [];
-  for (let slot = 12 * 60; slot <= 22 * 60 + 30; slot += 30) {
+  for (let slot = 6 * 60; slot < 24 * 60; slot += 30) {
     const matched = poolRows.filter((row) => {
       const date = S.parseDate(row.dateKey);
       const start = Number(row.startMinutes);
@@ -579,6 +579,190 @@ function buildHourlyPatterns(schedule = {}, rows = []) {
     historyStartDate: historyDates[0] || '',
     historyEndDate: historyDates[historyDates.length - 1] || '',
     reconciliation: buildStartTimeReconciliation(schedule, clean)
+  };
+}
+
+
+const STRATEGY_DAYPARTS = Object.freeze([
+  { id: 'morning', label: 'Morning', startMinutes: 6 * 60, endMinutes: 12 * 60 },
+  { id: 'afternoon', label: 'Afternoon', startMinutes: 12 * 60, endMinutes: 17 * 60 },
+  { id: 'early-evening', label: 'Early evening', startMinutes: 17 * 60, endMinutes: 19 * 60 },
+  { id: 'prime', label: 'Prime', startMinutes: 19 * 60, endMinutes: 22 * 60 + 30 },
+  { id: 'late-evening', label: 'Late evening', startMinutes: 22 * 60 + 30, endMinutes: 24 * 60 }
+]);
+
+const STRATEGY_WEEKDAYS = Object.freeze([
+  { day: 1, weekday: 'Monday' },
+  { day: 2, weekday: 'Tuesday' },
+  { day: 3, weekday: 'Wednesday' },
+  { day: 4, weekday: 'Thursday' },
+  { day: 5, weekday: 'Friday' },
+  { day: 6, weekday: 'Saturday' },
+  { day: 0, weekday: 'Sunday' }
+]);
+
+function peerWindowSummary(schedule = {}, observations = [], weekday = '', startMinutes = 0, endMinutes = 0) {
+  const targetSeason = S.seasonForDate(schedule.startDate);
+  const matched = [];
+
+  for (const item of observations || []) {
+    if (text(item.day_of_week).toLowerCase() !== text(weekday).toLowerCase()) continue;
+    const strength = Number(item.evidence_strength || 0);
+    if (strength < 3) continue;
+
+    const itemStart = Number(item.start_time_minutes);
+    const itemEnd = Number(item.end_time_minutes);
+    const range = daypartRange(item.daypart);
+    let matches = false;
+    let specificity = 0;
+
+    if (Number.isFinite(itemStart)) {
+      const resolvedEnd = Number.isFinite(itemEnd) && itemEnd > itemStart ? itemEnd : itemStart + 60;
+      matches = windowsOverlap(startMinutes, endMinutes, itemStart, resolvedEnd);
+      specificity = 2;
+    } else if (range) {
+      matches = windowsOverlap(startMinutes, endMinutes, range[0], range[1]);
+      specificity = 1;
+    } else {
+      continue;
+    }
+    if (!matches) continue;
+
+    const station = text(item.station_name || item.station_code || 'Other station');
+    const stationKey = S.lookupKey(item.station_code || station);
+    const signal = Number(item.assessment_signal);
+    const season = text(item.season);
+    const sameSeason = season && season === targetSeason;
+    const seasonNeutral = !season;
+    const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0)
+      + specificity
+      + Math.min(5, strength) / 10
+      + Math.max(-1, Math.min(1, Number.isFinite(signal) ? signal / 2 : 0));
+
+    matched.push({
+      station,
+      stationKey,
+      signal: Number.isFinite(signal) ? signal : 0,
+      strength,
+      relevance,
+      topic: text(item.topic_primary || ''),
+      secondary: text(item.topic_secondary || ''),
+      summary: text(item.summary || item.assessment_raw || ''),
+      programTitle: text(item.program_title_raw || ''),
+      startMinutes: Number.isFinite(itemStart) ? itemStart : null,
+      endMinutes: Number.isFinite(itemEnd) ? itemEnd : null,
+      actualDollars: nullableNumber(item.actual_dollars),
+      pledgeCount: nullableNumber(item.pledge_count)
+    });
+  }
+
+  const bestByStation = new Map();
+  for (const item of matched.sort((a, b) => b.relevance - a.relevance || b.strength - a.strength || Math.abs(b.signal) - Math.abs(a.signal))) {
+    if (!bestByStation.has(item.stationKey)) bestByStation.set(item.stationKey, item);
+  }
+  const independent = [...bestByStation.values()];
+  const positive = independent.filter((item) => item.signal > 0);
+  const negative = independent.filter((item) => item.signal < 0);
+  const neutral = independent.filter((item) => item.signal === 0);
+
+  const topicStations = new Map();
+  for (const item of positive) {
+    const topic = text(item.topic);
+    if (!topic) continue;
+    if (!topicStations.has(topic)) topicStations.set(topic, new Set());
+    topicStations.get(topic).add(item.stationKey);
+  }
+  const topTopics = [...topicStations.entries()]
+    .map(([topic, stations]) => ({ topic, stations: stations.size }))
+    .sort((a, b) => b.stations - a.stations || a.topic.localeCompare(b.topic))
+    .slice(0, 4);
+
+  return {
+    stations: independent.length,
+    positiveStations: positive.length,
+    negativeStations: negative.length,
+    neutralStations: neutral.length,
+    topTopics,
+    examples: independent
+      .sort((a, b) => b.relevance - a.relevance || b.strength - a.strength)
+      .slice(0, 4)
+  };
+}
+
+function buildTopicTimeMatrix(schedule = {}, rows = [], peerObservations = []) {
+  const planningPool = seasonPlanningPool(schedule, rows);
+  const result = [];
+
+  for (const day of STRATEGY_WEEKDAYS) {
+    for (const part of STRATEGY_DAYPARTS) {
+      const localRows = planningPool.rows.filter((row) => {
+        const date = S.parseDate(row.dateKey);
+        const start = Number(row.startMinutes);
+        return date
+          && date.getDay() === day.day
+          && Number.isFinite(start)
+          && start >= part.startMinutes
+          && start < part.endMinutes;
+      });
+      const local = summarizeTimeslotRows(localRows);
+      const topicGroups = new Map();
+
+      for (const row of localRows) {
+        const topic = text(row.topic || 'Uncategorized');
+        if (!topicGroups.has(topic)) topicGroups.set(topic, []);
+        topicGroups.get(topic).push(row);
+      }
+
+      const localTopics = [...topicGroups.entries()]
+        .map(([topic, topicRows]) => {
+          const summary = summarizeTimeslotRows(topicRows);
+          return {
+            topic,
+            airings: summary.airings,
+            fundraiserSamples: summary.fundraiserSamples,
+            averageRate: summary.averageRate
+          };
+        })
+        .filter((item) => item.fundraiserSamples > 0 && Number.isFinite(item.averageRate))
+        .sort((a, b) => b.averageRate - a.averageRate || b.fundraiserSamples - a.fundraiserSamples || b.airings - a.airings)
+        .slice(0, 4);
+
+      const peer = peerWindowSummary(schedule, peerObservations, day.weekday, part.startMinutes, part.endMinutes);
+      if (!local.airings && !peer.stations) continue;
+
+      let evidenceState = 'Untested';
+      if (local.fundraiserSamples >= 2) evidenceState = 'WNMU-tested';
+      else if (local.airings > 0) evidenceState = 'Thin WNMU history';
+      else if (peer.positiveStations >= 2) evidenceState = 'Peer-led test';
+      else if (peer.stations > 0) evidenceState = 'Peer context only';
+
+      result.push({
+        weekday: day.weekday,
+        weekdayIndex: day.day,
+        daypart: part.label,
+        daypartId: part.id,
+        startMinutes: part.startMinutes,
+        endMinutes: part.endMinutes,
+        season: planningPool.targetSeason,
+        fallback: planningPool.fallback,
+        evidenceState,
+        local: {
+          airings: local.airings,
+          fundraiserSamples: local.fundraiserSamples,
+          averageRate: local.averageRate,
+          dominantTopic: local.dominantTopic,
+          dominantShare: local.dominantShare
+        },
+        localTopics,
+        peer
+      });
+    }
+  }
+
+  return {
+    season: planningPool.targetSeason,
+    fallback: planningPool.fallback,
+    rows: result
   };
 }
 
@@ -825,7 +1009,7 @@ function buildPeerPracticeGaps(schedule = {}, observations = []) {
       id: 'sunday-morning',
       label: 'Sunday-morning pledge',
       match: (item) => text(item.day_of_week).toLowerCase() === 'sunday' && text(item.daypart).toLowerCase().includes('morning'),
-      wnmuStatus: 'Current Day-by-Day strategy windows do not include Sunday morning.',
+      wnmuStatus: 'WNMU has little direct Sunday-morning pledge history; the strategy now surfaces this as a peer-led test when independent peer evidence supports it.',
       testIdea: 'If rights and staffing allow, test one Sunday-morning block with programming aimed at an audience not already served by prime-time pledge.'
     },
     {
@@ -937,7 +1121,7 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerO
 
     for (let index = 0; index < dayRows.length; index += 1) {
       const row = dayRows[index];
-      if (row.startMinutes < 12 * 60 || row.startMinutes > 21 * 60) continue;
+      if (row.startMinutes < 6 * 60 || row.startMinutes >= 24 * 60) continue;
 
       const underused = row.fundraiserSamples > 0
         && row.fundraiserSamples <= Math.max(2, Math.floor(maxSamples * 0.45));
@@ -998,7 +1182,57 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerO
     }
   });
 
-  const kindOrder = { 'underused-positive': 0, 'narrow-test': 1 };
+  // Peer-led gaps: surface broad dayparts that independent stations report as
+  // productive even when WNMU has little or no direct pledge history there.
+  // This does not treat peer performance as proof for WNMU; it identifies a
+  // bounded experiment that our own history cannot yet answer.
+  for (const day of STRATEGY_WEEKDAYS) {
+    for (const part of STRATEGY_DAYPARTS) {
+      const localRows = planningPool.rows.filter((row) => {
+        const date = S.parseDate(row.dateKey);
+        const start = Number(row.startMinutes);
+        return date
+          && date.getDay() === day.day
+          && Number.isFinite(start)
+          && start >= part.startMinutes
+          && start < part.endMinutes;
+      });
+      const local = summarizeTimeslotRows(localRows);
+      const peer = peerWindowSummary(schedule, peerObservations, day.weekday, part.startMinutes, part.endMinutes);
+      if (peer.positiveStations < 2 || local.fundraiserSamples > 1) continue;
+
+      const duplicate = opportunities.some((item) =>
+        item.weekday === day.weekday
+        && Math.max(item.startMinutes, part.startMinutes) < Math.min(item.endMinutes, part.endMinutes)
+      );
+      if (duplicate) continue;
+
+      const topicHint = peer.topTopics.length
+        ? ` Positive peer topic signal: ${peer.topTopics.map((item) => item.topic).join(', ')}.`
+        : '';
+      const localText = local.airings
+        ? `WNMU has only ${local.airings} historical airing${local.airings === 1 ? '' : 's'} across ${local.fundraiserSamples} rate-valid fundraiser sample${local.fundraiserSamples === 1 ? '' : 's'} in this broad window.`
+        : 'WNMU has no rate-valid pledge-program history in this broad window.';
+
+      opportunities.push({
+        weekday: day.weekday,
+        startMinutes: part.startMinutes,
+        endMinutes: part.endMinutes,
+        kind: 'peer-gap',
+        label: 'Peer-supported; WNMU under-tested',
+        averageRate: local.averageRate,
+        fundraiserSamples: local.fundraiserSamples,
+        airings: local.airings,
+        peerStationCount: peer.stations,
+        positivePeerStations: peer.positiveStations,
+        negativePeerStations: peer.negativeStations,
+        peerTopics: peer.topTopics,
+        rationale: `${localText} ${peer.positiveStations} independent peer station${peer.positiveStations === 1 ? '' : 's'} provide positive evidence for the same weekday/daypart; peer results are a reason to test, not a WNMU performance claim.${topicHint}`
+      });
+    }
+  }
+
+  const kindOrder = { 'underused-positive': 0, 'peer-gap': 1, 'narrow-test': 2 };
   opportunities.sort((a, b) =>
     (kindOrder[a.kind] ?? 9) - (kindOrder[b.kind] ?? 9)
     || (b.averageRate || 0) - (a.averageRate || 0)
@@ -1006,11 +1240,11 @@ function buildOpportunityPatterns(schedule = {}, rows = [], hourly = null, peerO
     || a.startMinutes - b.startMinutes
   );
 
-  const rowsWithEvidence = opportunities.slice(0, 12).map((item) => ({
+  const rowsWithEvidence = opportunities.slice(0, 16).map((item) => ({
     ...item,
     evidenceItems: [
       {
-        sourceLabel: 'WNMU history',
+        sourceLabel: item.kind === 'peer-gap' ? 'WNMU + peer comparison' : 'WNMU history',
         text: item.rationale,
         tone: item.kind === 'underused-positive' ? 'positive' : 'neutral'
       },
@@ -1182,6 +1416,7 @@ self.onmessage = (event) => {
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns, peerObservations);
     const peerPractices = buildPeerPracticeGaps(schedule, peerObservations);
+    const topicTimeMatrix = buildTopicTimeMatrix(schedule, rows, peerObservations);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 
     phase = nowMs();
@@ -1197,6 +1432,7 @@ self.onmessage = (event) => {
       hourlyPatterns,
       opportunities,
       peerPractices,
+      topicTimeMatrix,
       backtest,
       diagnostics
     });
