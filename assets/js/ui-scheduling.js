@@ -4452,10 +4452,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       if (els.scheduleClearPlacementButton) { els.scheduleClearPlacementButton.disabled = true; els.scheduleClearPlacementButton.classList.add('hidden'); }
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = true;
     }
-    if (els.scheduleLiveBreakFlag) {
+    if (els.scheduleBreakModeSelect) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
-      els.scheduleLiveBreakFlag.checked = placeholder ? false : hasLiveBreakFlag(currentPlacement || {});
-      els.scheduleLiveBreakFlag.disabled = !editable || placeholder;
+      const explicitMode = placeholder ? '' : calendarPlacementBreakMode(schedule, currentPlacement || {});
+      const mode = explicitMode || defaultBreakModeForMinutes(slot.minutes);
+      els.scheduleBreakModeSelect.value = placeholder ? BREAK_MODES.PHONES_STAFFED : mode;
+      els.scheduleBreakModeSelect.disabled = !editable || placeholder;
     }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
     if (els.scheduleAssignmentNote) {
@@ -4703,6 +4705,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       return;
     }
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
+    const defaultMode = defaultBreakModeForMinutes(slot.minutes);
+    const selectedMode = normalizeBreakMode(els.scheduleBreakModeSelect?.value)
+      || canonicalScheduleBreakMode(existing || {})
+      || defaultMode;
+    const existingExplicitMode = canonicalScheduleBreakMode(existing || {});
+    const breakModeSource = existingExplicitMode
+      ? (breakModeSourceValue(existing) || 'manual')
+      : (selectedMode === defaultMode ? 'default' : 'manual');
     const base = {
       id: existing?.id || utils.makeId('place'),
       programId: scheduleRowLookupId(row),
@@ -4712,8 +4722,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       startMinutes: slot.minutes,
       endMinutes,
       startSlotKey: slot.key,
-      liveBreakFlag: Boolean(els.scheduleLiveBreakFlag?.checked),
-      liveBreakNotes: Boolean(els.scheduleLiveBreakFlag?.checked) ? (existing?.liveBreakNotes || '') : '',
+      breakMode: selectedMode,
+      breakModeSource,
+      liveBreakFlag: selectedMode === BREAK_MODES.LIVE,
+      liveBreakNotes: selectedMode === BREAK_MODES.LIVE ? (existing?.liveBreakNotes || '') : '',
       isNonPledge,
       isPlaceholder: false,
       placementType: '',
@@ -4738,14 +4750,17 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
 
-  async function updateLiveBreakFlag() {
+  async function updateBreakMode() {
     if (!canScheduleEdit()) return;
     const schedule = getActiveSchedule();
     const slot = state.selectedScheduleSlot;
     if (!schedule || !slot) return;
     const target = findPlacementForSlot(schedule, slot.key);
-    if (!target) return;
-    target.liveBreakFlag = Boolean(els.scheduleLiveBreakFlag?.checked);
+    if (!target || isPlaceholderPlacement(target)) return;
+    const mode = normalizeBreakMode(els.scheduleBreakModeSelect?.value) || defaultBreakModeForMinutes(target.startMinutes);
+    target.breakMode = mode;
+    target.breakModeSource = 'manual';
+    target.liveBreakFlag = mode === BREAK_MODES.LIVE;
     if (!target.liveBreakFlag) target.liveBreakNotes = '';
     await persistSchedules(schedule);
     renderScheduleGrid();
@@ -6315,7 +6330,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterRightsStartYear?.addEventListener('change', (event) => { state.scheduleFilterRightsStartYear = Boolean(event.target.checked); renderProgramPicker(); });
     els.scheduleFilterTopEarner?.addEventListener('change', (event) => { state.scheduleFilterTopEarner = Boolean(event.target.checked); renderProgramPicker(); });
-    els.scheduleLiveBreakFlag?.addEventListener('change', () => { void updateLiveBreakFlag().catch((error) => setNotice(error?.message || 'Could not update live-break flag.', 'warn')); });
+    els.scheduleBreakModeSelect?.addEventListener('change', () => { void updateBreakMode().catch((error) => setNotice(error?.message || 'Could not update break mode.', 'warn')); });
     els.scheduleManualResultSaveButton?.addEventListener('click', () => { void saveManualResultToSelectedPlacement(); });
     els.scheduleManualResultClearButton?.addEventListener('click', () => { void clearManualResultFromSelectedPlacement(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
