@@ -1152,3 +1152,77 @@
   .strategy-day-topic-strength small,
   .strategy-day-topic-signal small{font-size:5.9pt}
 }
+
+
+/* v0.22.219 meeting-brief cleanup + print handout layout */
+.strategy-meeting-live{grid-column:1/-1}
+.strategy-opportunity-summary p{
+  margin:0;
+  color:#405d6a;
+  line-height:1.4;
+}
+@page{
+  margin:0.85in 0.58in 0.70in 0.82in;
+}
+@media print{
+  /* Leave room for a staple/binder edge and keep the top of each sheet out of the printer's cramped zone. */
+  .strategy-sheet{padding:0!important}
+
+  /* The printed Day/Time section is a compact reference table, not the browser's long scroll. */
+  .strategy-hourly-grid{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:7px!important;
+    align-items:start;
+  }
+  .strategy-hourly-day{
+    break-inside:avoid-page!important;
+    page-break-inside:avoid!important;
+    margin-bottom:0!important;
+    overflow:visible!important;
+  }
+  .strategy-hourly-print-hide{display:none!important}
+  .strategy-hourly-day h3{
+    padding:4px 6px!important;
+    font-size:7.4pt!important;
+    break-after:avoid-page;
+    page-break-after:avoid;
+  }
+  .strategy-hourly-compare-head,
+  .strategy-hourly-compare-row{
+    grid-template-columns:44px minmax(0,1fr) minmax(0,1fr)!important;
+    gap:3px!important;
+    padding:2px 4px!important;
+    font-size:6.25pt!important;
+  }
+  .strategy-hourly-scope small,
+  .strategy-hourly-compare-row .strategy-no-history{
+    font-size:5.7pt!important;
+  }
+
+  /* Keep headings attached to the first useful row/card, and keep small decision units intact. */
+  .strategy-section-head,
+  .sheet-section>h2,
+  .sheet-section>h3,
+  .strategy-daily-breakdown-head{
+    break-after:avoid-page;
+    page-break-after:avoid;
+  }
+  .strategy-day-topic-row,
+  .strategy-topic-list-row,
+  .strategy-time-takeaway-grid>article,
+  .strategy-meeting-grid>article,
+  .strategy-compact-list>div,
+  .strategy-program-row,
+  .strategy-window-divider,
+  .strategy-documentary-subtopic{
+    break-inside:avoid-page!important;
+    page-break-inside:avoid!important;
+  }
+  .strategy-meeting-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:6px!important;
+  }
+  .strategy-meeting-live{grid-column:1/-1}
+  .strategy-opportunity-summary p{font-size:6.5pt}
+}
