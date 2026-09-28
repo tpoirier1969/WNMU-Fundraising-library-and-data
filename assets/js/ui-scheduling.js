@@ -1875,8 +1875,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
             ...existing,
             ...placement,
             id: existing.id || placement.id,
+            breakMode: canonicalScheduleBreakMode(existing),
+            breakModeSource: breakModeSourceValue(existing),
             liveBreakFlag: hasLiveBreakFlag(existing),
-            liveBreakNotes: existing.liveBreakNotes || '',
+            liveBreakNotes: hasLiveBreakFlag(existing) ? (existing.liveBreakNotes || '') : '',
             isNonPledge: Boolean(existing.isNonPledge),
             transferredToStation: Boolean(existing.transferredToStation),
             importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
@@ -4471,10 +4473,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     }
     if (els.scheduleBreakModeSelect) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
-      const explicitMode = placeholder ? '' : calendarPlacementBreakMode(schedule, currentPlacement || {});
+      const nonPledge = Boolean(currentPlacement?.isNonPledge);
+      const explicitMode = (placeholder || nonPledge) ? '' : calendarPlacementBreakMode(schedule, currentPlacement || {});
       const mode = explicitMode || defaultBreakModeForMinutes(slot.minutes);
-      els.scheduleBreakModeSelect.value = placeholder ? BREAK_MODES.PHONES_STAFFED : mode;
-      els.scheduleBreakModeSelect.disabled = !editable || placeholder;
+      els.scheduleBreakModeSelect.value = (placeholder || nonPledge) ? BREAK_MODES.PHONES_STAFFED : mode;
+      els.scheduleBreakModeSelect.disabled = !editable || placeholder || nonPledge;
     }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
     if (els.scheduleAssignmentNote) {
@@ -4729,9 +4732,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       || canonicalScheduleBreakMode(existing || {})
       || defaultMode;
     const existingExplicitMode = canonicalScheduleBreakMode(existing || {});
-    const breakModeSource = existingExplicitMode
-      ? (breakModeSourceValue(existing) || 'manual')
-      : (selectedMode === defaultMode ? 'default' : 'manual');
+    const effectiveMode = isNonPledge ? '' : selectedMode;
+    const breakModeSource = isNonPledge
+      ? ''
+      : (existingExplicitMode
+        ? (breakModeSourceValue(existing) || 'manual')
+        : (selectedMode === defaultMode ? 'default' : 'manual'));
     const base = {
       id: existing?.id || utils.makeId('place'),
       programId: scheduleRowLookupId(row),
@@ -4741,10 +4747,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       startMinutes: slot.minutes,
       endMinutes,
       startSlotKey: slot.key,
-      breakMode: selectedMode,
+      breakMode: effectiveMode,
       breakModeSource,
-      liveBreakFlag: selectedMode === BREAK_MODES.LIVE,
-      liveBreakNotes: selectedMode === BREAK_MODES.LIVE ? (existing?.liveBreakNotes || '') : '',
+      liveBreakFlag: effectiveMode === BREAK_MODES.LIVE,
+      liveBreakNotes: effectiveMode === BREAK_MODES.LIVE ? (existing?.liveBreakNotes || '') : '',
       isNonPledge,
       isPlaceholder: false,
       placementType: '',
@@ -4775,7 +4781,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const slot = state.selectedScheduleSlot;
     if (!schedule || !slot) return;
     const target = findPlacementForSlot(schedule, slot.key);
-    if (!target || isPlaceholderPlacement(target)) return;
+    if (!target || isPlaceholderPlacement(target) || target.isNonPledge) return;
     const mode = normalizeBreakMode(els.scheduleBreakModeSelect?.value) || defaultBreakModeForMinutes(target.startMinutes);
     target.breakMode = mode;
     target.breakModeSource = 'manual';
@@ -4891,12 +4897,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     const copiedMode = normalizeBreakMode(clip.breakMode) || (clip.liveBreakFlag ? BREAK_MODES.LIVE : '');
     const copiedModeSource = utils.normalizeText(clip.breakModeSource || '');
-    const pastedMode = placeholder
+    const pastedIsNonPledge = Boolean(!placeholder && (clip.isNonPledge || row?.__external_source_name));
+    const pastedMode = (placeholder || pastedIsNonPledge)
       ? ''
       : (copiedMode && copiedModeSource && copiedModeSource !== 'default'
         ? copiedMode
         : defaultBreakModeForMinutes(slot.minutes));
-    const pastedModeSource = placeholder ? '' : (copiedMode && copiedModeSource && copiedModeSource !== 'default' ? copiedModeSource : 'default');
+    const pastedModeSource = (placeholder || pastedIsNonPledge) ? '' : (copiedMode && copiedModeSource && copiedModeSource !== 'default' ? copiedModeSource : 'default');
     schedule.placements.push({
       id: utils.makeId(placeholder ? 'placeholder' : 'placement'),
       programId: placeholder ? '' : derive.programId(row),
@@ -4913,7 +4920,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       breakModeSource: pastedModeSource,
       liveBreakFlag: pastedMode === BREAK_MODES.LIVE,
       liveBreakNotes: pastedMode === BREAK_MODES.LIVE ? (clip.liveBreakNotes || '') : '',
-      isNonPledge: Boolean(!placeholder && (clip.isNonPledge || row?.__external_source_name)),
+      isNonPledge: pastedIsNonPledge,
       sourceName: placeholder ? '' : (clip.sourceName || row?.__external_source_name || ''),
       sourceLabel: placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')
     });
