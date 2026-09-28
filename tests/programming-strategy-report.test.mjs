@@ -175,6 +175,44 @@ test('older Drama Docs are penalized relative to current-cycle Drama Docs', () =
   assert.ok(currentScore.score > oldScore.score);
 });
 
+test('avoid list excludes fixed schedule, Drama Doc, recurring protected examples, and above-baseline titles', () => {
+  const programs = [
+    baseProgram({ id:'news', title:'PBS Newshour', topic_primary:'News' }),
+    baseProgram({ id:'drama', title:'Drama Special', topic_primary:'Drama Doc' }),
+    baseProgram({ id:'mood', title:'Michigan Out of Doors', topic_primary:'Michigan' }),
+    baseProgram({ id:'hsb', title:'High School Bowl', topic_primary:'WNMU' }),
+    baseProgram({ id:'welk', title:'Lawrence Welk: Strong Special', topic_primary:'Music' }),
+    baseProgram({ id:'weak', title:'Weak Discretionary Special', topic_primary:'Music' })
+  ];
+  const rows = [];
+  for (let i = 0; i < 8; i += 1) {
+    const day = String(1 + i).padStart(2,'0');
+    rows.push(
+      row({ programId:'news', title:'PBS Newshour', topic:'News', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
+      row({ programId:'drama', title:'Drama Special', topic:'Drama Doc', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
+      row({ programId:'mood', title:'Michigan Out of Doors', topic:'Michigan', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
+      row({ programId:'hsb', title:'High School Bowl', topic:'WNMU', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
+      row({ programId:'welk', title:'Lawrence Welk: Strong Special', topic:'Music', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:1000 }),
+      row({ programId:'weak', title:'Weak Discretionary Special', topic:'Music', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 })
+    );
+  }
+  const strategy = S.buildStrategy({ schedule, library: programs, evidenceRows: rows, now:new Date('2026-09-28T12:00:00Z') });
+  const titles = new Set(strategy.avoid.map(item=>item.title));
+  assert.ok(titles.has('Weak Discretionary Special'));
+  assert.ok(!titles.has('PBS Newshour'));
+  assert.ok(!titles.has('Drama Special'));
+  assert.ok(!titles.has('Michigan Out of Doors'));
+  assert.ok(!titles.has('High School Bowl'));
+  assert.ok(!titles.has('Lawrence Welk: Strong Special'));
+});
+
+test('avoid report labels the section as discretionary and explains exclusions', () => {
+  const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  assert.match(reportUi, /Discretionary titles to avoid \/ rest/);
+  assert.match(reportUi, /Fixed-schedule programs, Drama Docs/);
+  assert.match(reportUi, /at or above WNMU's relevant pledge baseline/);
+});
+
 test('new-title confidence requires repeatable fundraiser evidence, not just multiple airings', () => {
   const fresh = baseProgram({ id:'fresh-doc', title:'Fresh Documentary', topic_primary:'Documentary' });
   const slot = S.planningWindows(schedule).find((entry) => entry.weekday === 'Saturday' && entry.label === 'Prime');
@@ -567,7 +605,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.217'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.218'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -575,7 +613,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.213', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.218', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
