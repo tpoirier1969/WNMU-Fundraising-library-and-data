@@ -205,7 +205,7 @@ function combinedDayTopicSection(outlook,matrix,schedule){
     });
     topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
 
-    return{...day,occurrence,topicSignals:topicSignals.slice(0,2)};
+    return{...day,occurrence,topicSignals:topicSignals.slice(0,3)};
   });
 
   const peerGaps=[];
@@ -229,10 +229,10 @@ function combinedDayTopicSection(outlook,matrix,schedule){
     ?`<div class="strategy-day-topic-peer"><strong>Under-tested windows supported by peers</strong>${peerGaps.slice(0,4).map(item=>`<span><b>${esc(item.weekday)} · ${esc(item.daypart)}</b> · ${item.positives} positive independent peer station${item.positives===1?'':'s'}${item.topics.length?` · ${esc(item.topics.join(', '))}`:''}</span>`).join('')}<small>Peer evidence justifies a test; it does not predict WNMU revenue.</small></div>`
     :'';
 
-  return`<section class="sheet-section strategy-day-topic-section"><div class="strategy-section-head"><div><h2>Fundraiser day & topic takeaways</h2><p>Combines anticipated day strength with topic/time evidence for the <strong>actual dates in this selected fundraiser</strong>. Historical first/second/third weekday evidence is shown only when that occurrence actually exists in this drive. Topic/time callouts require at least two fundraiser samples and two different titles.</p></div></div><div class="strategy-day-topic-list">${dayRows.map(day=>{
+  return`<section class="sheet-section strategy-day-topic-section"><div class="strategy-section-head"><div><h2>Fundraiser day & topic takeaways</h2><p>Combines anticipated day strength with topic/time evidence for the <strong>actual dates in this selected fundraiser</strong>. Historical first/second/third weekday evidence is shown only when that occurrence actually exists in this drive. Each day shows up to three topic/time signals supported by at least two fundraiser samples and two different titles.</p></div></div><div class="strategy-day-topic-list">${dayRows.map(day=>{
     const topicHtml=day.topicSignals.length
       ?day.topicSignals.map(item=>`<span class="strategy-day-topic-signal"><b>${esc(item.daypart)} · ${esc(item.topic)}</b><span class="strategy-rate">Avg &#36;${Math.round(item.rate)}/pledge hr</span><small>${item.samples} fundraisers · ${item.titles} titles</small></span>`).join('')
-      :'<span class="strategy-no-history">No multi-title topic/time signal clears the threshold for this exact fundraiser position.</span>';
+      :'<span class="strategy-no-history">No repeat multi-title topic/time signal clears the threshold for this fundraiser day.</span>';
     return`<div class="strategy-day-topic-row tone-${dayTone(day.outlook)}"><div class="strategy-day-topic-date"><strong>${esc(day.label)}</strong><small>${esc(fmt(day.date,false))}</small></div><div class="strategy-day-topic-strength"><span class="strategy-day-rating">${esc(day.outlook)}${day.bestBet?' · Best bet':''}</span><small>${day.samples?`${day.samples} comparable historical day${day.samples===1?'':'s'}${Number.isFinite(day.averageRate)?` · Avg &#36;${Math.round(day.averageRate)}/pledge hr`:''}`:'No corresponding historical day sample'}</small></div><div class="strategy-day-topic-signals">${topicHtml}</div></div>`;
   }).join('')}</div>${peerHtml}</section>`;
 }
@@ -259,7 +259,8 @@ function hourlyPatternsSection(hourly){
       const allRows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);
       const observed=allRows.filter(x=>Number(x.targetSeason?.fundraiserSamples||0)>0||Number(x.allHistory?.fundraiserSamples||0)>0);
       const rows=observed;
-      return`<section class="strategy-hourly-day"><h3>${day}</h3><div class="strategy-hourly-compare-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-compare-row"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-hourly-scope">${metric(x.targetSeason,data.season||'season')}</span><span class="strategy-hourly-scope">${metric(x.allHistory,'all-history')}</span></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
+      const weekend=day==='Saturday'||day==='Sunday';
+      return`<section class="strategy-hourly-day strategy-hourly-day-${day.toLowerCase()}"><h3>${day}</h3><div class="strategy-hourly-compare-head"><span>Start</span><span>${esc(data.season||'Season')}</span><span>All history</span></div><div>${rows.length?rows.map(x=>`<div class="strategy-hourly-compare-row${!weekend&&Number(x.startMinutes)<17*60?' strategy-hourly-print-hide':''}"><span class="strategy-hourly-time">${clock(x.startMinutes)}</span><span class="strategy-hourly-scope">${metric(x.targetSeason,data.season||'season')}</span><span class="strategy-hourly-scope">${metric(x.allHistory,'all-history')}</span></div>`).join(''):'<div class="strategy-hourly-empty">No half-hour start history.</div>'}</div></section>`;
     }).join('')}</div></section>`;
 }
 
@@ -383,56 +384,32 @@ function meetingBriefSection(result){
   const practices=result?.peerPractices||[];
 
   const windows=opportunities.slice(0,5);
-  const candidates=[];
-  matrix.forEach(row=>{
-    const positions=Array.isArray(row.positionBreakdown)&&row.positionBreakdown.length
-      ?row.positionBreakdown
-      :[{label:row.weekday,local:row.local||{},localTopics:row.localTopics||[]}];
-    positions.forEach(pos=>{
-      (pos.localTopics||[]).forEach(topic=>{
-        if(Number(topic.fundraiserSamples||0)<2||Number(topic.titleCount||0)<2||!Number.isFinite(Number(topic.averageRate)))return;
-        candidates.push({
-          weekday:row.weekday,
-          daypart:row.daypart,
-          positionLabel:pos.label||row.weekday,
-          topic,
-          windowAverage:Number(pos.local?.averageRate)
-        });
-      });
-    });
-  });
-  const strongSignals=candidates
-    .sort((a,b)=>Number(b.topic.averageRate||0)-Number(a.topic.averageRate||0)
-      || Number(b.topic.fundraiserSamples||0)-Number(a.topic.fundraiserSamples||0)
-      || Number(b.topic.titleCount||0)-Number(a.topic.titleCount||0))
-    .slice(0,5);
-
   const peerLed=matrix
     .filter(row=>row.evidenceState==='Peer-led test')
     .sort((a,b)=>Number(b?.peer?.positiveStations||0)-Number(a?.peer?.positiveStations||0))
     .slice(0,4);
+  const livePractice=practices.find(item=>item.id==='live-localized');
 
   const windowHtml=windows.length?windows.map(item=>{
-    const qualifier=item.kind==='narrow-test'
-      ?'This is a broad test question, not a claim that every occurrence of this weekday performs the same.'
-      :item.kind==='peer-gap'
-        ?'Peer evidence supports a bounded experiment; WNMU history remains primary.'
-        :'This window has repeat WNMU evidence but has been used relatively infrequently.';
-    return`<div><strong>${esc(item.weekday)} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}</strong><span>${esc(item.label)}${item.kind==='peer-gap'?` · ${Number(item.positivePeerStations||0)} positive peer stations`:''}</span><small>${esc(item.rationale||'No rationale recorded.')}</small><small><b>How to read this:</b> ${esc(qualifier)}</small></div>`;
+    const saturdayAfternoon=item.weekday==='Saturday'&&Number(item.startMinutes)===15*60&&Number(item.endMinutes)===17*60;
+    return`<div><strong>${esc(item.weekday)} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}</strong><span>${esc(item.label)}${item.kind==='peer-gap'?` · ${Number(item.positivePeerStations||0)} positive peer stations`:''}</span><small>${esc(item.rationale||'No rationale recorded.')}</small>${saturdayAfternoon?'<small><b>Saturday 3–5 PM:</b> Treat this as a test of a broader program/topic mix. WNMU historical use here has been narrow, so the old results do not prove the clock time itself is weak.</small>':''}</div>`;
   }).join(''):'<p>No distinct timing test currently clears the evidence rules.</p>';
 
-  const signalHtml=strongSignals.length?strongSignals.map(item=>{
-    const top=item.topic;
-    const support=Number(top.fundraiserSamples||0)>=4&&Number(top.titleCount||0)>=2?'broader history':Number(top.fundraiserSamples||0)>=3?'moderate history':'thin repeat history';
-    const comparison=Number.isFinite(item.windowAverage)&&item.windowAverage>0
-      ?` · ${Math.round((Number(top.averageRate)/item.windowAverage-1)*100)}% vs that position/daypart average`
-      :'';
-    return`<div><strong>${esc(item.positionLabel)} · ${esc(item.daypart)} · ${esc(top.topic)}</strong><span><span class="strategy-rate">Avg &#36;${Math.round(top.averageRate)}/pledge hr</span> · ${top.fundraiserSamples} fundraisers · ${Number(top.titleCount||0)} title${Number(top.titleCount||0)===1?'':'s'} · ${esc(support)}${comparison}</span></div>`;
-  }).join(''):'<p>No WNMU topic/time combination has repeat rate-valid fundraiser evidence yet.</p>';
+  const peerHtml=peerLed.length
+    ?peerLed.map(row=>`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)}</strong><span>${Number(row.peer.positiveStations||0)} positive independent peer station${Number(row.peer.positiveStations||0)===1?'':'s'}${(row.peer.topTopics||[]).length?` · ${esc(row.peer.topTopics.map(x=>x.topic).join(', '))}`:''}</span></div>`).join('')
+    :practices.filter(item=>item.id!=='live-localized').slice(0,4).map(item=>`<div><strong>${esc(item.label)}</strong><span>${Number(item.stationCount||0)} peer station${Number(item.stationCount||0)===1?'':'s'} represented</span></div>`).join('')||'<p>No peer-led test currently clears the evidence rules.</p>';
 
-  const peerHtml=peerLed.length?peerLed.map(row=>`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)}</strong><span>${Number(row.peer.positiveStations||0)} positive independent peer station${Number(row.peer.positiveStations||0)===1?'':'s'}${(row.peer.topTopics||[]).length?` · ${esc(row.peer.topTopics.map(x=>x.topic).join(', '))}`:''}</span><small>Peer evidence suggests a bounded test; it is not a WNMU performance forecast.</small></div>`).join(''):practices.slice(0,4).map(item=>`<div><strong>${esc(item.label)}</strong><span>${Number(item.stationCount||0)} peer station${Number(item.stationCount||0)===1?'':'s'} represented</span><small>${esc(item.wnmuStatus||'')}</small></div>`).join('')||'<p>No peer-led test currently clears the evidence rules.</p>';
+  const liveHtml=livePractice
+    ?`<div><strong>${esc(livePractice.label)}</strong><span>${Number(livePractice.stationCount||0)} independent peer station${Number(livePractice.stationCount||0)===1?'':'s'} · ${Number(livePractice.observationCount||0)} positive observation${Number(livePractice.observationCount||0)===1?'':'s'}</span><small>${esc(livePractice.testIdea||'Use live/localized breaks as a bounded program-specific test, not as proof that live presentation alone causes stronger results.')}</small></div>${(livePractice.examples||[]).slice(0,3).map(example=>{
+      const metrics=[];
+      if(Number.isFinite(Number(example.actualDollars)))metrics.push(`$${Math.round(Number(example.actualDollars)).toLocaleString()}`);
+      if(Number.isFinite(Number(example.pledgeCount)))metrics.push(`${Number(example.pledgeCount)} pledge${Number(example.pledgeCount)===1?'':'s'}`);
+      if(Number.isFinite(Number(example.goalDollars)))metrics.push(`goal $${Math.round(Number(example.goalDollars)).toLocaleString()}`);
+      return`<div><strong>${esc(example.station||'Peer station')}${example.programTitle?` · ${esc(example.programTitle)}`:''}</strong><span>${metrics.length?esc(metrics.join(' · ')):esc(example.summary||'Positive peer observation')}</span>${metrics.length&&example.summary?`<small>${esc(example.summary)}</small>`:''}</div>`;
+    }).join('')}`
+    :'<p>No structured peer live/localized-break observation currently clears the evidence threshold.</p>';
 
-  return`<section class="sheet-section strategy-meeting-brief"><div class="strategy-section-head"><div><h2>Meeting brief</h2><p>A discussion summary, not an automatic schedule. <strong>The WNMU signal list is not “the top four slots”.</strong> It shows the five highest measured topic/time rates supported by at least two comparable fundraiser samples <strong>and at least two different titles</strong>, ordered by dollars per pledge hour. One-title patterns are deliberately excluded from this card because they are title evidence, not proof that the whole topic works there. First vs. second occurrences of a weekday are kept separate where history permits.</p></div></div><div class="strategy-meeting-facts"><span><b>${Number(strategy.evidenceFundraisers||0)}</b> historical fundraiser/event groups</span><span><b>${Number(strategy.evidenceRows||0).toLocaleString()}</b> reconciled program rows</span><span><b>${Number(strategy.eligibleTitles||0)}</b> currently eligible library titles</span></div><div class="strategy-meeting-grid"><article><h3>Strongest multi-title WNMU topic/time signals</h3><div class="strategy-meeting-list">${signalHtml}</div></article><article><h3>Windows worth discussing</h3><div class="strategy-meeting-list">${windowHtml}</div></article><article><h3>Peer-led gaps to consider</h3><div class="strategy-meeting-list">${peerHtml}</div></article><article><h3>Interpretation guardrails</h3><div class="strategy-meeting-list"><div><strong>Weekday position matters</strong><span>Opening Saturday, second Saturday, etc. can represent different fundraiser conditions and are now split when possible.</span></div><div><strong>Topic is not title</strong><span>The brief now requires at least two different titles before promoting a result as a topic/time signal. Strong single-title results stay in the detailed evidence instead.</span></div><div><strong>Peer evidence is secondary</strong><span>Another station's result can justify a test, but it does not overrule WNMU history or predict WNMU revenue.</span></div><div><strong>Local programming needs two buckets</strong><span>Local specials/events/documentaries should not be treated as equivalent to ordinary recurring local series.</span></div></div></article></div></section>`;
+  return`<section class="sheet-section strategy-meeting-brief"><div class="strategy-section-head"><div><h2>Meeting brief</h2><p>A compact discussion starter. Detailed day/topic recommendations are below; this section keeps only timing opportunities, peer gaps, and break-format evidence that may change how the fundraiser is built.</p></div></div><div class="strategy-meeting-facts"><span><b>${Number(strategy.evidenceFundraisers||0)}</b> historical fundraiser/event groups</span><span><b>${Number(strategy.evidenceRows||0).toLocaleString()}</b> reconciled program rows</span><span><b>${Number(strategy.eligibleTitles||0)}</b> currently eligible library titles</span></div><div class="strategy-meeting-grid"><article><h3>Windows worth discussing</h3><div class="strategy-meeting-list">${windowHtml}</div></article><article><h3>Peer-led gaps to consider</h3><div class="strategy-meeting-list">${peerHtml}</div></article><article class="strategy-meeting-live"><h3>Live / localized break evidence</h3><div class="strategy-meeting-list">${liveHtml}</div></article></div></section>`;
 }
 
 function opportunitiesSection(opportunities){
@@ -443,7 +420,7 @@ function opportunitiesSection(opportunities){
     if(!items.length)return'';
     return`<div class="strategy-opportunity-evidence"><strong>Why explore this?</strong><ul>${items.map(item=>`<li class="evidence-${esc(item.tone||'neutral')}"><b>${esc(item.sourceLabel||'Evidence')}:</b> ${esc(item.text||'')}</li>`).join('')}</ul></div>`;
   };
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}${x.kind==='peer-gap'?` · ${Number(x.positivePeerStations||0)} positive peer stations`:''}</small></div>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Scheduling opportunities / tests</h2><p>Each weekly timeslot appears once. A test is shown only with visible evidence explaining why it may be worth trying or why limited WNMU history is not conclusive.</p></div></div>${rows.length?`<div class="strategy-opportunity-list">${rows.map(x=>`<div class="strategy-opportunity-row opportunity-${esc(x.kind)}"><div><strong>${esc(x.weekday)} · ${clock(x.startMinutes)}–${clock(x.endMinutes)}</strong><span>${esc(x.label)}</span></div><div><span class="strategy-rate">${Number.isFinite(x.averageRate)?`Avg ${Math.round(x.averageRate)}/pledge hr`:'No reliable average yet'}</span><small>${x.fundraiserSamples} fundraiser sample${x.fundraiserSamples===1?'':'s'} · ${x.airings} airing${x.airings===1?'':'s'}${x.kind==='peer-gap'?` · ${Number(x.positivePeerStations||0)} positive peer stations`:''}</small></div><div class="strategy-opportunity-summary"><p>${esc(x.rationale||'')}</p></div>${evidenceList(x)}</div>`).join('')}</div>`:'<p>No distinct exploratory timeslot currently has enough evidence to justify a test.</p>'}</section>`;
 }
 
 function dayMapSection(strategy){
@@ -460,7 +437,6 @@ function dayMapSection(strategy){
 
 function compact(items,renderer,empty){return items?.length?`<div class="strategy-compact-list">${items.map(renderer).join('')}</div>`:`<p>${esc(empty)}</p>`;}
 function supportingSections(strategy){return`<section class="sheet-section strategy-two-column"><div><h2>Repeat candidates</h2>${compact(strategy.repeats,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · score ${Math.round(x.score)} · supported on ${x.slots.length} separated prime windows.</span></div>`,'No repeat candidate clears the threshold.')}<h2>Seasonal opportunities</h2>${compact(strategy.seasonal,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · ${esc(x.season.notes.join(' ')||`${x.season.targetSeason} seasonal support`)}</span></div>`,'No distinct seasonal opportunity identified.')}</div><div><h2>Local / U.P. opportunities</h2>${compact(strategy.local,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.topic)} · best-window score ${Math.round(x.score)} · ${esc(x.fit)}</span></div>`,'No eligible Local / U.P. title identified.')}<h2>Discretionary titles to avoid / rest</h2><p class="strategy-section-note">Only discretionary pledge titles appear here. Fixed-schedule programs, Drama Docs, and titles still performing at or above WNMU's relevant pledge baseline are omitted unless you explicitly rated them Don't air or Low confidence.</p>${compact(strategy.avoid,x=>`<div><strong>${esc(x.title)}</strong><span>${esc(x.reasons.join(' · '))}</span></div>`,'No discretionary title currently needs a prominent rest/avoid caution.')}</div></section>`;}
-function rightsSection(strategy){const desc=x=>`${x.rightsStart?`Starts ${fmt(x.rightsStart)}`:''}${x.rightsStart&&x.rightsEnd?' · ':''}${x.rightsEnd?`Ends ${fmt(x.rightsEnd)}`:''}`;return`<section class="sheet-section strategy-two-column"><div><h2>Rights constraints</h2>${compact(strategy.rights.unavailable.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No fully unavailable title detected.')}</div><div><h2>Partial-drive rights</h2>${compact(strategy.rights.partial.slice(0,20),x=>`<div><strong>${esc(x.title)}</strong><span>${esc(desc(x))}</span></div>`,'No partial-drive rights restriction detected.')}</div></section>`;}
 function limitationsSection(strategy){return`<section class="sheet-section"><h2>Evidence confidence & limitations</h2><div class="strategy-facts"><div><strong>${strategy.evidenceRows.toLocaleString()}</strong><span>pre-cutoff historical program rows</span></div><div><strong>${strategy.evidenceFundraisers.toLocaleString()}</strong><span>historical fundraiser/event groups</span></div></div><ul class="strategy-limitations">${strategy.limitations.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`;}
 function clearStrategyWorkerTimer(){if(state.workerTimer){globalThis.clearTimeout(state.workerTimer);state.workerTimer=null;}}
 function stopStrategyWorker(reason='Superseded'){
@@ -575,7 +551,7 @@ async function renderStrategy(){
     const diagnostics=result.diagnostics||{};
     const renderStarted=globalThis.performance?.now?.()??Date.now();
 
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${topicComparisonSection(strategy)}${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${topicComparisonSection(strategy)}${combinedDayTopicSection(dayOutlook,result.topicTimeMatrix,schedule)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${limitationsSection(strategy)}</article>`;
     globalThis.WNMUStrategyEnhancements?.decorate?.(out,result);
 
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
