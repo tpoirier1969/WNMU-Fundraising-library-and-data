@@ -178,6 +178,66 @@ function hourlyPatternsSection(hourly){
     }).join('')}</div></section>`;
 }
 
+function topicTimeMatrixSection(matrix){
+  const data=matrix||{rows:[]};
+  const rows=Array.isArray(data.rows)?data.rows:[];
+  if(!rows.length)return'<section class="sheet-section"><h2>Topic × time map</h2><p>No WNMU or structured peer timing evidence is available for the analyzed dayparts.</p></section>';
+
+  const topicText=(items=[])=>{
+    if(!items.length)return'<span class="strategy-no-history">No rate-valid WNMU topic result</span>';
+    return items.slice(0,3).map(item=>`<span class="strategy-topic-time-topic"><b>${esc(item.topic)}</b> <span class="strategy-rate">${Number.isFinite(item.averageRate)?`${Math.round(item.averageRate)}/pledge hr`:'—'}</span><small>${item.fundraiserSamples} fundraiser${item.fundraiserSamples===1?'':'s'} · ${item.airings} airing${item.airings===1?'':'s'}</small></span>`).join('');
+  };
+  const peerText=(peer={})=>{
+    const positive=Number(peer.positiveStations||0),negative=Number(peer.negativeStations||0),stations=Number(peer.stations||0);
+    if(!stations)return'<span class="strategy-no-history">No matching structured peer evidence</span>';
+    const topics=(peer.topTopics||[]).map(item=>item.topic).filter(Boolean);
+    return `<span><b>${positive} positive</b> · ${negative} negative · ${stations} independent station${stations===1?'':'s'}</span>${topics.length?`<small>Positive peer topics: ${esc(topics.join(', '))}</small>`:''}`;
+  };
+
+  const order=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const groups=new Map(order.map(day=>[day,[]]));
+  rows.forEach(row=>{if(!groups.has(row.weekday))groups.set(row.weekday,[]);groups.get(row.weekday).push(row);});
+
+  return`<section class="sheet-section strategy-topic-time-section"><div class="strategy-section-head"><div><h2>Topic × time map</h2><p>Connects the two questions that matter in schedule planning: <strong>when</strong> a fundraising audience has responded and <strong>what kind of programming</strong> produced the response. WNMU results remain primary. Peer evidence identifies testable gaps, not predicted WNMU revenue.</p></div></div><div class="strategy-topic-time-groups">${order.map(day=>{
+    const dayRows=groups.get(day)||[];
+    if(!dayRows.length)return'';
+    return`<section class="strategy-topic-time-day"><h3>${esc(day)}</h3><div class="strategy-topic-time-head"><span>Daypart</span><span>WNMU use</span><span>WNMU topic signals</span><span>Peer context</span></div>${dayRows.map(row=>{
+      const local=row.local||{},peer=row.peer||{};
+      const localUse=Number(local.airings||0)
+        ?`<b>${Number(local.fundraiserSamples||0)} fundraiser${Number(local.fundraiserSamples||0)===1?'':'s'}</b><small>${Number(local.airings||0)} airing${Number(local.airings||0)===1?'':'s'}${Number.isFinite(Number(local.averageRate))?` · Avg ${Math.round(Number(local.averageRate))}/pledge hr`:''}</small>`
+        :'<span class="strategy-no-history">No rate-valid WNMU history</span>';
+      return`<div class="strategy-topic-time-row evidence-${esc(String(row.evidenceState||'').toLowerCase().replace(/[^a-z0-9]+/g,'-'))}"><span class="strategy-topic-time-window"><b>${clock(row.startMinutes)}–${clock(row.endMinutes)}</b><small>${esc(row.daypart)} · ${esc(row.evidenceState||'')}</small></span><span class="strategy-topic-time-use">${localUse}</span><span class="strategy-topic-time-topics">${topicText(row.localTopics||[])}</span><span class="strategy-topic-time-peer">${peerText(peer)}</span></div>`;
+    }).join('')}</section>`;
+  }).join('')}</div></section>`;
+}
+
+function meetingBriefSection(result){
+  const strategy=result?.strategy||{};
+  const opportunities=result?.opportunities?.rows||[];
+  const matrix=result?.topicTimeMatrix?.rows||[];
+  const practices=result?.peerPractices||[];
+
+  const windows=opportunities.slice(0,4);
+  const localSignals=matrix
+    .filter(row=>Number(row?.local?.fundraiserSamples||0)>=2&&(row.localTopics||[]).length)
+    .sort((a,b)=>Number(b.local.fundraiserSamples||0)-Number(a.local.fundraiserSamples||0)
+      || Number(b.localTopics?.[0]?.averageRate||0)-Number(a.localTopics?.[0]?.averageRate||0))
+    .slice(0,4);
+  const peerLed=matrix
+    .filter(row=>row.evidenceState==='Peer-led test')
+    .sort((a,b)=>Number(b?.peer?.positiveStations||0)-Number(a?.peer?.positiveStations||0))
+    .slice(0,3);
+
+  const windowHtml=windows.length?windows.map(item=>`<div><strong>${esc(item.weekday)} · ${clock(item.startMinutes)}–${clock(item.endMinutes)}</strong><span>${esc(item.label)}${item.kind==='peer-gap'?` · ${Number(item.positivePeerStations||0)} positive peer stations`:''}</span></div>`).join(''):'<p>No distinct timing test currently clears the evidence rules.</p>';
+  const signalHtml=localSignals.length?localSignals.map(row=>{
+    const top=row.localTopics[0];
+    return`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)} · ${esc(top.topic)}</strong><span><span class="strategy-rate">Avg ${Math.round(top.averageRate)}/pledge hr</span> · ${top.fundraiserSamples} fundraiser${top.fundraiserSamples===1?'':'s'}</span></div>`;
+  }).join(''):'<p>No WNMU topic/time combination has two rate-valid fundraiser samples yet.</p>';
+  const peerHtml=(peerLed.length?peerLed.map(row=>`<div><strong>${esc(row.weekday)} · ${esc(row.daypart)}</strong><span>${Number(row.peer.positiveStations||0)} positive independent peer station${Number(row.peer.positiveStations||0)===1?'':'s'}${(row.peer.topTopics||[]).length?` · ${esc(row.peer.topTopics.map(x=>x.topic).join(', '))}`:''}</span></div>`).join(''):practices.slice(0,3).map(item=>`<div><strong>${esc(item.label)}</strong><span>${Number(item.stationCount||0)} peer station${Number(item.stationCount||0)===1?'':'s'} represented</span></div>`).join(''))||'<p>No peer-led test currently clears the evidence rules.</p>';
+
+  return`<section class="sheet-section strategy-meeting-brief"><div class="strategy-section-head"><div><h2>Meeting brief</h2><p>Front-page planning signals for discussion. These are evidence prompts, not an automatic schedule: WNMU history is primary, and peer-led items are explicitly experiments.</p></div></div><div class="strategy-meeting-facts"><span><b>${Number(strategy.evidenceFundraisers||0)}</b> historical fundraiser/event groups</span><span><b>${Number(strategy.evidenceRows||0).toLocaleString()}</b> reconciled program rows</span><span><b>${Number(strategy.eligibleTitles||0)}</b> currently eligible library titles</span></div><div class="strategy-meeting-grid"><article><h3>Windows worth discussing</h3><div class="strategy-meeting-list">${windowHtml}</div></article><article><h3>WNMU topic × time signals</h3><div class="strategy-meeting-list">${signalHtml}</div></article><article><h3>Peer-led gaps to consider</h3><div class="strategy-meeting-list">${peerHtml}</div></article></div></section>`;
+}
+
 function opportunitiesSection(opportunities){
   const data=opportunities||{rows:[]};
   const rows=data.rows||[];
@@ -224,7 +284,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.212');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.213');
     }catch(error){
       reject(error);
       return;
@@ -318,7 +378,7 @@ async function renderStrategy(){
     const diagnostics=result.diagnostics||{};
     const renderStarted=globalThis.performance?.now?.()??Date.now();
 
-    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${topicComparisonSection(strategy)}${dayOutlookSection(dayOutlook)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
+    out.innerHTML=`<article class="report-sheet strategy-sheet"><header class="sheet-title"><div><div class="report-kicker">WNMU-TV PBS pre-drive planning</div><h1>Fundraiser Programming Strategy</h1><p>${esc(schedule.title)} · ${fmt(schedule.startDate)}–${fmt(schedule.endDate,false)}</p></div></header>${meetingBriefSection(result)}${topicComparisonSection(strategy)}${topicTimeMatrixSection(result.topicTimeMatrix)}${dayOutlookSection(dayOutlook)}${hourlyPatternsSection(hourlyPatterns)}${opportunitiesSection(opportunities)}${dayMapSection(strategy)}${supportingSections(strategy)}${rightsSection(strategy)}${limitationsSection(strategy)}</article>`;
     globalThis.WNMUStrategyEnhancements?.decorate?.(out,result);
 
     const renderMs=Math.round((globalThis.performance?.now?.()??Date.now())-renderStarted);
