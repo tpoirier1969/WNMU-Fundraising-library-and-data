@@ -143,7 +143,7 @@
     schedulePlaceholderControls: document.getElementById('schedule-placeholder-controls'),
     scheduleProgramResults: document.getElementById('schedule-program-results'),
     scheduleSelectedPreview: document.getElementById('schedule-selected-preview'),
-    scheduleLiveBreakFlag: document.getElementById('schedule-live-break-flag'),
+    scheduleBreakModeSelect: document.getElementById('schedule-break-mode-select'),
     scheduleManualResultPanel: document.getElementById('schedule-manual-result-panel'),
     scheduleManualResultStatus: document.getElementById('schedule-manual-result-status'),
     scheduleManualResultDollars: document.getElementById('schedule-manual-result-dollars'),
