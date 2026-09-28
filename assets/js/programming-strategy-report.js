@@ -276,7 +276,7 @@ function hourlyPatternsSection(hourly){
     ?`${fmt(data.historyStartDate,false)}–${fmt(data.historyEndDate,false)}`
     :'available history';
 
-  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Each daily row shows <strong>${esc(data.season||'selected')} fundraiser history first</strong>, with <strong>all fundraiser history</strong> beside it for sample-size context. All-history span: ${esc(span)}. Regular-program boundary/end-break fundraising is excluded from these pledge-program averages.</p></div></div>
+  return`<section class="sheet-section"><div class="strategy-section-head"><div><h2>Day/time performance</h2><p><strong>30-minute start-time buckets.</strong> An 8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM. Each daily row shows <strong>${esc(data.season||'selected')} fundraiser history first</strong>, with <strong>all fundraiser history</strong> beside it for sample-size context. All-history span: ${esc(span)}. Programs with an attached pledge break count as pledge programs whether the break is internal or follows the program. Only explicitly non-pledge placements are excluded from these averages.</p></div></div>
     <div class="strategy-daily-breakdown-head"><h3>Daily breakdown</h3><p>Season-specific evidence is primary; all-history evidence is context.</p></div>
     <div class="strategy-hourly-grid">${order.map(day=>{
       const allRows=(groups.get(day)||[]).sort((a,b)=>a.startMinutes-b.startMinutes);
