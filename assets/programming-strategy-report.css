@@ -2001,3 +2001,23 @@
     font-size:5.2pt;
   }
 }
+
+
+/* v0.22.228 opportunity-card preview correction */
+.strategy-program-opportunity-list>article{
+  grid-template-columns:24px minmax(0,1fr);
+}
+.strategy-opportunity-title{grid-column:2}
+.strategy-opportunity-badges{
+  grid-column:2;
+  justify-content:flex-start;
+}
+.strategy-program-opportunity-list>article>p,
+.strategy-program-opportunity-list>article>small{
+  grid-column:2;
+}
+@media print{
+  .strategy-program-opportunity-list>article{
+    grid-template-columns:18px minmax(0,1fr);
+  }
+}
