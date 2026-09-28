@@ -181,6 +181,7 @@ test('avoid list excludes fixed schedule, Drama Doc, recurring protected example
     baseProgram({ id:'drama', title:'Drama Special', topic_primary:'Drama Doc' }),
     baseProgram({ id:'mood', title:'Michigan Out of Doors', topic_primary:'Michigan' }),
     baseProgram({ id:'hsb', title:'High School Bowl', topic_primary:'WNMU' }),
+    baseProgram({ id:'fixed-generic', title:'Weekly Fixed Show', topic_primary:'Music' }),
     baseProgram({ id:'welk', title:'Lawrence Welk: Strong Special', topic_primary:'Music' }),
     baseProgram({ id:'weak', title:'Weak Discretionary Special', topic_primary:'Music' })
   ];
@@ -192,17 +193,19 @@ test('avoid list excludes fixed schedule, Drama Doc, recurring protected example
       row({ programId:'drama', title:'Drama Special', topic:'Drama Doc', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
       row({ programId:'mood', title:'Michigan Out of Doors', topic:'Michigan', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
       row({ programId:'hsb', title:'High School Bowl', topic:'WNMU', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
+      row({ programId:'fixed-generic', title:'Weekly Fixed Show', topic:'Music', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 }),
       row({ programId:'welk', title:'Lawrence Welk: Strong Special', topic:'Music', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:1000 }),
       row({ programId:'weak', title:'Weak Discretionary Special', topic:'Music', dateKey:`2025-12-${day}`, fundraiserId:`dec25-${i}`, dollars:0 })
     );
   }
-  const strategy = S.buildStrategy({ schedule, library: programs, evidenceRows: rows, now:new Date('2026-09-28T12:00:00Z') });
+  const strategy = S.buildStrategy({ schedule, library: programs, evidenceRows: rows, fixedScheduleProgramIds:['fixed-generic'], fixedScheduleTitles:['Weekly Fixed Show'], now:new Date('2026-09-28T12:00:00Z') });
   const titles = new Set(strategy.avoid.map(item=>item.title));
   assert.ok(titles.has('Weak Discretionary Special'));
   assert.ok(!titles.has('PBS Newshour'));
   assert.ok(!titles.has('Drama Special'));
   assert.ok(!titles.has('Michigan Out of Doors'));
   assert.ok(!titles.has('High School Bowl'));
+  assert.ok(!titles.has('Weekly Fixed Show'));
   assert.ok(!titles.has('Lawrence Welk: Strong Special'));
 });
 
