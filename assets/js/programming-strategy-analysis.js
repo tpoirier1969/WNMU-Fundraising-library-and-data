@@ -192,12 +192,13 @@
     return LOCAL_WORD_PATTERN.test(value) || LOCAL_UP_PATTERN.test(value);
   }
 
-  function excludedFromAvoidList(program = {}, history = {}, drama = {}, baselineRate = null, rating = '') {
+  function excludedFromAvoidList(program = {}, history = {}, drama = {}, baselineRate = null, rating = '', fixedProgramIds = new Set(), fixedTitleKeys = new Set()) {
     // Explicit editorial cautions remain visible even when performance is healthy.
     if (rating === 'dont_air' || rating === 'low_confidence') return false;
 
     const title = programTitle(program);
-    if (FIXED_SCHEDULE_TITLE_PATTERN.test(title)) return true;
+    const id = programId(program);
+    if ((id && fixedProgramIds.has(id)) || fixedTitleKeys.has(lookupKey(title)) || FIXED_SCHEDULE_TITLE_PATTERN.test(title)) return true;
     if (drama?.isDramaDoc) return true;
 
     const averageRate = Number(history?.averageRate);
@@ -1455,10 +1456,12 @@ return result;}
     return { unavailable, partial };
   }
 
-  function buildStrategy({ schedule = {}, library = [], evidenceRows = [], overrides = [], performanceStats = null, now = new Date() } = {}) {
+  function buildStrategy({ schedule = {}, library = [], evidenceRows = [], overrides = [], performanceStats = null, fixedScheduleProgramIds = [], fixedScheduleTitles = [], now = new Date() } = {}) {
     const cutoff = evidenceCutoff(schedule, now);
     const historicalRows = filterEvidenceAirings(evidenceRows, cutoff);
     const overrideByProgramId = overrideIndex(overrides);
+    const fixedProgramIds = new Set((fixedScheduleProgramIds || []).map(text).filter(Boolean));
+    const fixedTitleKeys = new Set((fixedScheduleTitles || []).map(lookupKey).filter(Boolean));
     const targetSeason = seasonForDate(scheduleStart(schedule));
     const seasonRows = historicalRows.filter((row) => rowSeason(row) === targetSeason);
     const seasonFundraiserCount = fundraiserCount(seasonRows);
@@ -1523,7 +1526,7 @@ return result;}
       const drama = cached.drama;
       const season = cached.season;
 
-      if (excludedFromAvoidList(program, history, drama, baselineRate, rating)) return null;
+      if (excludedFromAvoidList(program, history, drama, baselineRate, rating, fixedProgramIds, fixedTitleKeys)) return null;
 
       const rest = history.latest ? daysBetween(history.latest, scheduleStart(schedule)) : null;
       const reasons = [];
