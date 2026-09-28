@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -222,6 +222,25 @@ test('Scheduling autosave serializes full-row Supabase writes so an older placem
   releaseFirst();
   await Promise.all([first, second]);
   assert.equal(JSON.stringify(snapshots), JSON.stringify([['one'], ['one', 'two']]));
+});
+
+test('Scheduling break-mode defaults use Web-only only from 5–7 PM', () => {
+  resetState();
+  assert.equal(hooks.defaultBreakModeForMinutes(9 * 60), 'phones_staffed');
+  assert.equal(hooks.defaultBreakModeForMinutes(16 * 60 + 59), 'phones_staffed');
+  assert.equal(hooks.defaultBreakModeForMinutes(17 * 60), 'web_only');
+  assert.equal(hooks.defaultBreakModeForMinutes(18 * 60 + 59), 'web_only');
+  assert.equal(hooks.defaultBreakModeForMinutes(19 * 60), 'phones_staffed');
+  assert.equal(hooks.defaultBreakModeForMinutes(20 * 60), 'phones_staffed');
+});
+
+test('Scheduling break-mode migration preserves old Live flags without inventing Phones for legacy non-Live rows', () => {
+  resetState();
+  assert.equal(hooks.canonicalScheduleBreakMode({ liveBreakFlag: true }), 'live');
+  assert.equal(hooks.canonicalScheduleBreakMode({ liveBreakFlag: false }), '');
+  assert.equal(hooks.canonicalScheduleBreakMode({ breakMode: 'phones_staffed', liveBreakFlag: true }), 'phones_staffed');
+  assert.equal(hooks.canonicalScheduleBreakMode({ breakMode: 'web_only' }), 'web_only');
+  assert.equal(hooks.breakModeSourceValue({ breakMode: 'web_only' }), 'legacy');
 });
 
 test('Scheduling break warning treats zero-second timing rows as missing break information', () => {
