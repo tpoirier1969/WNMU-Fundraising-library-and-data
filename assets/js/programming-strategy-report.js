@@ -174,6 +174,29 @@ function scheduleOccurrenceForDate(schedule={},dateKey=''){
   return occurrence||null;
 }
 
+function daySchedulingAction(day={},signals=[]){
+  const outlook=String(day?.outlook||'').toLowerCase();
+  const hasSignal=Array.isArray(signals)&&signals.length>0;
+  if(outlook.includes('usually weak')||outlook.includes('usually soft')){
+    return hasSignal
+      ?'Concentrate pledge hours in the strongest topic/time pockets shown here; a weak day does not mean every program on the day is weak.'
+      :'Consider fewer discretionary pledge hours on this day unless a strong title-specific reason overrides the broad history.';
+  }
+  if(outlook.includes('usually strong')||outlook.includes('usually good')){
+    return hasSignal
+      ?'This day can support a broader pledge effort, with the strongest topic/time pockets used as anchors.'
+      :'The day itself has favorable history, but title and topic choices still matter.';
+  }
+  if(outlook.includes('thin')||outlook.includes('no comparable')){
+    return hasSignal
+      ?'Use the topic/time evidence as the stronger guide; the day-level sample is too thin to carry much weight.'
+      :'Treat the day cautiously until stronger WNMU evidence exists.';
+  }
+  return hasSignal
+    ?'Use the topic/time signals to decide where to concentrate effort; the day-level average is context, not a score for every program.'
+    :'Treat the day-level average as broad context, not as proof that every program on the day performs the same.';
+}
+
 function combinedDayTopicSection(outlook,matrix,schedule){
   const dayData=outlook||{season:'selected',fallback:false,rows:[]};
   const matrixRows=Array.isArray(matrix?.rows)?matrix.rows:[];
@@ -233,7 +256,7 @@ function combinedDayTopicSection(outlook,matrix,schedule){
     const topicHtml=day.topicSignals.length
       ?day.topicSignals.map(item=>`<span class="strategy-day-topic-signal"><b>${esc(item.daypart)} · ${esc(item.topic)}</b><span class="strategy-rate">Avg &#36;${Math.round(item.rate)}/pledge hr</span><small>${item.samples} fundraisers · ${item.titles} titles</small></span>`).join('')
       :'<span class="strategy-no-history">No repeat multi-title topic/time signal clears the threshold for this fundraiser day.</span>';
-    return`<div class="strategy-day-topic-row tone-${dayTone(day.outlook)}"><div class="strategy-day-topic-date"><strong>${esc(day.label)}</strong><small>${esc(fmt(day.date,false))}</small></div><div class="strategy-day-topic-strength"><span class="strategy-day-rating">${esc(day.outlook)}${day.bestBet?' · Best bet':''}</span><small>${day.samples?`${day.samples} comparable historical day${day.samples===1?'':'s'}${Number.isFinite(day.averageRate)?` · Avg &#36;${Math.round(day.averageRate)}/pledge hr`:''}`:'No corresponding historical day sample'}</small></div><div class="strategy-day-topic-signals">${topicHtml}</div></div>`;
+    return`<div class="strategy-day-topic-row tone-${dayTone(day.outlook)}"><div class="strategy-day-topic-date"><strong>${esc(day.label)}</strong><small>${esc(fmt(day.date,false))}</small></div><div class="strategy-day-topic-strength"><span class="strategy-day-rating">${esc(day.outlook)}${day.bestBet?' · Best bet':''}</span><small>${day.samples?`${day.samples} comparable historical day${day.samples===1?'':'s'}${Number.isFinite(day.averageRate)?` · Avg &#36;${Math.round(day.averageRate)}/pledge hr`:''}`:'No corresponding historical day sample'}</small><small class="strategy-day-topic-action"><b>Scheduling implication:</b> ${esc(daySchedulingAction(day,day.topicSignals))}</small></div><div class="strategy-day-topic-signals">${topicHtml}</div></div>`;
   }).join('')}</div>${peerHtml}</section>`;
 }
 
