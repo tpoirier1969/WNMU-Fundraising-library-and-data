@@ -5666,6 +5666,22 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return 11;
   }
 
+  function schedulePrintCalendarFundraisingWindowHtml(window = {}, pageDays = [], visibleStartMin = 0, visibleEndMin = 1440) {
+    const dayIndex = pageDays.indexOf(window.displayDateKey);
+    if (dayIndex < 0) return '';
+    const windowStart = Number(window.displayStartMinutes || 0);
+    const windowEnd = Number(window.displayEndMinutes || windowStart + constants.DEFAULT_SLOT_MINUTES);
+    if (windowEnd <= visibleStartMin || windowStart >= visibleEndMin) return '';
+    const clippedStart = Math.max(visibleStartMin, windowStart);
+    const clippedEnd = Math.min(visibleEndMin, windowEnd);
+    const rowStart = Math.floor((clippedStart - visibleStartMin) / constants.DEFAULT_SLOT_MINUTES) + 2;
+    const rowSpan = Math.max(1, Math.ceil((clippedEnd - clippedStart) / constants.DEFAULT_SLOT_MINUTES));
+    const label = `Fundraising window · ${fundraisingWindowPriorityLabel(window.priority)}`;
+    return `<div class="print-fundraising-window print-fundraising-window-${utils.escapeHtml(normalizeFundraisingWindowPriority(window.priority))}" style="grid-column:${dayIndex + 2};grid-row:${rowStart} / span ${rowSpan};">
+      <span>${utils.escapeHtml(label)}</span>
+    </div>`;
+  }
+
   function schedulePrintCalendarPlacementHtml(placement = {}, pageDays = [], visibleStartMin = 0, visibleEndMin = 1440) {
     const dayIndex = pageDays.indexOf(placement.displayDateKey);
     if (dayIndex < 0) return '';
@@ -5702,7 +5718,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     </div>`;
   }
 
-  function schedulePrintCalendarPageHtml({ schedule = {}, pageDays = [], placements = [], visibleStartMin = 0, visibleEndMin = 1440, pageNumber = 1, totalPages = 1 } = {}) {
+  function schedulePrintCalendarPageHtml({ schedule = {}, pageDays = [], placements = [], fundraisingWindows = [], visibleStartMin = 0, visibleEndMin = 1440, pageNumber = 1, totalPages = 1 } = {}) {
     const times = [];
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const slotCount = times.length;
@@ -5723,6 +5739,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         cells.push(`<div class="print-slot ${isHour ? 'hour' : ''} ${isWeekendDateKey(dateKey) ? 'weekend' : ''}" style="grid-column:${dayIndex + 2};grid-row:${row};"></div>`);
       });
     });
+    const fundraisingWindowHtml = fundraisingWindows
+      .map((window) => schedulePrintCalendarFundraisingWindowHtml(window, pageDays, visibleStartMin, visibleEndMin))
+      .filter(Boolean)
+      .join('');
     const placementHtml = placements
       .map((placement) => schedulePrintCalendarPlacementHtml(placement, pageDays, visibleStartMin, visibleEndMin))
       .filter(Boolean)
@@ -5738,7 +5758,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         </div>
         <div class="calendar-page-number">Page ${pageNumber} of ${totalPages}</div>
       </header>
-      <div class="print-calendar-grid" style="grid-template-columns:${gridColumns};grid-template-rows:${gridRows};">${cells.join('')}${placementHtml}</div>
+      <div class="print-calendar-grid" style="grid-template-columns:${gridColumns};grid-template-rows:${gridRows};">${cells.join('')}${fundraisingWindowHtml}${placementHtml}</div>
     </section>`;
   }
 
@@ -5748,6 +5768,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const visibleStartMin = windowConfig.startMinutes;
     const visibleEndMin = windowConfig.endMinutes;
     const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
+    const fundraisingWindows = normalizedFundraisingWindows(schedule).map((window) => toDisplayFundraisingWindow(window, visibleStartMin));
     const daysPerPage = dayKeys.length <= 9 ? Math.max(1, dayKeys.length) : 7;
     const pages = [];
     for (let index = 0; index < dayKeys.length; index += daysPerPage) pages.push(dayKeys.slice(index, index + daysPerPage));
@@ -5756,6 +5777,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       schedule,
       pageDays,
       placements,
+      fundraisingWindows,
       visibleStartMin,
       visibleEndMin,
       pageNumber: index + 1,
@@ -5867,6 +5889,24 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     .print-slot { background: #ffffff; }
     .print-slot.weekend { background: #f8fbfd; }
     .print-slot.hour { border-top: 1px solid #9fb3c2; }
+    .print-fundraising-window {
+      z-index: 3;
+      min-width: 0;
+      margin: 1px;
+      padding: 2px 3px;
+      border: 1.5px dashed #4a8f88;
+      border-radius: 4px;
+      background: rgba(225,245,241,.72);
+      color: #245c56;
+      font-size: 6px;
+      font-weight: 900;
+      line-height: 1.05;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+    .print-fundraising-window-prefer { border-color: #347d9b; background: rgba(226,241,248,.72); color: #24566b; }
+    .print-fundraising-window-commit { border-color: #7259a3; background: rgba(238,232,249,.72); color: #544078; }
+    .print-fundraising-window span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .print-placement {
       z-index: 5;
       min-width: 0;
