@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.236', 'programming-strategy-backtest.js?v=0.22.237');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.238', 'programming-strategy-backtest.js?v=0.22.237');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -1457,14 +1457,31 @@ function compactStrategy(strategy = {}, schedule = {}, peerObservations = []) {
       label: slot.label,
       startMinutes: slot.startMinutes,
       endMinutes: slot.endMinutes,
+      sourceWindowId: slot.sourceWindowId,
+      userDefined: slot.userDefined,
+      priority: slot.priority,
+      priorityLabel: slot.priorityLabel,
+      note: slot.note,
+      fundraisingMode: slot.fundraisingMode,
+      webOnlyExperimental: slot.webOnlyExperimental,
       experimental: slot.experimental,
       blocked: slot.blocked,
       reason: slot.reason,
+      requestedMinutes: slot.requestedMinutes,
+      recommendedMinutes: slot.recommendedMinutes,
+      unusedMinutes: slot.unusedMinutes,
+      recommendationThreshold: slot.recommendationThreshold,
       evidenceRows: slot.evidenceRows,
       windowHistory: slot.windowHistory,
       experimentalEvidence: slot.experimentalEvidence,
       timingEvidence: buildSlotTimingEvidence(schedule, peerObservations, slot),
-      recommendations: (slot.recommendations || []).map(compactRecommendation)
+      recommendations: (slot.recommendations || []).map(compactRecommendation),
+      lineup: (slot.lineup || []).map((item) => ({
+        ...compactRecommendation(item),
+        plannedStartMinutes: item.plannedStartMinutes,
+        plannedEndMinutes: item.plannedEndMinutes,
+        scheduleMinutes: item.scheduleMinutes
+      }))
     })),
     topicComparison: strategy.topicComparison,
     repeats: (strategy.repeats || []).map((item) => ({
