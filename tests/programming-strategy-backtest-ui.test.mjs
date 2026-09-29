@@ -16,6 +16,8 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.236/);
   assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.236/);
   assert.match(ui, /mode:'backtest'/);
+  assert.match(ui, /drama_cycle_status/);
+  assert.match(ui, /Topic \+ time answer sheet/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.236');
+  assert.equal(version.appVersion, '0.22.237');
 });
