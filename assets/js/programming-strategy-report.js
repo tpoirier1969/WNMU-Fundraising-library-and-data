@@ -694,7 +694,11 @@ function programOpportunitiesSection(strategy={}){
   });
   const rows=[...byKey.values()]
     .map(row=>({...row,badges:[...new Set(row.badges)],notes:[...new Set(row.notes)]}))
-    .filter(row=>!row.drama?.isDramaDoc||row.newTitle||row.drama?.currentCycle===true)
+    .filter(row=>{
+      if(!row.drama?.isDramaDoc)return true;
+      const recommended=row.badges.includes('Recommended');
+      return recommended&&(row.newTitle||row.drama?.currentCycle===true);
+    })
     .sort((a,b)=>{
       const as=Number.isFinite(Number(a.score))?Number(a.score):-Infinity;
       const bs=Number.isFinite(Number(b.score))?Number(b.score):-Infinity;
