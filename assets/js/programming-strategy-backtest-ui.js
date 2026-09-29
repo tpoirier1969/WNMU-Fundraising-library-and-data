@@ -10,6 +10,7 @@ function todayKey(){const d=new Date();d.setHours(0,0,0,0);return dateKey(d);}
 function fmtDate(v){const d=parseDate(v);return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—';}
 function money(v){const n=Number(v);return Number.isFinite(n)?n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}):'—';}
 function rate(v){const n=Number(v);return Number.isFinite(n)?`${money(n)}/hr`:'—';}
+function clock(m){m=Number(m);if(!Number.isFinite(m))return'—';m=((m%1440)+1440)%1440;const h=Math.floor(m/60),mi=m%60;return`${h%12||12}${mi?`:${String(mi).padStart(2,'0')}`:''} ${h>=12?'PM':'AM'}`;}
 function pct(v){const n=Number(v);return Number.isFinite(n)?`${Math.round(n*100)}%`:'—';}
 function corr(v){const n=Number(v);return Number.isFinite(n)?n.toFixed(2):'Not enough tested titles';}
 function status(msg,tone=''){const node=$('#backtest-status');if(node){node.textContent=msg||'';node.className=`strategy-status${tone?` ${tone}`:''}`;}}
@@ -60,7 +61,7 @@ async function loadSchedules(){
 async function loadData(){
   status('Loading Program Library and historical pledge results…');
   const airingSelect=['id','program_id','pledge_program_id','manual_match_program_id','title','program_title','imported_program_title','matched_library_title','nola_code','air_date','air_time','aired_at','dollars','pledge_count','program_minutes','fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','import_batch_id','raw_payload','updated_at','created_at'].join(',');
-  const programSelect=['id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary','rights_start','rights_end','rights_notes','distributor','premium_summary','actual_runtime_seconds'].join(',');
+  const programSelect=['id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary','rights_start','rights_end','drama_cycle_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'].join(',');
   const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
   const[airings,library,overrides,peerObservations]=await Promise.all([
     fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
@@ -76,7 +77,7 @@ function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);stat
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.236');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.237');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
@@ -100,6 +101,17 @@ function recommendationRows(rows=[]){
     return `<tr><td class="num">${x.recommendationRank}</td><td><span class="backtest-title">${esc(x.title)}</span><span class="backtest-sub">${esc(x.topic)} · ${x.normalWindows} normal window${x.normalWindows===1?'':'s'}${x.experimentalWindows?` · ${x.experimentalWindows} experimental`:''}</span></td><td class="num">${Number.isFinite(Number(x.score))?Math.round(Number(x.score)):'—'}</td><td>${outcome}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
+function topicTimeRows(data={}){
+  const rows=Array.isArray(data?.signalResults)?data.signalResults:[];
+  if(!rows.length)return '<p class="backtest-empty">No date-specific topic/time signal cleared the evidence threshold for this fundraiser.</p>';
+  return `<table class="backtest-table"><thead><tr><th>Date / window</th><th>Predicted topic</th><th>Prior evidence</th><th>What actually happened</th></tr></thead><tbody>${rows.map(x=>{
+    const prior=`${rate(x.predictedRate)} · ${Number(x.fundraiserSamples||0)} prior drive${Number(x.fundraiserSamples||0)===1?'':'s'} · ${Number(x.titleCount||0)} title${Number(x.titleCount||0)===1?'':'s'}`;
+    const outcome=!x.tested
+      ?'<span class="backtest-outcome-untested">Topic not aired in this daypart · untestable</span>'
+      :`<span class="${x.aboveMedian?'backtest-outcome-good':'backtest-outcome-low'}">Actual: ${esc(rate(x.actualRate))}</span><span class="backtest-sub">${esc(money(x.actualDollars))} · ${x.actualAirings} airing${x.actualAirings===1?'':'s'}${x.topQuartile?' · top quartile':''}</span>${x.comparableWindow?`<span class="backtest-sub">Within this daypart: #${x.actualTopicRank} of ${x.windowTopicCount} topic${x.windowTopicCount===1?'':'s'} · window avg ${esc(rate(x.windowRate))}</span>`:''}`;
+    return `<tr><td><span class="backtest-title">${esc(fmtDate(x.date))}</span><span class="backtest-sub">${esc(x.daypart)} · ${esc(clock(x.startMinutes))}–${esc(clock(x.endMinutes))} · signal #${x.dayRank}</span></td><td><span class="backtest-title">${esc(x.topic)}</span></td><td><span class="backtest-sub">${esc(prior)}</span></td><td>${outcome}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
 function simpleList(rows=[],type){
   if(!rows.length)return '<p class="backtest-empty">None in this backtest.</p>';
   return `<div class="backtest-list">${rows.map(x=>{
@@ -115,6 +127,7 @@ function render(result){
   const b=result.backtest,out=$('#backtest-output');
   if(!b){out.innerHTML='<section class="backtest-intro"><strong>No backtest result was returned.</strong></section>';return;}
   const s=b.summary,drive=b.drive,safe=b.leakageSafe&&b.targetScheduleFound!==false;
+  const tt=b.topicTime||{summary:{},signalResults:[]},ts=tt.summary||{};
   const correlation=Number.isFinite(Number(s.scoreRateCorrelation))?Number(s.scoreRateCorrelation):null;
   out.innerHTML=`<div class="backtest-sheet">
     <section class="backtest-verdict">
@@ -128,6 +141,15 @@ function render(result){
       ${metric(`${s.windowTopQuartileHits}/${s.windowTestedRecommendations||0}`,'recommended-window tests that reached the drive’s top quartile')}
       ${metric(s.topActualTitles?pct(s.topActualCoverage):'—','top-quartile performers inside recommendation inventory covered by the recommendation set')}
       ${metric(corr(correlation),'title-level model-score / actual-rate correlation')}
+    </section>
+    <section class="backtest-section"><h2>Topic + time answer sheet</h2><p>This freezes the same five date-specific topic/time signals used by the Fundraiser Plan, then checks only the cases WNMU actually tested by airing that topic in that daypart.</p>
+      <div class="backtest-metrics">
+        ${metric(`${ts.testedSignals||0}/${ts.signals||0}`,'topic/time signals actually tested')}
+        ${metric(ts.testedSignals?pct((ts.aboveMedianHits||0)/ts.testedSignals):'—','tested signals above this drive’s median title rate')}
+        ${metric(ts.testedSignals?pct((ts.topQuartileHits||0)/ts.testedSignals):'—','tested signals reaching this drive’s top quartile')}
+        ${metric(ts.comparableWindowTests?pct((ts.topInWindowHits||0)/ts.comparableWindowTests):'—','comparable dayparts where the signaled topic ranked #1')}
+      </div>
+      ${topicTimeRows(tt)}
     </section>
     <section class="backtest-section"><h2>Recommendation answer sheet</h2><p>The stricter result is “Recommended-window.” A title that did well elsewhere in the drive is useful evidence about the title, but it does not validate the model’s day/time recommendation.</p>${recommendationRows(b.recommendationResults)}</section>
     <section class="backtest-section"><h2>Strong actual performers the model missed</h2><p>Top-quartile titles that aired inside a window the model was allowed to schedule, but did not appear in its top recommendation set. These are the cleanest places to look for weak weighting or missing context.</p>${simpleList(b.missedTopPerformers,'missed')}</section>
