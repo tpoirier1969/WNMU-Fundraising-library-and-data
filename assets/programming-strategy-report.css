@@ -2043,3 +2043,71 @@
   color:#74858c;
   font-size:.7rem;
 }
+
+
+/* v0.22.229 report depth/layout refinements */
+.strategy-section-card{
+  padding:10px 11px;
+  border:1px solid #d8e3e8;
+  border-radius:8px;
+  background:#fbfcfd;
+}
+.strategy-promotion-card{margin-top:2px}
+
+.strategy-plan-signals{
+  gap:0;
+}
+.strategy-plan-signals>span{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:3px;
+  align-items:baseline;
+  padding:1px 0;
+  line-height:1.08;
+}
+.strategy-plan-signals>span .strategy-rate{
+  margin-left:0;
+  text-align:right;
+}
+
+.strategy-opportunity-badges{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-start;
+  align-items:center;
+  gap:4px;
+}
+.strategy-opportunity-badges span{
+  box-sizing:border-box;
+  min-height:20px;
+  height:auto;
+  padding:3px 8px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1.15;
+  text-align:center;
+  border-radius:999px;
+  border:1px solid #c9dce5;
+  background:#e7f0f4;
+  color:#31586e;
+  white-space:nowrap;
+}
+
+@media print{
+  .strategy-section-card{padding:5px 6px}
+  .strategy-sheet>section.sheet-section+section.sheet-section{
+    break-before:page!important;
+    page-break-before:always!important;
+  }
+  .strategy-plan-signals>span{
+    gap:2px;
+    padding:.5px 0;
+    line-height:1.05;
+  }
+  .strategy-opportunity-badges span{
+    min-height:15px;
+    padding:1.5px 5px;
+    line-height:1.1;
+  }
+}
