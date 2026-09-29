@@ -2135,3 +2135,57 @@
     gap:0 3px;
   }
 }
+
+
+/* v0.22.238 scheduler-defined Fundraising Windows */
+.strategy-user-window{
+  border-left:4px solid #4a8f88;
+  padding-left:8px!important;
+}
+.strategy-user-window .strategy-plan-window-head strong{color:#214f4a}
+.strategy-window-note{
+  display:block;
+  margin:2px 0 4px;
+  color:#687c84;
+  font-style:italic;
+}
+.strategy-window-lineup{
+  margin:4px 0;
+  padding-left:20px;
+}
+.strategy-window-lineup li{
+  padding:2px 0;
+}
+.strategy-window-lineup li>b,
+.strategy-window-lineup li>span{
+  display:block;
+}
+.strategy-window-lineup li>span{
+  color:#657982;
+  font-size:.64rem;
+}
+.strategy-window-usage{
+  margin:4px 0 0!important;
+  padding:4px 6px;
+  border-radius:5px;
+  background:#eef7f5;
+  color:#355c58!important;
+  font-size:.66rem!important;
+  line-height:1.3!important;
+}
+.strategy-window-usage b{color:#214f4a}
+.strategy-protected-window{
+  border-left-color:#7c858a;
+  background:#f3f4f5;
+}
+.strategy-protected-window .strategy-plan-window-head strong{color:#4e5a60}
+.strategy-protected-window .strategy-window-usage{
+  background:#e8eaeb;
+  color:#556168!important;
+}
+@media print{
+  .strategy-window-lineup li,
+  .strategy-window-usage,
+  .strategy-window-note{font-size:5.4pt!important}
+  .strategy-user-window{break-inside:avoid-page;page-break-inside:avoid}
+}
