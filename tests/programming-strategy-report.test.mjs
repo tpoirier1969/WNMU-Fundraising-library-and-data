@@ -1238,6 +1238,26 @@ test('peer daypart evidence surfaces Sunday morning as an explicit WNMU test gap
   assert.ok(matrix.peer.topTopics.some((item) => item.topic === 'How-to'));
 });
 
+test('Sunday-morning peer practice retains a real Drama signal even outside the generic top four topics', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.buildPeerPracticeGaps, 'function');
+  const topics=['How-to','Music','Travel','Health','Drama'];
+  const observations=topics.map((topic,index)=>({
+    station_code:'S'+index,
+    station_name:'Station '+index,
+    day_of_week:'Sunday',
+    daypart:'Morning',
+    topic_primary:topic,
+    assessment_signal:2,
+    evidence_strength:4,
+    summary:topic+' Sunday morning example'
+  }));
+  const rows=workerContext.buildPeerPracticeGaps({},observations,[]);
+  const sunday=rows.find((item)=>item.id==='sunday-morning');
+  assert.ok(sunday);
+  assert.ok(sunday.topTopics.some((item)=>item.topic==='Drama'),JSON.stringify(sunday.topTopics));
+});
+
 test('strategy report restores topic, timing, peer, promotion, and ranked opportunity depth', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
@@ -1250,6 +1270,7 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.doesNotMatch(reportUi,/<h3>Promotion<\/h3>/);
   assert.match(reportUi,/function promotionExamplesSection/);
   assert.match(reportUi,/Fundraiser promotion ideas already worth discussing/);
+  assert.match(reportUi,/strategy-section-card strategy-promotion-card/);
 
   assert.match(reportUi,/function fundraiserPlanSection/);
   assert.match(reportUi,/<h2>Fundraiser plan<\/h2>/);
@@ -1294,6 +1315,8 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(styles,/\.strategy-topic-card-grid/);
   assert.match(styles,/\.strategy-time-day-grid/);
   assert.match(styles,/\.strategy-program-opportunity-list/);
+  assert.match(styles,/\.strategy-opportunity-badges span[\s\S]*?justify-content:center/);
+  assert.match(styles,/four-column time cards: stack topic text under time\/rate/);
   assert.match(calendar,/Hanukkah/);
   assert.match(calendar,/Big Ten Football Championship/);
   assert.match(calendar,/NMU vs\. Augustana hockey/);
