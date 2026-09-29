@@ -318,15 +318,175 @@
     return distributor === 'pbs' && /^(?:drama|documentary|history|nature|science|public affairs|news)/.test(topic);
   }
 
-  function dramaInfo(program = {}, schedule = {}) {
+  const DRAMA_SEASON_WORDS = Object.freeze({
+    one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+    eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15
+  });
+
+  function dramaSeasonTokenNumber(value = '') {
+    const raw = lookupKey(value);
+    if (!raw) return null;
+    if (/^\d{1,2}$/.test(raw)) return Number(raw);
+    return Number.isFinite(DRAMA_SEASON_WORDS[raw]) ? DRAMA_SEASON_WORDS[raw] : null;
+  }
+
+  function dramaSeasonNumbers(program = {}) {
+    const found = new Set();
+    const addToken = (value) => {
+      const num = dramaSeasonTokenNumber(value);
+      if (Number.isFinite(num) && num > 0 && num < 50) found.add(num);
+    };
+    const explicit = text(first(
+      program.episode_season,
+      program.series_season,
+      program.season_number,
+      program.season,
+      ''
+    ));
+    (explicit.match(/\d{1,2}/g) || []).forEach(addToken);
+
+    const source = `${programTitle(program)} ${programDescription(program)}`;
+    const wordPattern = Object.keys(DRAMA_SEASON_WORDS).join('|');
+    const tokenPattern = new RegExp(`(?:\\d{1,2}|${wordPattern})`, 'gi');
+    const seasonPattern = /\bseasons?\s+([^.;:!?]{0,80})/gi;
+    let match;
+    while ((match = seasonPattern.exec(source))) {
+      const segment = match[1] || '';
+      const tokens = segment.match(tokenPattern) || [];
+      tokens.slice(0, 6).forEach(addToken);
+    }
+    const trailingPattern = new RegExp(`\\b(\\d{1,2}|${wordPattern})\\s+seasons?\\b`, 'gi');
+    while ((match = trailingPattern.exec(source))) addToken(match[1]);
+
+    const chapterPattern = new RegExp(`\\bchapter\\s+(\\d{1,2}|${wordPattern})\\b`, 'gi');
+    while ((match = chapterPattern.exec(programTitle(program)))) addToken(match[1]);
+
+    return [...found].sort((a,b)=>a-b);
+  }
+
+  function dramaSeriesKey(program = {}) {
+    const explicit = text(first(
+      program.series_name,
+      program.series_title,
+      program.parent_series,
+      program.parent_title,
+      ''
+    ));
+    if (explicit) return lookupKey(explicit);
+
+    const title = programTitle(program);
+    if (title.includes(':')) {
+      const prefix = text(title.split(':')[0]);
+      if (prefix.length >= 4) return lookupKey(prefix);
+    }
+
+    const patterns = [
+      /\bour favorite things about\s+(.+)$/i,
+      /\bsolving the puzzles of\s+(?:the\s+)?(.+)$/i,
+      /^inside\s+(.+)$/i,
+      /^(?:tribute|salute)\s+to\s+(.+)$/i,
+      /^weddings\s+of\s+(.+)$/i,
+      /^i\s+miss\s+(.+)$/i
+    ];
+    for (const pattern of patterns) {
+      const match = title.match(pattern);
+      if (match?.[1]) return lookupKey(match[1]);
+    }
+    return '';
+  }
+
+  function buildDramaCycleIndex(library = [], schedule = {}) {
+    const target = parseDate(scheduleStart(schedule));
+    if (!target) return new Map();
+    const activityFloor = addDays(target, -365);
+    const futureCeiling = addDays(target, 31);
+    const index = new Map();
+
+    (library || []).forEach((program) => {
+      if (lookupKey(programTopic(program)) !== 'drama doc') return;
+      if (!eligibleSomewhereInFundraiser(program, schedule)) return;
+      const seriesKey = dramaSeriesKey(program);
+      if (!seriesKey) return;
+      const began = parseDate(rightsStart(program));
+      const seasons = dramaSeasonNumbers(program);
+      const current = index.get(seriesKey) || {
+        seriesKey,
+        latestRightsBegin:null,
+        currentSeason:null,
+        seasonEvidenceCount:0
+      };
+      if (began && (!current.latestRightsBegin || began > current.latestRightsBegin)) current.latestRightsBegin = began;
+      seasons.forEach((season) => {
+        current.currentSeason = current.currentSeason == null ? season : Math.max(current.currentSeason, season);
+        current.seasonEvidenceCount += 1;
+      });
+      index.set(seriesKey,current);
+    });
+
+    index.forEach((entry) => {
+      entry.seriesCurrent = Boolean(
+        entry.latestRightsBegin &&
+        entry.latestRightsBegin >= activityFloor &&
+        entry.latestRightsBegin <= futureCeiling
+      );
+    });
+    return index;
+  }
+
+  function dramaInfo(program = {}, schedule = {}, cycleIndex = null) {
     const isDramaDoc = lookupKey(programTopic(program)) === 'drama doc';
-    if (!isDramaDoc) return { isDramaDoc: false, currentCycle: false, olderCycle: false, cycleUnknown: false };
+    if (!isDramaDoc) return { isDramaDoc:false,currentCycle:false,olderCycle:false,cycleUnknown:false };
+
+    const seriesKey = dramaSeriesKey(program);
+    const seasons = dramaSeasonNumbers(program);
+    const ownSeason = seasons.length ? Math.max(...seasons) : null;
+    const entry = seriesKey && cycleIndex?.get ? cycleIndex.get(seriesKey) : null;
+
+    if (entry && Number.isFinite(ownSeason) && Number.isFinite(entry.currentSeason)) {
+      const currentCycle = Boolean(entry.seriesCurrent && ownSeason === entry.currentSeason);
+      return {
+        isDramaDoc:true,
+        currentCycle,
+        olderCycle:!currentCycle,
+        cycleUnknown:false,
+        basis:'series-season',
+        seriesKey,
+        seasonNumber:ownSeason,
+        currentSeriesSeason:entry.currentSeason,
+        seriesCurrent:Boolean(entry.seriesCurrent),
+        latestSeriesRightsBegin:entry.latestRightsBegin || null
+      };
+    }
+
     const target = parseDate(scheduleStart(schedule));
     const began = parseDate(rightsStart(program));
-    if (!target || !began) return { isDramaDoc: true, currentCycle: false, olderCycle: false, cycleUnknown: true };
+    if (!target || !began) {
+      return {
+        isDramaDoc:true,
+        currentCycle:false,
+        olderCycle:false,
+        cycleUnknown:true,
+        basis:'unknown',
+        seriesKey,
+        seasonNumber:ownSeason,
+        currentSeriesSeason:entry?.currentSeason ?? null,
+        seriesCurrent:Boolean(entry?.seriesCurrent)
+      };
+    }
     const cycleFloor = addDays(target, -365);
     const currentCycle = began >= cycleFloor && began <= addDays(target, 31);
-    return { isDramaDoc: true, currentCycle, olderCycle: !currentCycle, cycleUnknown: false, rightsBegin: began };
+    return {
+      isDramaDoc:true,
+      currentCycle,
+      olderCycle:!currentCycle,
+      cycleUnknown:false,
+      basis:'rights-start-fallback',
+      seriesKey,
+      seasonNumber:ownSeason,
+      currentSeriesSeason:entry?.currentSeason ?? null,
+      seriesCurrent:Boolean(entry?.seriesCurrent),
+      rightsBegin:began
+    };
   }
 
   function titleEligibleForDate(program = {}, slotDate) {
@@ -788,7 +948,7 @@
       titleRows,
       titleHistory: rowSummary(titleRows, program),
       season: seasonEvidence(program, titleRows, schedule),
-      drama: dramaInfo(program, schedule),
+      drama: dramaInfo(program, schedule, context.dramaCycleIndex),
       override,
       programmer: programmerEvidence(program, titleRows, override, context.evidenceRows || []),
       local: isLocal(program),
@@ -1055,7 +1215,7 @@ const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustment
 let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);reasons.push(`${topic} has ${exactTopic.rates.length} rate-valid airing${exactTopic.rates.length===1?'':'s'} in this weekday/window${Number.isFinite(exactTopic.averageRate)?`, Avg ${Math.round(exactTopic.averageRate)}/pledge hr`:''}.`);}else if(!slot.experimental){topicAdj=exactTopic.rates.length===1?-4:-9;cautions.push(exactTopic.rates.length?`Only one ${topic} result exists in this weekday/window.`:`No WNMU ${topic} evidence exists in this weekday/window; treat this as exploratory.`);if(broadTopic.rates.length)reasons.push(`${topic} has ${broadTopic.rates.length} comparable results elsewhere, but not enough here.`);}score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
 if(titleHistory.latest){const d=daysBetween(titleHistory.latest,scheduleStart(schedule));let a=0;if(d>=730)a=titleHistory.rows===1?2:8;else if(d>=365)a=6;else if(d>=180)a=2;else if(d<90)a=-10;else if(d<180)a=-5;score+=a;adjustments.push(['rest',a]);if(a>0)reasons.push(`Rested ${d} days since the latest known airing.`);if(a<0)cautions.push(`Short rest: ${d} days since the latest known airing.`);}
 let fatigue=0;if(titleHistory.rows>=12)fatigue=-8;else if(titleHistory.rows>=8)fatigue=-5;else if(titleHistory.rows>=5)fatigue=-2;else if(titleHistory.rows>0&&titleHistory.rows<=2)fatigue=3;score+=fatigue;adjustments.push(['lifetimeExposure',fatigue]);if(titleHistory.rows>=8)cautions.push(`Heavy lifetime exposure: ${titleHistory.rows} known airings.`);
-score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push('Current-cycle Drama Doc proxy based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push('Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc cycle is unknown because rights-start timing is unavailable.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
+score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push(drama.basis==='series-season'?('Current Drama Doc series/season'+(drama.seasonNumber?' (Season '+drama.seasonNumber+')':'')+'.'):'Current-cycle Drama Doc fallback based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push(drama.basis==='series-season'?('Drama Doc is not in the current series/season'+(drama.currentSeriesSeason?' (current library season '+drama.currentSeriesSeason+')':'')+'.'):'Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc current-series/season status is unknown.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
 score+=programmer.adjustment;adjustments.push(['programmer',programmer.adjustment]);if(programmer.rating){reasons.push(`Programmer rating: ${programmer.label} (${programmer.adjustment>=0?'+':''}${programmer.adjustment}).`);if(programmer.rating==='low_confidence')cautions.push('Programmer rating is Low confidence; cap recommendation posture accordingly.');if(programmer.rating==='dont_air')cautions.push("Programmer rating says Don't air; strong negative input, not a rights exclusion.");}
 const newTitle=titleHistory.rows===0;
 const reviewedNew=newTitle&&['neutral','viable','promising','must_air'].includes(programmer.rating);
@@ -1537,8 +1697,10 @@ return result;}
     const baselineRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
     const baselineRate = baseHistoricalRate(baselineRows);
     const viable = (library || []).filter((program) => eligibleSomewhereInFundraiser(program, schedule));
+    const dramaCycleIndex = buildDramaCycleIndex(viable, schedule);
     const context = {
       schedule,
+      dramaCycleIndex,
       evidenceRows: historicalRows,
       overrideByProgramId,
       baselineRate,
@@ -1665,7 +1827,7 @@ return result;}
         'Day/time performance uses the same reconciled history in half-hour program-start buckets from 6 AM through late evening; exact half-hour starts stay distinct.',
         'Time-window recommendation evidence uses starts inside the actual planning window rather than the former ±90-minute / broad-daypart approximation.',
         'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
-        'Drama Doc cycle is inferred from rights-start recency because exact related-series cycle metadata is not stored.',
+        'Drama Doc repeat eligibility uses series/season references found in title or program notes when available; rights-start recency is only the fallback when the pledge record does not identify a season.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
         'The avoid/rest list is limited to discretionary pledge titles: fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
@@ -1725,6 +1887,10 @@ return result;}
     selectRecommendationsForSlot,
     selectWebOnlyRecommendationsForSlot,
     dramaDocRecommendationAllowed,
+    dramaSeasonNumbers,
+    dramaSeriesKey,
+    buildDramaCycleIndex,
+    dramaInfo,
     mixFromSlots,
     topicComparison,
     experimentalEvidence,
