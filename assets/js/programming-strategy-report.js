@@ -739,7 +739,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.234');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.235');
     }catch(error){
       reject(error);
       return;

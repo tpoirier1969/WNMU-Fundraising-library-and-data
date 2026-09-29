@@ -343,11 +343,11 @@
       program.season,
       ''
     ));
-    (explicit.match(/\d{1,2}/g) || []).forEach(addToken);
+    (explicit.match(/\b\d{1,2}\b/g) || []).forEach(addToken);
 
     const source = `${programTitle(program)} ${programDescription(program)}`;
     const wordPattern = Object.keys(DRAMA_SEASON_WORDS).join('|');
-    const tokenPattern = new RegExp(`(?:\\d{1,2}|${wordPattern})`, 'gi');
+    const tokenPattern = new RegExp(`\\b(?:\\d{1,2}|${wordPattern})\\b`, 'gi');
     const seasonPattern = /\bseasons?\s+([^.;:!?]{0,80})/gi;
     let match;
     while ((match = seasonPattern.exec(source))) {

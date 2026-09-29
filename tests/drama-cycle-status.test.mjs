@@ -41,3 +41,24 @@ test('explicit Drama cycle beats rights-date inference', () => {
   assert.equal(older.basis,'explicit');
   assert.equal(older.olderCycle,true);
 });
+
+test('Drama season parser ignores year fragments near season references', () => {
+  const source=fs.readFileSync(new URL('../assets/js/programming-strategy-analysis.js',import.meta.url),'utf8');
+  const context={console,Date,Map,Set,Math,Number,String,Object,Array,RegExp,Intl};
+  context.globalThis=context;
+  vm.runInNewContext(source,context,{filename:'programming-strategy-analysis.js'});
+  const S=context.WNMUProgrammingStrategyAnalysis;
+
+  const creatures=Array.from(S.dramaSeasonNumbers({
+    title:'All Creatures Great and Small: Chapter Six',
+    program_notes:'Season 6 returns to Darrowby in May 1945 to find Skeldale House at sixes and sevens.'
+  }));
+  const endeavour=Array.from(S.dramaSeasonNumbers({
+    title:'Endeavour: A Countdown to the Final Goodbye',
+    program_notes:'The series comes to a close with Season 9 in June 2023.'
+  }));
+
+  assert.deepEqual(creatures,[6]);
+  assert.deepEqual(endeavour,[9]);
+});
+
