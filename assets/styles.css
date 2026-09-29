@@ -6283,3 +6283,62 @@ input.goal-difference-negative {
   .schedule-break-mode-row{grid-template-columns:1fr}
   .schedule-break-mode-help{padding-bottom:0}
 }
+
+
+/* v0.22.238 scheduler fundraising windows */
+.schedule-fundraising-window-panel{
+  display:grid;
+  gap:10px;
+  padding:12px;
+  margin-bottom:12px;
+  border:1px solid #b8d9d4;
+  border-radius:14px;
+  background:#eef9f7;
+}
+.schedule-fundraising-window-head{display:grid;gap:2px}
+.schedule-fundraising-window-head strong{color:var(--heading)}
+.schedule-fundraising-window-head span{color:var(--muted);font-size:.9rem;line-height:1.35}
+.schedule-fundraising-window-grid{
+  display:grid;
+  grid-template-columns:minmax(110px,.55fr) minmax(130px,.65fr) minmax(160px,.8fr) minmax(220px,1.5fr) auto;
+  gap:10px;
+  align-items:end;
+}
+.schedule-fundraising-window-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.schedule-slot.fundraising-window-slot{
+  background:rgba(50,157,144,.10);
+  box-shadow:inset 2px 0 0 rgba(50,157,144,.42), inset -2px 0 0 rgba(50,157,144,.42);
+}
+.schedule-slot.fundraising-window-open{background:rgba(50,157,144,.08)}
+.schedule-slot.fundraising-window-prefer{background:rgba(38,132,169,.11)}
+.schedule-slot.fundraising-window-commit{background:rgba(111,88,164,.11)}
+.schedule-slot.fundraising-window-start{box-shadow:inset 2px 2px 0 rgba(50,157,144,.58), inset -2px 0 0 rgba(50,157,144,.42)}
+.schedule-slot.fundraising-window-end{box-shadow:inset 2px 0 0 rgba(50,157,144,.42), inset -2px -2px 0 rgba(50,157,144,.58)}
+.schedule-slot.fundraising-window-start.fundraising-window-end{box-shadow:inset 0 0 0 2px rgba(50,157,144,.58)}
+.schedule-fundraising-window-tag{
+  position:absolute;
+  right:3px;
+  top:2px;
+  z-index:6;
+  max-width:calc(100% - 6px);
+  padding:1px 4px;
+  border-radius:999px;
+  background:rgba(235,251,248,.94);
+  border:1px solid rgba(36,126,116,.35);
+  color:#23665f;
+  font-size:clamp(.38rem,.42vw,.50rem);
+  font-weight:900;
+  line-height:1.05;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  pointer-events:none;
+}
+@media(max-width:900px){
+  .schedule-fundraising-window-grid{grid-template-columns:1fr 1fr}
+  .schedule-fundraising-window-actions{grid-column:1/-1}
+}
+@media(max-width:620px){
+  .schedule-fundraising-window-grid{grid-template-columns:1fr}
+  .schedule-fundraising-window-actions{grid-column:auto}
+}
