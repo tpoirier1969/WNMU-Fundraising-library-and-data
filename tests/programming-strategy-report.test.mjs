@@ -201,6 +201,32 @@ test('Drama Doc season detection prefers explicit series-season evidence over ri
   assert.equal(e9.currentCycle,false,'matching an old season number is not enough when the series itself is no longer current');
 });
 
+test('explicit Drama Doc cycle status overrides inferred season and rights timing', () => {
+  const schedule={ startDate:'2026-12-05', endDate:'2026-12-13' };
+  const explicitCurrent=baseProgram({
+    id:'explicit-current',
+    title:'Old Rights But Current Drama',
+    topic_primary:'Drama Doc',
+    rights_start:'2024-01-01',
+    drama_cycle_status:'current'
+  });
+  const explicitOlder=baseProgram({
+    id:'explicit-older',
+    title:'Recent Rights But Older Drama',
+    topic_primary:'Drama Doc',
+    rights_start:'2026-09-01',
+    drama_cycle_status:'older'
+  });
+  const current=S.dramaInfo(explicitCurrent,schedule,new Map());
+  const older=S.dramaInfo(explicitOlder,schedule,new Map());
+  assert.equal(current.basis,'explicit');
+  assert.equal(current.currentCycle,true);
+  assert.equal(current.olderCycle,false);
+  assert.equal(older.basis,'explicit');
+  assert.equal(older.currentCycle,false);
+  assert.equal(older.olderCycle,true);
+});
+
 test('Drama Doc recommendation rule allows new titles and current-cycle repeats only', () => {
   const newDrama = {
     programId:'new-drama', title:'New Drama Doc', topic:'Drama Doc', score:75, newTitle:true, reviewedNew:true,
