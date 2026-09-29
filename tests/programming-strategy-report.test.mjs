@@ -1471,6 +1471,15 @@ test('strategy report no longer renders a separate 8 PM vs 9 PM cross-check', ()
   assert.doesNotMatch(enhancements,/decorateHourlySection/);
 });
 
+test('compact time-of-day print hides weekday daytime but retains weekend rows', () => {
+  const report = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
+  const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
+  assert.match(report,/\['Monday','Tuesday','Wednesday','Thursday','Friday'\]\.includes\(row\.weekday\)/);
+  assert.match(report,/Number\(row\.startMinutes\)<17\*60/);
+  assert.match(report,/row\.printHidden\?' strategy-hourly-print-hide':''/);
+  assert.match(styles,/\.strategy-hourly-print-hide\{display:none!important\}/);
+});
+
 test('strategy print CSS starts each section on a new page and keeps dense four-column timing', () => {
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
   assert.match(styles,/@page\{[\s\S]*?margin:0\.85in 0\.58in 0\.70in 0\.82in/);
