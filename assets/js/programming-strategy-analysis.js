@@ -1577,7 +1577,7 @@ return result;}
     return { items: best.items || [], usedUnits: best.usedUnits || 0, value: best.value || 0 };
   }
 
-  function buildFundraisingWindowLineup(ranked = [], slot = {}, context = {}) {
+  function buildFundraisingWindowLineup(ranked = [], slot = {}, context = {}, excludedProgramKeys = new Set()) {
     if (!slot.userDefined || slot.blocked) return { items: [], usedMinutes: 0, unusedMinutes: Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0)), threshold: null };
     const windowMinutes = Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0));
     const capacityUnits = Math.floor(windowMinutes / 30);
@@ -1617,7 +1617,7 @@ return result;}
         const units = Math.max(1, Math.ceil(scheduleMinutes / 30));
         if (startUnit + units > capacityUnits) return;
         const key = text(item.programId || lookupKey(item.title));
-        if (!key) return;
+        if (!key || excludedProgramKeys.has(key)) return;
         const value = Math.max(1, Number(item.score || 0) - 40) * units
           + (item.newTitle ? 2 : 0)
           + (item.reviewedNew ? 2 : 0);
@@ -2003,6 +2003,7 @@ return result;}
       });
     });
 
+    const lineupUsedByDate = new Map();
     const windows = rankedWindows.map(({ slot, ranked }) => {
       const requestedMinutes = Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0));
       if (slot.blocked) return { ...slot, recommendations: [], lineup: [], recommendedMinutes: 0, unusedMinutes: requestedMinutes, recommendationThreshold: null, strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
@@ -2018,9 +2019,17 @@ return result;}
       const lineupPool = slot.webOnlyExperimental
         ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 60)
         : ranked;
+      const usedKeys = lineupUsedByDate.get(slot.date) || new Set();
       const lineupPlan = slot.userDefined
-        ? buildFundraisingWindowLineup(lineupPool, slot, context)
+        ? buildFundraisingWindowLineup(lineupPool, slot, context, usedKeys)
         : { items: [], usedMinutes: 0, unusedMinutes: 0, threshold: null };
+      if (slot.userDefined) {
+        lineupPlan.items.forEach((item) => {
+          const key = text(item.programId || lookupKey(item.title));
+          if (key) usedKeys.add(key);
+        });
+        lineupUsedByDate.set(slot.date, usedKeys);
+      }
       return {
         ...slot,
         recommendations,
