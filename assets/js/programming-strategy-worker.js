@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.236', 'programming-strategy-backtest.js?v=0.22.211');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.236', 'programming-strategy-backtest.js?v=0.22.237');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -1569,21 +1569,7 @@ self.onmessage = (event) => {
     diagnostics.strategyMs = Math.round(nowMs() - phase);
 
     let backtest = null;
-    if (payload.mode === 'backtest') {
-      progress(requestId, 'backtest', 'Comparing frozen recommendations with the fundraiser that actually aired…');
-      phase = nowMs();
-      const actual = targetBacktestRows(scheduleRows, canonical, library, schedule);
-      diagnostics.backtestTargetFound = actual.found;
-      diagnostics.backtestActualRows = actual.rows.length;
-      backtest = B.evaluate({
-        strategy,
-        actualRows: actual.rows,
-        schedule,
-        recommendationLimit: payload.recommendationLimit || 20
-      });
-      backtest.targetScheduleFound = actual.found;
-      diagnostics.backtestMs = Math.round(nowMs() - phase);
-    }
+    let backtestActual = null;
 
     progress(requestId, 'days', 'Calculating fundraiser-day and day/time patterns…');
     phase = nowMs();
@@ -1593,6 +1579,28 @@ self.onmessage = (event) => {
     const peerPractices = buildPeerPracticeGaps(schedule, peerObservations, rows);
     const topicTimeMatrix = buildTopicTimeMatrix(schedule, rows, peerObservations);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
+
+    if (payload.mode === 'backtest') {
+      progress(requestId, 'backtest', 'Comparing frozen title and topic/time recommendations with the fundraiser that actually aired…');
+      phase = nowMs();
+      backtestActual = targetBacktestRows(scheduleRows, canonical, library, schedule);
+      diagnostics.backtestTargetFound = backtestActual.found;
+      diagnostics.backtestActualRows = backtestActual.rows.length;
+      backtest = B.evaluate({
+        strategy,
+        actualRows: backtestActual.rows,
+        schedule,
+        recommendationLimit: payload.recommendationLimit || 20
+      });
+      backtest.topicTime = B.evaluateTopicTime({
+        matrix: topicTimeMatrix,
+        actualRows: backtestActual.rows,
+        schedule,
+        signalLimitPerDay: 5
+      });
+      backtest.targetScheduleFound = backtestActual.found;
+      diagnostics.backtestMs = Math.round(nowMs() - phase);
+    }
 
     phase = nowMs();
     const compact = compactStrategy(strategy, schedule, peerObservations);
