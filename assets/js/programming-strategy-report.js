@@ -656,10 +656,12 @@ function programOpportunitiesSection(strategy={}){
   const ensure=(item)=>{
     const key=keyFor(item);
     if(!key)return null;
-    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[]});
+    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,drama:null});
     const row=byKey.get(key);
     if(!row.title&&item.title)row.title=item.title;
     if(!row.topic&&item.topic)row.topic=item.topic;
+    if(item.newTitle===true)row.newTitle=true;
+    if(item.drama)row.drama=item.drama;
     if(Number.isFinite(Number(item.score)))row.score=Math.max(Number.isFinite(row.score)?row.score:-Infinity,Number(item.score));
     return row;
   };
@@ -667,13 +669,16 @@ function programOpportunitiesSection(strategy={}){
     if(slot.blocked)return;
     (slot.recommendations||[]).forEach(item=>{
       const row=ensure(item); if(!row)return;
-      row.badges.push(item.newTitle?'New':'Recommended');
+      row.badges.push('Recommended');
+      if(item.newTitle)row.badges.push('New');
+      if(item.drama?.isDramaDoc&&!item.newTitle&&item.drama?.currentCycle)row.badges.push('Current cycle');
       if(item.fit)row.notes.push(item.fit);
     });
   });
   (strategy.repeats||[]).forEach(item=>{
     const row=ensure(item); if(!row)return;
     row.badges.push('Repeat');
+    if(item.drama?.isDramaDoc&&item.drama?.currentCycle)row.badges.push('Current cycle');
     if(item.slots?.length)row.notes.push('Works across '+item.slots.length+' separated prime windows');
   });
   (strategy.seasonal||[]).forEach(item=>{
@@ -689,6 +694,7 @@ function programOpportunitiesSection(strategy={}){
   });
   const rows=[...byKey.values()]
     .map(row=>({...row,badges:[...new Set(row.badges)],notes:[...new Set(row.notes)]}))
+    .filter(row=>!row.drama?.isDramaDoc||row.newTitle||row.drama?.currentCycle===true)
     .sort((a,b)=>{
       const as=Number.isFinite(Number(a.score))?Number(a.score):-Infinity;
       const bs=Number.isFinite(Number(b.score))?Number(b.score):-Infinity;
