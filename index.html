@@ -24,7 +24,15 @@
       setStatus('Checking application version…');
       const versionResponse=await fetch(`version.json?_=${Date.now()}`,{cache:'no-store'});
       if(!versionResponse.ok)throw new Error(`Could not load version.json (${versionResponse.status}).`);
-      const versionPayload=await versionResponse.json();
+      const versionText=(await versionResponse.text()).replace(/^\uFEFF/,'').trim();
+      let versionPayload;
+      try{
+        versionPayload=JSON.parse(versionText);
+      }catch(firstError){
+        const repaired=versionText.replace(/\\n+\s*$/,'').trim();
+        if(repaired===versionText)throw firstError;
+        versionPayload=JSON.parse(repaired);
+      }
       VERSION=String(versionPayload?.appVersion||versionPayload?.version||'').trim().replace(/^v/i,'');
       if(!VERSION)throw new Error('version.json does not contain an appVersion.');
       LABEL=`v${VERSION}`;
