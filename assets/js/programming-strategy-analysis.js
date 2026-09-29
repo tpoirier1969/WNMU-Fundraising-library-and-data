@@ -1089,9 +1089,16 @@ return result;}
     });
   }
 
+  function dramaDocRecommendationAllowed(item = {}) {
+    if (!item?.drama?.isDramaDoc) return true;
+    if (item.newTitle) return true;
+    return item.drama.currentCycle === true;
+  }
+
   function selectWebOnlyRecommendationsForSlot(ranked = [], staffedBestByProgram = new Map(), slot = {}, limit = 8) {
     const keyFor = (item) => text(item?.programId || lookupKey(item?.title || ''));
     const acceptable = (ranked || []).filter((item) =>
+      dramaDocRecommendationAllowed(item) &&
       !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
       !item.season?.holidayOutOfSeason &&
       item.score >= 40
@@ -1179,6 +1186,7 @@ return result;}
     if (chosen.length >= 2 && chosen.length < limit) {
       const anchor = ranked.find((item) =>
         !item.newTitle &&
+        dramaDocRecommendationAllowed(item) &&
         item.score >= 48 &&
         !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
         !item.season?.holidayOutOfSeason
@@ -1590,14 +1598,18 @@ return result;}
     });
     const rights = rightsConstraints(library, schedule);
     const seasonal = viable.map((program) => {
-      const season = cachedProgramEvidence(program, context).season;
-      return { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), season };
-    }).filter((item) => item.season.adjustment > 0)
+      const cached = cachedProgramEvidence(program, context);
+      const season = cached.season;
+      const drama = cached.drama;
+      const newTitle = cached.titleHistory.rows === 0;
+      return { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), season, drama, newTitle };
+    }).filter((item) => item.season.adjustment > 0 && dramaDocRecommendationAllowed(item))
       .sort((a, b) => b.season.adjustment - a.season.adjustment || a.title.localeCompare(b.title)).slice(0, 10);
     const local = viable.filter(isLocal).map((program) => windows.filter((slot) => !slot.experimental && !slot.blocked)
       .map((slot) => scoreProgramForSlot(program, slot, context)).filter(Boolean)
       .sort((a, b) => b.score - a.score)[0] || null)
-      .filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
+      .filter((item) => Boolean(item) && dramaDocRecommendationAllowed(item))
+      .sort((a, b) => b.score - a.score).slice(0, 10);
     const avoid = viable.map((program) => {
       const cached = cachedProgramEvidence(program, context);
       const rows = cached.titleRows;
@@ -1712,6 +1724,7 @@ return result;}
     rankProgramsForSlot,
     selectRecommendationsForSlot,
     selectWebOnlyRecommendationsForSlot,
+    dramaDocRecommendationAllowed,
     mixFromSlots,
     topicComparison,
     experimentalEvidence,
