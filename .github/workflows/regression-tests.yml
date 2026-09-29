@@ -1,4 +1,5 @@
 name: Regression tests
+# Temporary CI verification branch; no functional workflow change.
 
 on:
   pull_request:
