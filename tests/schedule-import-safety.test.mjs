@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue, schedulePackageType, scheduleDetailBreakSeconds, scheduleRowSupportsBreakMode, normalizeFundraisingWindowPriority, normalizedFundraisingWindows, fundraisingWindowForSlot, fundraisingWindowOverlaps };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue, schedulePackageType, scheduleDetailBreakSeconds, scheduleRowSupportsBreakMode, normalizeFundraisingWindowPriority, normalizedFundraisingWindows, fundraisingWindowForSlot, fundraisingWindowOverlaps, scheduleHasManualOrUserContent };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -244,6 +244,13 @@ test('Fundraising Windows stay separate from scheduled placements and normalize 
   assert.equal(hooks.fundraisingWindowForSlot(schedule, '2026-08-08|1080'), null);
   assert.equal(hooks.normalizeFundraisingWindowPriority('COMMIT'), 'commit');
   assert.equal(hooks.normalizeFundraisingWindowPriority('nonsense'), 'open');
+});
+
+test('Fundraising Windows count as user-authored schedule content for import safety', () => {
+  resetState();
+  const schedule=targetSchedule();
+  schedule.fundraisingWindows=[{id:'planning',dateKey:'2026-08-08',startMinutes:15*60,endMinutes:17*60,priority:'open'}];
+  assert.equal(hooks.scheduleHasManualOrUserContent(schedule),true);
 });
 
 test('Fundraising Window overlap detection permits adjacent windows but rejects overlapping windows', () => {
