@@ -79,7 +79,7 @@ async function loadAnalysisData(){
   ].join(',');
   const programSelect=[
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
-    'rights_start','rights_end','rights_notes','distributor','premium_summary','actual_runtime_seconds'
+    'rights_start','rights_end','drama_cycle_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
@@ -623,18 +623,21 @@ function timeOfDayComparisonSection(hourly={}){
     if(!Number(metric.fundraiserSamples||0)||!Number.isFinite(Number(metric.averageRate)))return;
     const topics=(metric.topTopics||[]).slice(0,2).map(item=>item.topic).filter(Boolean);
     if(!groups.has(row.weekday))groups.set(row.weekday,[]);
+    const weekdayDaytime=['Monday','Tuesday','Wednesday','Thursday','Friday'].includes(row.weekday)
+      && Number(row.startMinutes)<17*60;
     groups.get(row.weekday).push({
       startMinutes:row.startMinutes,
       rate:Number(metric.averageRate),
       fundraisers:Number(metric.fundraiserSamples||0),
       topics,
-      source:useSeason?(data.season||'Season'):'All history'
+      source:useSeason?(data.season||'Season'):'All history',
+      printHidden:weekdayDaytime
     });
   });
   const dayCards=order.map(day=>{
     const rows=groups.get(day)||[];
     if(!rows.length)return '';
-    const body=rows.map(row=>'<div class="strategy-half-hour-row"><b>'+clock(row.startMinutes)+'</b><strong class="strategy-rate">&#36;'+Math.round(row.rate)+'/hr</strong><span>'+esc(row.topics.length?row.topics.join(' · '):'Mixed / no repeat topic')+'</span><small>'+row.fundraisers+' drive'+(row.fundraisers===1?'':'s')+' · '+esc(row.source)+'</small></div>').join('');
+    const body=rows.map(row=>'<div class="strategy-half-hour-row'+(row.printHidden?' strategy-hourly-print-hide':'')+'"><b>'+clock(row.startMinutes)+'</b><strong class="strategy-rate">&#36;'+Math.round(row.rate)+'/hr</strong><span>'+esc(row.topics.length?row.topics.join(' · '):'Mixed / no repeat topic')+'</span><small>'+row.fundraisers+' drive'+(row.fundraisers===1?'':'s')+' · '+esc(row.source)+'</small></div>').join('');
     return '<article class="strategy-time-day-card"><h3>'+esc(day)+'</h3>'+body+'</article>';
   }).join('');
   return '<section class="sheet-section strategy-time-of-day-section"><div class="strategy-section-head"><div><h2>Time-of-day comparisons</h2><p>Half-hour program-start buckets. Each row shows the fundraiser-balanced average and the strongest topics in that exact bucket. The selected pledge season is used when available; otherwise the row is clearly marked as all-history context.</p></div></div><div class="strategy-time-day-grid">'+(dayCards||'<p>No rate-valid half-hour history is available.</p>')+'</div></section>';
