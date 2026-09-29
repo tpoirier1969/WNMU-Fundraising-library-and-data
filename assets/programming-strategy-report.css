@@ -2111,3 +2111,27 @@
     line-height:1.1;
   }
 }
+
+
+/* v0.22.229 four-column time cards: stack topic text under time/rate */
+.strategy-half-hour-row{
+  grid-template-columns:auto minmax(0,1fr);
+  gap:1px 5px;
+}
+.strategy-half-hour-row>b{grid-column:1}
+.strategy-half-hour-row>strong{
+  grid-column:2;
+  text-align:right;
+}
+.strategy-half-hour-row>span{
+  grid-column:1/-1;
+}
+.strategy-half-hour-row>small{
+  grid-column:1/-1;
+}
+@media print{
+  .strategy-half-hour-row{
+    grid-template-columns:auto minmax(0,1fr);
+    gap:0 3px;
+  }
+}
