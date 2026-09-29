@@ -38,6 +38,14 @@ function todayStart(){const d=new Date();d.setHours(0,0,0,0);return d;}
 function todayKey(){return dateKey(todayStart());}
 function defaultSchedule(){return state.schedules[0]||null;}
 function scheduleLabel(s){return`${s.title} · ${fmt(s.startDate)}–${fmt(s.endDate,false)}`;}
+function schedulePayload(row={}){
+  const raw=row?.schedule_data;
+  if(raw&&typeof raw==='object'&&!Array.isArray(raw))return raw;
+  if(typeof raw==='string'){
+    try{const parsed=JSON.parse(raw);return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};}catch(_error){return{};}
+  }
+  return{};
+}
 async function loadSchedules(){
   status('Loading fundraiser history and upcoming choices…');
   let q=state.client.from('pledge_fundraiser_schedules')
@@ -54,11 +62,14 @@ async function loadSchedules(){
     if(!startDate||!endDate||startDate<todayKey())continue;
     const key=`${startDate}|${endDate}`;
     if(byRange.has(key))continue;
+    const saved=schedulePayload(row);
     byRange.set(key,{
-      id:String(row.id||''),
-      title:String(row.title||'Untitled fundraiser'),
+      ...saved,
+      id:String(row.id||saved.id||''),
+      title:String(row.title||saved.title||'Untitled fundraiser'),
       startDate,
       endDate,
+      fundraisingWindows:Array.isArray(saved.fundraisingWindows)?saved.fundraisingWindows:(Array.isArray(saved.fundraising_windows)?saved.fundraising_windows:[]),
       updatedAt:String(row.updated_at||'')
     });
   }
@@ -530,6 +541,27 @@ function compactTimingForSlot(hourlyIndex,slot={}){
   return'';
 }
 
+function fundraiserWindowPlanHtml(slot={},options=[],timingIndex=null){
+  const start=clock(slot.startMinutes),end=clock(slot.endMinutes);
+  if(slot.userDefined){
+    if(slot.blocked){
+      return `<div class="strategy-plan-window strategy-user-window strategy-protected-window"><div class="strategy-plan-window-head"><strong>${start}–${end} · Protected regular programming</strong></div><p class="strategy-window-usage">This hour remains regular programming and is not available for pledge recommendations.</p></div>`;
+    }
+    const requested=Number.isFinite(Number(slot.requestedMinutes))?Number(slot.requestedMinutes):Math.max(0,Number(slot.endMinutes||0)-Number(slot.startMinutes||0));
+    const used=Number(slot.recommendedMinutes||0);
+    const unused=Math.max(0,Number(slot.unusedMinutes??(requested-used))||0);
+    const priority=slot.priorityLabel||({commit:'Commit to pledge',prefer:'Prefer pledge',open:'Open to pledge'}[slot.priority]||'Open to pledge');
+    const note=slot.note?`<small class="strategy-window-note">${esc(slot.note)}</small>`:'';
+    const webNote=slot.webOnlyExperimental?'<p class="strategy-web-only-note">This marked window falls in the 5–7 PM Web-only experiment. Prefer lower-opportunity-cost inventory here and preserve stronger staffed-slot titles when possible.</p>':'';
+    const usage=options.length
+      ? `<p class="strategy-window-usage"><b>${used} of ${requested} minutes recommended.</b>${unused?` Leave ${unused} minutes regular / unfilled rather than lowering the programming threshold just to fill the window.`:' The recommended lineup uses the full marked window.'}</p>`
+      : `<p class="strategy-window-usage"><b>No title clears this window’s current recommendation threshold.</b> Leave the ${requested}-minute window regular for now rather than forcing a weak pledge choice.</p>`;
+    const lineup=options.length?`<ol class="strategy-window-lineup">${options.map(rec=>`<li><b>${clock(rec.plannedStartMinutes)}–${clock(rec.plannedEndMinutes)} · ${esc(rec.title)}</b><span>${esc(rec.topic||'')}${Number.isFinite(Number(rec.score))?` · score ${Math.round(Number(rec.score))}`:''}</span></li>`).join('')}</ol>`:'';
+    return `<div class="strategy-plan-window strategy-user-window${slot.webOnlyExperimental?' strategy-web-only-window':''}"><div class="strategy-plan-window-head"><strong>${start}–${end} · ${esc(priority)}</strong>${!slot.webOnlyExperimental&&compactTimingForSlot(timingIndex,slot)?`<small>${compactTimingForSlot(timingIndex,slot)}</small>`:''}</div>${note}${webNote}${lineup}${usage}</div>`;
+  }
+  return `<div class="strategy-plan-window${slot.webOnlyExperimental?' strategy-web-only-window':''}"><div class="strategy-plan-window-head"><strong>${start}–${end}${slot.webOnlyExperimental?' · WEB-ONLY EXPERIMENT':slot.experimental?' · TEST':''}</strong>${!slot.webOnlyExperimental&&compactTimingForSlot(timingIndex,slot)?`<small>${compactTimingForSlot(timingIndex,slot)}</small>`:''}</div>${slot.webOnlyExperimental?'<p class="strategy-web-only-note">No reliable WNMU 5–7 PM pledge history. Breaks default to Web-only with no operators standing by, so use lower-opportunity-cost inventory here and keep stronger staffed-slot titles elsewhere. Break mode is recorded on each scheduled program for later comparison.</p>':''}<ol>${options.map(rec=>`<li><b>${esc(rec.title)}</b><span>${esc(rec.topic)}</span>${slot.webOnlyExperimental&&rec.webOnlyReason?`<small>${esc(rec.webOnlyReason)}</small>`:''}</li>`).join('')}</ol></div>`;
+}
+
 function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedule={}){
   const calendar=calendarRowsForSchedule(schedule);
   const timingIndex=hourlyPatternIndex(hourly);
@@ -541,6 +573,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
   });
 
   const topicSnapshot=(strategy.topicComparison||[]).slice(0,6);
+  const usingFundraisingWindows=(strategy.windows||[]).some(slot=>slot.userDefined);
   const days=(outlook.rows||[]).map(day=>{
     const date=new Date(String(day.date||'')+'T12:00:00');
     const weekdayIndex=Number.isNaN(date.getTime())?null:date.getDay();
@@ -558,54 +591,59 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
     });
     topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
 
-    const daySlots=(windowsByDate.get(day.date)||[])
-      .filter(slot=>!slot.blocked)
+    const allDaySlots=(windowsByDate.get(day.date)||[])
       .sort((a,b)=>a.startMinutes-b.startMinutes);
+    const daySlots=usingFundraisingWindows?allDaySlots:allDaySlots.filter(slot=>!slot.blocked);
+    let programs=[];
 
-    // A title belongs to the one window where its slot-specific score is highest.
-    // This prevents a strong title from being repeated across several windows just
-    // because it happens to rank well everywhere.
-    const bestSlotByTitle=new Map();
-    daySlots.forEach(slot=>{
-      (slot.recommendations||[]).forEach(rec=>{
-        const key=String(rec?.programId||rec?.title||'').trim().toLowerCase();
-        if(!key)return;
-        const current=bestSlotByTitle.get(key);
-        const score=Number(rec?.score);
-        const currentScore=Number(current?.rec?.score);
-        if(!current||(!Number.isFinite(currentScore)&&Number.isFinite(score))||(Number.isFinite(score)&&score>currentScore)){
-          bestSlotByTitle.set(key,{slot,rec});
-        }
+    if(usingFundraisingWindows){
+      programs=daySlots.map(slot=>({slot,options:Array.isArray(slot.lineup)?slot.lineup:[]}));
+    }else{
+      // A title belongs to the one window where its slot-specific score is highest.
+      // This prevents a strong title from being repeated across several windows just
+      // because it happens to rank well everywhere.
+      const bestSlotByTitle=new Map();
+      daySlots.forEach(slot=>{
+        (slot.recommendations||[]).forEach(rec=>{
+          const key=String(rec?.programId||rec?.title||'').trim().toLowerCase();
+          if(!key)return;
+          const current=bestSlotByTitle.get(key);
+          const score=Number(rec?.score);
+          const currentScore=Number(current?.rec?.score);
+          if(!current||(!Number.isFinite(currentScore)&&Number.isFinite(score))||(Number.isFinite(score)&&score>currentScore)){
+            bestSlotByTitle.set(key,{slot,rec});
+          }
+        });
       });
-    });
 
-    const assignedBySlot=new Map(daySlots.map(slot=>[slot.id,[]]));
-    bestSlotByTitle.forEach(({slot,rec})=>{
-      if(!assignedBySlot.has(slot.id))assignedBySlot.set(slot.id,[]);
-      assignedBySlot.get(slot.id).push(rec);
-    });
+      const assignedBySlot=new Map(daySlots.map(slot=>[slot.id,[]]));
+      bestSlotByTitle.forEach(({slot,rec})=>{
+        if(!assignedBySlot.has(slot.id))assignedBySlot.set(slot.id,[]);
+        assignedBySlot.get(slot.id).push(rec);
+      });
 
-    const programs=daySlots
-      .map(slot=>{
-        const options=(assignedBySlot.get(slot.id)||[])
-          .sort((a,b)=>Number(b.score||0)-Number(a.score||0)||String(a.title||'').localeCompare(String(b.title||'')))
-          .slice(0,3);
-        return{slot,options};
-      })
-      .filter(item=>item.options.length)
-      .slice(0,3);
+      programs=daySlots
+        .map(slot=>{
+          const options=(assignedBySlot.get(slot.id)||[])
+            .sort((a,b)=>Number(b.score||0)-Number(a.score||0)||String(a.title||'').localeCompare(String(b.title||'')))
+            .slice(0,3);
+          return{slot,options};
+        })
+        .filter(item=>item.options.length)
+        .slice(0,3);
+    }
 
     return{...day,topicSignals:topicSignals.slice(0,5),programs,calendar:calendarRowsForDate(calendar,day.date)};
   });
 
-  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>Day, topic, timing and program direction in one compact planning view.</p></div></div>
+  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>${usingFundraisingWindows?'Uses the Fundraising Windows marked in Scheduling. Recommendations may use all, part, or none of each window depending on the strength of the available titles.':'Day, topic, timing and program direction in one compact planning view.'}</p></div></div>
     <div class="strategy-topic-snapshot"><h3>Topic snapshot</h3><div>${topicSnapshot.length?topicSnapshot.map(item=>`<span><b>${esc(item.topic)}</b><strong class="strategy-rate">${Number.isFinite(item.averageRate)?`&#36;${Math.round(item.averageRate)}/hr`:'No seasonal history'}</strong><small>${Number(item.fundraiserSamples||0)} drive${Number(item.fundraiserSamples||0)===1?'':'s'} · ${Number(item.eligibleProgramCount||0)} eligible</small></span>`).join(''):'<p>No eligible seasonal topic history.</p>'}</div></div>
     <div class="strategy-plan-days">${days.map(day=>`<article class="strategy-plan-day tone-${dayTone(day.outlook)}">
       <header><div><strong>${esc(day.label)}</strong><span>${esc(fmt(day.date,false))}</span></div><div><b>${esc(day.outlook)}</b>${Number.isFinite(day.averageRate)?`<span class="strategy-rate">Avg &#36;${Math.round(day.averageRate)}/pledge hr</span>`:''}</div></header>
       ${day.calendar.length?`<div class="strategy-day-calendar">${day.calendar.map(item=>`<span class="impact-${esc(item.impact||'context')}"><b>${esc(item.title)}</b>${item.time?` · ${esc(item.time)}`:''}</span>`).join('')}</div>`:''}
       <div class="strategy-plan-day-body"><p class="strategy-plan-action">${esc(daySchedulingAction(day,day.topicSignals))}</p>
         <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
-        <div class="strategy-plan-programs">${day.programs.length?day.programs.map(({slot,options})=>`<div class="strategy-plan-window${slot.webOnlyExperimental?' strategy-web-only-window':''}"><div class="strategy-plan-window-head"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)}${slot.webOnlyExperimental?' · WEB-ONLY EXPERIMENT':slot.experimental?' · TEST':''}</strong>${!slot.webOnlyExperimental&&compactTimingForSlot(timingIndex,slot)?`<small>${compactTimingForSlot(timingIndex,slot)}</small>`:''}</div>${slot.webOnlyExperimental?'<p class="strategy-web-only-note">No reliable WNMU 5–7 PM pledge history. Breaks default to Web-only with no operators standing by, so use lower-opportunity-cost inventory here and keep stronger staffed-slot titles elsewhere. Break mode is recorded on each scheduled program for later comparison.</p>':''}<ol>${options.map(rec=>`<li><b>${esc(rec.title)}</b><span>${esc(rec.topic)}</span>${slot.webOnlyExperimental&&rec.webOnlyReason?`<small>${esc(rec.webOnlyReason)}</small>`:''}</li>`).join('')}</ol></div>`).join(''):'<span class="strategy-no-history">No discretionary pledge recommendation for this date.</span>'}</div>
+        <div class="strategy-plan-programs">${day.programs.length?day.programs.map(({slot,options})=>fundraiserWindowPlanHtml(slot,options,timingIndex)).join(''):'<span class="strategy-no-history">${usingFundraisingWindows?'No Fundraising Window is marked for this date.':'No discretionary pledge recommendation for this date.'}</span>'}</div>
       </div>
     </article>`).join('')}</div>
   </section>`;
@@ -739,7 +777,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.236');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.238');
     }catch(error){
       reject(error);
       return;
