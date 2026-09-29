@@ -51,7 +51,8 @@ async function loadSchedules(){
     const startDate=String(row.start_date||'').slice(0,10),endDate=String(row.end_date||'').slice(0,10);
     if(!startDate||!endDate||endDate>=today)continue;
     const key=`${startDate}|${endDate}`;if(byRange.has(key))continue;
-    byRange.set(key,{id:String(row.id||''),title:String(row.title||'Untitled fundraiser'),startDate,endDate,updatedAt:String(row.updated_at||'')});
+    const saved=schedulePayload(row);
+    byRange.set(key,{...saved,id:String(row.id||saved.id||''),title:String(row.title||saved.title||'Untitled fundraiser'),startDate,endDate,fundraisingWindows:Array.isArray(saved.fundraisingWindows)?saved.fundraisingWindows:(Array.isArray(saved.fundraising_windows)?saved.fundraising_windows:[]),updatedAt:String(row.updated_at||'')});
   }
   state.schedules=[...byRange.values()].sort((a,b)=>b.startDate.localeCompare(a.startDate));
   const select=$('#backtest-fundraiser');
@@ -73,11 +74,17 @@ async function loadData(){
   status('Historical data loaded. Choose a fundraiser and run the backtest.');
 }
 function selectedSchedule(){const id=$('#backtest-fundraiser')?.value;return state.schedules.find(x=>String(x.id)===String(id))||null;}
+function schedulePayload(row={}){
+  const raw=row?.schedule_data;
+  if(raw&&typeof raw==='object'&&!Array.isArray(raw))return raw;
+  if(typeof raw==='string'){try{const parsed=JSON.parse(raw);return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};}catch(_error){return{};}}
+  return{};
+}
 function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);state.workerTimer=null;}if(state.worker){state.worker.terminate();state.worker=null;}}
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.237');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.238');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
