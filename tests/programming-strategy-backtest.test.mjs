@@ -57,6 +57,40 @@ test('deduplicates recommendations and keeps the strongest score plus window exp
   assert.equal(alpha.experimentalWindows, 1);
 });
 
+test('backtest grades the optimized lineup and exact planned starts for scheduler-defined Fundraising Windows', () => {
+  const windowStrategy={
+    cutoff:'2025-11-30',
+    windows:[{
+      date:'2025-12-01',
+      startMinutes:18*60,
+      endMinutes:21*60,
+      userDefined:true,
+      blocked:false,
+      experimental:false,
+      recommendations:[
+        {programId:'alternate',title:'Alternate Only',topic:'Music',score:99}
+      ],
+      lineup:[
+        {programId:'chosen',title:'Chosen Lineup',topic:'Music',score:82,plannedStartMinutes:19*60,plannedEndMinutes:20*60}
+      ]
+    }]
+  };
+  const flattened=B.flattenRecommendations(windowStrategy,20);
+  assert.equal(flattened.length,1);
+  assert.equal(flattened[0].title,'Chosen Lineup');
+  assert.equal(flattened[0].recommendedWindows[0].startMinutes,19*60);
+  assert.equal(flattened[0].recommendedWindows[0].endMinutes,20*60);
+
+  const rows=[
+    {programId:'chosen',title:'Chosen Lineup',dateKey:'2025-12-01',startMinutes:19*60,minutes:60,dollars:300,known:true,countsTowardScheduleMinutes:true},
+    {programId:'alternate',title:'Alternate Only',dateKey:'2025-12-01',startMinutes:18*60,minutes:60,dollars:900,known:true,countsTowardScheduleMinutes:true}
+  ];
+  const result=B.evaluate({strategy:windowStrategy,actualRows:rows,schedule});
+  assert.equal(result.summary.recommendedTitles,1);
+  assert.equal(result.recommendationResults[0].title,'Chosen Lineup');
+  assert.equal(result.recommendationResults[0].observedInRecommendedWindow,true);
+});
+
 test('backtest treats unaired recommendations as untestable rather than failures', () => {
   const result = B.evaluate({ strategy, actualRows, schedule });
   const gamma = result.recommendationResults.find((item) => item.title === 'Gamma');
