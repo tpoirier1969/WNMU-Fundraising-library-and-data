@@ -190,7 +190,7 @@ test('Drama Doc season detection prefers explicit series-season evidence over ri
   const s6=S.dramaInfo(library[2],target,index);
   const e9=S.dramaInfo(library[4],target,index);
 
-  assert.deepEqual(S.dramaSeasonNumbers(library[1]),[5]);
+  assert.deepEqual(Array.from(S.dramaSeasonNumbers(library[1])),[5]);
   assert.equal(S.dramaSeriesKey(library[2]),'all creatures great and small');
   assert.equal(s4.currentSeriesSeason,6);
   assert.equal(s4.currentCycle,false);
@@ -713,7 +713,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.229'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.232'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -721,7 +721,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.228', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.232', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
