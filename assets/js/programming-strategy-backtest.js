@@ -157,6 +157,161 @@
     return dx && dy ? n / Math.sqrt(dx * dy) : null;
   }
 
+
+  function scheduleDateKeys(schedule = {}) {
+    const start = txt(schedule.startDate ?? schedule.start_date).slice(0, 10);
+    const end = txt(schedule.endDate ?? schedule.end_date).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return [];
+    const first = new Date(`${start}T12:00:00`);
+    const last = new Date(`${end}T12:00:00`);
+    if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime()) || last < first) return [];
+    const out = [];
+    for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+      out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+    return out;
+  }
+
+  function weekdayOccurrence(schedule = {}, dateKeyValue = '') {
+    const start = txt(schedule.startDate ?? schedule.start_date).slice(0, 10);
+    const target = txt(dateKeyValue).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(target)) return null;
+    const first = new Date(`${start}T12:00:00`);
+    const date = new Date(`${target}T12:00:00`);
+    if (Number.isNaN(first.getTime()) || Number.isNaN(date.getTime()) || date < first) return null;
+    const weekday = date.getDay();
+    let occurrence = 0;
+    for (let d = new Date(first); d <= date; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() === weekday) occurrence += 1;
+    }
+    return occurrence || null;
+  }
+
+  function topicTimeSignals(matrix = {}, schedule = {}, limitPerDay = 5) {
+    const rows = Array.isArray(matrix?.rows) ? matrix.rows : [];
+    const out = [];
+    for (const date of scheduleDateKeys(schedule)) {
+      const parsed = new Date(`${date}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) continue;
+      const weekdayIndex = parsed.getDay();
+      const occurrence = weekdayOccurrence(schedule, date);
+      const signals = [];
+      for (const row of rows) {
+        if (Number(row.weekdayIndex) !== weekdayIndex) continue;
+        const position = (row.positionBreakdown || []).find((item) => Number(item.occurrence) === Number(occurrence));
+        for (const topic of position?.localTopics || []) {
+          const samples = Number(topic.fundraiserSamples || 0);
+          const titles = Number(topic.titleCount || 0);
+          const predictedRate = num(topic.averageRate);
+          if (samples < 2 || titles < 2 || predictedRate == null) continue;
+          signals.push({
+            date,
+            weekday: txt(row.weekday),
+            weekdayIndex,
+            occurrence,
+            daypart: txt(row.daypart),
+            daypartId: txt(row.daypartId),
+            startMinutes: num(row.startMinutes),
+            endMinutes: num(row.endMinutes),
+            topic: txt(topic.topic || 'Uncategorized') || 'Uncategorized',
+            predictedRate,
+            fundraiserSamples: samples,
+            titleCount: titles
+          });
+        }
+      }
+      signals
+        .sort((a, b) => b.predictedRate - a.predictedRate || b.fundraiserSamples - a.fundraiserSamples || b.titleCount - a.titleCount || a.topic.localeCompare(b.topic))
+        .slice(0, Math.max(1, Number(limitPerDay) || 5))
+        .forEach((signal, index) => out.push({ ...signal, dayRank: index + 1 }));
+    }
+    return out;
+  }
+
+  function evaluateTopicTime({ matrix = {}, actualRows = [], schedule = {}, signalLimitPerDay = 5 } = {}) {
+    const signals = topicTimeSignals(matrix, schedule, signalLimitPerDay);
+    const rows = usableActualRows(actualRows, schedule);
+    const titleOutcomes = actualTitleOutcomes(actualRows, schedule, { windows: [] });
+    const titleRates = titleOutcomes.map((item) => item.rate).filter(Number.isFinite);
+    const medianTitleRate = median(titleRates);
+    const topQuartileThreshold = percentile(titleRates, .75);
+
+    const results = signals.map((signal) => {
+      const windowRows = rows.filter((row) => {
+        const start = num(row.startMinutes ?? row.start_minutes);
+        return rowDate(row) === signal.date
+          && start != null
+          && signal.startMinutes != null
+          && signal.endMinutes != null
+          && start >= signal.startMinutes
+          && start < signal.endMinutes;
+      });
+      const topicRows = windowRows.filter((row) => keyTitle(row.topic ?? row.topic_primary ?? 'Uncategorized') === keyTitle(signal.topic));
+      const actual = rowAggregate(topicRows);
+      const window = rowAggregate(windowRows);
+
+      const topicGroups = new Map();
+      for (const row of windowRows) {
+        const key = keyTitle(row.topic ?? row.topic_primary ?? 'Uncategorized') || 'uncategorized';
+        if (!topicGroups.has(key)) topicGroups.set(key, []);
+        topicGroups.get(key).push(row);
+      }
+      const rankedTopics = [...topicGroups.entries()]
+        .map(([key, groupedRows]) => ({ key, ...rowAggregate(groupedRows) }))
+        .filter((item) => item.rate != null)
+        .sort((a, b) => b.rate - a.rate || b.dollars - a.dollars);
+      const actualTopicRank = actual.airings
+        ? (rankedTopics.findIndex((item) => item.key === keyTitle(signal.topic)) + 1 || null)
+        : null;
+      const comparableWindow = actual.airings > 0 && rankedTopics.length >= 2;
+
+      return {
+        ...signal,
+        tested: actual.airings > 0,
+        actualAirings: actual.airings,
+        actualMinutes: actual.minutes,
+        actualDollars: actual.dollars,
+        actualPledges: actual.pledges,
+        actualRate: actual.rate,
+        aboveMedian: actual.rate != null && medianTitleRate != null ? actual.rate > medianTitleRate : null,
+        topQuartile: actual.rate != null && topQuartileThreshold != null ? actual.rate > 0 && actual.rate >= topQuartileThreshold : null,
+        windowRate: window.rate,
+        windowTopicCount: rankedTopics.length,
+        actualTopicRank,
+        comparableWindow,
+        topInWindow: comparableWindow ? actualTopicRank === 1 : null,
+        aboveWindowAverage: comparableWindow && actual.rate != null && window.rate != null ? actual.rate > window.rate : null
+      };
+    });
+
+    const tested = results.filter((item) => item.tested);
+    const comparable = tested.filter((item) => item.comparableWindow);
+    return {
+      season: txt(matrix?.season),
+      fallback: !!matrix?.fallback,
+      medianTitleRate,
+      topQuartileThreshold,
+      summary: {
+        signals: results.length,
+        testedSignals: tested.length,
+        untestedSignals: results.length - tested.length,
+        aboveMedianHits: tested.filter((item) => item.aboveMedian).length,
+        topQuartileHits: tested.filter((item) => item.topQuartile).length,
+        comparableWindowTests: comparable.length,
+        topInWindowHits: comparable.filter((item) => item.topInWindow).length,
+        aboveWindowAverageHits: comparable.filter((item) => item.aboveWindowAverage).length,
+        datesWithSignals: new Set(results.map((item) => item.date)).size,
+        datesTested: new Set(tested.map((item) => item.date)).size
+      },
+      signalResults: results,
+      notes: [
+        'Signals reproduce the Fundraiser Plan topic/time rules: exact fundraiser date position, at least two prior fundraiser samples, at least two different titles, and the five strongest signals per day.',
+        'A signal is tested only when WNMU actually aired that topic inside the signaled daypart on that historical date.',
+        'Above-median and top-quartile comparisons use title rates from that same fundraiser, while window comparisons ask whether the signaled topic beat other topics WNMU aired in that daypart.'
+      ]
+    };
+  }
+
   function evaluate({ strategy = {}, actualRows = [], schedule = {}, recommendationLimit = 20 } = {}) {
     const outcomes = actualTitleOutcomes(actualRows, schedule, strategy), recommendations = flattenRecommendations(strategy, recommendationLimit);
     const byKey = new Map(outcomes.map((x) => [x.key, x])), byTitle = new Map(outcomes.map((x) => [keyTitle(x.title), x]));
@@ -235,5 +390,5 @@
     };
   }
 
-  globalThis.WNMUStrategyBacktest = Object.freeze({ rowInRecommendationInventory, actualTitleOutcomes, flattenRecommendations, recommendationMatchedRows, rowAggregate, evaluate });
+  globalThis.WNMUStrategyBacktest = Object.freeze({ rowInRecommendationInventory, actualTitleOutcomes, flattenRecommendations, recommendationMatchedRows, rowAggregate, topicTimeSignals, evaluateTopicTime, evaluate });
 })();
