@@ -76,20 +76,24 @@
     const map = new Map();
     for (const slot of strategy.windows || []) {
       if (slot.blocked) continue;
-      for (const rec of slot.recommendations || []) {
+      const selected = slot.userDefined ? (slot.lineup || []) : (slot.recommendations || []);
+      for (const rec of selected) {
         const key = itemKey(rec);
         if (!key || key === 'title:') continue;
         const score = num(rec.score), x = map.get(key) || { key, programId: txt(rec.programId ?? rec.program_id), title: txt(rec.title), topic: txt(rec.topic || 'Uncategorized') || 'Uncategorized', score, fit: txt(rec.fit), confidence: txt(rec.confidence), reasons: rec.reasons || [], cautions: rec.cautions || [], windows: 0, normalWindows: 0, experimentalWindows: 0, recommendedWindows: [] };
         if (score != null && (x.score == null || score > x.score)) Object.assign(x, { score, fit: txt(rec.fit), confidence: txt(rec.confidence), reasons: rec.reasons || x.reasons, cautions: rec.cautions || x.cautions });
         x.windows += 1;
         slot.experimental ? x.experimentalWindows += 1 : x.normalWindows += 1;
+        const plannedStart = num(rec.plannedStartMinutes);
+        const plannedEnd = num(rec.plannedEndMinutes);
         x.recommendedWindows.push({
           date: txt(slot.date),
-          startMinutes: num(slot.startMinutes),
-          endMinutes: num(slot.endMinutes),
+          startMinutes: plannedStart != null ? plannedStart : num(slot.startMinutes),
+          endMinutes: plannedEnd != null ? plannedEnd : num(slot.endMinutes),
           label: txt(slot.label),
           weekday: txt(slot.weekday),
-          experimental: !!slot.experimental
+          experimental: !!slot.experimental,
+          userDefined: !!slot.userDefined
         });
         map.set(key, x);
       }
