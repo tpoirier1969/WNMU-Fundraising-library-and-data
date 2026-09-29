@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue, schedulePackageType, scheduleDetailBreakSeconds, scheduleRowSupportsBreakMode };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -241,6 +241,17 @@ test('Scheduling break-mode migration preserves old Live flags without inventing
   assert.equal(hooks.canonicalScheduleBreakMode({ breakMode: 'phones_staffed', liveBreakFlag: true }), 'phones_staffed');
   assert.equal(hooks.canonicalScheduleBreakMode({ breakMode: 'web_only' }), 'web_only');
   assert.equal(hooks.breakModeSourceValue({ breakMode: 'web_only' }), 'legacy');
+});
+
+test('Scheduling break modes are limited to pledge-break packages or substantial pledge timing', () => {
+  resetState();
+  assert.equal(hooks.scheduleRowSupportsBreakMode({ package_type:'HDPE' }), true);
+  assert.equal(hooks.scheduleRowSupportsBreakMode({ package_type:'PE' }), true);
+  assert.equal(hooks.scheduleRowSupportsBreakMode({ package_type:'BA' }, { timings:[{ break_seconds:420 }] }), false);
+  assert.equal(hooks.scheduleRowSupportsBreakMode({ package_type:'BA' }, { timings:[{ break_seconds:901 }] }), true);
+  assert.equal(hooks.scheduleRowSupportsBreakMode({ package_type:'Unlim' }, { timings:[{ break_seconds:2157 }] }), true);
+  assert.equal(hooks.scheduleRowSupportsBreakMode({ package_type:null }, { timings:[] }), false);
+  assert.equal(hooks.scheduleDetailBreakSeconds({ timings:[{ break_seconds:500 },{ break_seconds:450 }] }), 950);
 });
 
 test('Scheduling break warning treats zero-second timing rows as missing break information', () => {
