@@ -1468,9 +1468,12 @@ function compactStrategy(strategy = {}, schedule = {}, peerObservations = []) {
     })),
     topicComparison: strategy.topicComparison,
     repeats: (strategy.repeats || []).map((item) => ({
+      programId: item.programId,
       title: item.title,
       topic: item.topic,
       score: item.score,
+      newTitle: item.newTitle,
+      drama: item.drama,
       slots: (item.slots || []).map((slot) => ({
         id: slot.id,
         date: slot.date,
@@ -1481,15 +1484,21 @@ function compactStrategy(strategy = {}, schedule = {}, peerObservations = []) {
       }))
     })),
     seasonal: (strategy.seasonal || []).map((item) => ({
+      programId: item.programId,
       title: item.title,
       topic: item.topic,
-      season: item.season
+      season: item.season,
+      newTitle: item.newTitle,
+      drama: item.drama
     })),
     local: (strategy.local || []).map((item) => ({
+      programId: item.programId,
       title: item.title,
       topic: item.topic,
       score: item.score,
-      fit: item.fit
+      fit: item.fit,
+      newTitle: item.newTitle,
+      drama: item.drama
     })),
     avoid: (strategy.avoid || []).map((item) => ({
       title: item.title,
