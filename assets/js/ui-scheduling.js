@@ -283,6 +283,7 @@
       manualResultUpdatedAt: utils.normalizeText(placement?.manualResultUpdatedAt || ''),
       transferredToStation: normalizePlacementBoolean(placement?.transferredToStation, Boolean(placement?.transferredToStation))
     }));
+    next.fundraisingWindows = normalizedFundraisingWindows(next);
     return next;
   }
 
@@ -2690,6 +2691,90 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return Math.max(15, Math.min(480, Math.round(numeric / 15) * 15));
   }
 
+  const FUNDRAISING_WINDOW_PRIORITIES = new Set(['open', 'prefer', 'commit']);
+
+  function normalizeFundraisingWindowPriority(value = '') {
+    const raw = utils.normalizeText(value).toLowerCase();
+    return FUNDRAISING_WINDOW_PRIORITIES.has(raw) ? raw : 'open';
+  }
+
+  function fundraisingWindowPriorityLabel(value = '') {
+    const priority = normalizeFundraisingWindowPriority(value);
+    if (priority === 'commit') return 'Commit to pledge';
+    if (priority === 'prefer') return 'Prefer pledge';
+    return 'Open to pledge';
+  }
+
+  function fundraisingWindowLengthMinutes(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 120;
+    return Math.max(constants.DEFAULT_SLOT_MINUTES, Math.min(720, Math.round(numeric / constants.DEFAULT_SLOT_MINUTES) * constants.DEFAULT_SLOT_MINUTES));
+  }
+
+  function normalizedFundraisingWindows(schedule = {}) {
+    const source = Array.isArray(schedule?.fundraisingWindows)
+      ? schedule.fundraisingWindows
+      : (Array.isArray(schedule?.fundraising_windows) ? schedule.fundraising_windows : []);
+    return source.map((window) => {
+      const dateKey = utils.normalizeText(window?.dateKey || window?.date_key || '');
+      const startMinutes = Number(window?.startMinutes ?? window?.start_minutes);
+      const rawEnd = Number(window?.endMinutes ?? window?.end_minutes);
+      const rawLength = Number(window?.lengthMinutes ?? window?.length_minutes);
+      const endMinutes = Number.isFinite(rawEnd) && rawEnd > startMinutes
+        ? rawEnd
+        : startMinutes + fundraisingWindowLengthMinutes(rawLength);
+      return {
+        id: utils.normalizeText(window?.id || '') || utils.makeId('pledge-window'),
+        dateKey,
+        startMinutes,
+        endMinutes,
+        priority: normalizeFundraisingWindowPriority(window?.priority || window?.intent || ''),
+        note: utils.normalizeText(window?.note || window?.notes || '')
+      };
+    }).filter((window) =>
+      window.dateKey
+      && Number.isFinite(window.startMinutes)
+      && Number.isFinite(window.endMinutes)
+      && window.endMinutes > window.startMinutes
+    ).sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes);
+  }
+
+  function fundraisingWindowForSlot(schedule = {}, slotKey = '') {
+    const [dateKey, minutesRaw] = String(slotKey || '').split('|');
+    const minutes = Number(minutesRaw);
+    if (!dateKey || !Number.isFinite(minutes)) return null;
+    return normalizedFundraisingWindows(schedule).find((window) =>
+      window.dateKey === dateKey
+      && minutes >= Number(window.startMinutes)
+      && minutes < Number(window.endMinutes)
+    ) || null;
+  }
+
+  function fundraisingWindowOverlaps(schedule = {}, candidate = {}, ignoreId = '') {
+    return normalizedFundraisingWindows(schedule).some((window) =>
+      window.id !== ignoreId
+      && window.dateKey === candidate.dateKey
+      && Math.max(Number(window.startMinutes), Number(candidate.startMinutes)) < Math.min(Number(window.endMinutes), Number(candidate.endMinutes))
+    );
+  }
+
+  function toDisplayFundraisingWindow(window = {}, windowStartMinutes = constants.DEFAULT_DAY_START_MINUTES) {
+    const cutoff = ((Number(windowStartMinutes) % 1440) + 1440) % 1440;
+    let displayDateKey = window.dateKey;
+    let displayStartMinutes = Number(window.startMinutes || 0);
+    if (displayStartMinutes < cutoff) {
+      displayDateKey = utils.plusDays(displayDateKey, -1);
+      displayStartMinutes += 1440;
+    }
+    const duration = Math.max(constants.DEFAULT_SLOT_MINUTES, Number(window.endMinutes || 0) - Number(window.startMinutes || 0));
+    return {
+      ...window,
+      displayDateKey,
+      displayStartMinutes,
+      displayEndMinutes: displayStartMinutes + duration
+    };
+  }
+
   function hasScheduleClipboard() {
     return Boolean(state.scheduleClipboard?.programId || state.scheduleClipboard?.isPlaceholder);
   }
@@ -3891,6 +3976,22 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const times = [];
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
+    const fundraisingWindows = normalizedFundraisingWindows(schedule);
+    const fundraisingWindowMinutesByDate = new Map();
+    fundraisingWindows.forEach((window) => {
+      fundraisingWindowMinutesByDate.set(window.dateKey, (fundraisingWindowMinutesByDate.get(window.dateKey) || 0) + Math.max(0, window.endMinutes - window.startMinutes));
+    });
+    const totalFundraisingWindowMinutes = fundraisingWindows.reduce((sum, window) => sum + Math.max(0, window.endMinutes - window.startMinutes), 0);
+    const fundraisingWindowByDisplaySlot = new Map();
+    fundraisingWindows.map((window) => toDisplayFundraisingWindow(window, visibleStartMin)).forEach((window) => {
+      for (let minutes = Number(window.displayStartMinutes); minutes < Number(window.displayEndMinutes); minutes += constants.DEFAULT_SLOT_MINUTES) {
+        fundraisingWindowByDisplaySlot.set(`${window.displayDateKey}|${minutes}`, {
+          window,
+          isStart: minutes === Number(window.displayStartMinutes),
+          isEnd: minutes + constants.DEFAULT_SLOT_MINUTES >= Number(window.displayEndMinutes)
+        });
+      }
+    });
     const calendarDetailIds = [...new Set(placements.map((placement) => scheduleDetailKeyForPlacement(placement)).filter(Boolean))];
     if (calendarDetailIds.length) void ensureScheduledDetailsBatch(calendarDetailIds);
     const placementByDisplaySlot = new Map();
@@ -3917,7 +4018,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleGrid.style.setProperty('--schedule-slot-height', `${slotHeight}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-font-size', `${timeFontPx}px`);
     els.scheduleGrid.style.setProperty('--schedule-time-width', `${timeColumnWidth}px`);
-    els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin - constants.DEFAULT_SLOT_MINUTES)} · ${scheduleFundraisingHoursLabel(totalFundraisingMinutes)} fundraising scheduled`;
+    els.scheduleWindowLabel.textContent = `${utils.minutesToLabel(visibleStartMin)} – ${utils.minutesToLabel(visibleEndMin - constants.DEFAULT_SLOT_MINUTES)} · ${scheduleFundraisingHoursLabel(totalFundraisingMinutes)} fundraising scheduled${totalFundraisingWindowMinutes ? ` · ${scheduleFundraisingHoursLabel(totalFundraisingWindowMinutes)} available pledge window${fundraisingWindows.length === 1 ? '' : 's'}` : ''}`;
     if (els.scheduleZoomValue) els.scheduleZoomValue.textContent = `${Math.round(zoom * 100)}%`;
 
     const header = ['<div class="schedule-corner sticky"></div>'];
@@ -3930,7 +4031,9 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         ? `Imported broadcast ${utils.formatMoney(money.broadcast)} + prorated Online/Mail ${utils.formatMoney(money.onlineMail)}`
         : 'No imported results for this date yet';
       const fundraisingHours = scheduleFundraisingHoursLabel(dailyFundraisingMinutes.get(dateKey) || 0);
-      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span><span class="schedule-day-total ${money.hasImportedResults ? 'reported' : 'unreported'}" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span><span class="schedule-day-hours" style="font-size:.68rem;color:#5f7383;font-weight:800;">${utils.escapeHtml(fundraisingHours)} fundraising</span></div>`);
+      const fundraisingWindowMinutes = fundraisingWindowMinutesByDate.get(dateKey) || 0;
+      const fundraisingWindowHours = scheduleFundraisingHoursLabel(fundraisingWindowMinutes);
+      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span><span class="schedule-day-total ${money.hasImportedResults ? 'reported' : 'unreported'}" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span><span class="schedule-day-hours" style="font-size:.68rem;color:#5f7383;font-weight:800;">${utils.escapeHtml(fundraisingHours)} fundraising${fundraisingWindowMinutes ? ` · ${utils.escapeHtml(fundraisingWindowHours)} window` : ''}</span></div>`);
       footer.push(`<div class="schedule-day-head schedule-day-foot ${weekendClass}"><span>${label}</span></div>`);
     });
 
@@ -3960,6 +4063,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const displaySlotKey = `${displayDateKey}|${minutes}`;
         const placement = placementByDisplaySlot.get(displaySlotKey) || null;
         const isStart = placementStartByDisplaySlot.has(displaySlotKey);
+        const fundraisingWindowMark = fundraisingWindowByDisplaySlot.get(displaySlotKey) || null;
+        const fundraisingWindowClass = fundraisingWindowMark
+          ? ` fundraising-window-slot fundraising-window-${utils.escapeHtml(fundraisingWindowMark.window.priority)}${fundraisingWindowMark.isStart ? ' fundraising-window-start' : ''}${fundraisingWindowMark.isEnd ? ' fundraising-window-end' : ''}`
+          : '';
+        const fundraisingWindowTitle = fundraisingWindowMark
+          ? `${fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority)} · ${fundraisingWindowMark.window.endMinutes - fundraisingWindowMark.window.startMinutes} min fundraising window${fundraisingWindowMark.window.note ? ` · ${fundraisingWindowMark.window.note}` : ''}`
+          : '';
         const style = isStart ? `height:${placementHeight(placement.lengthMinutes, slotHeight)};` : '';
         const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
         const hasManualData = isStart && !hasImportedData && placementHasManualResult(placement);
@@ -3989,7 +4099,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES'}</span>`
           : '';
         body.push(`
-          <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}">
+          <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
+            ${fundraisingWindowMark?.isStart ? `<span class="schedule-fundraising-window-tag">${utils.escapeHtml(fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority))}</span>` : ''}
             ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${isPlaceholder ? '' : transferToggle}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${manualResultBadge}${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
@@ -4292,10 +4403,61 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     `;
   }
 
-  function syncPlaceholderControls(currentPlacement = null, editable = false) {
+  function fundraisingWindowLengthOptionsHtml(selectedMinutes = 120) {
+    const selected = fundraisingWindowLengthMinutes(selectedMinutes);
+    const options = [30, 60, 90, 120, 150, 180, 210, 240, 300, 360, 480, 600, 720];
+    if (!options.includes(selected)) options.push(selected);
+    options.sort((a, b) => a - b);
+    return options.map((minutes) => `<option value="${minutes}"${minutes === selected ? ' selected' : ''}>${minutes} min</option>`).join('');
+  }
+
+  function renderFundraisingWindowControls(schedule = {}, slot = {}, editable = false) {
+    const existing = fundraisingWindowForSlot(schedule, slot.key);
+    const startMinutes = existing ? existing.startMinutes : Number(slot.minutes || 0);
+    const lengthMinutes = existing ? existing.endMinutes - existing.startMinutes : 120;
+    const priority = existing ? existing.priority : 'open';
+    const note = existing ? existing.note : '';
+    const buttonText = existing ? 'Update fundraising window' : 'Add fundraising window';
+    return `
+      <section class="schedule-fundraising-window-panel" aria-label="Fundraising window">
+        <div class="schedule-fundraising-window-head">
+          <strong>Fundraising window</strong>
+          <span>Marks time that may be used for pledge programming. Strategy may recommend one title, several titles, only part of the window, or none of it.</span>
+        </div>
+        <div class="schedule-fundraising-window-grid">
+          <label class="filter-field">
+            <span class="filter-label">Starts</span>
+            <input type="text" value="${utils.escapeHtml(utils.minutesToLabel(startMinutes))}" readonly>
+          </label>
+          <label class="filter-field">
+            <span class="filter-label">Available time</span>
+            <select id="schedule-fundraising-window-length" ${editable ? '' : 'disabled'}>${fundraisingWindowLengthOptionsHtml(lengthMinutes)}</select>
+          </label>
+          <label class="filter-field">
+            <span class="filter-label">Planning intent</span>
+            <select id="schedule-fundraising-window-priority" ${editable ? '' : 'disabled'}>
+              <option value="open"${priority === 'open' ? ' selected' : ''}>Open to pledge</option>
+              <option value="prefer"${priority === 'prefer' ? ' selected' : ''}>Prefer pledge</option>
+              <option value="commit"${priority === 'commit' ? ' selected' : ''}>Commit to pledge</option>
+            </select>
+          </label>
+          <label class="filter-field search-grow">
+            <span class="filter-label">Note</span>
+            <input id="schedule-fundraising-window-note" type="text" value="${utils.escapeHtml(note)}" placeholder="Optional planning note" ${editable ? '' : 'disabled'}>
+          </label>
+          <div class="schedule-fundraising-window-actions">
+            <button type="button" class="primary" id="schedule-fundraising-window-save-button" ${editable ? '' : 'disabled'}>${buttonText}</button>
+            ${existing ? `<button type="button" class="ghost danger" id="schedule-fundraising-window-remove-button" ${editable ? '' : 'disabled'}>Remove window</button>` : ''}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function syncPlanningControls(schedule = {}, slot = {}, currentPlacement = null, editable = false) {
     const host = document.getElementById('schedule-placeholder-controls');
     if (!host) return;
-    host.innerHTML = renderPlaceholderControls(currentPlacement, editable);
+    host.innerHTML = renderFundraisingWindowControls(schedule, slot, editable) + renderPlaceholderControls(currentPlacement, editable);
   }
 
   function placementHasConfirmedImportedResult(placement = {}) {
@@ -4433,7 +4595,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
-    syncPlaceholderControls(currentPlacement, editable);
+    syncPlanningControls(schedule, slot, currentPlacement, editable);
     renderManualResultControls(currentPlacement, editable);
     renderScheduleSlotRescue(schedule, slot, currentPlacement, editable);
 
@@ -4678,6 +4840,58 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     void persistSchedules(schedule);
     renderScheduleGrid();
     renderScheduledProgramDetails();
+  }
+
+  async function saveFundraisingWindowToSelectedSlot(closeAfter = false) {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to add fundraising windows.', 'bad'); return false; }
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    if (!schedule || !slot) return false;
+    const existing = fundraisingWindowForSlot(schedule, slot.key);
+    const dateKey = existing?.dateKey || slot.dateKey;
+    const startMinutes = Number(existing?.startMinutes ?? slot.minutes);
+    const lengthMinutes = fundraisingWindowLengthMinutes(document.getElementById('schedule-fundraising-window-length')?.value || 120);
+    const endMinutes = startMinutes + lengthMinutes;
+    if (endMinutes > 1440) {
+      showScheduleModalWarning('A fundraising window cannot cross midnight. Add a second window after midnight on the next calendar date.', 'warn');
+      return false;
+    }
+    const candidate = {
+      id: existing?.id || utils.makeId('pledge-window'),
+      dateKey,
+      startMinutes,
+      endMinutes,
+      priority: normalizeFundraisingWindowPriority(document.getElementById('schedule-fundraising-window-priority')?.value || existing?.priority || 'open'),
+      note: utils.normalizeText(document.getElementById('schedule-fundraising-window-note')?.value || '')
+    };
+    if (fundraisingWindowOverlaps(schedule, candidate, existing?.id || '')) {
+      showScheduleModalWarning('That fundraising window overlaps another fundraising window on the same date. Adjust or remove the other window first.', 'warn');
+      return false;
+    }
+    schedule.fundraisingWindows = normalizedFundraisingWindows(schedule).filter((window) => window.id !== candidate.id);
+    schedule.fundraisingWindows.push(candidate);
+    schedule.fundraisingWindows.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes);
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    setNotice(`${existing ? 'Updated' : 'Added'} fundraising window at ${slotLabel(dateKey, startMinutes)} for ${lengthMinutes} minutes · ${fundraisingWindowPriorityLabel(candidate.priority)}. ${state.scheduleSyncMessage}`);
+    if (closeAfter) closeScheduleModal();
+    return true;
+  }
+
+  async function removeFundraisingWindowFromSelectedSlot(closeAfter = false) {
+    if (!canScheduleEdit()) return false;
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    const existing = schedule && slot ? fundraisingWindowForSlot(schedule, slot.key) : null;
+    if (!schedule || !existing) return false;
+    schedule.fundraisingWindows = normalizedFundraisingWindows(schedule).filter((window) => window.id !== existing.id);
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    setNotice(`Removed fundraising window at ${slotLabel(existing.dateKey, existing.startMinutes)}. ${state.scheduleSyncMessage}`);
+    if (closeAfter) closeScheduleModal();
+    return true;
   }
 
   async function savePlaceholderToSelectedSlot(closeAfter = true) {
@@ -5027,6 +5241,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     menu.id = 'schedule-context-menu';
     menu.className = 'schedule-context-menu hidden';
     menu.innerHTML = [
+      '<button type="button" data-action="fundraising-window">Add fundraising window…</button>',
       '<button type="button" data-action="placeholder">Add / edit placeholder…</button>',
       '<button type="button" data-action="copy">Copy block</button>',
       '<button type="button" data-action="paste">Paste copied block here</button>',
@@ -5042,6 +5257,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       hideScheduleContextMenu();
       if (!slot) return;
       state.selectedScheduleSlot = slot;
+      if (action === 'fundraising-window') openScheduleModal(slot);
       if (action === 'placeholder') openScheduleModal(slot);
       if (action === 'copy') copySelectedPlacement(false);
       if (action === 'paste') void pasteClipboardToSelectedSlot(false);
@@ -5068,13 +5284,16 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     state.selectedScheduleSlot = slot;
     const schedule = getActiveSchedule();
     const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
+    const fundraisingWindow = schedule && slot ? fundraisingWindowForSlot(schedule, slot.key) : null;
     const menu = ensureScheduleContextMenu();
+    const fundraisingWindowButton = menu.querySelector('[data-action="fundraising-window"]');
     const placeholderButton = menu.querySelector('[data-action="placeholder"]');
     const copyButton = menu.querySelector('[data-action="copy"]');
     const pasteButton = menu.querySelector('[data-action="paste"]');
     const detailButton = menu.querySelector('[data-action="detail"]');
     const deleteButton = menu.querySelector('[data-action="delete"]');
     const isPlaceholder = isPlaceholderPlacement(placement);
+    if (fundraisingWindowButton) fundraisingWindowButton.textContent = fundraisingWindow ? 'Edit fundraising window…' : 'Add fundraising window…';
     if (placeholderButton) placeholderButton.textContent = isPlaceholder ? 'Edit / match placeholder…' : 'Add placeholder…';
     if (copyButton) copyButton.disabled = !placement;
     if (pasteButton) pasteButton.disabled = !hasScheduleClipboard();
@@ -6402,6 +6621,20 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramPicker?.addEventListener('click', (event) => {
+      const saveWindow = event.target.closest('#schedule-fundraising-window-save-button');
+      if (saveWindow) {
+        event.preventDefault();
+        event.stopPropagation();
+        void saveFundraisingWindowToSelectedSlot(false);
+        return;
+      }
+      const removeWindow = event.target.closest('#schedule-fundraising-window-remove-button');
+      if (removeWindow) {
+        event.preventDefault();
+        event.stopPropagation();
+        void removeFundraisingWindowFromSelectedSlot(false);
+        return;
+      }
       const save = event.target.closest('#schedule-placeholder-save-button');
       if (save) {
         event.preventDefault();
