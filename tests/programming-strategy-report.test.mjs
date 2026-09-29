@@ -175,6 +175,40 @@ test('recommended titles come only from the supplied Program Library', () => {
   strategy.windows.forEach((window) => window.recommendations.forEach((recommendation) => assert.ok(allowed.has(recommendation.title))));
 });
 
+test('Drama Doc recommendation rule allows new titles and current-cycle repeats only', () => {
+  const newDrama = {
+    programId:'new-drama', title:'New Drama Doc', topic:'Drama Doc', score:75, newTitle:true, reviewedNew:true,
+    programmer:{rating:'promising'}, season:{holidayOutOfSeason:false},
+    drama:{isDramaDoc:true,currentCycle:false,olderCycle:true}
+  };
+  const currentRepeat = {
+    programId:'current-repeat', title:'Current Drama Repeat', topic:'Drama Doc', score:82, newTitle:false,
+    programmer:{rating:''}, season:{holidayOutOfSeason:false},
+    drama:{isDramaDoc:true,currentCycle:true,olderCycle:false}
+  };
+  const olderRepeat = {
+    programId:'old-repeat', title:'Old Drama Repeat', topic:'Drama Doc', score:99, newTitle:false,
+    programmer:{rating:''}, season:{holidayOutOfSeason:false},
+    drama:{isDramaDoc:true,currentCycle:false,olderCycle:true}
+  };
+
+  assert.equal(S.dramaDocRecommendationAllowed(newDrama),true);
+  assert.equal(S.dramaDocRecommendationAllowed(currentRepeat),true);
+  assert.equal(S.dramaDocRecommendationAllowed(olderRepeat),false);
+
+  const normalNewA = {
+    programId:'new-a', title:'New A', topic:'Music', score:78, newTitle:true, reviewedNew:true,
+    programmer:{rating:'promising'}, season:{holidayOutOfSeason:false}, drama:{isDramaDoc:false}
+  };
+  const normalNewB = {
+    programId:'new-b', title:'New B', topic:'Music', score:76, newTitle:true, reviewedNew:true,
+    programmer:{rating:'promising'}, season:{holidayOutOfSeason:false}, drama:{isDramaDoc:false}
+  };
+  const selected=S.selectRecommendationsForSlot([olderRepeat,currentRepeat,normalNewA,normalNewB],4);
+  assert.ok(selected.some((item)=>item.programId==='current-repeat'));
+  assert.ok(!selected.some((item)=>item.programId==='old-repeat'));
+});
+
 test('older Drama Docs are penalized relative to current-cycle Drama Docs', () => {
   const oldDoc = baseProgram({ id: 'old', title: 'Old Drama Doc', topic_primary: 'Drama Doc', rights_start: '2024-01-01' });
   const currentDoc = baseProgram({ id: 'current', title: 'Current Drama Doc', topic_primary: 'Drama Doc', rights_start: '2026-09-01' });
@@ -1290,6 +1324,10 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(reportUi,/<h2>Program opportunities<\/h2>/);
   assert.match(reportUi,/\.slice\(0,20\)/);
   assert.match(reportUi,/strategy-opportunity-body/);
+  assert.match(reportUi,/row\.badges\.push\('Recommended'\)/);
+  assert.match(reportUi,/if\(item\.newTitle\)row\.badges\.push\('New'\)/);
+  assert.match(reportUi,/Current cycle/);
+  assert.match(reportUi,/filter\(row=>!row\.drama\?\.isDramaDoc\|\|row\.newTitle\|\|row\.drama\?\.currentCycle===true\)/);
   assert.match(reportUi,/row\.badges\.push\('Repeat'\)/);
   assert.match(reportUi,/row\.badges\.push\('Seasonal'\)/);
   assert.match(reportUi,/row\.badges\.push\('Local \/ U\.P\.'\)/);
