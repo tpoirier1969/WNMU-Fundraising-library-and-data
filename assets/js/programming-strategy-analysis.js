@@ -1269,6 +1269,8 @@ return result;}
   function dramaDocRecommendationAllowed(item = {}) {
     if (!item?.drama?.isDramaDoc) return true;
     if (item.newTitle) return true;
+    const basis = text(item.drama.basis);
+    if (!basis || basis === 'rights-start-fallback' || basis === 'unknown') return false;
     return item.drama.currentCycle === true;
   }
 

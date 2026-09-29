@@ -236,16 +236,28 @@ test('Drama Doc recommendation rule allows new titles and current-cycle repeats 
   const currentRepeat = {
     programId:'current-repeat', title:'Current Drama Repeat', topic:'Drama Doc', score:82, newTitle:false,
     programmer:{rating:''}, season:{holidayOutOfSeason:false},
-    drama:{isDramaDoc:true,currentCycle:true,olderCycle:false}
+    drama:{isDramaDoc:true,currentCycle:true,olderCycle:false,basis:'series-season'}
+  };
+  const explicitCurrentRepeat = {
+    programId:'explicit-current', title:'Explicit Current Drama Repeat', topic:'Drama Doc', score:80, newTitle:false,
+    programmer:{rating:''}, season:{holidayOutOfSeason:false},
+    drama:{isDramaDoc:true,currentCycle:true,olderCycle:false,basis:'explicit'}
+  };
+  const rightsOnlyRepeat = {
+    programId:'rights-only', title:'Recent Rights Only Drama Repeat', topic:'Drama Doc', score:90, newTitle:false,
+    programmer:{rating:''}, season:{holidayOutOfSeason:false},
+    drama:{isDramaDoc:true,currentCycle:true,olderCycle:false,basis:'rights-start-fallback'}
   };
   const olderRepeat = {
     programId:'old-repeat', title:'Old Drama Repeat', topic:'Drama Doc', score:99, newTitle:false,
     programmer:{rating:''}, season:{holidayOutOfSeason:false},
-    drama:{isDramaDoc:true,currentCycle:false,olderCycle:true}
+    drama:{isDramaDoc:true,currentCycle:false,olderCycle:true,basis:'series-season'}
   };
 
   assert.equal(S.dramaDocRecommendationAllowed(newDrama),true);
   assert.equal(S.dramaDocRecommendationAllowed(currentRepeat),true);
+  assert.equal(S.dramaDocRecommendationAllowed(explicitCurrentRepeat),true);
+  assert.equal(S.dramaDocRecommendationAllowed(rightsOnlyRepeat),false);
   assert.equal(S.dramaDocRecommendationAllowed(olderRepeat),false);
 
   const normalNewA = {
@@ -256,9 +268,10 @@ test('Drama Doc recommendation rule allows new titles and current-cycle repeats 
     programId:'new-b', title:'New B', topic:'Music', score:76, newTitle:true, reviewedNew:true,
     programmer:{rating:'promising'}, season:{holidayOutOfSeason:false}, drama:{isDramaDoc:false}
   };
-  const selected=S.selectRecommendationsForSlot([olderRepeat,currentRepeat,normalNewA,normalNewB],4);
+  const selected=S.selectRecommendationsForSlot([olderRepeat,rightsOnlyRepeat,currentRepeat,normalNewA,normalNewB],4);
   assert.ok(selected.some((item)=>item.programId==='current-repeat'));
   assert.ok(!selected.some((item)=>item.programId==='old-repeat'));
+  assert.ok(!selected.some((item)=>item.programId==='rights-only'));
 });
 
 test('older Drama Docs are penalized relative to current-cycle Drama Docs', () => {
@@ -739,7 +752,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.235'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.236'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -747,7 +760,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.235', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.236', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
