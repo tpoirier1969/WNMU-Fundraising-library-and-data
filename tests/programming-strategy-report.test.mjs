@@ -653,7 +653,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.218'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.229'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -661,7 +661,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.218', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.228', 'programming-strategy-backtest\.js\?v=0\.22\.211'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1561,17 +1561,16 @@ test('8:00 vs 9:00 paired comparison excludes 8:30 and 9:30 starts', () => {
   assert.equal(exact.medianHourBRate,300);
 });
 
-test('Day/Time report explains half-hour buckets and shows season plus all-history context without redundant weekday overview', () => {
+test('Day/Time report shows exact half-hour buckets, topic context, and season plus all-history fallback without redundant weekday overview', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi,/30-minute start-time buckets/);
-  assert.match(reportUi,/8:30 PM start is analyzed as 8:30 PM, not folded into 8:00 PM/);
-  assert.match(reportUi,/all fundraiser history/);
-  assert.match(reportUi,/Season-specific evidence is primary/);
-  assert.match(reportUi,/Daily breakdown/);
+  assert.match(reportUi,/Half-hour program-start buckets/);
+  assert.match(reportUi,/strongest topics in that exact bucket/);
+  assert.match(reportUi,/selected pledge season is used when available/);
+  assert.match(reportUi,/all-history context/);
+  assert.match(reportUi,/const dayCards=order\.map/);
   assert.doesNotMatch(reportUi,/General weekday \/ weekend pattern/);
-  assert.match(reportUi,/const rows=observed/);
   assert.doesNotMatch(reportUi,/minStart/);
   assert.doesNotMatch(reportUi,/maxStart/);
   assert.doesNotMatch(enhancements,/8:00 PM vs 9:00 PM cross-check/);
