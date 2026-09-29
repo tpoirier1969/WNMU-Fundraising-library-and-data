@@ -1206,10 +1206,17 @@ function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = 
       if (!topic) return;
       topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
     });
-    const topTopics = [...topicCounts.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    const rankedTopics = [...topicCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const topTopics = rankedTopics
       .slice(0, 4)
       .map(([topic, count]) => ({ topic, count }));
+    if (definition.id === 'sunday-morning') {
+      const drama = rankedTopics.find(([topic]) => S.lookupKey(topic) === 'drama');
+      if (drama && !topTopics.some((item) => S.lookupKey(item.topic) === 'drama')) {
+        topTopics.push({ topic: drama[0], count: drama[1] });
+      }
+    }
 
     const examples = [...bestByStation.values()].slice(0, 4);
     rows.push({
