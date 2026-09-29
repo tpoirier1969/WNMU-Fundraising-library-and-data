@@ -8,7 +8,7 @@ let source = fs.readFileSync(sourcePath, 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const exportMarker = '  App.schedulingUi = {\n';
 assert.ok(source.includes(exportMarker), 'scheduling test export marker must exist');
-source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue, schedulePackageType, scheduleDetailBreakSeconds, scheduleRowSupportsBreakMode };\n\n${exportMarker}`);
+source = source.replace(exportMarker, `  globalThis.__scheduleImportTestHooks = { mergeImportedRowsIntoSchedules, deleteMergedImportedScheduleRecords, confirmImportedScheduleDestructiveRepair, reconcileSchedulePlacementResults, importedTotalsSignature, persistSchedules, scheduleDetailHasBreakInfo, scheduleDetailKeyForPlacement, normalizeBreakMode, defaultBreakModeForMinutes, canonicalScheduleBreakMode, breakModeSourceValue, schedulePackageType, scheduleDetailBreakSeconds, scheduleRowSupportsBreakMode, normalizeFundraisingWindowPriority, normalizedFundraisingWindows, fundraisingWindowForSlot, fundraisingWindowOverlaps };\n\n${exportMarker}`);
 
 const stored = new Map();
 let nextId = 1;
@@ -222,6 +222,37 @@ test('Scheduling autosave serializes full-row Supabase writes so an older placem
   releaseFirst();
   await Promise.all([first, second]);
   assert.equal(JSON.stringify(snapshots), JSON.stringify([['one'], ['one', 'two']]));
+});
+
+test('Fundraising Windows stay separate from scheduled placements and normalize planning intent', () => {
+  resetState();
+  const schedule = targetSchedule([{ id:'program-1', programId:'p1', programTitle:'Program One', dateKey:'2026-08-08', startMinutes:900, endMinutes:960 }]);
+  schedule.fundraisingWindows = [{
+    id:'window-1',
+    dateKey:'2026-08-08',
+    startMinutes:15*60,
+    endMinutes:17*60+30,
+    priority:'prefer',
+    note:'Meeting-approved expansion'
+  }];
+  const windows = hooks.normalizedFundraisingWindows(schedule);
+  assert.equal(windows.length, 1);
+  assert.equal(windows[0].priority, 'prefer');
+  assert.equal(windows[0].note, 'Meeting-approved expansion');
+  assert.equal(schedule.placements.length, 1, 'planning inventory must not become a fake scheduled program');
+  assert.equal(hooks.fundraisingWindowForSlot(schedule, '2026-08-08|930')?.id, 'window-1');
+  assert.equal(hooks.fundraisingWindowForSlot(schedule, '2026-08-08|1080'), null);
+  assert.equal(hooks.normalizeFundraisingWindowPriority('COMMIT'), 'commit');
+  assert.equal(hooks.normalizeFundraisingWindowPriority('nonsense'), 'open');
+});
+
+test('Fundraising Window overlap detection permits adjacent windows but rejects overlapping windows', () => {
+  resetState();
+  const schedule = targetSchedule();
+  schedule.fundraisingWindows = [{ id:'first', dateKey:'2026-08-08', startMinutes:15*60, endMinutes:17*60, priority:'open' }];
+  assert.equal(hooks.fundraisingWindowOverlaps(schedule, { dateKey:'2026-08-08', startMinutes:16*60+30, endMinutes:18*60 }), true);
+  assert.equal(hooks.fundraisingWindowOverlaps(schedule, { dateKey:'2026-08-08', startMinutes:17*60, endMinutes:19*60 }), false);
+  assert.equal(hooks.fundraisingWindowOverlaps(schedule, { dateKey:'2026-08-09', startMinutes:16*60, endMinutes:18*60 }), false);
 });
 
 test('Scheduling break-mode defaults use Web-only only from 5–7 PM', () => {
