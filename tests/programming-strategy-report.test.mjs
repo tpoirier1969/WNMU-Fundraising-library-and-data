@@ -175,6 +175,32 @@ test('recommended titles come only from the supplied Program Library', () => {
   strategy.windows.forEach((window) => window.recommendations.forEach((recommendation) => assert.ok(allowed.has(recommendation.title))));
 });
 
+test('Drama Doc season detection prefers explicit series-season evidence over rights-start recency', () => {
+  const target={startDate:'2026-12-05',endDate:'2026-12-13'};
+  const library=[
+    baseProgram({id:'s4',title:'All Creatures Great and Small: A Season 4 Change',topic_primary:'Drama Doc',program_notes:'Go behind the scenes of Season 4.',rights_start:'2024-08-10',rights_end:'2028-02-17'}),
+    baseProgram({id:'s5',title:'All Creatures Great and Small: Chapter Five',topic_primary:'Drama Doc',program_notes:'Season 5 finds young baby Jimmy...',rights_start:'2025-08-07',rights_end:'2027-09-06'}),
+    baseProgram({id:'s6',title:'All Creatures Great and Small: Chapter Six',topic_primary:'Drama Doc',program_notes:'Go behind the scenes as the cast discuss what happens in Season 6.',rights_start:'2026-08-05',rights_end:'2032-02-18'}),
+    baseProgram({id:'e8',title:'Endeavour: The Evolution',topic_primary:'Drama Doc',program_notes:'In advance of the Season 8 premiere.',rights_start:'2022-02-26',rights_end:'2027-09-30'}),
+    baseProgram({id:'e9',title:'Endeavour: A Countdown to the Final Goodbye',topic_primary:'Drama Doc',program_notes:'Final season, Season 9.',rights_start:'2023-02-25',rights_end:'2027-07-01'})
+  ];
+  const index=S.buildDramaCycleIndex(library,target);
+  const s4=S.dramaInfo(library[0],target,index);
+  const s5=S.dramaInfo(library[1],target,index);
+  const s6=S.dramaInfo(library[2],target,index);
+  const e9=S.dramaInfo(library[4],target,index);
+
+  assert.deepEqual(S.dramaSeasonNumbers(library[1]),[5]);
+  assert.equal(S.dramaSeriesKey(library[2]),'all creatures great and small');
+  assert.equal(s4.currentSeriesSeason,6);
+  assert.equal(s4.currentCycle,false);
+  assert.equal(s5.currentCycle,false);
+  assert.equal(s6.currentCycle,true);
+  assert.equal(s6.basis,'series-season');
+  assert.equal(e9.currentSeriesSeason,9);
+  assert.equal(e9.currentCycle,false,'matching an old season number is not enough when the series itself is no longer current');
+});
+
 test('Drama Doc recommendation rule allows new titles and current-cycle repeats only', () => {
   const newDrama = {
     programId:'new-drama', title:'New Drama Doc', topic:'Drama Doc', score:75, newTitle:true, reviewedNew:true,
