@@ -168,6 +168,118 @@ test('Friday 8–9 PM is protected regular programming, not pledge inventory', (
   assert.equal(strategyBlocked.recommendations.length, 0);
 });
 
+test('scheduler-defined Fundraising Windows replace default planning inventory', () => {
+  const custom = {
+    ...schedule,
+    fundraisingWindows:[{
+      id:'sat-afternoon',
+      dateKey:'2026-12-05',
+      startMinutes:15*60,
+      endMinutes:18*60,
+      priority:'prefer',
+      note:'Explore more pledge hours'
+    }]
+  };
+  const windows = S.planningWindows(custom);
+  assert.equal(windows.length,1);
+  assert.equal(windows[0].userDefined,true);
+  assert.equal(windows[0].sourceWindowId,'sat-afternoon');
+  assert.equal(windows[0].startMinutes,15*60);
+  assert.equal(windows[0].endMinutes,18*60);
+  assert.equal(windows[0].priority,'prefer');
+  assert.equal(windows[0].priorityLabel,'Prefer pledge');
+  assert.equal(windows[0].note,'Explore more pledge hours');
+  assert.ok(!windows.some((entry)=>entry.label==='Prime'),'default evening inventory must not be added after explicit windows exist');
+});
+
+test('Friday Fundraising Windows preserve the protected 8–9 PM regular-programming hour', () => {
+  const custom = {
+    ...schedule,
+    fundraisingWindows:[{
+      id:'fri-window',
+      dateKey:'2026-12-11',
+      startMinutes:19*60,
+      endMinutes:22*60,
+      priority:'commit'
+    }]
+  };
+  const windows = S.planningWindows(custom);
+  assert.equal(windows.length,3);
+  assert.equal(windows[0].startMinutes,19*60);
+  assert.equal(windows[0].endMinutes,20*60);
+  assert.equal(windows[0].blocked,false);
+  assert.equal(windows[1].startMinutes,20*60);
+  assert.equal(windows[1].endMinutes,21*60);
+  assert.equal(windows[1].blocked,true);
+  assert.equal(windows[2].startMinutes,21*60);
+  assert.equal(windows[2].endMinutes,22*60);
+  assert.equal(windows[2].blocked,false);
+});
+
+test('Fundraising Window optimizer can choose multiple strong programs and leave unused time', () => {
+  const result=S.optimizeFundraisingWindowCandidates([
+    {key:'a',startUnit:0,units:2,value:100,score:80,title:'A'},
+    {key:'b',startUnit:2,units:2,value:90,score:78,title:'B'},
+    {key:'c',startUnit:0,units:5,value:150,score:85,title:'C'}
+  ],5);
+  assert.deepEqual(Array.from(result.items,(item)=>item.key),['a','b']);
+  assert.equal(result.usedUnits,4);
+  assert.equal(5-result.usedUnits,1,'one 30-minute unit should remain unused rather than forcing a weaker full-window choice');
+});
+
+test('strategy builds an actual multi-title lineup inside a marked window without forcing full coverage', () => {
+  const custom={
+    ...schedule,
+    fundraisingWindows:[{
+      id:'window',
+      dateKey:'2026-12-05',
+      startMinutes:10*60,
+      endMinutes:12*60+30,
+      priority:'open'
+    }]
+  };
+  const library=[
+    baseProgram({id:'a',title:'Strong New A',topic_primary:'Music',length_bucket_minutes:60}),
+    baseProgram({id:'b',title:'Strong New B',topic_primary:'Music',length_bucket_minutes:60})
+  ];
+  const overrides=[
+    {program_id:'a',rating:'must_air'},
+    {program_id:'b',rating:'must_air'}
+  ];
+  const strategy=S.buildStrategy({schedule:custom,library,evidenceRows:[],overrides,now:new Date('2026-09-29T12:00:00')});
+  const window=strategy.windows.find((entry)=>entry.sourceWindowId==='window');
+  assert.ok(window);
+  assert.equal(window.lineup.length,2);
+  assert.equal(window.recommendedMinutes,120);
+  assert.equal(window.unusedMinutes,30);
+  assert.equal(new Set(window.lineup.map((item)=>item.programId)).size,2);
+  assert.ok(window.lineup.every((item)=>item.plannedStartMinutes>=10*60&&item.plannedEndMinutes<=12*60+30));
+});
+
+test('same-day Fundraising Windows do not recommend the same title twice', () => {
+  const custom={
+    ...schedule,
+    fundraisingWindows:[
+      {id:'first',dateKey:'2026-12-05',startMinutes:10*60,endMinutes:11*60,priority:'open'},
+      {id:'second',dateKey:'2026-12-05',startMinutes:12*60,endMinutes:13*60,priority:'open'}
+    ]
+  };
+  const library=[
+    baseProgram({id:'a',title:'Strong New A',topic_primary:'Music',length_bucket_minutes:60}),
+    baseProgram({id:'b',title:'Strong New B',topic_primary:'Music',length_bucket_minutes:60})
+  ];
+  const overrides=[
+    {program_id:'a',rating:'must_air'},
+    {program_id:'b',rating:'must_air'}
+  ];
+  const strategy=S.buildStrategy({schedule:custom,library,evidenceRows:[],overrides,now:new Date('2026-09-29T12:00:00')});
+  const planned=strategy.windows.filter((entry)=>entry.userDefined&&!entry.blocked);
+  assert.equal(planned.length,2);
+  assert.equal(planned[0].lineup.length,1);
+  assert.equal(planned[1].lineup.length,1);
+  assert.notEqual(planned[0].lineup[0].programId,planned[1].lineup[0].programId);
+});
+
 test('recommended titles come only from the supplied Program Library', () => {
   const library = [baseProgram({ id: 'a', title: 'Library A' }), baseProgram({ id: 'b', title: 'Library B', topic_primary: 'History' })];
   const strategy = S.buildStrategy({ schedule, library, evidenceRows: [row({ programId: 'ghost', title: 'Ghost Result', dollars: 5000 })] });
@@ -770,6 +882,20 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
+});
+
+test('strategy report carries scheduler Fundraising Windows through the worker and renders partial-use plans', () => {
+  const reportUi=fs.readFileSync(new URL('../assets/js/programming-strategy-report.js',import.meta.url),'utf8');
+  const workerUi=fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js',import.meta.url),'utf8');
+  assert.match(reportUi,/schedulePayload\(row\)/);
+  assert.match(reportUi,/fundraisingWindows:Array\.isArray\(saved\.fundraisingWindows\)/);
+  assert.match(reportUi,/slot\.lineup/);
+  assert.match(reportUi,/minutes recommended/);
+  assert.match(reportUi,/Leave .* minutes regular \/ unfilled/);
+  assert.match(reportUi,/No title clears this window/);
+  assert.match(workerUi,/recommendedMinutes: slot\.recommendedMinutes/);
+  assert.match(workerUi,/unusedMinutes: slot\.unusedMinutes/);
+  assert.match(workerUi,/lineup: \(slot\.lineup \|\| \[\]\)/);
 });
 
 test('topic cards show every topic with optional expandable subtopics', () => {
