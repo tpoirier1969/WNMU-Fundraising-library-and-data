@@ -7,12 +7,14 @@ test('Program Library exposes and saves explicit Drama Doc cycle status', () => 
   const shell=fs.readFileSync(new URL('../app-shell.html',import.meta.url),'utf8');
   const core=fs.readFileSync(new URL('../assets/js/core.js',import.meta.url),'utf8');
   const detail=fs.readFileSync(new URL('../assets/js/ui-detail.js',import.meta.url),'utf8');
+  const report=fs.readFileSync(new URL('../assets/js/programming-strategy-report.js',import.meta.url),'utf8');
   assert.match(shell,/name="drama_cycle_status"/);
   assert.match(shell,/Current series \/ season/);
   assert.match(shell,/Older series \/ season/);
   assert.match(core,/'drama_cycle_status'/);
   assert.match(detail,/form\.elements\.drama_cycle_status\.value/);
   assert.match(detail,/drama_cycle_status:\s*utils\.normalizeText\(form\.elements\.drama_cycle_status\.value\)/);
+  assert.match(report,/'rights_start','rights_end','drama_cycle_status','rights_notes'/);
 });
 
 test('explicit Drama cycle beats rights-date inference', () => {
