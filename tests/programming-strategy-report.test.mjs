@@ -1327,7 +1327,8 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(reportUi,/row\.badges\.push\('Recommended'\)/);
   assert.match(reportUi,/if\(item\.newTitle\)row\.badges\.push\('New'\)/);
   assert.match(reportUi,/Current cycle/);
-  assert.match(reportUi,/filter\(row=>!row\.drama\?\.isDramaDoc\|\|row\.newTitle\|\|row\.drama\?\.currentCycle===true\)/);
+  assert.match(reportUi,/const recommended=row\.badges\.includes\('Recommended'\)/);
+  assert.match(reportUi,/return recommended&&\(row\.newTitle\|\|row\.drama\?\.currentCycle===true\)/);
   assert.match(reportUi,/row\.badges\.push\('Repeat'\)/);
   assert.match(reportUi,/row\.badges\.push\('Seasonal'\)/);
   assert.match(reportUi,/row\.badges\.push\('Local \/ U\.P\.'\)/);
