@@ -437,6 +437,23 @@
     const isDramaDoc = lookupKey(programTopic(program)) === 'drama doc';
     if (!isDramaDoc) return { isDramaDoc:false,currentCycle:false,olderCycle:false,cycleUnknown:false };
 
+    const explicitCycle = text(first(
+      program.drama_cycle_status,
+      program.dramaCycleStatus,
+      program.drama_cycle,
+      ''
+    )).toLowerCase();
+    if (explicitCycle === 'current' || explicitCycle === 'older') {
+      return {
+        isDramaDoc:true,
+        currentCycle:explicitCycle === 'current',
+        olderCycle:explicitCycle === 'older',
+        cycleUnknown:false,
+        basis:'explicit',
+        explicitCycle
+      };
+    }
+
     const seriesKey = dramaSeriesKey(program);
     const seasons = dramaSeasonNumbers(program);
     const ownSeason = seasons.length ? Math.max(...seasons) : null;
