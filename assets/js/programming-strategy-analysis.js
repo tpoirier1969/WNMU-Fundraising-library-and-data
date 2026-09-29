@@ -635,7 +635,126 @@
     return days;
   }
 
+  function planningPriority(value = '') {
+    const raw = text(value).toLowerCase();
+    return ['open', 'prefer', 'commit'].includes(raw) ? raw : 'open';
+  }
+
+  function planningPriorityLabel(value = '') {
+    const priority = planningPriority(value);
+    if (priority === 'commit') return 'Commit to pledge';
+    if (priority === 'prefer') return 'Prefer pledge';
+    return 'Open to pledge';
+  }
+
+  function planningPriorityThreshold(value = '') {
+    const priority = planningPriority(value);
+    if (priority === 'commit') return 48;
+    if (priority === 'prefer') return 56;
+    return 60;
+  }
+
+  function userFundraisingWindows(schedule = {}) {
+    const source = Array.isArray(schedule?.fundraisingWindows)
+      ? schedule.fundraisingWindows
+      : (Array.isArray(schedule?.fundraising_windows) ? schedule.fundraising_windows : []);
+    const startKey = dateKey(scheduleStart(schedule));
+    const endKey = dateKey(scheduleEnd(schedule));
+    return source.map((window, index) => {
+      const date = text(first(window.dateKey, window.date_key, ''));
+      const startMinutes = number(first(window.startMinutes, window.start_minutes), NaN);
+      const endMinutes = number(first(window.endMinutes, window.end_minutes), NaN);
+      return {
+        id: text(window.id) || `fundraising-window-${index + 1}`,
+        date,
+        startMinutes,
+        endMinutes,
+        priority: planningPriority(first(window.priority, window.intent, 'open')),
+        note: text(first(window.note, window.notes, ''))
+      };
+    }).filter((window) =>
+      window.date
+      && Number.isFinite(window.startMinutes)
+      && Number.isFinite(window.endMinutes)
+      && window.endMinutes > window.startMinutes
+      && window.startMinutes >= 0
+      && window.endMinutes <= 1440
+      && (!startKey || window.date >= startKey)
+      && (!endKey || window.date <= endKey)
+    ).sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes);
+  }
+
+  function customPlanningWindows(schedule = {}) {
+    const targetStart = parseDate(scheduleStart(schedule));
+    const webOnlyExperiment = seasonForDate(scheduleStart(schedule)) === 'December' && targetStart?.getFullYear() === 2026;
+    const result = [];
+    const makeSegment = (window, startMinutes, endMinutes, suffix = '') => {
+      const date = parseDate(window.date);
+      if (!date || endMinutes <= startMinutes) return;
+      const day = date.getDay();
+      const entirelyWebOnly = webOnlyExperiment && startMinutes >= 17 * 60 && endMinutes <= 19 * 60;
+      result.push({
+        id: `${window.id}${suffix}`,
+        sourceWindowId: window.id,
+        date: window.date,
+        weekday: date.toLocaleDateString('en-US', { weekday: 'long' }),
+        weekpart: day === 6 ? 'Saturday' : day === 0 ? 'Sunday' : 'Weekday',
+        label: 'Fundraising window',
+        startMinutes,
+        endMinutes,
+        priority: window.priority,
+        priorityLabel: planningPriorityLabel(window.priority),
+        note: window.note,
+        userDefined: true,
+        confidenceClass: entirelyWebOnly ? 'experimental' : 'normal',
+        experimental: entirelyWebOnly,
+        webOnlyExperimental: entirelyWebOnly,
+        fundraisingMode: entirelyWebOnly ? 'web-only' : 'staffed',
+        blocked: false
+      });
+    };
+
+    userFundraisingWindows(schedule).forEach((window) => {
+      const date = parseDate(window.date);
+      const friday = date?.getDay() === 5;
+      const protectedStart = 20 * 60;
+      const protectedEnd = 21 * 60;
+      const overlapsProtected = friday
+        && Math.max(window.startMinutes, protectedStart) < Math.min(window.endMinutes, protectedEnd);
+      if (!overlapsProtected) {
+        makeSegment(window, window.startMinutes, window.endMinutes);
+        return;
+      }
+
+      makeSegment(window, window.startMinutes, Math.min(window.endMinutes, protectedStart), '-before-protected');
+      result.push({
+        id: `${window.id}-protected`,
+        sourceWindowId: window.id,
+        date: window.date,
+        weekday: 'Friday',
+        weekpart: 'Weekday',
+        label: 'Protected regular programming',
+        startMinutes: Math.max(window.startMinutes, protectedStart),
+        endMinutes: Math.min(window.endMinutes, protectedEnd),
+        priority: window.priority,
+        priorityLabel: planningPriorityLabel(window.priority),
+        note: window.note,
+        userDefined: true,
+        confidenceClass: 'blocked',
+        experimental: false,
+        webOnlyExperimental: false,
+        fundraisingMode: 'staffed',
+        blocked: true
+      });
+      makeSegment(window, Math.max(window.startMinutes, protectedEnd), window.endMinutes, '-after-protected');
+    });
+    return result.sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes || Number(a.blocked) - Number(b.blocked));
+  }
+
   function planningWindows(schedule = {}) {
+    const custom = customPlanningWindows(schedule);
+    if (custom.length) return custom;
+
     const windows = [];
     const experimentalDates = new Set();
     dateRange(schedule).forEach((date) => {
@@ -1402,6 +1521,134 @@ return result;}
     });
   }
 
+  function programScheduleMinutes(program = {}) {
+    const bucket = number(first(program.length_bucket_minutes, program.lengthBucketMinutes, program.scheduled_minutes, program.schedule_minutes), 0);
+    const raw = bucket > 0 ? bucket : programRuntimeMinutes(program);
+    if (!(raw > 0)) return 60;
+    return Math.max(30, Math.ceil(raw / 30) * 30);
+  }
+
+  function optimizeFundraisingWindowCandidates(candidates = [], capacityUnits = 0) {
+    const capacity = Math.max(0, Math.trunc(Number(capacityUnits) || 0));
+    if (!capacity) return { items: [], usedUnits: 0, value: 0 };
+    const byStart = new Map();
+    (candidates || []).forEach((candidate) => {
+      const startUnit = Math.max(0, Math.trunc(Number(candidate.startUnit) || 0));
+      if (startUnit >= capacity || !(Number(candidate.units) > 0) || startUnit + Number(candidate.units) > capacity) return;
+      if (!byStart.has(startUnit)) byStart.set(startUnit, []);
+      byStart.get(startUnit).push(candidate);
+    });
+    byStart.forEach((rows) => rows.sort((a, b) => Number(b.value || 0) - Number(a.value || 0) || Number(b.score || 0) - Number(a.score || 0)));
+
+    const states = Array.from({ length: capacity + 1 }, () => []);
+    states[0].push({ value: 0, usedUnits: 0, items: [], keys: new Set() });
+    const addState = (unit, state) => {
+      const rows = states[unit];
+      const signature = [...state.keys].sort().join('|') + '::' + state.items.map((item) => `${item.startUnit}:${item.key}`).join(',');
+      if (rows.some((entry) => entry.signature === signature)) return;
+      rows.push({ ...state, signature });
+      rows.sort((a, b) => b.value - a.value || b.usedUnits - a.usedUnits || b.items.length - a.items.length);
+      if (rows.length > 36) rows.length = 36;
+    };
+
+    for (let unit = 0; unit < capacity; unit += 1) {
+      const currentStates = [...states[unit]];
+      currentStates.forEach((state) => {
+        addState(unit + 1, { value: state.value, usedUnits: state.usedUnits, items: state.items, keys: new Set(state.keys) });
+        (byStart.get(unit) || []).slice(0, 10).forEach((candidate) => {
+          if (state.keys.has(candidate.key)) return;
+          const nextUnit = unit + Number(candidate.units);
+          if (nextUnit > capacity) return;
+          const keys = new Set(state.keys);
+          keys.add(candidate.key);
+          addState(nextUnit, {
+            value: state.value + Number(candidate.value || 0),
+            usedUnits: state.usedUnits + Number(candidate.units),
+            items: [...state.items, candidate],
+            keys
+          });
+        });
+      });
+    }
+
+    const finalists = states.flat();
+    finalists.sort((a, b) => b.value - a.value || b.usedUnits - a.usedUnits || b.items.length - a.items.length);
+    const best = finalists[0] || { value: 0, usedUnits: 0, items: [] };
+    return { items: best.items || [], usedUnits: best.usedUnits || 0, value: best.value || 0 };
+  }
+
+  function buildFundraisingWindowLineup(ranked = [], slot = {}, context = {}) {
+    if (!slot.userDefined || slot.blocked) return { items: [], usedMinutes: 0, unusedMinutes: Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0)), threshold: null };
+    const windowMinutes = Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0));
+    const capacityUnits = Math.floor(windowMinutes / 30);
+    const threshold = planningPriorityThreshold(slot.priority);
+    if (!capacityUnits) return { items: [], usedMinutes: 0, unusedMinutes: windowMinutes, threshold };
+
+    const broadPool = (ranked || []).filter((item) =>
+      item?.program
+      && dramaDocRecommendationAllowed(item)
+      && !['low_confidence', 'dont_air'].includes(item.programmer?.rating)
+      && !item.season?.holidayOutOfSeason
+    ).slice(0, 60);
+    const candidates = [];
+
+    for (let startUnit = 0; startUnit < capacityUnits; startUnit += 1) {
+      const plannedStart = Number(slot.startMinutes) + (startUnit * 30);
+      const exactSlot = {
+        ...slot,
+        id: `${slot.id}-start-${plannedStart}`,
+        label: 'Fundraising window start',
+        startMinutes: plannedStart,
+        endMinutes: plannedStart + 30
+      };
+      const exact = broadPool.map((base) => scoreProgramForSlot(base.program, exactSlot, context))
+        .filter((item) =>
+          item
+          && dramaDocRecommendationAllowed(item)
+          && !['low_confidence', 'dont_air'].includes(item.programmer?.rating)
+          && !item.season?.holidayOutOfSeason
+          && Number(item.score) >= threshold
+        )
+        .sort((a, b) => Number(b.score || 0) - Number(a.score || 0) || Number(b.evidenceCount || 0) - Number(a.evidenceCount || 0))
+        .slice(0, 10);
+
+      exact.forEach((item) => {
+        const scheduleMinutes = programScheduleMinutes(item.program);
+        const units = Math.max(1, Math.ceil(scheduleMinutes / 30));
+        if (startUnit + units > capacityUnits) return;
+        const key = text(item.programId || lookupKey(item.title));
+        if (!key) return;
+        const value = Math.max(1, Number(item.score || 0) - 40) * units
+          + (item.newTitle ? 2 : 0)
+          + (item.reviewedNew ? 2 : 0);
+        candidates.push({
+          startUnit,
+          units,
+          key,
+          score: Number(item.score || 0),
+          value,
+          item,
+          scheduleMinutes
+        });
+      });
+    }
+
+    const optimized = optimizeFundraisingWindowCandidates(candidates, capacityUnits);
+    const items = (optimized.items || []).map((candidate) => ({
+      ...candidate.item,
+      plannedStartMinutes: Number(slot.startMinutes) + (candidate.startUnit * 30),
+      plannedEndMinutes: Number(slot.startMinutes) + ((candidate.startUnit + candidate.units) * 30),
+      scheduleMinutes: candidate.units * 30
+    })).sort((a, b) => a.plannedStartMinutes - b.plannedStartMinutes || Number(b.score || 0) - Number(a.score || 0));
+    const usedMinutes = (optimized.usedUnits || 0) * 30;
+    return {
+      items,
+      usedMinutes,
+      unusedMinutes: Math.max(0, windowMinutes - usedMinutes),
+      threshold
+    };
+  }
+
   function topicChoicesForSlot(ranked = []) {
     const seen = new Set();
     const choices = [];
@@ -1757,7 +2004,8 @@ return result;}
     });
 
     const windows = rankedWindows.map(({ slot, ranked }) => {
-      if (slot.blocked) return { ...slot, recommendations: [], strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
+      const requestedMinutes = Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0));
+      if (slot.blocked) return { ...slot, recommendations: [], lineup: [], recommendedMinutes: 0, unusedMinutes: requestedMinutes, recommendationThreshold: null, strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
       const topics = topicChoicesForSlot(ranked);
       const slotEvidence = seasonFundraiserCount >= 2
         ? cachedSeasonSlotEvidence(slot, context)
@@ -1766,10 +2014,21 @@ return result;}
       const experimentalRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
       const recommendations = slot.webOnlyExperimental
         ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 8)
-        : selectRecommendationsForSlot(ranked, 4);
+        : selectRecommendationsForSlot(ranked, slot.userDefined ? 8 : 4);
+      const lineupPool = slot.webOnlyExperimental
+        ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 60)
+        : ranked;
+      const lineupPlan = slot.userDefined
+        ? buildFundraisingWindowLineup(lineupPool, slot, context)
+        : { items: [], usedMinutes: 0, unusedMinutes: 0, threshold: null };
       return {
         ...slot,
         recommendations,
+        lineup: lineupPlan.items,
+        recommendedMinutes: lineupPlan.usedMinutes,
+        unusedMinutes: lineupPlan.unusedMinutes,
+        recommendationThreshold: lineupPlan.threshold,
+        requestedMinutes,
         windowHistory: slotEvidence.exactSummary,
         strongestTopics: topics.slice(0, 3),
         alternativeTopics: topics.slice(3, 6),
@@ -1895,7 +2154,15 @@ return result;}
     median,
     mean,
     fundraiserKey,
+    planningPriority,
+    planningPriorityLabel,
+    planningPriorityThreshold,
+    userFundraisingWindows,
+    customPlanningWindows,
     planningWindows,
+    programScheduleMinutes,
+    optimizeFundraisingWindowCandidates,
+    buildFundraisingWindowLineup,
     rowsForProgram,
     rowSummary,
     comparableRows,
