@@ -310,6 +310,7 @@
     if (moneyTotal > 0) score += 1000000 + Math.min(999999, Math.round(moneyTotal));
     if (!scheduleLooksAutoImported(schedule)) score += 100000;
     if ((schedule?.placements || []).some((placement) => !placement?.importedFromReport)) score += 50000;
+    if (normalizedFundraisingWindows(schedule).length) score += 40000;
     if ((schedule?.placements || []).some((placement) => placement?.importedFromReport)) score += 10000;
     if (schedule?.meta?.importedTotalsHydratedFromAirings) score += 5000;
     const updated = Date.parse(schedule?.updatedAt || schedule?.updated_at || schedule?.createdAt || '');
@@ -349,6 +350,7 @@
       schedule?.title || 'Untitled fundraiser',
       dateRange,
       `${utils.formatCount(placementCount)} scheduled block${placementCount === 1 ? '' : 's'}`,
+      `${utils.formatCount(normalizedFundraisingWindows(schedule).length)} fundraising window${normalizedFundraisingWindows(schedule).length === 1 ? '' : 's'}`,
       moneyLines,
       '',
       'This does NOT delete imported pledge report rows, but it DOES remove this fundraiser calendar from the app.',
@@ -1496,9 +1498,10 @@
 
   function scheduleHasManualOrUserContent(schedule = {}) {
     if (scheduleManualMoneyTotal(schedule) > 0) return true;
+    if (normalizedFundraisingWindows(schedule).length) return true;
     return (Array.isArray(schedule?.placements) ? schedule.placements : []).some((placement) => {
       if (placement?.importedFromReport) return false;
-      // Non-pledge/internal markers are user-authored schedule content; do not auto-delete a calendar holding them.
+      // Non-pledge/internal markers and Fundraising Windows are user-authored schedule content; do not auto-delete a calendar holding them.
       return true;
     });
   }
