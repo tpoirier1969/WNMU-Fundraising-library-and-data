@@ -193,3 +193,49 @@ test('slot-level backtest gives scheduling credit only when the title airs insid
   assert.equal(result.summary.testedRecommendations, 2);
   assert.equal(result.summary.windowTestedRecommendations, 1);
 });
+
+test('topic/time backtest reproduces date-specific fundraiser-plan signals and scores only actual tests', () => {
+  const matrix = {
+    season:'December',
+    fallback:false,
+    rows:[
+      {
+        weekday:'Monday',weekdayIndex:1,daypart:'Prime',daypartId:'prime',startMinutes:19*60,endMinutes:22*60+30,
+        positionBreakdown:[{occurrence:1,localTopics:[
+          {topic:'Music',averageRate:400,fundraiserSamples:3,titleCount:3},
+          {topic:'History',averageRate:350,fundraiserSamples:1,titleCount:3}
+        ]}]
+      },
+      {
+        weekday:'Tuesday',weekdayIndex:2,daypart:'Prime',daypartId:'prime',startMinutes:19*60,endMinutes:22*60+30,
+        positionBreakdown:[{occurrence:1,localTopics:[
+          {topic:'Health',averageRate:300,fundraiserSamples:3,titleCount:2}
+        ]}]
+      }
+    ]
+  };
+  const rows = [
+    { programId:'m1', title:'Music Winner', topic:'Music', dateKey:'2025-12-01', startMinutes:19*60, minutes:60, dollars:300, known:true, countsTowardScheduleMinutes:true },
+    { programId:'h1', title:'History Context', topic:'History', dateKey:'2025-12-01', startMinutes:20*60, minutes:60, dollars:100, known:true, countsTowardScheduleMinutes:true },
+    { programId:'d1', title:'Tuesday Documentary', topic:'Documentary', dateKey:'2025-12-02', startMinutes:19*60, minutes:60, dollars:200, known:true, countsTowardScheduleMinutes:true }
+  ];
+
+  const signals = B.topicTimeSignals(matrix, schedule, 5);
+  assert.equal(signals.length,2);
+  assert.equal(signals[0].topic,'Music');
+  assert.ok(!signals.some((item)=>item.topic==='History'),'thin one-fundraiser topic signal should not qualify');
+
+  const result = B.evaluateTopicTime({ matrix, actualRows:rows, schedule, signalLimitPerDay:5 });
+  assert.equal(result.summary.signals,2);
+  assert.equal(result.summary.testedSignals,1);
+  assert.equal(result.summary.aboveMedianHits,1);
+  assert.equal(result.summary.topQuartileHits,1);
+  assert.equal(result.summary.comparableWindowTests,1);
+  assert.equal(result.summary.topInWindowHits,1);
+  const music = result.signalResults.find((item)=>item.topic==='Music');
+  const health = result.signalResults.find((item)=>item.topic==='Health');
+  assert.equal(music.actualRate,300);
+  assert.equal(music.actualTopicRank,1);
+  assert.equal(health.tested,false);
+});
+
