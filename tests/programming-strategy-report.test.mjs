@@ -174,8 +174,8 @@ test('scheduler-defined Fundraising Windows replace default planning inventory',
     fundraisingWindows:[{
       id:'sat-afternoon',
       dateKey:'2026-12-05',
-      startMinutes:15*60,
-      endMinutes:18*60,
+      startMinutes:10*60,
+      endMinutes:13*60,
       priority:'prefer',
       note:'Explore more pledge hours'
     }]
@@ -184,12 +184,34 @@ test('scheduler-defined Fundraising Windows replace default planning inventory',
   assert.equal(windows.length,1);
   assert.equal(windows[0].userDefined,true);
   assert.equal(windows[0].sourceWindowId,'sat-afternoon');
-  assert.equal(windows[0].startMinutes,15*60);
-  assert.equal(windows[0].endMinutes,18*60);
+  assert.equal(windows[0].startMinutes,10*60);
+  assert.equal(windows[0].endMinutes,13*60);
   assert.equal(windows[0].priority,'prefer');
   assert.equal(windows[0].priorityLabel,'Prefer pledge');
   assert.equal(windows[0].note,'Explore more pledge hours');
   assert.ok(!windows.some((entry)=>entry.label==='Prime'),'default evening inventory must not be added after explicit windows exist');
+});
+
+test('December 2026 Fundraising Windows split the 5–7 PM Web-only experiment from staffed inventory', () => {
+  const custom={
+    ...schedule,
+    fundraisingWindows:[{
+      id:'mixed-window',
+      dateKey:'2026-12-05',
+      startMinutes:16*60,
+      endMinutes:20*60,
+      priority:'prefer'
+    }]
+  };
+  const windows=S.planningWindows(custom);
+  assert.deepEqual(Array.from(windows,(entry)=>[entry.startMinutes,entry.endMinutes,entry.fundraisingMode]),[
+    [16*60,17*60,'staffed'],
+    [17*60,19*60,'web-only'],
+    [19*60,20*60,'staffed']
+  ]);
+  assert.equal(windows[1].webOnlyExperimental,true);
+  assert.equal(windows[0].webOnlyExperimental,false);
+  assert.equal(windows[2].webOnlyExperimental,false);
 });
 
 test('Friday Fundraising Windows preserve the protected 8–9 PM regular-programming hour', () => {
