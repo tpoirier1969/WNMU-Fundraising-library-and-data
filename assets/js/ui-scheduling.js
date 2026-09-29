@@ -187,6 +187,32 @@
     if (mode === BREAK_MODES.PHONES_STAFFED) return 'Phones staffed';
     return '';
   }
+  const PLEDGE_BREAK_PACKAGE_TYPES = new Set(['PE','HDPE','PEL','PE/PEL','PHDPE','PR']);
+
+  function schedulePackageType(row = {}) {
+    return utils.normalizeText(utils.firstNonEmpty(row?.package_type, row?.packageType, row?.package, '')).toUpperCase();
+  }
+
+  function scheduleDetailBreakSeconds(detail = {}) {
+    return normalizeScheduledTimingRows(detail?.timings || [])
+      .reduce((sum, entry) => sum + (Number.isFinite(entry.breakSeconds) ? Math.max(0, entry.breakSeconds) : 0), 0);
+  }
+
+  function scheduleRowSupportsBreakMode(row = {}, detail = null) {
+    if (!row || row?.__external_source_name) return false;
+    if (PLEDGE_BREAK_PACKAGE_TYPES.has(schedulePackageType(row))) return true;
+    return scheduleDetailBreakSeconds(detail || {}) >= 900;
+  }
+
+  async function resolveScheduleRowSupportsBreakMode(row = {}) {
+    if (scheduleRowSupportsBreakMode(row)) return true;
+    const detailKey = scheduleRowLookupId(row);
+    if (!detailKey || !state.client) return false;
+    await ensureScheduledDetailsBatch([detailKey]);
+    const cache = state.scheduleDetailCache?.[detailKey];
+    return scheduleRowSupportsBreakMode(row, cache?.detail || null);
+  }
+
 
   function defaultBreakModeForMinutes(startMinutes = 0) {
     const minutes = ((Number(startMinutes || 0) % 1440) + 1440) % 1440;
@@ -4478,10 +4504,21 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (els.scheduleBreakModeSelect) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
       const nonPledge = Boolean(currentPlacement?.isNonPledge);
+      const currentRow = (!placeholder && !nonPledge && currentPlacement) ? scheduleProgramRowForPlacement(currentPlacement) : null;
+      const detailKey = currentPlacement ? scheduleDetailKeyForPlacement(currentPlacement) : '';
+      const detailCache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
       const explicitMode = (placeholder || nonPledge) ? '' : calendarPlacementBreakMode(schedule, currentPlacement || {});
+      const currentSupportsMode = explicitMode
+        ? true
+        : (currentRow ? scheduleRowSupportsBreakMode(currentRow, detailCache?.detail || null) : true);
       const mode = explicitMode || defaultBreakModeForMinutes(slot.minutes);
       els.scheduleBreakModeSelect.value = (placeholder || nonPledge) ? BREAK_MODES.PHONES_STAFFED : mode;
-      els.scheduleBreakModeSelect.disabled = !editable || placeholder || nonPledge;
+      els.scheduleBreakModeSelect.disabled = !editable || placeholder || nonPledge || Boolean(currentPlacement && !currentSupportsMode);
+      if (currentPlacement && currentRow && !explicitMode && !detailCache?.loaded && !detailCache?.loading) {
+        void ensureScheduledDetailsBatch([detailKey]).then(() => {
+          if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
+        });
+      }
     }
     if (els.schedulePastePlacementButton) els.schedulePastePlacementButton.disabled = !editable || !hasScheduleClipboard();
     if (els.scheduleAssignmentNote) {
@@ -4736,12 +4773,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       || canonicalScheduleBreakMode(existing || {})
       || defaultMode;
     const existingExplicitMode = canonicalScheduleBreakMode(existing || {});
-    const effectiveMode = isNonPledge ? '' : selectedMode;
-    const breakModeSource = isNonPledge
-      ? ''
-      : (existingExplicitMode
+    const supportsBreakMode = !isNonPledge && (existingExplicitMode
+      ? true
+      : await resolveScheduleRowSupportsBreakMode(row));
+    const effectiveMode = supportsBreakMode ? selectedMode : '';
+    const breakModeSource = supportsBreakMode
+      ? (existingExplicitMode
         ? (breakModeSourceValue(existing) || 'manual')
-        : (selectedMode === defaultMode ? 'default' : 'manual'));
+        : (selectedMode === defaultMode ? 'default' : 'manual'))
+      : '';
     const base = {
       id: existing?.id || utils.makeId('place'),
       programId: scheduleRowLookupId(row),
@@ -4786,6 +4826,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (!schedule || !slot) return;
     const target = findPlacementForSlot(schedule, slot.key);
     if (!target || isPlaceholderPlacement(target) || target.isNonPledge) return;
+    const row = scheduleProgramRowForPlacement(target);
+    if (!row || !(await resolveScheduleRowSupportsBreakMode(row))) return;
     const mode = normalizeBreakMode(els.scheduleBreakModeSelect?.value) || defaultBreakModeForMinutes(target.startMinutes);
     target.breakMode = mode;
     target.breakModeSource = 'manual';
