@@ -688,65 +688,55 @@
     const targetStart = parseDate(scheduleStart(schedule));
     const webOnlyExperiment = seasonForDate(scheduleStart(schedule)) === 'December' && targetStart?.getFullYear() === 2026;
     const result = [];
-    const makeSegment = (window, startMinutes, endMinutes, suffix = '') => {
+    const makeSegment = (window, startMinutes, endMinutes, suffix = '', blocked = false) => {
       const date = parseDate(window.date);
       if (!date || endMinutes <= startMinutes) return;
       const day = date.getDay();
-      const entirelyWebOnly = webOnlyExperiment && startMinutes >= 17 * 60 && endMinutes <= 19 * 60;
+      const entirelyWebOnly = !blocked && webOnlyExperiment && startMinutes >= 17 * 60 && endMinutes <= 19 * 60;
       result.push({
         id: `${window.id}${suffix}`,
         sourceWindowId: window.id,
         date: window.date,
         weekday: date.toLocaleDateString('en-US', { weekday: 'long' }),
         weekpart: day === 6 ? 'Saturday' : day === 0 ? 'Sunday' : 'Weekday',
-        label: 'Fundraising window',
+        label: blocked ? 'Protected regular programming' : 'Fundraising window',
         startMinutes,
         endMinutes,
         priority: window.priority,
         priorityLabel: planningPriorityLabel(window.priority),
         note: window.note,
         userDefined: true,
-        confidenceClass: entirelyWebOnly ? 'experimental' : 'normal',
+        confidenceClass: blocked ? 'blocked' : (entirelyWebOnly ? 'experimental' : 'normal'),
         experimental: entirelyWebOnly,
         webOnlyExperimental: entirelyWebOnly,
         fundraisingMode: entirelyWebOnly ? 'web-only' : 'staffed',
-        blocked: false
+        blocked
       });
     };
 
     userFundraisingWindows(schedule).forEach((window) => {
       const date = parseDate(window.date);
-      const friday = date?.getDay() === 5;
-      const protectedStart = 20 * 60;
-      const protectedEnd = 21 * 60;
-      const overlapsProtected = friday
-        && Math.max(window.startMinutes, protectedStart) < Math.min(window.endMinutes, protectedEnd);
-      if (!overlapsProtected) {
-        makeSegment(window, window.startMinutes, window.endMinutes);
-        return;
+      if (!date) return;
+      const cuts = new Set([window.startMinutes, window.endMinutes]);
+      if (webOnlyExperiment) {
+        [17 * 60, 19 * 60].forEach((boundary) => {
+          if (boundary > window.startMinutes && boundary < window.endMinutes) cuts.add(boundary);
+        });
       }
-
-      makeSegment(window, window.startMinutes, Math.min(window.endMinutes, protectedStart), '-before-protected');
-      result.push({
-        id: `${window.id}-protected`,
-        sourceWindowId: window.id,
-        date: window.date,
-        weekday: 'Friday',
-        weekpart: 'Weekday',
-        label: 'Protected regular programming',
-        startMinutes: Math.max(window.startMinutes, protectedStart),
-        endMinutes: Math.min(window.endMinutes, protectedEnd),
-        priority: window.priority,
-        priorityLabel: planningPriorityLabel(window.priority),
-        note: window.note,
-        userDefined: true,
-        confidenceClass: 'blocked',
-        experimental: false,
-        webOnlyExperimental: false,
-        fundraisingMode: 'staffed',
-        blocked: true
-      });
-      makeSegment(window, Math.max(window.startMinutes, protectedEnd), window.endMinutes, '-after-protected');
+      if (date.getDay() === 5) {
+        [20 * 60, 21 * 60].forEach((boundary) => {
+          if (boundary > window.startMinutes && boundary < window.endMinutes) cuts.add(boundary);
+        });
+      }
+      const points = [...cuts].sort((a, b) => a - b);
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const segmentStart = points[index];
+        const segmentEnd = points[index + 1];
+        const blocked = date.getDay() === 5
+          && segmentStart >= 20 * 60
+          && segmentEnd <= 21 * 60;
+        makeSegment(window, segmentStart, segmentEnd, `-segment-${index + 1}`, blocked);
+      }
     });
     return result.sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes || Number(a.blocked) - Number(b.blocked));
   }
