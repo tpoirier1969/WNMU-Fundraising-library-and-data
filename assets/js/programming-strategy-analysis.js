@@ -1355,6 +1355,7 @@ score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.
 score+=programmer.adjustment;adjustments.push(['programmer',programmer.adjustment]);if(programmer.rating){reasons.push(`Programmer rating: ${programmer.label} (${programmer.adjustment>=0?'+':''}${programmer.adjustment}).`);if(programmer.rating==='low_confidence')cautions.push('Programmer rating is Low confidence; cap recommendation posture accordingly.');if(programmer.rating==='dont_air')cautions.push("Programmer rating says Don't air; strong negative input, not a rights exclusion.");}
 const newTitle=titleHistory.rows===0;
 const reviewedNew=newTitle&&['neutral','viable','promising','must_air'].includes(programmer.rating);
+if(drama.isDramaDoc&&newTitle){score+=8;adjustments.push(['newDramaDoc',8]);reasons.push('New / unaired Drama Doc receives first-run priority.');}
 if(reviewedNew){
   const a=5;
   score+=a;
