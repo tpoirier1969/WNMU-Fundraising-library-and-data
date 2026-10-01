@@ -34,7 +34,7 @@ window.PledgeLib = window.PledgeLib || {};
       'topic_secondary',
       'rights_start',
       'rights_end',
-      'drama_cycle_status',
+      'drama_cycle_status',\n      'companion_program_status',
       'package_type',
       'source_format',
       'rights_notes',
