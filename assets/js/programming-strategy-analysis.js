@@ -1581,6 +1581,9 @@ return result;}
           date: dateKey(slot.date),
           score: Number(item.score || 0),
           evidenceCount: Number(item.evidenceCount || 0),
+          experimental: Boolean(slot.experimental),
+          webOnlyExperimental: Boolean(slot.webOnlyExperimental),
+          newTitle: Boolean(item.newTitle),
           title: item.title || key
         });
       });
@@ -1618,16 +1621,25 @@ return result;}
           String(a.date || '').localeCompare(String(b.date || ''))
         );
       const selected = [];
-      const primary = choose(rows, 0);
+      const staffedRows = rows.filter((row) => !row.experimental);
+      // Normal titles should not spend their only automated appearances on an
+      // exploratory window merely because that window happens to score a few
+      // points higher. Give the main staffed plan first claim. Titles that are
+      // eligible only in an experiment (for example a dated companion) still
+      // allocate normally because staffedRows is empty.
+      const primaryPool = staffedRows.length ? staffedRows : rows;
+      const primary = choose(primaryPool, 0);
       if (primary) selected.push(primary);
 
       if (cap > 1 && primary) {
         const secondFloor = Math.max(40, Number(primary.score || 0) - 6);
-        const secondPool = rows.filter((row) =>
+        const eligibleSeconds = rows.filter((row) =>
           row.slotKey !== primary.slotKey &&
           row.date !== primary.date &&
           Number(row.score || 0) >= secondFloor
         );
+        const staffedSeconds = eligibleSeconds.filter((row) => !row.experimental);
+        const secondPool = staffedSeconds.length ? staffedSeconds : eligibleSeconds;
         const wellSpaced = secondPool.filter((row) => {
           const gap = absoluteDayGap(primary.date, row.date);
           return gap == null || gap >= 2;
