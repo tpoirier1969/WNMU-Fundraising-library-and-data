@@ -753,7 +753,10 @@
 
   function planningWindows(schedule = {}) {
     const custom = customPlanningWindows(schedule);
-    if (custom.length) return custom;
+    const windowDriven = custom.length > 0
+      || schedule?.meta?.fundraisingWindowPlanning === true
+      || schedule?.fundraisingWindowPlanning === true;
+    if (windowDriven) return custom;
 
     const windows = [];
     const experimentalDates = new Set();

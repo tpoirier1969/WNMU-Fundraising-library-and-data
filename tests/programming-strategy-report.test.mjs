@@ -192,6 +192,32 @@ test('scheduler-defined Fundraising Windows replace default planning inventory',
   assert.ok(!windows.some((entry)=>entry.label==='Prime'),'default evening inventory must not be added after explicit windows exist');
 });
 
+test('window-driven strategy never invents pledge time outside the saved Fundraising Windows', () => {
+  const custom = {
+    ...schedule,
+    startDate:'2026-11-27',
+    endDate:'2026-12-07',
+    fundraisingWindows:[{
+      id:'only-window',
+      dateKey:'2026-12-01',
+      startMinutes:19*60,
+      endMinutes:21*60,
+      priority:'open'
+    }],
+    meta:{fundraisingWindowPlanning:true}
+  };
+  const windows=S.planningWindows(custom);
+  assert.ok(windows.length>0);
+  assert.ok(windows.every((entry)=>entry.date==='2026-12-01'));
+  assert.ok(windows.every((entry)=>entry.startMinutes>=19*60&&entry.endMinutes<=21*60));
+  assert.ok(!windows.some((entry)=>entry.date==='2026-11-27'),'Friday Nov. 27 was not marked as a Fundraising Window and must not receive invented pledge inventory');
+});
+
+test('window-driven strategy with zero saved windows returns no pledge inventory instead of legacy defaults', () => {
+  const custom={...schedule,fundraisingWindows:[],meta:{fundraisingWindowPlanning:true}};
+  assert.deepEqual(Array.from(S.planningWindows(custom)),[]);
+});
+
 test('December 2026 Fundraising Windows split the 5–7 PM Web-only experiment from staffed inventory', () => {
   const custom={
     ...schedule,
@@ -965,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.249'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.251'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -973,7 +999,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.249', 'programming-strategy-backtest\.js\?v=0\.22\.249'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.251', 'programming-strategy-backtest\.js\?v=0\.22\.251'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -985,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.250/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.251/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });

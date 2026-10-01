@@ -1498,6 +1498,7 @@
 
   function scheduleHasManualOrUserContent(schedule = {}) {
     if (scheduleManualMoneyTotal(schedule) > 0) return true;
+    if (schedule?.meta?.fundraisingWindowPlanning === true) return true;
     if (normalizedFundraisingWindows(schedule).length) return true;
     return (Array.isArray(schedule?.placements) ? schedule.placements : []).some((placement) => {
       if (placement?.importedFromReport) return false;
@@ -4874,6 +4875,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     schedule.fundraisingWindows = normalizedFundraisingWindows(schedule).filter((window) => window.id !== candidate.id);
     schedule.fundraisingWindows.push(candidate);
     schedule.fundraisingWindows.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes);
+    schedule.meta = { ...(schedule.meta || {}), fundraisingWindowPlanning: true };
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
@@ -4889,6 +4891,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const existing = schedule && slot ? fundraisingWindowForSlot(schedule, slot.key) : null;
     if (!schedule || !existing) return false;
     schedule.fundraisingWindows = normalizedFundraisingWindows(schedule).filter((window) => window.id !== existing.id);
+    schedule.meta = { ...(schedule.meta || {}), fundraisingWindowPlanning: true };
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
