@@ -1547,6 +1547,106 @@ return result;}
     });
   }
 
+  const MAX_AUTOMATED_TITLE_APPEARANCES = 2;
+
+  function planningSlotKey(slot = {}) {
+    return text(slot.id) || `${dateKey(slot.date)}|${number(slot.startMinutes, -1)}|${number(slot.endMinutes, -1)}|${text(slot.label)}`;
+  }
+
+  function absoluteDayGap(a, b) {
+    const firstDate = parseDate(a);
+    const secondDate = parseDate(b);
+    if (!firstDate || !secondDate) return null;
+    return Math.abs(Math.round((secondDate.getTime() - firstDate.getTime()) / DAY_MS));
+  }
+
+  function buildFundraiserTitleAssignments(rankedWindows = [], maxAppearances = MAX_AUTOMATED_TITLE_APPEARANCES) {
+    const cap = Math.max(1, Math.trunc(Number(maxAppearances) || MAX_AUTOMATED_TITLE_APPEARANCES));
+    const byProgram = new Map();
+
+    (rankedWindows || []).forEach(({ slot, ranked }) => {
+      if (!slot || slot.blocked) return;
+      const slotKey = planningSlotKey(slot);
+      (ranked || []).forEach((item) => {
+        if (!item || !recommendationAllowed(item, slot)) return;
+        if (['low_confidence', 'dont_air'].includes(item.programmer?.rating)) return;
+        if (item.season?.holidayOutOfSeason) return;
+        if (Number(item.score || 0) < 40) return;
+        const key = text(item.programId || lookupKey(item.title));
+        if (!key) return;
+        if (!byProgram.has(key)) byProgram.set(key, []);
+        byProgram.get(key).push({
+          key,
+          slotKey,
+          date: dateKey(slot.date),
+          score: Number(item.score || 0),
+          evidenceCount: Number(item.evidenceCount || 0),
+          title: item.title || key
+        });
+      });
+    });
+
+    const slotLoad = new Map();
+    const assignments = new Map();
+    const programs = [...byProgram.entries()]
+      .map(([key, rows]) => ({
+        key,
+        rows,
+        bestScore: Math.max(...rows.map((row) => Number(row.score || 0)))
+      }))
+      .sort((a, b) => b.bestScore - a.bestScore || a.key.localeCompare(b.key));
+
+    const loadFor = (slotKey) => Number(slotLoad.get(slotKey) || 0);
+    const choose = (rows = [], tolerance = 0) => {
+      if (!rows.length) return null;
+      const bestScore = Math.max(...rows.map((row) => Number(row.score || 0)));
+      return rows
+        .filter((row) => Number(row.score || 0) >= bestScore - tolerance)
+        .sort((a, b) =>
+          loadFor(a.slotKey) - loadFor(b.slotKey) ||
+          Number(b.score || 0) - Number(a.score || 0) ||
+          Number(b.evidenceCount || 0) - Number(a.evidenceCount || 0) ||
+          String(a.date || '').localeCompare(String(b.date || ''))
+        )[0] || null;
+    };
+
+    for (const program of programs) {
+      const rows = [...program.rows]
+        .sort((a, b) =>
+          Number(b.score || 0) - Number(a.score || 0) ||
+          Number(b.evidenceCount || 0) - Number(a.evidenceCount || 0) ||
+          String(a.date || '').localeCompare(String(b.date || ''))
+        );
+      const selected = [];
+      const primary = choose(rows, 0);
+      if (primary) selected.push(primary);
+
+      if (cap > 1 && primary) {
+        const secondFloor = Math.max(40, Number(primary.score || 0) - 6);
+        const secondPool = rows.filter((row) =>
+          row.slotKey !== primary.slotKey &&
+          row.date !== primary.date &&
+          Number(row.score || 0) >= secondFloor
+        );
+        const wellSpaced = secondPool.filter((row) => {
+          const gap = absoluteDayGap(primary.date, row.date);
+          return gap == null || gap >= 2;
+        });
+        const secondary = choose(wellSpaced.length ? wellSpaced : secondPool, 2);
+        if (secondary) selected.push(secondary);
+      }
+
+      const slotKeys = new Set();
+      selected.slice(0, cap).forEach((row) => {
+        slotKeys.add(row.slotKey);
+        slotLoad.set(row.slotKey, loadFor(row.slotKey) + 1);
+      });
+      if (slotKeys.size) assignments.set(program.key, slotKeys);
+    }
+
+    return assignments;
+  }
+
   function programScheduleMinutes(program = {}) {
     const bucket = number(first(program.length_bucket_minutes, program.lengthBucketMinutes, program.scheduled_minutes, program.schedule_minutes), 0);
     const raw = bucket > 0 ? bucket : programRuntimeMinutes(program);
@@ -2030,6 +2130,7 @@ return result;}
       });
     });
 
+    const fundraiserTitleAssignments = buildFundraiserTitleAssignments(rankedWindows);
     const lineupUsedByDate = new Map();
     const windows = rankedWindows.map(({ slot, ranked }) => {
       const requestedMinutes = Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0));
@@ -2040,12 +2141,18 @@ return result;}
         : cachedSlotEvidence(slot, context);
       const exactRows = slotEvidence.exactRows;
       const experimentalRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
+      const slotKey = planningSlotKey(slot);
+      const allocatedRanked = ranked.filter((item) => {
+        const key = text(item?.programId || lookupKey(item?.title || ''));
+        const assigned = fundraiserTitleAssignments.get(key);
+        return Boolean(assigned && assigned.has(slotKey));
+      });
       const recommendations = slot.webOnlyExperimental
-        ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 8)
-        : selectRecommendationsForSlot(ranked, slot.userDefined ? 8 : 4, slot);
+        ? selectWebOnlyRecommendationsForSlot(allocatedRanked, staffedBestByProgram, slot, 8)
+        : selectRecommendationsForSlot(allocatedRanked, slot.userDefined ? 8 : 4, slot);
       const lineupPool = slot.webOnlyExperimental
-        ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 60)
-        : ranked;
+        ? selectWebOnlyRecommendationsForSlot(allocatedRanked, staffedBestByProgram, slot, 60)
+        : allocatedRanked;
       const usedKeys = lineupUsedByDate.get(slot.date) || new Set();
       const lineupPlan = slot.userDefined
         ? buildFundraisingWindowLineup(lineupPool, slot, context, usedKeys)
@@ -2126,6 +2233,7 @@ return result;}
       eligibleTitles: viable.length,
       baselineRate,
       windows,
+      titleAppearanceCap: MAX_AUTOMATED_TITLE_APPEARANCES,
       mix: mixFromSlots(windows),
       topicComparison: topicComparison(library, windows, context),
       repeats: repeatCandidates(windows),
@@ -2143,6 +2251,7 @@ return result;}
         'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
         'Drama Doc repeat eligibility uses series/season references found in title or program notes when available; rights-start recency is only the fallback when the pledge record does not identify a season.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
+        'The automated Fundraiser Plan allocates titles across the entire drive before rendering individual days. A title can appear at most twice, and repeat use is reserved for its strongest distinct-date opportunities rather than simply the first chronological windows.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
         'The avoid/rest list is limited to discretionary pledge titles: fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
         'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
@@ -2209,6 +2318,8 @@ return result;}
     rankProgramsForSlot,
     selectRecommendationsForSlot,
     selectWebOnlyRecommendationsForSlot,
+    planningSlotKey,
+    buildFundraiserTitleAssignments,
     dramaDocRecommendationAllowed,
     recommendationAllowed,
     dramaSeasonNumbers,
