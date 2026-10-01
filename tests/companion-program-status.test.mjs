@@ -8,7 +8,7 @@ test('Program Library exposes and saves companion program status', () => {
   const core=fs.readFileSync(new URL('../assets/js/core.js',import.meta.url),'utf8');
   const detail=fs.readFileSync(new URL('../assets/js/ui-detail.js',import.meta.url),'utf8');
   const report=fs.readFileSync(new URL('../assets/js/programming-strategy-report.js',import.meta.url),'utf8');
-  const migration=fs.readFileSync(new URL('../13_add_companion_program_status_v0.22.240.sql',import.meta.url),'utf8');
+  const migration=fs.readFileSync(new URL('../13_add_companion_program_status_v0.22.245.sql',import.meta.url),'utf8');
 
   assert.match(shell,/name="companion_program_status"/);
   assert.match(shell,/Current companion/);
