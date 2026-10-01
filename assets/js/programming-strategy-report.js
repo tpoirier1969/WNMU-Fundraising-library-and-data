@@ -728,12 +728,13 @@ function programOpportunitiesSection(strategy={}){
   const ensure=(item)=>{
     const key=keyFor(item);
     if(!key)return null;
-    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,drama:null});
+    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,drama:null,companionStatus:'',webOnlyRecommended:false});
     const row=byKey.get(key);
     if(!row.title&&item.title)row.title=item.title;
     if(!row.topic&&item.topic)row.topic=item.topic;
     if(item.newTitle===true)row.newTitle=true;
     if(item.drama)row.drama=item.drama;
+    if(item.companionStatus)row.companionStatus=item.companionStatus;
     if(Number.isFinite(Number(item.score)))row.score=Math.max(Number.isFinite(row.score)?row.score:-Infinity,Number(item.score));
     return row;
   };
@@ -742,7 +743,12 @@ function programOpportunitiesSection(strategy={}){
     (slot.recommendations||[]).forEach(item=>{
       const row=ensure(item); if(!row)return;
       row.badges.push('Recommended');
+      if(slot.webOnlyExperimental)row.webOnlyRecommended=true;
       if(item.newTitle)row.badges.push('New');
+      if(item.companionStatus==='dated'){
+        row.badges.push('Dated companion');
+        if(slot.webOnlyExperimental)row.badges.push('5–7 test only');
+      }
       if(item.drama?.isDramaDoc&&!item.newTitle&&item.drama?.currentCycle)row.badges.push('Current cycle');
       if(item.fit)row.notes.push(item.fit);
     });
@@ -767,8 +773,9 @@ function programOpportunitiesSection(strategy={}){
   const rows=[...byKey.values()]
     .map(row=>({...row,badges:[...new Set(row.badges)],notes:[...new Set(row.notes)]}))
     .filter(row=>{
-      if(!row.drama?.isDramaDoc)return true;
       const recommended=row.badges.includes('Recommended');
+      if(row.companionStatus==='dated')return recommended&&row.webOnlyRecommended;
+      if(!row.drama?.isDramaDoc)return true;
       return recommended&&(row.newTitle||row.drama?.currentCycle===true);
     })
     .sort((a,b)=>{
