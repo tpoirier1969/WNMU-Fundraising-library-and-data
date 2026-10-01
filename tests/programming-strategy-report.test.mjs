@@ -886,7 +886,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.241'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.242'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -894,7 +894,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.241', 'programming-strategy-backtest\.js\?v=0\.22\.241'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.242', 'programming-strategy-backtest\.js\?v=0\.22\.242'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -2169,4 +2169,61 @@ test('long-rest former performers are not put in Avoid solely for lifetime expos
 test('strategy report runtime parses after fundraising-window template changes', () => {
   const reportUi=fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url),'utf8');
   assert.doesNotThrow(()=>new vm.Script(reportUi,{filename:'programming-strategy-report.js'}));
+});
+
+
+test('historical backtest ignores present-day explicit Drama Doc cycle overrides', () => {
+  const workerContext = { console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl };
+  workerContext.globalThis = workerContext;
+  workerContext.self = workerContext;
+  workerContext.performance = { now: () => 0 };
+  workerContext.importScripts = () => {};
+  const messages = [];
+  workerContext.postMessage = (message) => messages.push(message);
+  workerContext.WNMUOneSheetAnalysis = context.WNMUOneSheetAnalysis;
+  workerContext.WNMUProgrammingStrategyAnalysis = S;
+  workerContext.WNMUStrategyBacktest = context.WNMUStrategyBacktest;
+  vm.runInNewContext(workerSource.replaceAll('0.22.241','0.22.242'), workerContext, { filename:'programming-strategy-worker.js' });
+
+  const target={id:'aug24-cycle',title:'August 2024',startDate:'2024-08-30',endDate:'2024-09-09'};
+  const seasonFour=baseProgram({
+    id:'season-four',
+    title:'All Creatures Great and Small: A Season 4 Change',
+    topic_primary:'Drama Doc',
+    program_notes:'Behind the scenes of Season 4.',
+    rights_start:'2024-08-10',
+    rights_end:'2028-02-17',
+    drama_cycle_status:'older'
+  });
+  const seasonSix=baseProgram({
+    id:'season-six',
+    title:'All Creatures Great and Small: Chapter Six',
+    topic_primary:'Drama Doc',
+    program_notes:'Behind the scenes of Season 6.',
+    rights_start:'2026-08-05',
+    rights_end:'2032-02-18',
+    drama_cycle_status:'current'
+  });
+
+  workerContext.onmessage({data:{
+    requestId:991,
+    mode:'backtest',
+    schedule:target,
+    library:[seasonFour,seasonSix],
+    airings:[],
+    scheduleRows:[],
+    overrides:[],
+    peerObservations:[],
+    peerScheduleContexts:[],
+    now:'2026-10-01T12:00:00Z'
+  }});
+
+  const result=messages.find((message)=>message.type==='result');
+  assert.ok(result);
+  const recommendation=(result.strategy.windows||[])
+    .flatMap((slot)=>slot.recommendations||[])
+    .find((item)=>item.title==='All Creatures Great and Small: A Season 4 Change');
+  assert.ok(recommendation,'Season 4 should be inferred from the 2024 target date rather than blocked by today\'s older override');
+  assert.equal(recommendation.drama?.basis,'series-season');
+  assert.equal(recommendation.drama?.currentCycle,true);
 });
