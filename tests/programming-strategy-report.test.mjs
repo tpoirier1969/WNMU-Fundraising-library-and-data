@@ -981,6 +981,11 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(workerUi, /peerObservations/);
 
   assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
+  assert.match(page, /version\.json\?_=/);
+  assert.match(page, /cache:'no-store'/);
+  assert.match(page, /searchParams\.get\('v'\)/);
+  assert.match(page, /window\.location\.replace/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.250/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -1654,7 +1659,8 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(reportUi,/active experiments already placed in this Fundraiser Plan/);
   assert.doesNotMatch(reportUi,/<h3>Promotion<\/h3>/);
   assert.match(reportUi,/function promotionExamplesSection/);
-  assert.match(reportUi,/Fundraiser promotion ideas already worth discussing/);
+  assert.match(reportUi,/Fundraiser promotion ideas worth discussing/);
+  assert.doesNotMatch(reportUi,/Fundraiser promotion ideas already worth discussing/);
   assert.match(reportUi,/strategy-section-card strategy-promotion-card/);
 
   assert.match(reportUi,/function fundraiserPlanSection/);
