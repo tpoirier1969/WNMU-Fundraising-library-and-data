@@ -2173,17 +2173,7 @@ test('strategy report runtime parses after fundraising-window template changes',
 
 
 test('historical backtest ignores present-day explicit Drama Doc cycle overrides', () => {
-  const workerContext = { console, Date, Map, Set, Math, Number, String, Object, Array, RegExp, Intl };
-  workerContext.globalThis = workerContext;
-  workerContext.self = workerContext;
-  workerContext.performance = { now: () => 0 };
-  workerContext.importScripts = () => {};
-  const messages = [];
-  workerContext.postMessage = (message) => messages.push(message);
-  workerContext.WNMUOneSheetAnalysis = context.WNMUOneSheetAnalysis;
-  workerContext.WNMUProgrammingStrategyAnalysis = S;
-  workerContext.WNMUStrategyBacktest = context.WNMUStrategyBacktest;
-  vm.runInNewContext(workerSource.replaceAll('0.22.241','0.22.242'), workerContext, { filename:'programming-strategy-worker.js' });
+  const { workerContext, workerMessages: messages } = makeWorkerHarness();
 
   const target={id:'aug24-cycle',title:'August 2024',startDate:'2024-08-30',endDate:'2024-09-09'};
   const seasonFour=baseProgram({
