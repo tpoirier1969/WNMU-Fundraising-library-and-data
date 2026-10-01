@@ -6,12 +6,12 @@
   const PROGRAM_FIELD_ORDER = [
     'title', 'nola_code', 'program_id', 'id', 'topic_primary', 'topic_secondary', 'distributor', 'package_type',
     'source_format', 'length_bucket_minutes', 'actual_runtime_seconds', 'actual_runtime_minutes', 'runtime_minutes',
-    'rights_start', 'rights_end', 'drama_cycle_status', 'rights_notes', 'premium_summary', 'program_notes', 'status', 'library_state',
+    'rights_start', 'rights_end', 'drama_cycle_status', 'companion_program_status', 'rights_notes', 'premium_summary', 'program_notes', 'status', 'library_state',
     'aired_on_13_1', 'aired_on_13_3', 'last_aired_at', 'last_aired', 'total_contributions', 'avg_contribution_per_drive'
   ];
   const CORE_EDIT_FIELD_SET = new Set([
     'title', 'nola_code', 'distributor', 'length_bucket_minutes', 'actual_runtime_seconds', 'actual_runtime_minutes', 'runtime_minutes',
-    'topic_primary', 'topic_secondary', 'rights_start', 'rights_end', 'drama_cycle_status', 'package_type', 'source_format', 'rights_notes',
+    'topic_primary', 'topic_secondary', 'rights_start', 'rights_end', 'drama_cycle_status', 'companion_program_status', 'package_type', 'source_format', 'rights_notes',
     'premium_summary', 'program_notes'
   ]);
   const NON_EDITABLE_FIELD_PATTERN = /^(?:id|program_id|source_row_number|created_at|updated_at|created_by|updated_by|row_hash)$/i;
@@ -2036,7 +2036,7 @@
     renderDetailTopicSelectors({ primaryValue: derive.topicPrimary(source), secondaryValue: derive.topicSecondary(source), preserveSecondary: true });
     form.elements.rights_start.value = utils.formatCompactDateInput(derive.rightsBegin(source));
     form.elements.rights_end.value = utils.formatCompactDateInput(derive.rightsEnd(source));
-    form.elements.drama_cycle_status.value = utils.normalizeText(source.drama_cycle_status);
+    form.elements.drama_cycle_status.value = utils.normalizeText(source.drama_cycle_status);\n    form.elements.companion_program_status.value = utils.normalizeText(source.companion_program_status);
     form.elements.package_type.value = utils.normalizeText(source.package_type);
     ensureSelectOption(form.elements.source_format, utils.normalizeText(source.source_format));
     form.elements.rights_notes.value = utils.normalizeText(source.rights_notes);
@@ -2299,7 +2299,7 @@
       topic_secondary: selectedTopicValue(form.elements.topic_secondary, form.elements.topic_secondary_new) || null,
       rights_start: null,
       rights_end: null,
-      drama_cycle_status: utils.normalizeText(form.elements.drama_cycle_status.value) || null,
+      drama_cycle_status: utils.normalizeText(form.elements.drama_cycle_status.value) || null,\n      companion_program_status: utils.normalizeText(form.elements.companion_program_status.value) || null,
       package_type: utils.normalizeText(form.elements.package_type.value) || null,
       source_format: utils.normalizeText(form.elements.source_format.value) || null,
       rights_notes: utils.normalizeText(form.elements.rights_notes.value) || null,
