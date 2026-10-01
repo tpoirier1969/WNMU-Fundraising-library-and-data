@@ -224,6 +224,12 @@ test('Scheduling autosave serializes full-row Supabase writes so an older placem
   assert.equal(JSON.stringify(snapshots), JSON.stringify([['one'], ['one', 'two']]));
 });
 
+test('Supabase schedule persistence reads and writes Fundraising Windows', () => {
+  const dataSource=fs.readFileSync(new URL('../assets/js/data.js',import.meta.url),'utf8');
+  assert.match(dataSource,/fundraisingWindows:\s*Array\.isArray\(row\.schedule_data\?\.fundraisingWindows\)/);
+  assert.match(dataSource,/fundraisingWindows:\s*Array\.isArray\(schedule\.fundraisingWindows\)/);
+});
+
 test('Fundraising Windows stay separate from scheduled placements and normalize planning intent', () => {
   resetState();
   const schedule = targetSchedule([{ id:'program-1', programId:'p1', programTitle:'Program One', dateKey:'2026-08-08', startMinutes:900, endMinutes:960 }]);
@@ -244,6 +250,14 @@ test('Fundraising Windows stay separate from scheduled placements and normalize 
   assert.equal(hooks.fundraisingWindowForSlot(schedule, '2026-08-08|1080'), null);
   assert.equal(hooks.normalizeFundraisingWindowPriority('COMMIT'), 'commit');
   assert.equal(hooks.normalizeFundraisingWindowPriority('nonsense'), 'open');
+});
+
+test('an explicitly window-driven schedule remains user-authored even after its last Fundraising Window is removed', () => {
+  resetState();
+  const schedule=targetSchedule();
+  schedule.fundraisingWindows=[];
+  schedule.meta={fundraisingWindowPlanning:true};
+  assert.equal(hooks.scheduleHasManualOrUserContent(schedule),true);
 });
 
 test('Fundraising Windows count as user-authored schedule content for import safety', () => {
