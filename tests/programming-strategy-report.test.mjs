@@ -893,7 +893,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.243'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.244'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -901,7 +901,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.243', 'programming-strategy-backtest\.js\?v=0\.22\.243'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.244', 'programming-strategy-backtest\.js\?v=0\.22\.244'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -2240,4 +2240,29 @@ test('blank-cycle Drama Doc with recent rights cannot be treated as a current-cy
   assert.equal(info.cycleUnknown,true);
   assert.equal(info.basis,'rights-start-only');
   assert.equal(info.recentRightsStart,true);
+});
+
+
+test('new Drama Docs receive first-run priority without requiring a current-cycle repeat classification', () => {
+  const slot=S.planningWindows(schedule).find((entry)=>entry.label==='Prime');
+  const newDrama=baseProgram({
+    id:'new-drama-priority',
+    title:'Brand New Drama Special',
+    topic_primary:'Drama Doc',
+    rights_start:'2026-09-01',
+    rights_end:'2028-12-31'
+  });
+  const scored=S.scoreProgramForSlot(newDrama,slot,{
+    schedule,
+    evidenceRows:[],
+    overrideByProgramId:new Map(),
+    baselineRate:null
+  });
+  const newDramaAdjustment=scored.adjustments.find(([name])=>name==='newDramaDoc')?.[1];
+  assert.equal(scored.newTitle,true);
+  assert.equal(scored.drama.currentCycle,false);
+  assert.equal(scored.drama.cycleUnknown,true);
+  assert.equal(newDramaAdjustment,8);
+  assert.ok(scored.reasons.some((reason)=>/New \/ unaired Drama Doc receives first-run priority/.test(reason)));
+  assert.equal(S.dramaDocRecommendationAllowed(scored),true);
 });
