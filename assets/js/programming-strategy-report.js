@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
-const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],peerObservations:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
+const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],peerObservations:[],peerScheduleContexts:[],selectedScheduleId:'',analysisReady:false,worker:null,workerReject:null,workerTimer:null,requestId:0,dataLoadMs:0};
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function parseDate(value){const raw=String(value??'').trim();if(!raw)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){const[y,m,d]=raw.split('-').map(Number);const out=new Date(y,m-1,d);return Number.isNaN(out.getTime())?null:out;}const out=new Date(raw);return Number.isNaN(out.getTime())?null:out;}
 function dateKey(value){const d=value instanceof Date?value:parseDate(value);return d&&!Number.isNaN(d.getTime())?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';}
@@ -94,16 +94,19 @@ async function loadAnalysisData(){
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
-  const[airings,library,overrides,peerObservations]=await Promise.all([
+  const peerContextSelect='id,station_code,station_name,context_period_start,context_period_end,day_of_week,start_time_minutes,end_time_minutes,schedule_label,schedule_pattern,representative_programs,source_kind,source_reference,source_summary,evidence_strength,notes';
+  const[airings,library,overrides,peerObservations,peerScheduleContexts]=await Promise.all([
     fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
     fetchAll('pledge_program_editorial_overrides',overrideSelect,{orders:['program_id']}),
-    fetchOptional('pledge_peer_evidence_observations',peerSelect,{orders:['id']})
+    fetchOptional('pledge_peer_evidence_observations',peerSelect,{orders:['id']}),
+    fetchOptional('pledge_peer_schedule_context',peerContextSelect,{orders:['id']})
   ]);
   state.airings=airings;
   state.library=library;
   state.overrides=overrides;
   state.peerObservations=peerObservations;
+  state.peerScheduleContexts=peerScheduleContexts;
   state.analysisReady=true;
   state.dataLoadMs=Math.round((globalThis.performance?.now?.()??Date.now())-started);
   status(`Strategy data loaded in ${(state.dataLoadMs/1000).toFixed(1)}s. Building report…`);
@@ -700,10 +703,24 @@ function peerPracticesCompactSection(rows=[]){
   const html=rows.map(item=>{
     const topics=(item.topTopics||[]).map(x=>x.topic).filter(Boolean);
     const topicLine=topics.length?'<p><b>Observed peer topics:</b> '+esc(topics.join(', '))+'</p>':'';
-    const examples=(item.examples||[]).slice(0,2).map(example=>'<small><b>'+esc(example.station||'Other station')+'</b>'+ (example.programTitle?' · '+esc(example.programTitle):'') +(example.summary?' · '+esc(example.summary):'')+'</small>').join('');
-    return '<article><header><strong>'+esc(item.label||'Peer practice')+'</strong><span>'+Number(item.stationCount||0)+' station'+(Number(item.stationCount||0)===1?'':'s')+'</span></header>'+topicLine+'<p>'+esc(item.testIdea||item.wnmuStatus||'Worth a bounded WNMU test.')+'</p>'+examples+'</article>';
+    const stationCount=Number(item.stationCount||0);
+    const contextCount=Number(item.contextStationCount||0);
+    const contextStatus=contextCount
+      ?'<p class="strategy-peer-context-status"><b>Normal-slot context:</b> verified for '+contextCount+' of '+stationCount+' peer station'+(stationCount===1?'':'s')+'. Context is explanatory only and does not change the peer evidence score.</p>'
+      :'<p class="strategy-peer-context-status"><b>Normal-slot context:</b> not yet verified for these peer stations. Treat the tactic as a bounded experiment, not as proof that WNMU has the same audience in that slot.</p>';
+    const examples=(item.examples||[]).slice(0,2).map(example=>{
+      const contexts=(example.scheduleContexts||[]).slice(0,2).map(context=>{
+        const period=context.periodStart&&context.periodEnd
+          ?fmt(context.periodStart)+'–'+fmt(context.periodEnd)
+          :(context.periodStart?fmt(context.periodStart):'historical schedule');
+        const summary=context.sourceSummary||([context.dayOfWeek,context.scheduleLabel].filter(Boolean).join(' · '));
+        return '<small class="strategy-peer-schedule-context"><b>Normal-slot context · '+esc(period)+':</b> '+esc(summary||'Historical schedule context is available.')+'</small>';
+      }).join('');
+      return '<small><b>'+esc(example.station||'Other station')+'</b>'+ (example.programTitle?' · '+esc(example.programTitle):'') +(example.summary?' · '+esc(example.summary):'')+'</small>'+contexts;
+    }).join('');
+    return '<article><header><strong>'+esc(item.label||'Peer practice')+'</strong><span>'+stationCount+' station'+(stationCount===1?'':'s')+'</span></header>'+topicLine+'<p>'+esc(item.testIdea||item.wnmuStatus||'Worth a bounded WNMU test.')+'</p>'+contextStatus+examples+'</article>';
   }).join('');
-  return '<section class="sheet-section strategy-peer-practices-compact"><div class="strategy-section-head"><div><h2>Peer practices worth testing</h2><p>Positive practices reported by other public-TV stations. Topic labels are retained so a signal such as Sunday-morning Drama does not disappear into a generic daypart label.</p></div></div><div class="strategy-peer-compact-grid">'+html+'</div></section>';
+  return '<section class="sheet-section strategy-peer-practices-compact"><div class="strategy-section-head"><div><h2>Peer practices worth testing</h2><p>Positive practices reported by other public-TV stations. Where available, dated normal-schedule context shows whether the peer station had already built a different audience or programming habit in that slot.</p></div></div><div class="strategy-peer-compact-grid">'+html+'</div></section>';
 }
 function programOpportunitiesSection(strategy={}){
   const byKey=new Map();
@@ -791,7 +808,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.240');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.241');
     }catch(error){
       reject(error);
       return;
@@ -845,6 +862,7 @@ function runStrategyWorker(schedule){
         overrides:state.overrides,
         scheduleRows:state.scheduleRows,
         peerObservations:state.peerObservations,
+        peerScheduleContexts:state.peerScheduleContexts,
         now:new Date().toISOString()
       });
     }catch(error){
