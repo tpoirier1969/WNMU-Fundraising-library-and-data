@@ -2036,7 +2036,8 @@
     renderDetailTopicSelectors({ primaryValue: derive.topicPrimary(source), secondaryValue: derive.topicSecondary(source), preserveSecondary: true });
     form.elements.rights_start.value = utils.formatCompactDateInput(derive.rightsBegin(source));
     form.elements.rights_end.value = utils.formatCompactDateInput(derive.rightsEnd(source));
-    form.elements.drama_cycle_status.value = utils.normalizeText(source.drama_cycle_status);\n    form.elements.companion_program_status.value = utils.normalizeText(source.companion_program_status);
+    form.elements.drama_cycle_status.value = utils.normalizeText(source.drama_cycle_status);
+    form.elements.companion_program_status.value = utils.normalizeText(source.companion_program_status);
     form.elements.package_type.value = utils.normalizeText(source.package_type);
     ensureSelectOption(form.elements.source_format, utils.normalizeText(source.source_format));
     form.elements.rights_notes.value = utils.normalizeText(source.rights_notes);
@@ -2299,7 +2300,8 @@
       topic_secondary: selectedTopicValue(form.elements.topic_secondary, form.elements.topic_secondary_new) || null,
       rights_start: null,
       rights_end: null,
-      drama_cycle_status: utils.normalizeText(form.elements.drama_cycle_status.value) || null,\n      companion_program_status: utils.normalizeText(form.elements.companion_program_status.value) || null,
+      drama_cycle_status: utils.normalizeText(form.elements.drama_cycle_status.value) || null,
+      companion_program_status: utils.normalizeText(form.elements.companion_program_status.value) || null,
       package_type: utils.normalizeText(form.elements.package_type.value) || null,
       source_format: utils.normalizeText(form.elements.source_format.value) || null,
       rights_notes: utils.normalizeText(form.elements.rights_notes.value) || null,
