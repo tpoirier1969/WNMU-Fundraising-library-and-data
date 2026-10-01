@@ -380,7 +380,7 @@ test('Drama Doc recommendation rule allows new titles and current-cycle repeats 
   const rightsOnlyRepeat = {
     programId:'rights-only', title:'Recent Rights Only Drama Repeat', topic:'Drama Doc', score:90, newTitle:false,
     programmer:{rating:''}, season:{holidayOutOfSeason:false},
-    drama:{isDramaDoc:true,currentCycle:true,olderCycle:false,basis:'rights-start-fallback'}
+    drama:{isDramaDoc:true,currentCycle:false,olderCycle:false,cycleUnknown:true,basis:'rights-start-only',recentRightsStart:true}
   };
   const olderRepeat = {
     programId:'old-repeat', title:'Old Drama Repeat', topic:'Drama Doc', score:99, newTitle:false,
@@ -408,13 +408,20 @@ test('Drama Doc recommendation rule allows new titles and current-cycle repeats 
   assert.ok(!selected.some((item)=>item.programId==='rights-only'));
 });
 
-test('older Drama Docs are penalized relative to current-cycle Drama Docs', () => {
-  const oldDoc = baseProgram({ id: 'old', title: 'Old Drama Doc', topic_primary: 'Drama Doc', rights_start: '2024-01-01' });
-  const currentDoc = baseProgram({ id: 'current', title: 'Current Drama Doc', topic_primary: 'Drama Doc', rights_start: '2026-09-01' });
+test('rights-start timing alone leaves Drama Doc cycle unknown while explicit current outranks explicit older', () => {
+  const unknownRecent = baseProgram({ id: 'unknown', title: 'Recent Rights Only Drama Doc', topic_primary: 'Drama Doc', rights_start: '2026-09-01' });
+  const oldDoc = baseProgram({ id: 'old', title: 'Old Drama Doc', topic_primary: 'Drama Doc', rights_start: '2026-09-01', drama_cycle_status:'older' });
+  const currentDoc = baseProgram({ id: 'current', title: 'Current Drama Doc', topic_primary: 'Drama Doc', rights_start: '2024-01-01', drama_cycle_status:'current' });
   const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime');
   const context = { schedule, evidenceRows: [], overrideByProgramId: new Map(), baselineRate: null };
+  const unknownScore = S.scoreProgramForSlot(unknownRecent, slot, context);
   const oldScore = S.scoreProgramForSlot(oldDoc, slot, context);
   const currentScore = S.scoreProgramForSlot(currentDoc, slot, context);
+  assert.equal(unknownScore.drama.currentCycle, false);
+  assert.equal(unknownScore.drama.olderCycle, false);
+  assert.equal(unknownScore.drama.cycleUnknown, true);
+  assert.equal(unknownScore.drama.basis, 'rights-start-only');
+  assert.equal(unknownScore.drama.recentRightsStart, true);
   assert.equal(oldScore.drama.olderCycle, true);
   assert.equal(currentScore.drama.currentCycle, true);
   assert.ok(currentScore.score > oldScore.score);
@@ -2216,4 +2223,21 @@ test('historical backtest ignores present-day explicit Drama Doc cycle overrides
   assert.ok(recommendation,'Season 4 should be inferred from the 2024 target date rather than blocked by today\'s older override');
   assert.equal(recommendation.drama?.basis,'series-season');
   assert.equal(recommendation.drama?.currentCycle,true);
+});
+
+
+test('blank-cycle Drama Doc with recent rights cannot be treated as a current-cycle repeat', () => {
+  const target={startDate:'2026-12-05',endDate:'2026-12-13'};
+  const program=baseProgram({
+    id:'rights-only-repeat',
+    title:'Recent Rights Mystery Special',
+    topic_primary:'Drama Doc',
+    rights_start:'2026-09-01',
+    rights_end:'2028-12-31'
+  });
+  const info=S.dramaInfo(program,target,new Map());
+  assert.equal(info.currentCycle,false);
+  assert.equal(info.cycleUnknown,true);
+  assert.equal(info.basis,'rights-start-only');
+  assert.equal(info.recentRightsStart,true);
 });
