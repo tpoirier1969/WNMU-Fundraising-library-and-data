@@ -886,7 +886,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.239'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.240'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -894,7 +894,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.239', 'programming-strategy-backtest\.js\?v=0\.22\.239'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.240', 'programming-strategy-backtest\.js\?v=0\.22\.240'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1522,6 +1522,11 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(reportUi,/function fundraiserPlanSection/);
   assert.match(reportUi,/<h2>Fundraiser plan<\/h2>/);
   assert.match(reportUi,/topicSignals\.slice\(0,5\)/);
+  assert.match(reportUi,/function topicSignalStrength/);
+  assert.match(reportUi,/ratio>=1\.15/);
+  assert.match(reportUi,/Strong pocket/);
+  assert.match(reportUi,/Relative leader/);
+  assert.match(reportUi,/not automatic recommendations/);
   assert.match(reportUi,/strategy-plan-window/);
   assert.match(reportUi,/WEB-ONLY EXPERIMENT/);
   assert.match(reportUi,/Break mode is recorded on each scheduled program for later comparison/);
