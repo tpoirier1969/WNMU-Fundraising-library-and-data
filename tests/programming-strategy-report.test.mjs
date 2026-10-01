@@ -302,6 +302,63 @@ test('same-day Fundraising Windows do not recommend the same title twice', () =>
   assert.notEqual(planned[0].lineup[0].programId,planned[1].lineup[0].programId);
 });
 
+test('fundraiser-wide title allocation reserves a title for its strongest one or two dates', () => {
+  const make=(id,score)=>({
+    programId:id,
+    title:id,
+    score,
+    evidenceCount:4,
+    newTitle:true,
+    reviewedNew:true,
+    programmer:{rating:'promising'},
+    season:{holidayOutOfSeason:false},
+    drama:{isDramaDoc:false}
+  });
+  const rankedWindows=[
+    {slot:{id:'day-1',date:'2026-12-01',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',64),make('other-a',68)]},
+    {slot:{id:'day-2',date:'2026-12-02',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',82),make('other-b',68)]},
+    {slot:{id:'day-3',date:'2026-12-03',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',80),make('other-c',68)]},
+    {slot:{id:'day-4',date:'2026-12-05',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',79),make('other-d',68)]},
+    {slot:{id:'day-5',date:'2026-12-07',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',62),make('other-e',68)]}
+  ];
+  const assigned=S.buildFundraiserTitleAssignments(rankedWindows);
+  const dominant=[...(assigned.get('dominant')||[])];
+  assert.equal(dominant.length,2);
+  assert.ok(dominant.includes('day-2'),'the highest-scoring date must be retained');
+  assert.ok(dominant.includes('day-4'),'a nearly-as-strong separated date should beat a back-to-back repeat');
+  assert.ok(!dominant.includes('day-1'),'chronological order must not decide placement');
+  assert.ok(!dominant.includes('day-5'),'weak extra dates must not accumulate repeat exposure');
+});
+
+test('Fundraiser Plan does not reuse any automated title more than twice across the drive', () => {
+  const custom={
+    ...schedule,
+    fundraisingWindows:[
+      {id:'w1',dateKey:'2026-12-05',startMinutes:19*60,endMinutes:20*60,priority:'open'},
+      {id:'w2',dateKey:'2026-12-06',startMinutes:19*60,endMinutes:20*60,priority:'open'},
+      {id:'w3',dateKey:'2026-12-07',startMinutes:19*60,endMinutes:20*60,priority:'open'},
+      {id:'w4',dateKey:'2026-12-08',startMinutes:19*60,endMinutes:20*60,priority:'open'},
+      {id:'w5',dateKey:'2026-12-09',startMinutes:19*60,endMinutes:20*60,priority:'open'}
+    ]
+  };
+  const library=[
+    baseProgram({id:'a',title:'New Music A',topic_primary:'Music',length_bucket_minutes:60}),
+    baseProgram({id:'b',title:'New Music B',topic_primary:'Music',length_bucket_minutes:60}),
+    baseProgram({id:'c',title:'New Music C',topic_primary:'Music',length_bucket_minutes:60}),
+    baseProgram({id:'d',title:'New Music D',topic_primary:'Music',length_bucket_minutes:60})
+  ];
+  const overrides=library.map((program)=>({program_id:program.id,rating:'must_air'}));
+  const strategy=S.buildStrategy({schedule:custom,library,evidenceRows:[],overrides,now:new Date('2026-09-29T12:00:00')});
+  const planned=strategy.windows.filter((entry)=>entry.userDefined&&!entry.blocked);
+  const appearances=new Map();
+  planned.flatMap((entry)=>entry.lineup||[]).forEach((item)=>{
+    appearances.set(item.programId,(appearances.get(item.programId)||0)+1);
+  });
+  assert.equal(strategy.titleAppearanceCap,2);
+  assert.ok([...appearances.values()].every((count)=>count<=2));
+  assert.ok(appearances.size>=3,'the planner should diversify across available titles instead of recycling one winner');
+});
+
 test('recommended titles come only from the supplied Program Library', () => {
   const library = [baseProgram({ id: 'a', title: 'Library A' }), baseProgram({ id: 'b', title: 'Library B', topic_primary: 'History' })];
   const strategy = S.buildStrategy({ schedule, library, evidenceRows: [row({ programId: 'ghost', title: 'Ghost Result', dollars: 5000 })] });
@@ -893,7 +950,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.246'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.247'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -901,7 +958,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.246', 'programming-strategy-backtest\.js\?v=0\.22\.246'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.247', 'programming-strategy-backtest\.js\?v=0\.22\.247'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);

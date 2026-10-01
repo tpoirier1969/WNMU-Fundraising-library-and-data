@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.246', 'programming-strategy-backtest.js?v=0.22.246');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.247', 'programming-strategy-backtest.js?v=0.22.247');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
