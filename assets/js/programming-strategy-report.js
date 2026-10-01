@@ -522,7 +522,21 @@ function briefSection(result={},opportunities={},schedule={}){
   const sunday=peerRows.find(item=>item.id==='sunday-morning');
   const peer=sunday&&!peerRows.slice(0,4).includes(sunday)?[...peerRows.slice(0,3),sunday]:peerRows.slice(0,4);
   const localIdeas=(opportunities.rows||[]).slice(0,4);
+  const strategy=result.strategy||{};
+  const planWindows=Array.isArray(strategy.windows)?strategy.windows:[];
+  const webOnlyWindows=planWindows.filter(slot=>slot.webOnlyExperimental&&!slot.blocked);
+  const activePlanTests=[];
+  if(webOnlyWindows.length){
+    const dates=[...new Set(webOnlyWindows.map(slot=>slot.date).filter(Boolean))];
+    activePlanTests.push({
+      source:'Plan',
+      title:'5–7 PM Web-only pledge test',
+      text:'Use selected 5–7 PM pledge programming with Web-only breaks and no operators standing by. Keep lower-opportunity-cost inventory here, preserve stronger staffed-slot titles elsewhere, and compare the results after the drive.',
+      meta:dates.length+' fundraiser day'+(dates.length===1?'':'s')+' in this plan'
+    });
+  }
   const ideaCards=[
+    ...activePlanTests,
     ...localIdeas.map(item=>({
       source:'WNMU',
       title:item.weekday+' · '+clock(item.startMinutes)+'–'+clock(item.endMinutes),
@@ -537,7 +551,7 @@ function briefSection(result={},opportunities={},schedule={}){
     }))
   ].slice(0,8);
   const cards=ideaCards.length?ideaCards.map(item=>'<article><span class="strategy-source-tag">'+esc(item.source)+'</span><strong>'+esc(item.title)+'</strong><p>'+esc(item.text)+'</p>'+(item.meta?'<small>'+esc(item.meta)+'</small>':'')+'</article>').join(''):'<p>No distinct scheduling or peer-practice test currently clears the report threshold.</p>';
-  return '<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built.</p></div></div><div class="strategy-brief-card"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">'+cards+'</div></div></section>';
+  return '<section class="sheet-section strategy-brief-section"><div class="strategy-section-head"><div><h2>Brief</h2><p>The ideas most likely to change how this fundraiser is built, including active experiments already placed in this Fundraiser Plan.</p></div></div><div class="strategy-brief-card"><h3>Ideas & tests</h3><div class="strategy-brief-ideas">'+cards+'</div></div></section>';
 }
 
 function compactTimingForSlot(hourlyIndex,slot={}){
@@ -815,7 +829,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.248');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.249');
     }catch(error){
       reject(error);
       return;

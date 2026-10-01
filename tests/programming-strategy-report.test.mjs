@@ -965,7 +965,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.248'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.249'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -973,7 +973,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.248', 'programming-strategy-backtest\.js\?v=0\.22\.248'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.249', 'programming-strategy-backtest\.js\?v=0\.22\.249'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1649,6 +1649,9 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(reportUi,/function briefSection/);
   assert.match(reportUi,/<h2>Brief<\/h2>/);
   assert.match(reportUi,/<h3>Ideas & tests<\/h3>/);
+  assert.match(reportUi,/const webOnlyWindows=planWindows\.filter\(slot=>slot\.webOnlyExperimental&&!slot\.blocked\)/);
+  assert.match(reportUi,/5–7 PM Web-only pledge test/);
+  assert.match(reportUi,/active experiments already placed in this Fundraiser Plan/);
   assert.doesNotMatch(reportUi,/<h3>Promotion<\/h3>/);
   assert.match(reportUi,/function promotionExamplesSection/);
   assert.match(reportUi,/Fundraiser promotion ideas already worth discussing/);
