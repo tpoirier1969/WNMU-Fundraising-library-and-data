@@ -651,7 +651,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
     return{...day,topicSignals:topicSignals.slice(0,5),programs,calendar:calendarRowsForDate(calendar,day.date)};
   });
 
-  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>${usingFundraisingWindows?'Uses the Fundraising Windows marked in Scheduling. Recommendations may use all, part, or none of each window depending on the strength of the available titles.':'Day, topic, timing and program direction in one compact planning view.'} Topic/time rows marked <b>Strong pocket</b> are at least 115% of the season baseline; other rows are relative leaders, not automatic recommendations.</p></div></div>
+  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>${usingFundraisingWindows?'Uses the Fundraising Windows marked in Scheduling. Recommendations may use all, part, or none of each window depending on the strength of the available titles.':'Day, topic, timing and program direction in one compact planning view.'} The automated plan allocates each title across the whole fundraiser first and uses it at most twice, reserving repeat exposure for its strongest dates. Topic/time rows marked <b>Strong pocket</b> are at least 115% of the season baseline; other rows are relative leaders, not automatic recommendations.</p></div></div>
     <div class="strategy-topic-snapshot"><h3>Topic snapshot</h3><div>${topicSnapshot.length?topicSnapshot.map(item=>`<span><b>${esc(item.topic)}</b><strong class="strategy-rate">${Number.isFinite(item.averageRate)?`&#36;${Math.round(item.averageRate)}/hr`:'No seasonal history'}</strong><small>${Number(item.fundraiserSamples||0)} drive${Number(item.fundraiserSamples||0)===1?'':'s'} · ${Number(item.eligibleProgramCount||0)} eligible</small></span>`).join(''):'<p>No eligible seasonal topic history.</p>'}</div></div>
     <div class="strategy-plan-days">${days.map(day=>`<article class="strategy-plan-day tone-${dayTone(day.outlook)}">
       <header><div><strong>${esc(day.label)}</strong><span>${esc(fmt(day.date,false))}</span></div><div><b>${esc(day.outlook)}</b>${Number.isFinite(day.averageRate)?`<span class="strategy-rate">Avg &#36;${Math.round(day.averageRate)}/pledge hr</span>`:''}</div></header>
@@ -815,7 +815,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.246');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.247');
     }catch(error){
       reject(error);
       return;
