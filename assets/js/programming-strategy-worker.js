@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.244', 'programming-strategy-backtest.js?v=0.22.244');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.245', 'programming-strategy-backtest.js?v=0.22.245');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -1501,6 +1501,7 @@ function compactRecommendation(item = {}) {
     local: item.local,
     drama: item.drama,
     programmer: item.programmer,
+    companionStatus: item.companionStatus,
     newTitle: item.newTitle,
     reviewedNew: item.reviewedNew
   };
@@ -1602,15 +1603,17 @@ self.onmessage = (event) => {
     progress(requestId, 'prepare', 'Preparing historical evidence…');
     let phase = nowMs();
     const library = Array.isArray(payload.library) ? payload.library : [];
-    // Explicit Drama Doc cycle overrides describe the current planning cycle.
-    // Historical backtests must not project today's current/older judgment backward
-    // into an earlier fundraiser. Let the target-date series/season evidence infer it.
+    // Explicit cycle/companion overrides describe the current planning cycle.
+    // Historical backtests must not project today's current/older/dated judgment
+    // backward into an earlier fundraiser. Let target-date evidence stand on its own.
     const strategyLibrary = payload.mode === 'backtest'
       ? library.map((program) => ({
         ...program,
         drama_cycle_status: null,
         dramaCycleStatus: null,
-        drama_cycle: null
+        drama_cycle: null,
+        companion_program_status: null,
+        companionProgramStatus: null
       }))
       : library;
     const rawAirings = Array.isArray(payload.airings) ? payload.airings : [];

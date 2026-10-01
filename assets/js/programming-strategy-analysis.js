@@ -897,6 +897,11 @@
     return `nola:${lookupKey(programNola(program))}|title:${lookupKey(programTitle(program))}`;
   }
 
+  function companionProgramStatus(program = {}) {
+    const value = lookupKey(first(program.companion_program_status, program.companionProgramStatus, ''));
+    return value === 'current' || value === 'dated' ? value : '';
+  }
+
   function buildProgramRowIndex(rows = []) {
     const byId = new Map();
     const withoutId = [];
@@ -1087,6 +1092,7 @@
       drama: dramaInfo(program, schedule, context.dramaCycleIndex),
       override,
       programmer: programmerEvidence(program, titleRows, override, context.evidenceRows || []),
+      companionStatus: companionProgramStatus(program),
       local: isLocal(program),
       biography: isBiography(program),
       corePbs: isCorePbs(program)
@@ -1344,6 +1350,7 @@ const season = cachedProgram.season;
 const drama = cachedProgram.drama;
 const override = cachedProgram.override;
 const programmer = cachedProgram.programmer;
+const companionStatus = cachedProgram.companionStatus;
 const baseline = Number.isFinite(context.baselineRate)?context.baselineRate:baseHistoricalRate(useSeasonWindowEvidence?context.seasonRows:rows);let score=50;const reasons=[],cautions=[],adjustments=[];
 if(titleHistory.rows){let a=rateAdjustment(titleHistory.averageRate);const titleAgeDays=titleHistory.latest?daysBetween(titleHistory.latest,scheduleStart(schedule)):null;if(titleHistory.rows===1&&Number.isFinite(titleAgeDays)&&titleAgeDays>=730&&a>4)a=4;score+=a;adjustments.push(['titleHistory',a]);reasons.push(`WNMU title history: ${titleHistory.rows} airing${titleHistory.rows===1?'':'s'}${Number.isFinite(titleHistory.averageRate)?`, Avg ${Math.round(titleHistory.averageRate)}/pledge hr`:''}.`);if(titleHistory.rows===1&&Number.isFinite(titleAgeDays)&&titleAgeDays>=730)cautions.push(`Only one prior title airing, ${titleAgeDays} days old; stale single-airing evidence is capped.`);}else reasons.push('No prior WNMU title airing before the evidence cutoff.');
 if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.averageRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} in this weekday/window.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none in this exact weekday/window.`);
@@ -1352,6 +1359,15 @@ let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopi
 if(titleHistory.latest){const d=daysBetween(titleHistory.latest,scheduleStart(schedule));let a=0;if(d>=730)a=titleHistory.rows===1?2:8;else if(d>=365)a=6;else if(d>=180)a=2;else if(d<90)a=-10;else if(d<180)a=-5;score+=a;adjustments.push(['rest',a]);if(a>0)reasons.push(`Rested ${d} days since the latest known airing.`);if(a<0)cautions.push(`Short rest: ${d} days since the latest known airing.`);}
 let fatigue=0;if(titleHistory.rows>=12)fatigue=-8;else if(titleHistory.rows>=8)fatigue=-5;else if(titleHistory.rows>=5)fatigue=-2;else if(titleHistory.rows>0&&titleHistory.rows<=2)fatigue=3;score+=fatigue;adjustments.push(['lifetimeExposure',fatigue]);if(titleHistory.rows>=8)cautions.push(`Heavy lifetime exposure: ${titleHistory.rows} known airings.`);
 score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push(drama.basis==='series-season'?('Current Drama Doc series/season'+(drama.seasonNumber?' (Season '+drama.seasonNumber+')':'')+'.'):'Current-cycle Drama Doc fallback based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push(drama.basis==='series-season'?('Drama Doc is not in the current series/season'+(drama.currentSeriesSeason?' (current library season '+drama.currentSeriesSeason+')':'')+'.'):'Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc current-series/season status is unknown.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
+if(companionStatus==='dated'){
+  const a=-8;
+  score+=a;
+  adjustments.push(['datedCompanion',a]);
+  if(slot.webOnlyExperimental)reasons.push('Dated companion title: eligible here only as a lower-risk 5–7 PM Web-only test.');
+  else cautions.push('Dated companion title: exclude from prime and staffed recommendation windows.');
+}else if(companionStatus==='current'){
+  reasons.push('Companion title is explicitly marked current.');
+}
 score+=programmer.adjustment;adjustments.push(['programmer',programmer.adjustment]);if(programmer.rating){reasons.push(`Programmer rating: ${programmer.label} (${programmer.adjustment>=0?'+':''}${programmer.adjustment}).`);if(programmer.rating==='low_confidence')cautions.push('Programmer rating is Low confidence; cap recommendation posture accordingly.');if(programmer.rating==='dont_air')cautions.push("Programmer rating says Don't air; strong negative input, not a rights exclusion.");}
 const newTitle=titleHistory.rows===0;
 const reviewedNew=newTitle&&['neutral','viable','promising','must_air'].includes(programmer.rating);
@@ -1368,7 +1384,7 @@ let confidence='Low';if(exactTopic.rates.length>=4&&titleHistory.fundraisers>=3&
   fit = season.holidayCategory === 'Holiday - Christmas' ? 'Save for Christmas season' : 'Out of seasonal window';
   if (programmer.storedRating === 'must_air') cautions.push('Must Air is an editorial priority for a suitable placement; it does not override seasonal fit.');
 }
-const result={program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};
+const result={program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,companionStatus,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};
 context.scoreCache?.set(scoreKey,result);
 return result;}
   function rankProgramsForSlot(library = [], slot = {}, context = {}) {
@@ -1394,10 +1410,15 @@ return result;}
     return item.drama.currentCycle === true;
   }
 
+  function recommendationAllowed(item = {}, slot = null) {
+    if (item?.companionStatus === 'dated') return slot?.webOnlyExperimental === true;
+    return dramaDocRecommendationAllowed(item);
+  }
+
   function selectWebOnlyRecommendationsForSlot(ranked = [], staffedBestByProgram = new Map(), slot = {}, limit = 8) {
     const keyFor = (item) => text(item?.programId || lookupKey(item?.title || ''));
     const acceptable = (ranked || []).filter((item) =>
-      dramaDocRecommendationAllowed(item) &&
+      recommendationAllowed(item, slot) &&
       !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
       !item.season?.holidayOutOfSeason &&
       item.score >= 40
@@ -1451,8 +1472,9 @@ return result;}
     return [...lowCost, ...protectedFallback].slice(0, limit);
   }
 
-  function selectRecommendationsForSlot(ranked = [], limit = 4) {
+  function selectRecommendationsForSlot(ranked = [], limit = 4, slot = null) {
     const acceptableNew = ranked.filter((item) =>
+      recommendationAllowed(item, slot) &&
       item.newTitle &&
       !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
       !item.season?.holidayOutOfSeason &&
@@ -1485,7 +1507,7 @@ return result;}
     if (chosen.length >= 2 && chosen.length < limit) {
       const anchor = ranked.find((item) =>
         !item.newTitle &&
-        dramaDocRecommendationAllowed(item) &&
+        recommendationAllowed(item, slot) &&
         item.score >= 48 &&
         !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
         !item.season?.holidayOutOfSeason
@@ -1587,7 +1609,7 @@ return result;}
 
     const broadPool = (ranked || []).filter((item) =>
       item?.program
-      && dramaDocRecommendationAllowed(item)
+      && recommendationAllowed(item, slot)
       && !['low_confidence', 'dont_air'].includes(item.programmer?.rating)
       && !item.season?.holidayOutOfSeason
     ).slice(0, 60);
@@ -1605,7 +1627,7 @@ return result;}
       const exact = broadPool.map((base) => scoreProgramForSlot(base.program, exactSlot, context))
         .filter((item) =>
           item
-          && dramaDocRecommendationAllowed(item)
+          && recommendationAllowed(item, exactSlot)
           && !['low_confidence', 'dont_air'].includes(item.programmer?.rating)
           && !item.season?.holidayOutOfSeason
           && Number(item.score) >= threshold
@@ -2016,7 +2038,7 @@ return result;}
       const experimentalRows = seasonFundraiserCount >= 2 ? seasonRows : historicalRows;
       const recommendations = slot.webOnlyExperimental
         ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 8)
-        : selectRecommendationsForSlot(ranked, slot.userDefined ? 8 : 4);
+        : selectRecommendationsForSlot(ranked, slot.userDefined ? 8 : 4, slot);
       const lineupPool = slot.webOnlyExperimental
         ? selectWebOnlyRecommendationsForSlot(ranked, staffedBestByProgram, slot, 60)
         : ranked;
@@ -2053,12 +2075,12 @@ return result;}
       const drama = cached.drama;
       const newTitle = cached.titleHistory.rows === 0;
       return { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), season, drama, newTitle };
-    }).filter((item) => item.season.adjustment > 0 && dramaDocRecommendationAllowed(item))
+    }).filter((item) => item.season.adjustment > 0 && recommendationAllowed(item))
       .sort((a, b) => b.season.adjustment - a.season.adjustment || a.title.localeCompare(b.title)).slice(0, 10);
     const local = viable.filter(isLocal).map((program) => windows.filter((slot) => !slot.experimental && !slot.blocked)
       .map((slot) => scoreProgramForSlot(program, slot, context)).filter(Boolean)
       .sort((a, b) => b.score - a.score)[0] || null)
-      .filter((item) => Boolean(item) && dramaDocRecommendationAllowed(item))
+      .filter((item) => Boolean(item) && recommendationAllowed(item))
       .sort((a, b) => b.score - a.score).slice(0, 10);
     const avoid = viable.map((program) => {
       const cached = cachedProgramEvidence(program, context);
@@ -2148,6 +2170,7 @@ return result;}
     rightsStart,
     rightsEnd,
     premiumSummary,
+    companionProgramStatus,
     isLocal,
     holidayCategory,
     holidaySeasonAdjustment,
@@ -2183,6 +2206,7 @@ return result;}
     selectRecommendationsForSlot,
     selectWebOnlyRecommendationsForSlot,
     dramaDocRecommendationAllowed,
+    recommendationAllowed,
     dramaSeasonNumbers,
     dramaSeriesKey,
     buildDramaCycleIndex,

@@ -14,7 +14,7 @@ test('Program Library exposes and saves explicit Drama Doc cycle status', () => 
   assert.match(core,/'drama_cycle_status'/);
   assert.match(detail,/form\.elements\.drama_cycle_status\.value/);
   assert.match(detail,/drama_cycle_status:\s*utils\.normalizeText\(form\.elements\.drama_cycle_status\.value\)/);
-  assert.match(report,/'rights_start','rights_end','drama_cycle_status','rights_notes'/);
+  assert.match(report,/'rights_start','rights_end','drama_cycle_status','companion_program_status','rights_notes'/);
 });
 
 test('explicit Drama cycle beats rights-date inference', () => {

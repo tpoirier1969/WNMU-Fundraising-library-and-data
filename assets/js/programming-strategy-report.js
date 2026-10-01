@@ -90,7 +90,7 @@ async function loadAnalysisData(){
   ].join(',');
   const programSelect=[
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
-    'rights_start','rights_end','drama_cycle_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'
+    'rights_start','rights_end','drama_cycle_status','companion_program_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
@@ -728,12 +728,13 @@ function programOpportunitiesSection(strategy={}){
   const ensure=(item)=>{
     const key=keyFor(item);
     if(!key)return null;
-    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,drama:null});
+    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,drama:null,companionStatus:'',webOnlyRecommended:false});
     const row=byKey.get(key);
     if(!row.title&&item.title)row.title=item.title;
     if(!row.topic&&item.topic)row.topic=item.topic;
     if(item.newTitle===true)row.newTitle=true;
     if(item.drama)row.drama=item.drama;
+    if(item.companionStatus)row.companionStatus=item.companionStatus;
     if(Number.isFinite(Number(item.score)))row.score=Math.max(Number.isFinite(row.score)?row.score:-Infinity,Number(item.score));
     return row;
   };
@@ -742,7 +743,12 @@ function programOpportunitiesSection(strategy={}){
     (slot.recommendations||[]).forEach(item=>{
       const row=ensure(item); if(!row)return;
       row.badges.push('Recommended');
+      if(slot.webOnlyExperimental)row.webOnlyRecommended=true;
       if(item.newTitle)row.badges.push('New');
+      if(item.companionStatus==='dated'){
+        row.badges.push('Dated companion');
+        if(slot.webOnlyExperimental)row.badges.push('5–7 test only');
+      }
       if(item.drama?.isDramaDoc&&!item.newTitle&&item.drama?.currentCycle)row.badges.push('Current cycle');
       if(item.fit)row.notes.push(item.fit);
     });
@@ -767,8 +773,9 @@ function programOpportunitiesSection(strategy={}){
   const rows=[...byKey.values()]
     .map(row=>({...row,badges:[...new Set(row.badges)],notes:[...new Set(row.notes)]}))
     .filter(row=>{
-      if(!row.drama?.isDramaDoc)return true;
       const recommended=row.badges.includes('Recommended');
+      if(row.companionStatus==='dated')return recommended&&row.webOnlyRecommended;
+      if(!row.drama?.isDramaDoc)return true;
       return recommended&&(row.newTitle||row.drama?.currentCycle===true);
     })
     .sort((a,b)=>{
@@ -808,7 +815,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.244');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.245');
     }catch(error){
       reject(error);
       return;
