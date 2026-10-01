@@ -10,11 +10,11 @@ test('historical backtest page is linked and uses the current strategy worker', 
   const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
   assert.doesNotThrow(() => new vm.Script(ui, { filename:'programming-strategy-backtest-ui.js' }));
-  assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.238/);
+  assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.239/);
   assert.match(page, /Fundraiser Strategy Backtest/);
   assert.match(strategyPage, /href="programming-strategy-backtest\.html">Historical backtest/);
-  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.238/);
-  assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.238/);
+  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.239/);
+  assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.239/);
   assert.match(ui, /mode:'backtest'/);
   assert.match(ui, /drama_cycle_status/);
   assert.match(ui, /fundraisingWindows:Array\.isArray\(saved\.fundraisingWindows\)/);
