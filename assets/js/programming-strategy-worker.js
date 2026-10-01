@@ -1602,6 +1602,17 @@ self.onmessage = (event) => {
     progress(requestId, 'prepare', 'Preparing historical evidence…');
     let phase = nowMs();
     const library = Array.isArray(payload.library) ? payload.library : [];
+    // Explicit Drama Doc cycle overrides describe the current planning cycle.
+    // Historical backtests must not project today's current/older judgment backward
+    // into an earlier fundraiser. Let the target-date series/season evidence infer it.
+    const strategyLibrary = payload.mode === 'backtest'
+      ? library.map((program) => ({
+        ...program,
+        drama_cycle_status: null,
+        dramaCycleStatus: null,
+        drama_cycle: null
+      }))
+      : library;
     const rawAirings = Array.isArray(payload.airings) ? payload.airings : [];
     const overrides = Array.isArray(payload.overrides) ? payload.overrides : [];
     const scheduleRows = Array.isArray(payload.scheduleRows) ? payload.scheduleRows : [];
@@ -1621,7 +1632,7 @@ self.onmessage = (event) => {
     diagnostics.overrideRows = overrides.length;
     diagnostics.effectiveOverrideRows = effectiveOverrides.length;
     diagnostics.excludedPostCutoffOverrides = overrides.length - effectiveOverrides.length;
-    const historical = completedHistoricalAnalyses(scheduleRows, canonical, library, cutoff);
+    const historical = completedHistoricalAnalyses(scheduleRows, canonical, strategyLibrary, cutoff);
     const analyses = historical.analyses;
     const rows = strategyEvidenceRowsFromAnalyses(analyses);
     const performanceStats = buildHistoricalPerformanceStats(schedule, analyses);
@@ -1642,7 +1653,7 @@ self.onmessage = (event) => {
     phase = nowMs();
     const strategy = S.buildStrategy({
       schedule,
-      library,
+      library: strategyLibrary,
       evidenceRows: rows,
       overrides: effectiveOverrides,
       performanceStats,
@@ -1667,7 +1678,7 @@ self.onmessage = (event) => {
     if (payload.mode === 'backtest') {
       progress(requestId, 'backtest', 'Comparing frozen title and topic/time recommendations with the fundraiser that actually aired…');
       phase = nowMs();
-      backtestActual = targetBacktestRows(scheduleRows, canonical, library, schedule);
+      backtestActual = targetBacktestRows(scheduleRows, canonical, strategyLibrary, schedule);
       diagnostics.backtestTargetFound = backtestActual.found;
       diagnostics.backtestActualRows = backtestActual.rows.length;
       backtest = B.evaluate({
