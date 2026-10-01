@@ -95,3 +95,12 @@ test('dated companion status can deliberately route an older Drama Doc to 5-7 wi
   assert.equal(S.recommendationAllowed(item,{webOnlyExperimental:false}),false);
   assert.equal(S.recommendationAllowed(item,{webOnlyExperimental:true}),true);
 });
+
+
+test('historical backtests do not project present-day companion status backward', () => {
+  const worker=fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js',import.meta.url),'utf8');
+  const backtestUi=fs.readFileSync(new URL('../assets/js/programming-strategy-backtest-ui.js',import.meta.url),'utf8');
+  assert.match(worker,/companion_program_status:\s*null/);
+  assert.match(worker,/companionProgramStatus:\s*null/);
+  assert.match(backtestUi,/'companion_program_status'/);
+});
