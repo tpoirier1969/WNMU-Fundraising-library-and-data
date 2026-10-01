@@ -886,7 +886,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.238'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.239'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -894,7 +894,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.238', 'programming-strategy-backtest\.js\?v=0\.22\.238'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.239', 'programming-strategy-backtest\.js\?v=0\.22\.239'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -2068,6 +2068,7 @@ test('long-rest former performers are not put in Avoid solely for lifetime expos
   const target={id:'dec26-rest',title:'December 2026',startDate:'2026-12-05',endDate:'2026-12-13'};
   const rested=baseProgram({id:'rested-heavy',title:'Rested Heavy Performer',topic_primary:'Music',rights_start:'2018-01-01',rights_end:'2030-12-31'});
   const recent=baseProgram({id:'recent-heavy',title:'Recent Heavy Performer',topic_primary:'Music',rights_start:'2018-01-01',rights_end:'2030-12-31'});
+  const benchmark=baseProgram({id:'benchmark',title:'Benchmark Performer',topic_primary:'Music',rights_start:'2018-01-01',rights_end:'2030-12-31'});
   const history=[];
   for(let i=0;i<9;i+=1){
     history.push(row({
@@ -2084,8 +2085,15 @@ test('long-rest former performers are not put in Avoid solely for lifetime expos
       dollars:100,
       fundraiserId:'sep26'
     }));
+    history.push(row({
+      programId:'benchmark',
+      title:'Benchmark Performer',
+      dateKey:`2025-12-${String(1+i).padStart(2,'0')}`,
+      dollars:900,
+      fundraiserId:'dec25'
+    }));
   }
-  const strategy=S.buildStrategy({schedule:target,library:[rested,recent],evidenceRows:history,now:new Date('2026-09-25T12:00:00')});
+  const strategy=S.buildStrategy({schedule:target,library:[rested,recent,benchmark],evidenceRows:history,now:new Date('2026-09-25T12:00:00')});
   const restedAvoid=strategy.avoid.find(item=>item.title==='Rested Heavy Performer');
   const recentAvoid=strategy.avoid.find(item=>item.title==='Recent Heavy Performer');
   assert.equal(restedAvoid,undefined);
