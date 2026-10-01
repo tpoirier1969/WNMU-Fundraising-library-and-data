@@ -90,7 +90,7 @@ async function loadAnalysisData(){
   ].join(',');
   const programSelect=[
     'id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary',
-    'rights_start','rights_end','drama_cycle_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'
+    'rights_start','rights_end','drama_cycle_status','companion_program_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
   const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
