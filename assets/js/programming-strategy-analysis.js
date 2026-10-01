@@ -1429,7 +1429,10 @@ return result;}
       const staffedBest = staffedBestByProgram.get(key);
       const staffedScore = Number(staffedBest?.score);
       const restDays = item.titleHistory?.latest ? daysBetween(item.titleHistory.latest, slot.date) : null;
-      const protectedForStaffed = Number.isFinite(staffedScore) && staffedScore >= 65 && staffedScore >= Number(item.score || 0) - 5;
+      const protectedForStaffed = item.companionStatus !== 'dated'
+        && Number.isFinite(staffedScore)
+        && staffedScore >= 65
+        && staffedScore >= Number(item.score || 0) - 5;
       let webOnlyPriority = 4;
       let webOnlyReason = 'Lower-opportunity-cost test';
 
@@ -2019,6 +2022,7 @@ return result;}
     rankedWindows.forEach(({ slot, ranked }) => {
       if (slot.blocked || slot.webOnlyExperimental) return;
       ranked.forEach((item) => {
+        if (!recommendationAllowed(item, slot)) return;
         const key = text(item?.programId || lookupKey(item?.title || ''));
         if (!key) return;
         const current = staffedBestByProgram.get(key);

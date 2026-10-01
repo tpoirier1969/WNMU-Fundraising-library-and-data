@@ -104,3 +104,37 @@ test('historical backtests do not project present-day companion status backward'
   assert.match(worker,/companionProgramStatus:\s*null/);
   assert.match(backtestUi,/'companion_program_status'/);
 });
+
+
+test('dated companion is not protected out of 5-7 by a theoretical staffed score', () => {
+  const source=fs.readFileSync(new URL('../assets/js/programming-strategy-analysis.js',import.meta.url),'utf8');
+  const context={console,Date,Map,Set,Math,Number,String,Object,Array,RegExp,Intl};
+  context.globalThis=context;
+  vm.runInNewContext(source,context,{filename:'programming-strategy-analysis.js'});
+  const S=context.WNMUProgrammingStrategyAnalysis;
+
+  const dated={
+    programId:'dated-companion',
+    title:'Dated Series Celebration',
+    topic:'Documentary',
+    score:66,
+    evidenceCount:3,
+    newTitle:false,
+    reviewedNew:false,
+    companionStatus:'dated',
+    drama:{isDramaDoc:false,currentCycle:false},
+    programmer:{rating:'neutral'},
+    season:{holidayOutOfSeason:false},
+    titleHistory:{rows:2,latest:'2025-01-01'}
+  };
+  const staffedBest=new Map([['dated-companion',{score:95}]]);
+  const selected=S.selectWebOnlyRecommendationsForSlot(
+    [dated],
+    staffedBest,
+    {webOnlyExperimental:true,date:'2026-12-01'},
+    8
+  );
+  assert.equal(selected.length,1);
+  assert.equal(selected[0].title,'Dated Series Celebration');
+  assert.ok(selected[0].webOnlyPriority < 5);
+});
