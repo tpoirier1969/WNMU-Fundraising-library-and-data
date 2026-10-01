@@ -195,6 +195,8 @@ test('scheduler-defined Fundraising Windows replace default planning inventory',
 test('window-driven strategy never invents pledge time outside the saved Fundraising Windows', () => {
   const custom = {
     ...schedule,
+    startDate:'2026-11-27',
+    endDate:'2026-12-07',
     fundraisingWindows:[{
       id:'only-window',
       dateKey:'2026-12-01',
