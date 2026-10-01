@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.240', 'programming-strategy-backtest.js?v=0.22.240');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.241', 'programming-strategy-backtest.js?v=0.22.241');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -1108,7 +1108,68 @@ function flagOn(item = {}, ...keys) {
   return keys.some((key) => Boolean(flags[key]));
 }
 
-function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = []) {
+function peerScheduleContextMatches(observation = {}, context = {}) {
+  const stationKey = S.lookupKey(observation.station_code || observation.station_name || '');
+  const contextStationKey = S.lookupKey(context.station_code || context.station_name || '');
+  if (!stationKey || !contextStationKey || stationKey !== contextStationKey) return false;
+
+  const observationDay = S.lookupKey(observation.day_of_week || '');
+  const contextDay = S.lookupKey(context.day_of_week || '');
+  if (observationDay && contextDay && observationDay !== contextDay) return false;
+
+  const contextStart = nullableNumber(context.start_time_minutes);
+  const contextEnd = nullableNumber(context.end_time_minutes);
+  if (contextStart == null || contextEnd == null) return true;
+
+  const observationStart = nullableNumber(observation.start_time_minutes);
+  const observationEnd = nullableNumber(observation.end_time_minutes);
+  if (observationStart != null) {
+    const end = observationEnd != null && observationEnd > observationStart ? observationEnd : observationStart + 1;
+    return Math.max(observationStart, contextStart) < Math.min(end, contextEnd);
+  }
+
+  const daypart = text(observation.daypart).toLowerCase();
+  const bounds = daypart.includes('morning')
+    ? [6 * 60, 12 * 60]
+    : daypart.includes('afternoon')
+      ? [12 * 60, 17 * 60]
+      : daypart.includes('early evening')
+        ? [17 * 60, 19 * 60]
+        : daypart.includes('prime')
+          ? [19 * 60, 22.5 * 60]
+          : daypart.includes('late')
+            ? [22 * 60, 24 * 60]
+            : null;
+  return !bounds || Math.max(bounds[0], contextStart) < Math.min(bounds[1], contextEnd);
+}
+
+function peerScheduleContextsForObservation(observation = {}, contexts = []) {
+  return (contexts || [])
+    .filter((context) => peerScheduleContextMatches(observation, context))
+    .sort((a, b) =>
+      Number(b.evidence_strength || 0) - Number(a.evidence_strength || 0)
+      || text(b.context_period_start).localeCompare(text(a.context_period_start))
+    )
+    .slice(0, 3)
+    .map((context) => ({
+      id: context.id,
+      periodStart: text(context.context_period_start),
+      periodEnd: text(context.context_period_end),
+      dayOfWeek: text(context.day_of_week),
+      startMinutes: nullableNumber(context.start_time_minutes),
+      endMinutes: nullableNumber(context.end_time_minutes),
+      scheduleLabel: text(context.schedule_label),
+      schedulePattern: text(context.schedule_pattern),
+      representativePrograms: Array.isArray(context.representative_programs) ? context.representative_programs : [],
+      sourceKind: text(context.source_kind),
+      sourceReference: text(context.source_reference),
+      sourceSummary: text(context.source_summary),
+      evidenceStrength: Number(context.evidence_strength || 0),
+      notes: text(context.notes)
+    }));
+}
+
+function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = [], peerScheduleContexts = []) {
   const definitions = [
     {
       id: 'challenge-grants',
@@ -1188,6 +1249,7 @@ function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = 
       if (!bestByStation.has(key)) {
         bestByStation.set(key, {
           station,
+          stationCode: text(item.station_code),
           programTitle: text(item.program_title_raw),
           summary: text(item.summary || item.assessment_raw || ''),
           actualDollars: nullableNumber(item.actual_dollars),
@@ -1195,7 +1257,8 @@ function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = 
           pledgeCount: nullableNumber(item.pledge_count),
           evidenceStrength: Number(item.evidence_strength || 0),
           signal: Number(item.assessment_signal || 0),
-          season: text(item.season)
+          season: text(item.season),
+          scheduleContexts: peerScheduleContextsForObservation(item, peerScheduleContexts)
         });
       }
     }
@@ -1219,12 +1282,15 @@ function buildPeerPracticeGaps(schedule = {}, observations = [], evidenceRows = 
     }
 
     const examples = [...bestByStation.values()].slice(0, 4);
+    const contextStationCount = [...bestByStation.values()].filter((item) => item.scheduleContexts?.length).length;
     rows.push({
       id: definition.id,
       label: definition.label,
       stationCount: bestByStation.size,
       observationCount: matches.length,
       averageStrength: matches.reduce((sum, item) => sum + Number(item.evidence_strength || 0), 0) / matches.length,
+      contextStationCount,
+      contextCoverage: bestByStation.size ? contextStationCount / bestByStation.size : 0,
       wnmuStatus: definition.wnmuStatus,
       testIdea: definition.testIdea,
       topTopics,
@@ -1540,6 +1606,7 @@ self.onmessage = (event) => {
     const overrides = Array.isArray(payload.overrides) ? payload.overrides : [];
     const scheduleRows = Array.isArray(payload.scheduleRows) ? payload.scheduleRows : [];
     const peerObservations = Array.isArray(payload.peerObservations) ? payload.peerObservations : [];
+    const peerScheduleContexts = Array.isArray(payload.peerScheduleContexts) ? payload.peerScheduleContexts : [];
     const schedule = payload.schedule || {};
     const now = payload.now ? new Date(payload.now) : new Date();
 
@@ -1593,7 +1660,7 @@ self.onmessage = (event) => {
     const dayOutlook = buildDayOutlook(schedule, analyses);
     const hourlyPatterns = buildHourlyPatterns(schedule, rows);
     const opportunities = buildOpportunityPatterns(schedule, rows, hourlyPatterns, peerObservations);
-    const peerPractices = buildPeerPracticeGaps(schedule, peerObservations, rows);
+    const peerPractices = buildPeerPracticeGaps(schedule, peerObservations, rows, peerScheduleContexts);
     const topicTimeMatrix = buildTopicTimeMatrix(schedule, rows, peerObservations);
     diagnostics.dayOutlookMs = Math.round(nowMs() - phase);
 

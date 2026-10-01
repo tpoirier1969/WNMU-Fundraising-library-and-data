@@ -886,7 +886,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.240'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.241'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -894,7 +894,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.240', 'programming-strategy-backtest\.js\?v=0\.22\.240'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.241', 'programming-strategy-backtest\.js\?v=0\.22\.241'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1505,6 +1505,62 @@ test('Sunday-morning peer practice retains a real Drama signal even outside the 
   assert.ok(sunday.topTopics.some((item)=>item.topic==='Drama'),JSON.stringify(sunday.topTopics));
 });
 
+test('Sunday-morning peer practice attaches dated normal-slot context without changing peer evidence strength', () => {
+  const { workerContext } = makeWorkerHarness();
+  const observations=[{
+    station_code:'SOPT',
+    station_name:'Southern Oregon Public Television',
+    day_of_week:'Sunday',
+    daypart:'Morning',
+    topic_primary:'How-to',
+    assessment_signal:2,
+    evidence_strength:4,
+    summary:'Sunday-morning pledge reached a different audience.'
+  }];
+  const contexts=[
+    {
+      id:1,
+      station_code:'SOPT',
+      station_name:'Southern Oregon Public Television',
+      context_period_start:'2019-01-01',
+      context_period_end:'2019-01-31',
+      day_of_week:'Sunday',
+      start_time_minutes:540,
+      end_time_minutes:720,
+      schedule_label:'Special Presentation',
+      schedule_pattern:'recurring_special_presentation_block',
+      representative_programs:[{date:'2019-01-20',start_time:'10:00',title:"Suze Orman's Financial Solutions for You"}],
+      source_kind:'public_program_guide',
+      source_reference:'https://example.test/january-guide.pdf',
+      source_summary:'Sunday 9 AM-noon was reserved as Special Presentation.',
+      evidence_strength:5,
+      notes:'Historical context only.'
+    },
+    {
+      id:2,
+      station_code:'OTHER',
+      station_name:'Other station',
+      context_period_start:'2019-01-01',
+      context_period_end:'2019-01-31',
+      day_of_week:'Sunday',
+      start_time_minutes:540,
+      end_time_minutes:720,
+      schedule_label:'Unrelated',
+      evidence_strength:5
+    }
+  ];
+  const rows=workerContext.buildPeerPracticeGaps({},observations,[],contexts);
+  const sunday=rows.find((item)=>item.id==='sunday-morning');
+  assert.ok(sunday);
+  assert.equal(sunday.stationCount,1);
+  assert.equal(sunday.contextStationCount,1);
+  assert.equal(sunday.contextCoverage,1);
+  assert.equal(sunday.examples[0].evidenceStrength,4,'schedule context must not inflate the pledge evidence strength');
+  assert.equal(sunday.examples[0].scheduleContexts.length,1);
+  assert.equal(sunday.examples[0].scheduleContexts[0].scheduleLabel,'Special Presentation');
+  assert.match(sunday.examples[0].scheduleContexts[0].sourceSummary,/reserved as Special Presentation/);
+});
+
 test('strategy report restores topic, timing, peer, promotion, and ranked opportunity depth', () => {
   const reportUi = fs.readFileSync(new URL('../assets/js/programming-strategy-report.js', import.meta.url), 'utf8');
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
@@ -1537,6 +1593,10 @@ test('strategy report restores topic, timing, peer, promotion, and ranked opport
   assert.match(reportUi,/strategy-time-day-grid/);
   assert.match(reportUi,/function peerPracticesCompactSection/);
   assert.match(reportUi,/Observed peer topics/);
+  assert.match(reportUi,/pledge_peer_schedule_context/);
+  assert.match(reportUi,/Normal-slot context/);
+  assert.match(reportUi,/context is explanatory only/i);
+  assert.match(reportUi,/peerScheduleContexts:state\.peerScheduleContexts/);
 
   assert.match(reportUi,/function programOpportunitiesSection/);
   assert.match(reportUi,/<h2>Program opportunities<\/h2>/);
