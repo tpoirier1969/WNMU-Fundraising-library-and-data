@@ -643,7 +643,9 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
       ${day.calendar.length?`<div class="strategy-day-calendar">${day.calendar.map(item=>`<span class="impact-${esc(item.impact||'context')}"><b>${esc(item.title)}</b>${item.time?` · ${esc(item.time)}`:''}</span>`).join('')}</div>`:''}
       <div class="strategy-plan-day-body"><p class="strategy-plan-action">${esc(daySchedulingAction(day,day.topicSignals))}</p>
         <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
-        <div class="strategy-plan-programs">${day.programs.length?day.programs.map(({slot,options})=>fundraiserWindowPlanHtml(slot,options,timingIndex)).join(''):'<span class="strategy-no-history">${usingFundraisingWindows?'No Fundraising Window is marked for this date.':'No discretionary pledge recommendation for this date.'}</span>'}</div>
+        <div class="strategy-plan-programs">${day.programs.length
+          ?day.programs.map(({slot,options})=>fundraiserWindowPlanHtml(slot,options,timingIndex)).join('')
+          :'<span class="strategy-no-history">'+(usingFundraisingWindows?'No Fundraising Window is marked for this date.':'No discretionary pledge recommendation for this date.')+'</span>'}</div>
       </div>
     </article>`).join('')}</div>
   </section>`;
