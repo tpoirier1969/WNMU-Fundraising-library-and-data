@@ -4,6 +4,37 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Fundraiser Programming Strategy · WNMU-TV PBS</title>
+  <style id="strategy-version-guard-style">html{visibility:hidden}</style>
+  <script>
+    (async()=>{
+      const reveal=()=>document.getElementById('strategy-version-guard-style')?.remove();
+      try{
+        const response=await fetch(`version.json?_=${Date.now()}`,{cache:'no-store'});
+        if(!response.ok)throw new Error(`version.json ${response.status}`);
+        const versionText=(await response.text()).replace(/^\uFEFF/,'').trim();
+        let payload;
+        try{
+          payload=JSON.parse(versionText);
+        }catch(firstError){
+          const repaired=versionText.replace(/\\n+\s*$/,'').trim();
+          if(repaired===versionText)throw firstError;
+          payload=JSON.parse(repaired);
+        }
+        const version=String(payload?.appVersion||payload?.version||'').trim().replace(/^v/i,'');
+        if(version){
+          const url=new URL(window.location.href);
+          if(url.searchParams.get('v')!==version){
+            url.searchParams.set('v',version);
+            window.location.replace(url.toString());
+            return;
+          }
+        }
+      }catch(error){
+        console.warn('Strategy version check failed.',error);
+      }
+      reveal();
+    })();
+  </script>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/pledge-icon-32.png">
   <link rel="stylesheet" href="assets/one-sheet-reports.css?v=0.22.177">
   <link rel="stylesheet" href="assets/programming-strategy-report.css?v=0.22.246">
@@ -13,7 +44,7 @@
   <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
   <script defer src="assets/js/programming-strategy-calendar.js?v=0.22.224"></script>
   <script defer src="assets/js/programming-strategy-enhancements.js?v=0.22.224"></script>
-  <script defer src="assets/js/programming-strategy-report.js?v=0.22.249"></script>
+  <script defer src="assets/js/programming-strategy-report.js?v=0.22.250"></script>
 </head>
 <body>
   <div id="strategy-access-gate" class="report-access-gate hidden"></div>
