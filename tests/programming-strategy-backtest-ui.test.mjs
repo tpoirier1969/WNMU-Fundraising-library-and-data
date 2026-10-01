@@ -13,12 +13,12 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.249/);
   assert.match(page, /Fundraiser Strategy Backtest/);
   assert.match(strategyPage, /href="programming-strategy-backtest\.html">Historical backtest/);
-  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.249/);
+  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.250/);
   assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.249/);
   assert.match(ui, /mode:'backtest'/);
   assert.match(ui, /drama_cycle_status/);
   assert.match(ui, /fundraisingWindows:Array\.isArray\(saved\.fundraisingWindows\)/);
   assert.match(ui, /Topic \+ time answer sheet/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.249');
+  assert.equal(version.appVersion, '0.22.250');
 });
