@@ -1501,6 +1501,7 @@ function compactRecommendation(item = {}) {
     local: item.local,
     drama: item.drama,
     programmer: item.programmer,
+    companionStatus: item.companionStatus,
     newTitle: item.newTitle,
     reviewedNew: item.reviewedNew
   };
