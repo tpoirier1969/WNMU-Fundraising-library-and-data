@@ -500,13 +500,14 @@
       };
     }
     const cycleFloor = addDays(target, -365);
-    const currentCycle = began >= cycleFloor && began <= addDays(target, 31);
+    const recentRightsStart = began >= cycleFloor && began <= addDays(target, 31);
     return {
       isDramaDoc:true,
-      currentCycle,
-      olderCycle:!currentCycle,
-      cycleUnknown:false,
-      basis:'rights-start-fallback',
+      currentCycle:false,
+      olderCycle:false,
+      cycleUnknown:true,
+      basis:'rights-start-only',
+      recentRightsStart,
       seriesKey,
       seasonNumber:ownSeason,
       currentSeriesSeason:entry?.currentSeason ?? null,
