@@ -302,7 +302,7 @@ test('same-day Fundraising Windows do not recommend the same title twice', () =>
   assert.notEqual(planned[0].lineup[0].programId,planned[1].lineup[0].programId);
 });
 
-test('fundraiser-wide title allocation reserves a title for its strongest one or two dates', () => {
+test('fundraiser-wide title allocation allows four appearances but no more than two in one daypart', () => {
   const make=(id,score)=>({
     programId:id,
     title:id,
@@ -315,48 +315,63 @@ test('fundraiser-wide title allocation reserves a title for its strongest one or
     drama:{isDramaDoc:false}
   });
   const rankedWindows=[
-    {slot:{id:'day-1',date:'2026-12-01',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',64),make('other-a',68)]},
-    {slot:{id:'day-2',date:'2026-12-02',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',82),make('other-b',68)]},
-    {slot:{id:'day-3',date:'2026-12-03',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',80),make('other-c',68)]},
-    {slot:{id:'day-4',date:'2026-12-05',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',79),make('other-d',68)]},
-    {slot:{id:'day-5',date:'2026-12-07',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',62),make('other-e',68)]}
+    {slot:{id:'prime-1',date:'2026-12-01',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',82)]},
+    {slot:{id:'prime-2',date:'2026-12-03',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',81)]},
+    {slot:{id:'prime-3',date:'2026-12-05',startMinutes:19*60,endMinutes:20*60},ranked:[make('dominant',80)]},
+    {slot:{id:'early-1',date:'2026-12-07',startMinutes:17*60,endMinutes:18*60},ranked:[make('dominant',79)]},
+    {slot:{id:'early-2',date:'2026-12-09',startMinutes:17*60,endMinutes:18*60},ranked:[make('dominant',78)]},
+    {slot:{id:'early-3',date:'2026-12-11',startMinutes:17*60,endMinutes:18*60},ranked:[make('dominant',77)]},
+    {slot:{id:'afternoon-1',date:'2026-12-13',startMinutes:15*60,endMinutes:16*60},ranked:[make('dominant',76)]}
   ];
   const assigned=S.buildFundraiserTitleAssignments(rankedWindows);
   const dominant=[...(assigned.get('dominant')||[])];
-  assert.equal(dominant.length,2);
-  assert.ok(dominant.includes('day-2'),'the highest-scoring date must be retained');
-  assert.ok(dominant.includes('day-4'),'a nearly-as-strong separated date should beat a back-to-back repeat');
-  assert.ok(!dominant.includes('day-1'),'chronological order must not decide placement');
-  assert.ok(!dominant.includes('day-5'),'weak extra dates must not accumulate repeat exposure');
+  assert.equal(dominant.length,4);
+  assert.deepEqual(dominant,['prime-1','prime-2','early-1','early-2']);
+  assert.ok(!dominant.includes('prime-3'),'a third Prime appearance must be rejected even when it scores higher than another daypart');
+  assert.ok(!dominant.includes('early-3'),'a third Early evening appearance must be rejected');
+  assert.ok(!dominant.includes('afternoon-1'),'the drive-wide cap remains four');
 });
 
-test('Fundraiser Plan does not reuse any automated title more than twice across the drive', () => {
+test('Fundraiser Plan enforces four-per-drive and two-per-daypart caps', () => {
   const custom={
     ...schedule,
     fundraisingWindows:[
-      {id:'w1',dateKey:'2026-12-05',startMinutes:19*60,endMinutes:20*60,priority:'open'},
-      {id:'w2',dateKey:'2026-12-06',startMinutes:19*60,endMinutes:20*60,priority:'open'},
-      {id:'w3',dateKey:'2026-12-07',startMinutes:19*60,endMinutes:20*60,priority:'open'},
-      {id:'w4',dateKey:'2026-12-08',startMinutes:19*60,endMinutes:20*60,priority:'open'},
-      {id:'w5',dateKey:'2026-12-09',startMinutes:19*60,endMinutes:20*60,priority:'open'}
+      {id:'m1',dateKey:'2026-12-05',startMinutes:9*60,endMinutes:10*60,priority:'open'},
+      {id:'p1',dateKey:'2026-12-06',startMinutes:19*60,endMinutes:20*60,priority:'open'},
+      {id:'m2',dateKey:'2026-12-07',startMinutes:9*60,endMinutes:10*60,priority:'open'},
+      {id:'p2',dateKey:'2026-12-08',startMinutes:19*60,endMinutes:20*60,priority:'open'},
+      {id:'m3',dateKey:'2026-12-09',startMinutes:9*60,endMinutes:10*60,priority:'open'},
+      {id:'p3',dateKey:'2026-12-10',startMinutes:19*60,endMinutes:20*60,priority:'open'}
     ]
   };
   const library=[
-    baseProgram({id:'a',title:'New Music A',topic_primary:'Music',length_bucket_minutes:60}),
+    baseProgram({id:'dominant',title:'Dominant New Music',topic_primary:'Music',length_bucket_minutes:60}),
     baseProgram({id:'b',title:'New Music B',topic_primary:'Music',length_bucket_minutes:60}),
     baseProgram({id:'c',title:'New Music C',topic_primary:'Music',length_bucket_minutes:60}),
     baseProgram({id:'d',title:'New Music D',topic_primary:'Music',length_bucket_minutes:60})
   ];
-  const overrides=library.map((program)=>({program_id:program.id,rating:'must_air'}));
+  const overrides=[
+    {program_id:'dominant',rating:'must_air'},
+    {program_id:'b',rating:'promising'},
+    {program_id:'c',rating:'promising'},
+    {program_id:'d',rating:'promising'}
+  ];
   const strategy=S.buildStrategy({schedule:custom,library,evidenceRows:[],overrides,now:new Date('2026-09-29T12:00:00')});
-  const planned=strategy.windows.filter((entry)=>entry.userDefined&&!entry.blocked);
-  const appearances=new Map();
-  planned.flatMap((entry)=>entry.lineup||[]).forEach((item)=>{
-    appearances.set(item.programId,(appearances.get(item.programId)||0)+1);
+  const dominantAppearances=strategy.windows
+    .filter((entry)=>entry.userDefined&&!entry.blocked)
+    .flatMap((entry)=>entry.lineup||[])
+    .filter((item)=>item.programId==='dominant');
+  const byDaypart=new Map();
+  dominantAppearances.forEach((item)=>{
+    const daypart=S.daypartForMinutes(item.plannedStartMinutes);
+    byDaypart.set(daypart,(byDaypart.get(daypart)||0)+1);
   });
-  assert.equal(strategy.titleAppearanceCap,2);
-  assert.ok([...appearances.values()].every((count)=>count<=2));
-  assert.ok(appearances.size>=3,'the planner should diversify across available titles instead of recycling one winner');
+  assert.equal(strategy.titleAppearanceCap,4);
+  assert.equal(strategy.titleDaypartAppearanceCap,2);
+  assert.equal(dominantAppearances.length,4,'a strong title may be used more than twice when different dayparts justify it');
+  assert.ok([...byDaypart.values()].every((count)=>count<=2));
+  assert.equal(byDaypart.get('Morning'),2);
+  assert.equal(byDaypart.get('Prime'),2);
 });
 
 test('recommended titles come only from the supplied Program Library', () => {
@@ -950,7 +965,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.247'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.248'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -958,7 +973,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.247', 'programming-strategy-backtest\.js\?v=0\.22\.247'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.248', 'programming-strategy-backtest\.js\?v=0\.22\.248'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);

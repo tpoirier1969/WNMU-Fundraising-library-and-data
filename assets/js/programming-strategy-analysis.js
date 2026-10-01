@@ -1547,7 +1547,8 @@ return result;}
     });
   }
 
-  const MAX_AUTOMATED_TITLE_APPEARANCES = 2;
+  const MAX_AUTOMATED_TITLE_APPEARANCES = 4;
+  const MAX_AUTOMATED_TITLE_DAYPART_APPEARANCES = 2;
 
   function planningSlotKey(slot = {}) {
     return text(slot.id) || `${dateKey(slot.date)}|${number(slot.startMinutes, -1)}|${number(slot.endMinutes, -1)}|${text(slot.label)}`;
@@ -1579,6 +1580,7 @@ return result;}
           key,
           slotKey,
           date: dateKey(slot.date),
+          daypart: daypartForMinutes(slot.startMinutes),
           score: Number(item.score || 0),
           evidenceCount: Number(item.evidenceCount || 0),
           experimental: Boolean(slot.experimental),
@@ -1621,31 +1623,49 @@ return result;}
           String(a.date || '').localeCompare(String(b.date || ''))
         );
       const selected = [];
+      const selectedDates = new Set();
+      const selectedSlotKeys = new Set();
+      const daypartCounts = new Map();
+      const addSelected = (row) => {
+        if (!row || selectedSlotKeys.has(row.slotKey) || selectedDates.has(row.date)) return false;
+        const daypart = text(row.daypart) || 'Unknown';
+        if (Number(daypartCounts.get(daypart) || 0) >= MAX_AUTOMATED_TITLE_DAYPART_APPEARANCES) return false;
+        selected.push(row);
+        selectedSlotKeys.add(row.slotKey);
+        selectedDates.add(row.date);
+        daypartCounts.set(daypart, Number(daypartCounts.get(daypart) || 0) + 1);
+        return true;
+      };
+
       const staffedRows = rows.filter((row) => !row.experimental);
-      // Normal titles should not spend their only automated appearances on an
-      // exploratory window merely because that window happens to score a few
-      // points higher. Give the main staffed plan first claim. Titles that are
-      // eligible only in an experiment (for example a dated companion) still
-      // allocate normally because staffedRows is empty.
+      // Give the main staffed plan first claim. Experimental windows can still
+      // receive the title when they are the only viable inventory or after the
+      // stronger staffed opportunities have been allocated.
       const primaryPool = staffedRows.length ? staffedRows : rows;
       const primary = choose(primaryPool, 0);
-      if (primary) selected.push(primary);
+      addSelected(primary);
 
-      if (cap > 1 && primary) {
-        const secondFloor = Math.max(40, Number(primary.score || 0) - 6);
-        const eligibleSeconds = rows.filter((row) =>
-          row.slotKey !== primary.slotKey &&
-          row.date !== primary.date &&
-          Number(row.score || 0) >= secondFloor
-        );
-        const staffedSeconds = eligibleSeconds.filter((row) => !row.experimental);
-        const secondPool = staffedSeconds.length ? staffedSeconds : eligibleSeconds;
-        const wellSpaced = secondPool.filter((row) => {
-          const gap = absoluteDayGap(primary.date, row.date);
-          return gap == null || gap >= 2;
-        });
-        const secondary = choose(wellSpaced.length ? wellSpaced : secondPool, 2);
-        if (secondary) selected.push(secondary);
+      if (primary) {
+        const repeatFloor = Math.max(40, Number(primary.score || 0) - 6);
+        while (selected.length < cap) {
+          const eligible = rows.filter((row) => {
+            const daypart = text(row.daypart) || 'Unknown';
+            return !selectedSlotKeys.has(row.slotKey)
+              && !selectedDates.has(row.date)
+              && Number(row.score || 0) >= repeatFloor
+              && Number(daypartCounts.get(daypart) || 0) < MAX_AUTOMATED_TITLE_DAYPART_APPEARANCES;
+          });
+          if (!eligible.length) break;
+
+          const staffedEligible = eligible.filter((row) => !row.experimental);
+          const pool = staffedEligible.length ? staffedEligible : eligible;
+          const wellSpaced = pool.filter((row) => selected.every((existing) => {
+            const gap = absoluteDayGap(existing.date, row.date);
+            return gap == null || gap >= 2;
+          }));
+          const next = choose(wellSpaced.length ? wellSpaced : pool, 2);
+          if (!addSelected(next)) break;
+        }
       }
 
       const slotKeys = new Set();
@@ -2246,6 +2266,7 @@ return result;}
       baselineRate,
       windows,
       titleAppearanceCap: MAX_AUTOMATED_TITLE_APPEARANCES,
+      titleDaypartAppearanceCap: MAX_AUTOMATED_TITLE_DAYPART_APPEARANCES,
       mix: mixFromSlots(windows),
       topicComparison: topicComparison(library, windows, context),
       repeats: repeatCandidates(windows),
@@ -2263,7 +2284,7 @@ return result;}
         'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
         'Drama Doc repeat eligibility uses series/season references found in title or program notes when available; rights-start recency is only the fallback when the pledge record does not identify a season.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
-        'The automated Fundraiser Plan allocates titles across the entire drive before rendering individual days. A title can appear at most twice, and repeat use is reserved for its strongest distinct-date opportunities rather than simply the first chronological windows.',
+        'The automated Fundraiser Plan allocates titles across the entire drive before rendering individual days. A title can appear at most four times, no more than twice in the same daypart, and repeat use is reserved for its strongest distinct-date opportunities rather than simply the first chronological windows.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
         'The avoid/rest list is limited to discretionary pledge titles: fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
         'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
