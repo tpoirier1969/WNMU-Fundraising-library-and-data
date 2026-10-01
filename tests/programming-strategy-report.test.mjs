@@ -2266,3 +2266,23 @@ test('new Drama Docs receive first-run priority without requiring a current-cycl
   assert.ok(scored.reasons.some((reason)=>/New \/ unaired Drama Doc receives first-run priority/.test(reason)));
   assert.equal(S.dramaDocRecommendationAllowed(scored),true);
 });
+
+
+test('dated companion titles are excluded from staffed windows but eligible for the December 2026 5–7 PM Web-only test', () => {
+  const program=baseProgram({
+    id:'dated-companion',
+    title:'Dated companion special',
+    topic_primary:'Drama Doc',
+    companion_program_status:'dated',
+    drama_cycle_status:'current'
+  });
+  const staffed={date:'2026-12-05',weekday:'Saturday',weekpart:'Saturday',label:'Prime',startMinutes:19*60,endMinutes:22*60,experimental:false,webOnlyExperimental:false};
+  const webOnly={date:'2026-12-05',weekday:'Saturday',weekpart:'Saturday',label:'Early evening',startMinutes:17*60,endMinutes:19*60,experimental:true,webOnlyExperimental:true};
+  const context={schedule:{id:'dec26',title:'December 2026',startDate:'2026-11-27',endDate:'2026-12-07'},evidenceRows:[],overrideByProgramId:new Map(),baselineRate:300};
+  const staffedScore=S.scoreProgramForSlot(program,staffed,context);
+  const webScore=S.scoreProgramForSlot(program,webOnly,context);
+  assert.equal(staffedScore.companionStatus,'dated');
+  assert.equal(S.recommendationAllowed(staffedScore,staffed),false);
+  assert.equal(S.recommendationAllowed(webScore,webOnly),true);
+  assert.ok(webScore.reasons.some(reason=>/5–7 PM Web-only test/i.test(reason)));
+});
