@@ -1450,6 +1450,9 @@
       createdAt: row.created_at || '',
       updatedAt: row.updated_at || '',
       placements: Array.isArray(row.schedule_data?.placements) ? row.schedule_data.placements : [],
+      fundraisingWindows: Array.isArray(row.schedule_data?.fundraisingWindows)
+        ? row.schedule_data.fundraisingWindows
+        : (Array.isArray(row.schedule_data?.fundraising_windows) ? row.schedule_data.fundraising_windows : []),
       slotNotes: row.schedule_data?.slotNotes || {},
       onlineDollars: Number(row.schedule_data?.onlineDollars || 0) || 0,
       mailDollars: Number(row.schedule_data?.mailDollars || 0) || 0,
@@ -1468,6 +1471,9 @@
       day_end_hour: Math.floor((schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60)) / 60),
       schedule_data: {
         placements: schedule.placements || [],
+        fundraisingWindows: Array.isArray(schedule.fundraisingWindows)
+          ? schedule.fundraisingWindows
+          : (Array.isArray(schedule.fundraising_windows) ? schedule.fundraising_windows : []),
         slotNotes: schedule.slotNotes || {},
         dayStartMinutes: schedule.dayStartMinutes ?? (Number(schedule.dayStartHour || constants.DEFAULT_DAY_START_HOUR) * 60),
         dayEndMinutes: schedule.dayEndMinutes ?? (Number(schedule.dayEndHour || constants.DEFAULT_DAY_END_HOUR) * 60),
