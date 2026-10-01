@@ -182,27 +182,38 @@ function scheduleOccurrenceForDate(schedule={},dateKey=''){
   return occurrence||null;
 }
 
+function topicSignalStrength(rate,baselineRate){
+  const value=Number(rate),baseline=Number(baselineRate);
+  if(!Number.isFinite(value))return{actionable:false,signalLabel:'Unrated historical leader',ratio:null};
+  if(!(Number.isFinite(baseline)&&baseline>0))return{actionable:false,signalLabel:'Relative leader',ratio:null};
+  const ratio=value/baseline;
+  if(ratio>=1.15)return{actionable:true,signalLabel:'Strong pocket',ratio};
+  if(ratio>=1)return{actionable:false,signalLabel:'Around season baseline',ratio};
+  return{actionable:false,signalLabel:'Relative leader · below season baseline',ratio};
+}
+
 function daySchedulingAction(day={},signals=[]){
   const outlook=String(day?.outlook||'').toLowerCase();
   const hasSignal=Array.isArray(signals)&&signals.length>0;
+  const hasStrongSignal=hasSignal&&signals.some(item=>item?.actionable===true);
   if(outlook.includes('usually weak')||outlook.includes('usually soft')){
-    return hasSignal
-      ?'Concentrate pledge hours in the strongest topic/time pockets shown here; a weak day does not mean every program on the day is weak.'
-      :'Consider fewer discretionary pledge hours on this day unless a strong title-specific reason overrides the broad history.';
+    if(hasStrongSignal)return'Concentrate pledge hours in the Strong pocket topic/time rows shown here; a weak day does not mean every program on the day is weak.';
+    if(hasSignal)return'The listed topic/time leaders do not clear the Strong pocket threshold. Consider fewer discretionary pledge hours unless a title-specific reason overrides the broad history.';
+    return'Consider fewer discretionary pledge hours on this day unless a strong title-specific reason overrides the broad history.';
   }
   if(outlook.includes('usually strong')||outlook.includes('usually good')){
-    return hasSignal
-      ?'This day can support a broader pledge effort, with the strongest topic/time pockets used as anchors.'
-      :'The day itself has favorable history, but title and topic choices still matter.';
+    if(hasStrongSignal)return'This day can support a broader pledge effort, with the Strong pocket topic/time rows used as anchors.';
+    if(hasSignal)return'The day itself has favorable history, but the listed topic/time leaders do not clear the Strong pocket threshold. Choose titles carefully rather than treating the top row as an automatic recommendation.';
+    return'The day itself has favorable history, but title and topic choices still matter.';
   }
   if(outlook.includes('thin')||outlook.includes('no comparable')){
-    return hasSignal
-      ?'Use the topic/time evidence as the stronger guide; the day-level sample is too thin to carry much weight.'
-      :'Treat the day cautiously until stronger WNMU evidence exists.';
+    if(hasStrongSignal)return'Use the Strong pocket topic/time evidence as the stronger guide; the day-level sample is too thin to carry much weight.';
+    if(hasSignal)return'The day-level sample is thin and the listed topic/time leaders do not clear the Strong pocket threshold. Treat them as context, not recommendations.';
+    return'Treat the day cautiously until stronger WNMU evidence exists.';
   }
-  return hasSignal
-    ?'Use the topic/time signals to decide where to concentrate effort; the day-level average is context, not a score for every program.'
-    :'Treat the day-level average as broad context, not as proof that every program on the day performs the same.';
+  if(hasStrongSignal)return'Use the Strong pocket topic/time rows to decide where to concentrate effort; the day-level average is context, not a score for every program.';
+  if(hasSignal)return'These are the highest historical topic/time rows for the day, but none clears the Strong pocket threshold. Treat them as relative leaders, not recommendations.';
+  return'Treat the day-level average as broad context, not as proof that every program on the day performs the same.';
 }
 
 function combinedDayTopicSection(outlook,matrix,schedule){
@@ -566,6 +577,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
   const calendar=calendarRowsForSchedule(schedule);
   const timingIndex=hourlyPatternIndex(hourly);
   const matrixRows=Array.isArray(matrix?.rows)?matrix.rows:[];
+  const signalBaseline=Number(strategy?.baselineRate);
   const windowsByDate=new Map();
   (strategy.windows||[]).forEach(slot=>{
     if(!windowsByDate.has(slot.date))windowsByDate.set(slot.date,[]);
@@ -586,7 +598,7 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
         const titles=Number(topic.titleCount||0);
         const rate=Number(topic.averageRate);
         if(samples<2||titles<2||!Number.isFinite(rate))return;
-        topicSignals.push({daypart:row.daypart,topic:topic.topic,rate,samples,titles});
+        topicSignals.push({daypart:row.daypart,topic:topic.topic,rate,samples,titles,...topicSignalStrength(rate,signalBaseline)});
       });
     });
     topicSignals.sort((a,b)=>b.rate-a.rate||b.samples-a.samples||b.titles-a.titles);
@@ -636,13 +648,13 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
     return{...day,topicSignals:topicSignals.slice(0,5),programs,calendar:calendarRowsForDate(calendar,day.date)};
   });
 
-  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>${usingFundraisingWindows?'Uses the Fundraising Windows marked in Scheduling. Recommendations may use all, part, or none of each window depending on the strength of the available titles.':'Day, topic, timing and program direction in one compact planning view.'}</p></div></div>
+  return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>${usingFundraisingWindows?'Uses the Fundraising Windows marked in Scheduling. Recommendations may use all, part, or none of each window depending on the strength of the available titles.':'Day, topic, timing and program direction in one compact planning view.'} Topic/time rows marked <b>Strong pocket</b> are at least 115% of the season baseline; other rows are relative leaders, not automatic recommendations.</p></div></div>
     <div class="strategy-topic-snapshot"><h3>Topic snapshot</h3><div>${topicSnapshot.length?topicSnapshot.map(item=>`<span><b>${esc(item.topic)}</b><strong class="strategy-rate">${Number.isFinite(item.averageRate)?`&#36;${Math.round(item.averageRate)}/hr`:'No seasonal history'}</strong><small>${Number(item.fundraiserSamples||0)} drive${Number(item.fundraiserSamples||0)===1?'':'s'} · ${Number(item.eligibleProgramCount||0)} eligible</small></span>`).join(''):'<p>No eligible seasonal topic history.</p>'}</div></div>
     <div class="strategy-plan-days">${days.map(day=>`<article class="strategy-plan-day tone-${dayTone(day.outlook)}">
       <header><div><strong>${esc(day.label)}</strong><span>${esc(fmt(day.date,false))}</span></div><div><b>${esc(day.outlook)}</b>${Number.isFinite(day.averageRate)?`<span class="strategy-rate">Avg &#36;${Math.round(day.averageRate)}/pledge hr</span>`:''}</div></header>
       ${day.calendar.length?`<div class="strategy-day-calendar">${day.calendar.map(item=>`<span class="impact-${esc(item.impact||'context')}"><b>${esc(item.title)}</b>${item.time?` · ${esc(item.time)}`:''}</span>`).join('')}</div>`:''}
       <div class="strategy-plan-day-body"><p class="strategy-plan-action">${esc(daySchedulingAction(day,day.topicSignals))}</p>
-        <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
+        <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span class="${item.actionable?'strategy-topic-signal-strong':'strategy-topic-signal-relative'}"><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong><small>${esc(item.signalLabel||'Relative leader')}</small></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
         <div class="strategy-plan-programs">${day.programs.length
           ?day.programs.map(({slot,options})=>fundraiserWindowPlanHtml(slot,options,timingIndex)).join('')
           :'<span class="strategy-no-history">'+(usingFundraisingWindows?'No Fundraising Window is marked for this date.':'No discretionary pledge recommendation for this date.')+'</span>'}</div>
@@ -779,7 +791,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.239');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.240');
     }catch(error){
       reject(error);
       return;
