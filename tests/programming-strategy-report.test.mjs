@@ -192,6 +192,30 @@ test('scheduler-defined Fundraising Windows replace default planning inventory',
   assert.ok(!windows.some((entry)=>entry.label==='Prime'),'default evening inventory must not be added after explicit windows exist');
 });
 
+test('window-driven strategy never invents pledge time outside the saved Fundraising Windows', () => {
+  const custom = {
+    ...schedule,
+    fundraisingWindows:[{
+      id:'only-window',
+      dateKey:'2026-12-01',
+      startMinutes:19*60,
+      endMinutes:21*60,
+      priority:'open'
+    }],
+    meta:{fundraisingWindowPlanning:true}
+  };
+  const windows=S.planningWindows(custom);
+  assert.ok(windows.length>0);
+  assert.ok(windows.every((entry)=>entry.date==='2026-12-01'));
+  assert.ok(windows.every((entry)=>entry.startMinutes>=19*60&&entry.endMinutes<=21*60));
+  assert.ok(!windows.some((entry)=>entry.date==='2026-11-27'),'Friday Nov. 27 was not marked as a Fundraising Window and must not receive invented pledge inventory');
+});
+
+test('window-driven strategy with zero saved windows returns no pledge inventory instead of legacy defaults', () => {
+  const custom={...schedule,fundraisingWindows:[],meta:{fundraisingWindowPlanning:true}};
+  assert.deepEqual(Array.from(S.planningWindows(custom)),[]);
+});
+
 test('December 2026 Fundraising Windows split the 5–7 PM Web-only experiment from staffed inventory', () => {
   const custom={
     ...schedule,
