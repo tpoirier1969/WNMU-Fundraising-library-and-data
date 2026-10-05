@@ -3229,7 +3229,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const existingSlotPlacement = findPlacementForSlot(schedule, slot.key);
     const existingHashPlacement = scheduleImportedPlacementByHash(schedule, rowHash);
     if (existingSlotPlacement) {
-      showScheduleModalWarning(`That slot already contains ${existingSlotPlacement.programTitle}. Imported-row rescue will not replace it. Use Admin right-click → Delete scheduled block first.`, 'bad');
+      showScheduleModalWarning(`That slot already contains ${existingSlotPlacement.programTitle}. Imported-row rescue will not replace it. Remove the scheduled block first (open it and choose Remove from schedule, or use Admin right-click → Delete scheduled block).`, 'bad');
       return false;
     }
     if (existingHashPlacement) {
@@ -4660,7 +4660,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (currentPlacement) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
       els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''}">${placeholder ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>` : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${placeholder ? ' · placeholder' : ''}</div></div>`;
-      if (els.scheduleClearPlacementButton) { els.scheduleClearPlacementButton.disabled = true; els.scheduleClearPlacementButton.classList.add('hidden'); }
+      if (els.scheduleClearPlacementButton) {
+        els.scheduleClearPlacementButton.disabled = !editable;
+        els.scheduleClearPlacementButton.classList.toggle('hidden', !editable);
+      }
       if (els.scheduleCopyPlacementButton) els.scheduleCopyPlacementButton.disabled = !editable;
     } else {
       els.scheduleSelectedPreview.innerHTML = '<div class="schedule-hint">No program assigned to this slot yet.</div>';
@@ -4915,7 +4918,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const slotCount = Math.max(1, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES));
     const existing = findPlacementForSlot(schedule, slot.key);
     if (existing && !isPlaceholderPlacement(existing)) {
-      showScheduleModalWarning('That slot already contains a scheduled program. Use Admin right-click → Delete scheduled block first if you really intend to remove it.', 'bad');
+      showScheduleModalWarning('That slot already contains a scheduled program. Remove the scheduled block first (open it and choose Remove from schedule, or use Admin right-click → Delete scheduled block) if you really intend to remove it.', 'bad');
       return false;
     }
     const base = {
@@ -4984,7 +4987,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const existingSameProgram = existing && !isPlaceholderPlacement(existing)
       && String(existing.programId || '').trim() === String(derive.programId(row) || '').trim();
     if (existing && !isPlaceholderPlacement(existing) && !existingSameProgram) {
-      showScheduleModalWarning('That slot already contains a scheduled program. It will not be replaced. Use Admin right-click → Delete scheduled block first.', 'bad');
+      showScheduleModalWarning('That slot already contains a scheduled program. It will not be replaced. Remove the scheduled block first (open it and choose Remove from schedule, or use Admin right-click → Delete scheduled block).', 'bad');
       return;
     }
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
@@ -5034,8 +5037,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
 
   async function clearSelectedPlacement() {
     if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to remove programs.', 'bad'); return false; }
-    showScheduleModalWarning('Scheduled programs can only be removed with Admin right-click → Delete scheduled block.', 'warn');
-    return false;
+    const slot = state.selectedScheduleSlot;
+    if (!slot) {
+      showScheduleModalWarning('No scheduled block is selected.', 'warn');
+      return false;
+    }
+    const removed = await deletePlacementFromContext(slot);
+    if (removed) closeScheduleModal();
+    return removed;
   }
 
 
@@ -5155,7 +5164,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     }
     const existing = findPlacementForSlot(schedule, slot.key);
     if (existing) {
-      showScheduleModalWarning(`That slot already contains ${existing.programTitle}. Paste will not replace it. Use Admin right-click → Delete scheduled block first.`, 'bad');
+      showScheduleModalWarning(`That slot already contains ${existing.programTitle}. Paste will not replace it. Remove the scheduled block first (open it and choose Remove from schedule, or use Admin right-click → Delete scheduled block).`, 'bad');
       return false;
     }
     const lengthMinutes = placeholder ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
