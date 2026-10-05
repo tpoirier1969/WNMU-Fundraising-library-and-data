@@ -1117,6 +1117,19 @@ function peerScheduleContextMatches(observation = {}, context = {}) {
   const contextDay = S.lookupKey(context.day_of_week || '');
   if (observationDay && contextDay && observationDay !== contextDay) return false;
 
+  const isoDay = (value) => {
+    const candidate = text(value).slice(0, 10);
+    return /^\\d{4}-\\d{2}-\\d{2}$/.test(candidate) ? candidate : '';
+  };
+  const contextPeriodStart = isoDay(context.context_period_start);
+  const contextPeriodEnd = isoDay(context.context_period_end);
+  if (contextPeriodStart || contextPeriodEnd) {
+    const observationDate = isoDay(observation.observation_date);
+    if (!observationDate) return false;
+    if (contextPeriodStart && observationDate < contextPeriodStart) return false;
+    if (contextPeriodEnd && observationDate > contextPeriodEnd) return false;
+  }
+
   const contextStart = nullableNumber(context.start_time_minutes);
   const contextEnd = nullableNumber(context.end_time_minutes);
   if (contextStart == null || contextEnd == null) return true;
