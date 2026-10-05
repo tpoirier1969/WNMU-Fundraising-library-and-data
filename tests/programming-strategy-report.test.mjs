@@ -1620,6 +1620,7 @@ test('Sunday-morning peer practice attaches dated normal-slot context without ch
   const observations=[{
     station_code:'SOPT',
     station_name:'Southern Oregon Public Television',
+    observation_date:'2019-01-20',
     day_of_week:'Sunday',
     daypart:'Morning',
     topic_primary:'How-to',
@@ -1669,6 +1670,31 @@ test('Sunday-morning peer practice attaches dated normal-slot context without ch
   assert.equal(sunday.examples[0].scheduleContexts.length,1);
   assert.equal(sunday.examples[0].scheduleContexts[0].scheduleLabel,'Special Presentation');
   assert.match(sunday.examples[0].scheduleContexts[0].sourceSummary,/reserved as Special Presentation/);
+});
+
+test('dated peer normal-slot context requires an observation date inside the cited period', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.peerScheduleContextMatches, 'function');
+  const context={
+    station_code:'SOPT',
+    station_name:'Southern Oregon Public Television',
+    context_period_start:'2019-01-01',
+    context_period_end:'2019-01-31',
+    day_of_week:'Sunday',
+    start_time_minutes:540,
+    end_time_minutes:720
+  };
+  const base={
+    station_code:'SOPT',
+    station_name:'Southern Oregon Public Television',
+    day_of_week:'Sunday',
+    daypart:'Morning'
+  };
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-01-01'},context),true);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-01-31'},context),true);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2018-12-31'},context),false);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-02-01'},context),false);
+  assert.equal(workerContext.peerScheduleContextMatches(base,context),false,'undated observations must not inherit dated schedule context');
 });
 
 test('strategy report restores topic, timing, peer, promotion, and ranked opportunity depth', () => {
