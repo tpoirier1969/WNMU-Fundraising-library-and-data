@@ -2138,7 +2138,8 @@
 
   function setDetailMode(mode = 'view') {
     state.detailEditMode = mode === 'edit' && canEdit();
-    const canDeleteCurrent = canEdit() && !state.detailCreateMode && Boolean(state.selectedProgramId);
+    const inLibraryWorkspace = state.activeWorkspace === 'library';
+    const canDeleteCurrent = canEdit() && inLibraryWorkspace && !state.detailCreateMode && Boolean(state.selectedProgramId);
     els.detailModal.classList.toggle('create-mode', state.detailCreateMode);
     els.detailEditForm.classList.toggle('hidden', !state.detailEditMode);
     els.detailEditButton.classList.toggle('hidden', !canEdit() || state.detailEditMode || state.detailCreateMode);
