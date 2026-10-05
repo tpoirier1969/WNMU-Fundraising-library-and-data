@@ -1119,7 +1119,7 @@ function peerScheduleContextMatches(observation = {}, context = {}) {
 
   const isoDay = (value) => {
     const candidate = text(value).slice(0, 10);
-    return /^\\d{4}-\\d{2}-\\d{2}$/.test(candidate) ? candidate : '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : '';
   };
   const contextPeriodStart = isoDay(context.context_period_start);
   const contextPeriodEnd = isoDay(context.context_period_end);
