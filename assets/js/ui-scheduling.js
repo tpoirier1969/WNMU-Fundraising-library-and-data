@@ -3730,6 +3730,16 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return '<span class="schedule-placement-break-needed">BREAK INFO NEEDED</span>';
   }
 
+  function schedulePlacementReadinessClass(placement = null) {
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return '';
+    if (placement.transferredToStation) return 'workflow-entered';
+    const detailKey = scheduleDetailKeyForPlacement(placement);
+    if (!detailKey) return 'workflow-pending';
+    const cache = state.scheduleDetailCache?.[detailKey];
+    if (cache?.loaded && !cache?.error && scheduleDetailHasBreakInfo(cache.detail || {})) return 'workflow-break-ready';
+    return 'workflow-pending';
+  }
+
   function scheduleFundraiserDayKeys(schedule = {}) {
     return schedule?.startDate && schedule?.endDate ? utils.datesBetween(schedule.startDate, schedule.endDate) : [];
   }
@@ -4086,11 +4096,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
         const hasManualData = isStart && !hasImportedData && placementHasManualResult(placement);
         const isPlaceholder = isPlaceholderPlacement(placement);
-        const breakMode = (isStart && !isPlaceholder && !placement?.isNonPledge)
+        const isRegular = isRegularSchedulePlacement(placement);
+        const breakMode = (isStart && !isPlaceholder && !isRegular && !placement?.isNonPledge)
           ? calendarPlacementBreakMode(schedule, placement)
           : '';
         const breakModeClass = breakMode ? `break-mode-${breakMode.replace(/_/g, '-')}` : '';
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', isPlaceholder ? 'placeholder' : '', breakModeClass, breakMode === BREAK_MODES.LIVE ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')].filter(Boolean).join(' ');
+        const readinessClass = isStart ? schedulePlacementReadinessClass(placement) : '';
+        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', isRegular ? 'regular-program' : '', placement?.isNonPledge && !isRegular ? 'non-pledge' : '', isPlaceholder ? 'placeholder' : '', breakModeClass, breakMode === BREAK_MODES.LIVE ? 'live-break' : '', readinessClass, placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')].filter(Boolean).join(' ');
         const expectationBadge = isStart && !isPlaceholder ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const breakWarning = isStart && !isPlaceholder ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const manualResultBadge = hasManualData ? `<span class="schedule-placement-manual-result" title="Manual pledge result">${utils.escapeHtml(utils.formatMoney(placementManualResultDollars(placement)))}</span>` : '';
@@ -4098,22 +4110,24 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
           if (isPlaceholder) subtitleBits.push('placeholder');
-          if (placement.isNonPledge) subtitleBits.push('non-pledge');
+          if (isRegular) subtitleBits.push('regular · not for pledge');
+          else if (placement.isNonPledge) subtitleBits.push('non-pledge');
           if (breakMode) subtitleBits.push(utils.escapeHtml(breakModeLabel(breakMode)));
         }
-        const transferToggle = isStart && editable
+        const transferToggle = isStart && editable && !isPlaceholder && !isRegular && !placement?.isNonPledge
           ? `<label class="schedule-placement-transfer-toggle" data-placement-transfer-toggle title="Mark this title as entered in traffic/scheduling software">
               <input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}>
               <span class="schedule-placement-transfer-check" aria-hidden="true"></span>
             </label>`
           : '';
-        const breakModeBadge = isStart && breakMode && breakMode !== BREAK_MODES.LIVE
-          ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES'}</span>`
+        const breakModeBadge = isStart && breakMode
+          ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : (breakMode === BREAK_MODES.LIVE ? 'LIVE' : 'PHONES')}</span>`
           : '';
+        const placementNote = isStart ? schedulePlacementNote(placement) : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
             ${fundraisingWindowMark?.isStart ? `<span class="schedule-fundraising-window-tag">${utils.escapeHtml(fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority))}</span>` : ''}
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${isPlaceholder ? '' : transferToggle}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}<span>${subtitleBits.join(' · ')}</span>${manualResultBadge}${breakWarning}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${isPlaceholder || isRegular ? '' : transferToggle}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : (isRegular ? `<strong>${utils.escapeHtml(placement.programTitle || placement.regularTitle || 'Regular program')}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle }))}<span>${subtitleBits.join(' · ')}</span>${placementNote ? `<span class="schedule-placement-note">${utils.escapeHtml(placementNote)}</span>` : ''}${manualResultBadge}${breakWarning}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
