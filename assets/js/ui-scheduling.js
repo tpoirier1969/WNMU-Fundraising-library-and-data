@@ -5538,19 +5538,26 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
     const detail = cache?.detail || null;
     const placeholder = isPlaceholderPlacement(item);
+    const regular = isRegularSchedulePlacement(item);
+    const note = placementScheduleNote(item);
     const baseRow = (item.isNonPledge || placeholder) ? {} : (getProgramRowById(item.programId || '') || {});
     const displayRow = detail?.program ? utils.mergeRows(detail.program, baseRow) : baseRow;
-    const runtime = placeholder ? { label: `${placeholderLengthMinutes(item.lengthMinutes)} min` } : scheduledRuntimeInfo(displayRow, cache, item.lengthMinutes);
+    const runtime = (placeholder || regular) ? { label: `${placeholderLengthMinutes(item.lengthMinutes)} min` } : scheduledRuntimeInfo(displayRow, cache, item.lengthMinutes);
     const markerBits = [];
     if (placeholder) markerBits.push('placeholder');
-    if (item.isNonPledge) markerBits.push('non-pledge marker');
+    if (regular) markerBits.push('regular schedule · not for pledge');
+    else if (item.isNonPledge) markerBits.push('non-pledge marker');
     const exportBreakMode = canonicalScheduleBreakMode(item);
     if (exportBreakMode) markerBits.push(breakModeLabel(exportBreakMode));
     if (item.transferredToStation) markerBits.push('entered in traffic');
     const nola = (item.isNonPledge || placeholder) ? '' : derive.nola(displayRow);
     const topic = (item.isNonPledge || placeholder) ? '' : derive.topicPrimary(displayRow);
     const distributor = (item.isNonPledge || placeholder) ? '' : derive.distributor(displayRow);
-    const description = placeholder ? 'Temporary placeholder. Swap this block for the real program when ready.' : (item.isNonPledge ? '' : derive.description(displayRow));
+    const description = placeholder
+      ? [note, 'Temporary placeholder. Swap this block for the real program when ready.'].filter(Boolean).join(' · ')
+      : regular
+        ? [note, 'Regular schedule block. No pledge breaks planned.'].filter(Boolean).join(' · ')
+        : (item.isNonPledge ? note : derive.description(displayRow));
     const premiums = (item.isNonPledge || placeholder) ? '' : derive.premiumSummary(displayRow);
     const metaBits = [
       runtime?.label || (Number.isFinite(Number(item.lengthMinutes)) ? `${item.lengthMinutes} min` : ''),
