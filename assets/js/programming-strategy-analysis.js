@@ -1358,7 +1358,21 @@ const baseline = Number.isFinite(context.baselineRate)?context.baselineRate:base
 if(titleHistory.rows){let a=rateAdjustment(titleHistory.averageRate);const titleAgeDays=titleHistory.latest?daysBetween(titleHistory.latest,scheduleStart(schedule)):null;if(titleHistory.rows===1&&Number.isFinite(titleAgeDays)&&titleAgeDays>=730&&a>4)a=4;score+=a;adjustments.push(['titleHistory',a]);reasons.push(`WNMU title history: ${titleHistory.rows} airing${titleHistory.rows===1?'':'s'}${Number.isFinite(titleHistory.averageRate)?`, Avg ${Math.round(titleHistory.averageRate)}/pledge hr`:''}.`);if(titleHistory.rows===1&&Number.isFinite(titleAgeDays)&&titleAgeDays>=730)cautions.push(`Only one prior title airing, ${titleAgeDays} days old; stale single-airing evidence is capped.`);}else reasons.push('No prior WNMU title airing before the evidence cutoff.');
 if(exactTitle.rates.length){const a=Math.max(-8,Math.min(8,Math.round(rateAdjustment(exactTitle.averageRate)*.5)));score+=a;adjustments.push(['exactTitleSlot',a]);reasons.push(`${exactTitle.rates.length} title airing${exactTitle.rates.length===1?'':'s'} in this weekday/window.`);}else if(broadTitle.rates.length)reasons.push(`${broadTitle.rates.length} comparable title result${broadTitle.rates.length===1?'':'s'} elsewhere, but none in this exact weekday/window.`);
 const dayAdj=ratioAdjustment(dayHistory,baseline,8,-16);score+=dayAdj;adjustments.push(['weekdayWindow',dayAdj]);if(dayHistory.fundraisers>=2&&Number.isFinite(dayHistory.averageRate))reasons.push(`${slot.weekday} ${slot.label.toLowerCase()} history: ${dayHistory.fundraisers} fundraiser samples, Avg ${Math.round(dayHistory.averageRate)}/pledge hr.`);if(dayAdj<=-6)cautions.push(`${slot.weekday} ${slot.label.toLowerCase()} is historically weaker than WNMU's ${useSeasonWindowEvidence?context.targetSeason+' season':'overall'} pledge baseline.`);
-let topicAdj=0;if(exactTopic.rates.length>=2){topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);reasons.push(`${topic} has ${exactTopic.rates.length} rate-valid airing${exactTopic.rates.length===1?'':'s'} in this weekday/window${Number.isFinite(exactTopic.averageRate)?`, Avg ${Math.round(exactTopic.averageRate)}/pledge hr`:''}.`);}else if(!slot.experimental){topicAdj=exactTopic.rates.length===1?-4:-9;cautions.push(exactTopic.rates.length?`Only one ${topic} result exists in this weekday/window.`:`No WNMU ${topic} evidence exists in this weekday/window; treat this as exploratory.`);if(broadTopic.rates.length)reasons.push(`${topic} has ${broadTopic.rates.length} comparable results elsewhere, but not enough here.`);}score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
+let topicAdj=0;
+if(exactTopic.rates.length>=2){
+  topicAdj=ratioAdjustment(exactTopic,baseline,9,-10);
+  reasons.push(topic+' has '+exactTopic.rates.length+' rate-valid airing'+(exactTopic.rates.length===1?'':'s')+' in this weekday/window'+(Number.isFinite(exactTopic.averageRate)?', Avg '+Math.round(exactTopic.averageRate)+'/pledge hr':'')+'.');
+}else if(!slot.experimental){
+  const broaderEvidence=broadTopic.fundraisers>=2&&Number.isFinite(broadTopic.averageRate);
+  if(broaderEvidence){
+    topicAdj=Math.max(-5,Math.min(5,ratioAdjustment(broadTopic,baseline,5,-5)));
+    reasons.push(topic+' lacks repeat evidence in this exact weekday/window, so broader comparable '+(slot.weekpart||'daypart')+' evidence is used instead'+(Number.isFinite(broadTopic.averageRate)?', Avg '+Math.round(broadTopic.averageRate)+'/pledge hr':'')+'.');
+  }
+  cautions.push(exactTopic.rates.length
+    ? 'Only one '+topic+' result exists in this exact weekday/window; treat the title/topic fit as uncertain, not automatically weak.'
+    : 'No WNMU '+topic+' evidence exists in this exact weekday/window; this is missing evidence, not evidence against the title.');
+}
+score+=topicAdj;adjustments.push(['exactTopicWindow',topicAdj]);
 if(titleHistory.latest){const d=daysBetween(titleHistory.latest,scheduleStart(schedule));let a=0;if(d>=730)a=titleHistory.rows===1?2:8;else if(d>=365)a=6;else if(d>=180)a=2;else if(d<90)a=-10;else if(d<180)a=-5;score+=a;adjustments.push(['rest',a]);if(a>0)reasons.push(`Rested ${d} days since the latest known airing.`);if(a<0)cautions.push(`Short rest: ${d} days since the latest known airing.`);}
 let fatigue=0;if(titleHistory.rows>=12)fatigue=-8;else if(titleHistory.rows>=8)fatigue=-5;else if(titleHistory.rows>=5)fatigue=-2;else if(titleHistory.rows>0&&titleHistory.rows<=2)fatigue=3;score+=fatigue;adjustments.push(['lifetimeExposure',fatigue]);if(titleHistory.rows>=8)cautions.push(`Heavy lifetime exposure: ${titleHistory.rows} known airings.`);
 score+=season.adjustment;adjustments.push(['season',season.adjustment]);reasons.push(...season.notes);const local=cachedProgram.local;if(local){score+=8;adjustments.push(['local',8]);reasons.push('Local / U.P. relevance.');}if(drama.currentCycle){score+=8;adjustments.push(['dramaDoc',8]);reasons.push(drama.basis==='series-season'?('Current Drama Doc series/season'+(drama.seasonNumber?' (Season '+drama.seasonNumber+')':'')+'.'):'Current-cycle Drama Doc fallback based on rights-start timing.');}else if(drama.olderCycle){score-=12;adjustments.push(['dramaDoc',-12]);cautions.push(drama.basis==='series-season'?('Drama Doc is not in the current series/season'+(drama.currentSeriesSeason?' (current library season '+drama.currentSeriesSeason+')':'')+'.'):'Older Drama Doc cycle receives a priority penalty.');}else if(drama.cycleUnknown)cautions.push('Drama Doc current-series/season status is unknown.');if(cachedProgram.biography){score-=4;adjustments.push(['biography',-4]);}if(cachedProgram.corePbs){score+=4;adjustments.push(['corePbs',4]);}
@@ -1762,7 +1776,29 @@ return result;}
         startMinutes: plannedStart,
         endMinutes: plannedStart + 30
       };
-      const exact = broadPool.map((base) => scoreProgramForSlot(base.program, exactSlot, context))
+      const exact = broadPool.map((base) => {
+        const rescored = scoreProgramForSlot(base.program, exactSlot, context);
+        if (!rescored) return null;
+        const windowScore = Number(base.score);
+        const exactStartScore = Number(rescored.score);
+        const exactStartEvidenceSufficient =
+          Number(rescored.dayHistory?.fundraisers || 0) >= 2
+          || Number(rescored.topicHistory?.fundraisers || 0) >= 2
+          || Number(rescored.exactTitleHistory?.fundraisers || 0) >= 2;
+        let effectiveScore = exactStartScore;
+        if (Number.isFinite(windowScore)) {
+          effectiveScore = exactStartEvidenceSufficient && Number.isFinite(exactStartScore)
+            ? Math.round((windowScore * 0.65) + (exactStartScore * 0.35))
+            : windowScore;
+        }
+        return {
+          ...rescored,
+          score: clamp(effectiveScore),
+          windowScore: Number.isFinite(windowScore) ? windowScore : null,
+          exactStartScore: Number.isFinite(exactStartScore) ? exactStartScore : null,
+          exactStartEvidenceSufficient
+        };
+      })
         .filter((item) =>
           item
           && recommendationAllowed(item, exactSlot)
@@ -2167,6 +2203,25 @@ return result;}
 
     const fundraiserTitleAssignments = buildFundraiserTitleAssignments(rankedWindows);
     const lineupUsedByDate = new Map();
+    const lineupUseCount = new Map();
+    const lineupDaypartUseCount = new Map();
+    const lineupCandidateKey = (item = {}) => text(item?.programId || lookupKey(item?.title || ''));
+    const lineupCandidateWithinCaps = (item = {}, slot = {}) => {
+      const key = lineupCandidateKey(item);
+      if (!key) return false;
+      if (Number(lineupUseCount.get(key) || 0) >= MAX_AUTOMATED_TITLE_APPEARANCES) return false;
+      const daypart = daypartForMinutes(slot.startMinutes);
+      const daypartKey = key + '|' + daypart;
+      return Number(lineupDaypartUseCount.get(daypartKey) || 0) < MAX_AUTOMATED_TITLE_DAYPART_APPEARANCES;
+    };
+    const recordLineupUse = (item = {}) => {
+      const key = lineupCandidateKey(item);
+      if (!key) return;
+      lineupUseCount.set(key, Number(lineupUseCount.get(key) || 0) + 1);
+      const daypart = daypartForMinutes(item.plannedStartMinutes);
+      const daypartKey = key + '|' + daypart;
+      lineupDaypartUseCount.set(daypartKey, Number(lineupDaypartUseCount.get(daypartKey) || 0) + 1);
+    };
     const windows = rankedWindows.map(({ slot, ranked }) => {
       const requestedMinutes = Math.max(0, Number(slot.endMinutes || 0) - Number(slot.startMinutes || 0));
       if (slot.blocked) return { ...slot, recommendations: [], lineup: [], recommendedMinutes: 0, unusedMinutes: requestedMinutes, recommendationThreshold: null, strongestTopics: [], alternativeTopics: [], evidenceRows: 0, experimentalEvidence: null };
@@ -2182,20 +2237,39 @@ return result;}
         const assigned = fundraiserTitleAssignments.get(key);
         return Boolean(assigned && assigned.has(slotKey));
       });
-      const recommendations = slot.webOnlyExperimental
-        ? selectWebOnlyRecommendationsForSlot(allocatedRanked, staffedBestByProgram, slot, 8)
-        : selectRecommendationsForSlot(allocatedRanked, slot.userDefined ? 8 : 4, slot);
+      const cappedAllocatedRanked = allocatedRanked.filter((item) => lineupCandidateWithinCaps(item, slot));
+      let recommendations = slot.webOnlyExperimental
+        ? selectWebOnlyRecommendationsForSlot(cappedAllocatedRanked, staffedBestByProgram, slot, 8)
+        : selectRecommendationsForSlot(cappedAllocatedRanked, slot.userDefined ? 8 : 4, slot);
       const lineupPool = slot.webOnlyExperimental
-        ? selectWebOnlyRecommendationsForSlot(allocatedRanked, staffedBestByProgram, slot, 60)
-        : allocatedRanked;
+        ? selectWebOnlyRecommendationsForSlot(cappedAllocatedRanked, staffedBestByProgram, slot, 60)
+        : cappedAllocatedRanked;
       const usedKeys = lineupUsedByDate.get(slot.date) || new Set();
-      const lineupPlan = slot.userDefined
+      let lineupPlan = slot.userDefined
         ? buildFundraisingWindowLineup(lineupPool, slot, context, usedKeys)
         : { items: [], usedMinutes: 0, unusedMinutes: 0, threshold: null };
+      let allocationFallbackUsed = false;
+      if (slot.userDefined && !lineupPlan.items.length) {
+        const fallbackRanked = ranked.filter((item) => lineupCandidateWithinCaps(item, slot));
+        const fallbackPool = slot.webOnlyExperimental
+          ? selectWebOnlyRecommendationsForSlot(fallbackRanked, staffedBestByProgram, slot, 60)
+          : fallbackRanked;
+        const fallbackPlan = buildFundraisingWindowLineup(fallbackPool, slot, context, usedKeys);
+        if (fallbackPlan.items.length) {
+          lineupPlan = fallbackPlan;
+          allocationFallbackUsed = true;
+          if (!recommendations.length) {
+            recommendations = slot.webOnlyExperimental
+              ? selectWebOnlyRecommendationsForSlot(fallbackRanked, staffedBestByProgram, slot, 8)
+              : selectRecommendationsForSlot(fallbackRanked, 8, slot);
+          }
+        }
+      }
       if (slot.userDefined) {
         lineupPlan.items.forEach((item) => {
           const key = text(item.programId || lookupKey(item.title));
           if (key) usedKeys.add(key);
+          recordLineupUse(item);
         });
         lineupUsedByDate.set(slot.date, usedKeys);
       }
@@ -2206,6 +2280,7 @@ return result;}
         recommendedMinutes: lineupPlan.usedMinutes,
         unusedMinutes: lineupPlan.unusedMinutes,
         recommendationThreshold: lineupPlan.threshold,
+        allocationFallbackUsed,
         requestedMinutes,
         windowHistory: slotEvidence.exactSummary,
         strongestTopics: topics.slice(0, 3),

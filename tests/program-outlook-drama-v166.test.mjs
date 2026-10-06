@@ -28,3 +28,12 @@ test('programmer Low confidence governs the displayed outlook confidence', () =>
   assert.match(enhancementSource, /outlook = 'Low confidence · Caution'/);
   assert.match(enhancementSource, /outlook = 'Low confidence · Unclear'/);
 });
+
+
+test('unaired titles are never classified as caution merely for being untested', () => {
+  const branch=source.match(/if \(airings < 1\) \{[\s\S]*?return \{ \.\.\.result, score, outlook, tone, confidence, cautions \};[\s\S]*?\n    \}/)?.[0] || '';
+  assert.ok(branch,'explicit unaired classification branch should exist');
+  assert.match(branch,/Untested/);
+  assert.doesNotMatch(branch,/outlook = 'Caution'/);
+  assert.doesNotMatch(branch,/tone = 'caution'/);
+});

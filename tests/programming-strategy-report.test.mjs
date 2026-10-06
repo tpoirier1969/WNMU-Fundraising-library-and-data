@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.251'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.253'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -999,7 +999,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.251', 'programming-strategy-backtest\.js\?v=0\.22\.251'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.253', 'programming-strategy-backtest\.js\?v=0\.22\.253'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.251/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.253/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -1024,10 +1024,13 @@ test('strategy report carries scheduler Fundraising Windows through the worker a
   assert.match(reportUi,/slot\.lineup/);
   assert.match(reportUi,/minutes recommended/);
   assert.match(reportUi,/Leave .* minutes regular \/ unfilled/);
-  assert.match(reportUi,/No title clears this window/);
+  assert.match(reportUi,/No automated title lineup clears the current title-level threshold yet/);
+  assert.doesNotMatch(reportUi,/Leave the .*window regular for now/);
+  assert.match(reportUi,/Window history .*pledge hr/);
   assert.match(workerUi,/recommendedMinutes: slot\.recommendedMinutes/);
   assert.match(workerUi,/unusedMinutes: slot\.unusedMinutes/);
   assert.match(workerUi,/lineup: \(slot\.lineup \|\| \[\]\)/);
+  assert.match(workerUi,/allocationFallbackUsed: Boolean\(slot\.allocationFallbackUsed\)/);
 });
 
 test('topic cards show every topic with optional expandable subtopics', () => {
@@ -2392,4 +2395,67 @@ test('dated companion titles are excluded from staffed windows but eligible for 
   assert.equal(S.recommendationAllowed(staffedScore,staffed),false);
   assert.equal(S.recommendationAllowed(webScore,webOnly),true);
   assert.ok(webScore.reasons.some(reason=>/5–7 PM Web-only test/i.test(reason)));
+});
+
+
+test('missing exact topic history is uncertainty, not a negative score', () => {
+  const program=baseProgram({id:'fresh-music',title:'Fresh Music',topic_primary:'Music',length_bucket_minutes:60});
+  const slot={
+    id:'sat-prime',
+    date:'2026-12-05',
+    weekday:'Saturday',
+    weekpart:'Saturday',
+    label:'Prime',
+    startMinutes:19*60,
+    endMinutes:20*60,
+    userDefined:true,
+    priority:'open',
+    experimental:false,
+    blocked:false
+  };
+  const evidence=[
+    row({programId:'history-a',title:'History A',topic:'History',dateKey:'2025-12-06',startMinutes:19*60+30,minutes:60,dollars:700,fundraiserId:'dec25'}),
+    row({programId:'history-b',title:'History B',topic:'History',dateKey:'2024-12-07',startMinutes:19*60+30,minutes:60,dollars:650,fundraiserId:'dec24'})
+  ];
+  const context={schedule,evidenceRows:evidence,overrideByProgramId:new Map(),baselineRate:300};
+  const scored=S.scoreProgramForSlot(program,slot,context);
+  const topicAdjustment=scored.adjustments.find(([name])=>name==='exactTopicWindow')?.[1];
+  assert.equal(topicAdjustment,0);
+  assert.ok(scored.cautions.some((item)=>/missing evidence, not evidence against the title/i.test(item)));
+});
+
+test('sparse exact half-hour evidence cannot erase a strong whole-window title score', () => {
+  const program=baseProgram({id:'window-fit',title:'Window Fit',topic_primary:'Music',length_bucket_minutes:60});
+  const slot={
+    id:'sat-window',
+    date:'2026-12-05',
+    weekday:'Saturday',
+    weekpart:'Saturday',
+    label:'Fundraising window',
+    startMinutes:19*60,
+    endMinutes:20*60,
+    userDefined:true,
+    priority:'open',
+    experimental:false,
+    blocked:false
+  };
+  const evidence=[
+    row({programId:'history-a',title:'History A',topic:'History',dateKey:'2025-12-06',startMinutes:19*60+30,minutes:60,dollars:700,fundraiserId:'dec25'}),
+    row({programId:'history-b',title:'History B',topic:'History',dateKey:'2024-12-07',startMinutes:19*60+30,minutes:60,dollars:650,fundraiserId:'dec24'})
+  ];
+  const context={schedule,evidenceRows:evidence,overrideByProgramId:new Map(),baselineRate:300};
+  const broad={...S.scoreProgramForSlot(program,slot,context),score:65};
+  const plan=S.buildFundraisingWindowLineup([broad],slot,context,new Set());
+  assert.equal(plan.items.length,1);
+  assert.equal(plan.items[0].windowScore,65);
+  assert.equal(plan.items[0].exactStartEvidenceSufficient,false);
+  assert.ok(plan.items[0].score>=60);
+});
+
+test('marked windows retry strongest eligible titles when drive-wide allocation leaves no usable lineup', () => {
+  const source=fs.readFileSync(new URL('../assets/js/programming-strategy-analysis.js',import.meta.url),'utf8');
+  assert.match(source,/if \(slot\.userDefined && !lineupPlan\.items\.length\)/);
+  assert.match(source,/const fallbackRanked = ranked\.filter/);
+  assert.match(source,/allocationFallbackUsed = true/);
+  assert.match(source,/recordLineupUse\(item\)/);
 });

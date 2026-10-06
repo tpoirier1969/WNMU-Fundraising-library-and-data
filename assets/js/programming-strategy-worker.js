@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.251', 'programming-strategy-backtest.js?v=0.22.251');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.253', 'programming-strategy-backtest.js?v=0.22.253');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -1538,6 +1538,7 @@ function compactStrategy(strategy = {}, schedule = {}, peerObservations = []) {
       recommendedMinutes: slot.recommendedMinutes,
       unusedMinutes: slot.unusedMinutes,
       recommendationThreshold: slot.recommendationThreshold,
+      allocationFallbackUsed: Boolean(slot.allocationFallbackUsed),
       evidenceRows: slot.evidenceRows,
       windowHistory: slot.windowHistory,
       experimentalEvidence: slot.experimentalEvidence,
