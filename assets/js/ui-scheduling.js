@@ -2685,6 +2685,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return Boolean(placement?.isPlaceholder || placement?.placementType === 'placeholder');
   }
 
+  function isRegularSchedulePlacement(placement = {}) {
+    return Boolean(placement?.placementType === 'regular');
+  }
+
+  function placementScheduleNote(placement = {}) {
+    return utils.normalizeText(placement?.scheduleNote || placement?.schedule_note || placement?.planningNote || placement?.planning_note || '');
+  }
+
   function placeholderTitle(placement = {}) {
     return utils.normalizeText(placement?.placeholderTitle || placement?.programTitle || placement?.title || 'Placeholder');
   }
