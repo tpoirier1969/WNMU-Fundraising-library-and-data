@@ -694,11 +694,26 @@
     ).sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes);
   }
 
+  function regularScheduleBlocks(schedule = {}) {
+    return (Array.isArray(schedule?.placements) ? schedule.placements : [])
+      .filter((placement) => placement?.placementType === 'regular' || placement?.isRegularScheduleBlock === true)
+      .map((placement, index) => ({
+        id: text(placement.id) || `regular-${index + 1}`,
+        date: text(first(placement.dateKey, placement.date_key, '')),
+        startMinutes: number(first(placement.startMinutes, placement.start_minutes), NaN),
+        endMinutes: number(first(placement.endMinutes, placement.end_minutes), NaN),
+        title: text(first(placement.programTitle, placement.regularTitle, 'Regular program')),
+        note: text(first(placement.scheduleNote, placement.regularNote, placement.note, ''))
+      }))
+      .filter((placement) => placement.date && Number.isFinite(placement.startMinutes) && Number.isFinite(placement.endMinutes) && placement.endMinutes > placement.startMinutes);
+  }
+
   function customPlanningWindows(schedule = {}) {
     const targetStart = parseDate(scheduleStart(schedule));
     const webOnlyExperiment = seasonForDate(scheduleStart(schedule)) === 'December' && targetStart?.getFullYear() === 2026;
+    const regularBlocks = regularScheduleBlocks(schedule);
     const result = [];
-    const makeSegment = (window, startMinutes, endMinutes, suffix = '', blocked = false) => {
+    const makeSegment = (window, startMinutes, endMinutes, suffix = '', blocked = false, regularBlock = null) => {
       const date = parseDate(window.date);
       if (!date || endMinutes <= startMinutes) return;
       const day = date.getDay();
@@ -709,17 +724,18 @@
         date: window.date,
         weekday: date.toLocaleDateString('en-US', { weekday: 'long' }),
         weekpart: day === 6 ? 'Saturday' : day === 0 ? 'Sunday' : 'Weekday',
-        label: blocked ? 'Protected regular programming' : 'Fundraising window',
+        label: regularBlock ? `Regular schedule · ${regularBlock.title}` : (blocked ? 'Protected regular programming' : 'Fundraising window'),
         startMinutes,
         endMinutes,
         priority: window.priority,
         priorityLabel: planningPriorityLabel(window.priority),
-        note: window.note,
+        note: regularBlock?.note || window.note,
         userDefined: true,
         confidenceClass: blocked ? 'blocked' : (entirelyWebOnly ? 'experimental' : 'normal'),
         experimental: entirelyWebOnly,
         webOnlyExperimental: entirelyWebOnly,
         fundraisingMode: entirelyWebOnly ? 'web-only' : 'staffed',
+        regularScheduleBlock: regularBlock ? { ...regularBlock } : null,
         blocked
       });
     };
@@ -728,6 +744,15 @@
       const date = parseDate(window.date);
       if (!date) return;
       const cuts = new Set([window.startMinutes, window.endMinutes]);
+      const overlappingRegular = regularBlocks.filter((placement) =>
+        placement.date === window.date
+        && placement.startMinutes < window.endMinutes
+        && placement.endMinutes > window.startMinutes
+      );
+      overlappingRegular.forEach((placement) => {
+        if (placement.startMinutes > window.startMinutes && placement.startMinutes < window.endMinutes) cuts.add(placement.startMinutes);
+        if (placement.endMinutes > window.startMinutes && placement.endMinutes < window.endMinutes) cuts.add(placement.endMinutes);
+      });
       if (webOnlyExperiment) {
         [17 * 60, 19 * 60].forEach((boundary) => {
           if (boundary > window.startMinutes && boundary < window.endMinutes) cuts.add(boundary);
@@ -742,10 +767,14 @@
       for (let index = 0; index < points.length - 1; index += 1) {
         const segmentStart = points[index];
         const segmentEnd = points[index + 1];
-        const blocked = date.getDay() === 5
+        const regularBlock = overlappingRegular.find((placement) =>
+          segmentStart >= placement.startMinutes && segmentEnd <= placement.endMinutes
+        ) || null;
+        const protectedFriday = date.getDay() === 5
           && segmentStart >= 20 * 60
           && segmentEnd <= 21 * 60;
-        makeSegment(window, segmentStart, segmentEnd, `-segment-${index + 1}`, blocked);
+        const blocked = protectedFriday || Boolean(regularBlock);
+        makeSegment(window, segmentStart, segmentEnd, `-segment-${index + 1}`, blocked, regularBlock);
       }
     });
     return result.sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes || Number(a.blocked) - Number(b.blocked));
