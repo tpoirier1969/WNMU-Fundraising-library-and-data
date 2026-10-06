@@ -24,3 +24,11 @@ test('permanent program deletion is available only from the Program Library work
   assert.match(detailSource, /const canDeleteCurrent = canEdit\(\) && inLibraryWorkspace/);
   assert.match(shell, /id="detail-delete-button">Delete from Library…<\/button>/);
 });
+
+
+test('Schedule This Slot closes after successful window edits and scheduling', () => {
+  assert.match(schedulingSource,/saveFundraisingWindowToSelectedSlot\(true\)/);
+  assert.match(schedulingSource,/removeFundraisingWindowFromSelectedSlot\(true\)/);
+  const assignBlock=schedulingSource.match(/async function assignProgramToSelectedSlot[\s\S]*?\n  \}/)?.[0] || '';
+  assert.match(assignBlock,/closeScheduleModal\(\)/);
+});
