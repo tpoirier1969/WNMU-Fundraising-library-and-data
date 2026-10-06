@@ -4389,6 +4389,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const existingPlaceholder = isPlaceholderPlacement(currentPlacement);
     const titleValue = existingPlaceholder ? placeholderTitle(currentPlacement) : utils.normalizeText(state.scheduleProgramQuery || '');
     const lengthValue = existingPlaceholder ? placeholderLengthMinutes(currentPlacement.lengthMinutes) : 60;
+    const noteValue = existingPlaceholder ? placementScheduleNote(currentPlacement) : '';
     const buttonText = existingPlaceholder ? 'Update placeholder' : 'Add placeholder';
     const findText = existingPlaceholder ? 'Find matching programs' : 'Search this title';
     return `
@@ -4406,9 +4407,46 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
             <span class="filter-label">Length</span>
             <select id="schedule-placeholder-length" ${editable ? '' : 'disabled'}>${placeholderLengthOptionsHtml(lengthValue)}</select>
           </label>
+          <label class="filter-field schedule-note-field">
+            <span class="filter-label">Note <span class="muted">(optional)</span></span>
+            <input id="schedule-placeholder-note" type="text" value="${utils.escapeHtml(noteValue)}" placeholder="Why is this placeholder here?" ${editable ? '' : 'disabled'}>
+          </label>
           <div class="schedule-placeholder-actions">
             <button type="button" class="secondary" id="schedule-placeholder-save-button" ${editable ? '' : 'disabled'}>${buttonText}</button>
             <button type="button" class="ghost" id="schedule-placeholder-find-button" ${editable ? '' : 'disabled'}>${findText}</button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderRegularScheduleControls(currentPlacement = null, editable = false) {
+    const existingRegular = isRegularSchedulePlacement(currentPlacement);
+    const titleValue = existingRegular ? utils.normalizeText(currentPlacement?.programTitle || '') : '';
+    const lengthValue = existingRegular ? placeholderLengthMinutes(currentPlacement?.lengthMinutes) : 60;
+    const noteValue = existingRegular ? placementScheduleNote(currentPlacement) : '';
+    const buttonText = existingRegular ? 'Update regular program' : 'Add regular program';
+    return `
+      <section class="schedule-regular-panel" aria-label="Regular schedule not for pledge">
+        <div class="schedule-regular-head">
+          <strong>Regular schedule · Not for pledge</strong>
+          <span>Use this for a normal program that overlaps the fundraiser but will not carry fundraising breaks. It occupies calendar time and is excluded from pledge hours and financial tracking.</span>
+        </div>
+        <div class="schedule-regular-grid">
+          <label class="filter-field search-grow">
+            <span class="filter-label">Program title</span>
+            <input id="schedule-regular-title" type="text" value="${utils.escapeHtml(titleValue)}" placeholder="Type the regular-schedule title" ${editable ? '' : 'disabled'}>
+          </label>
+          <label class="filter-field">
+            <span class="filter-label">Length</span>
+            <select id="schedule-regular-length" ${editable ? '' : 'disabled'}>${placeholderLengthOptionsHtml(lengthValue)}</select>
+          </label>
+          <label class="filter-field schedule-note-field">
+            <span class="filter-label">Note <span class="muted">(optional)</span></span>
+            <input id="schedule-regular-note" type="text" value="${utils.escapeHtml(noteValue)}" placeholder="Optional scheduling note" ${editable ? '' : 'disabled'}>
+          </label>
+          <div class="schedule-regular-actions">
+            <button type="button" class="secondary" id="schedule-regular-save-button" ${editable ? '' : 'disabled'}>${buttonText}</button>
           </div>
         </div>
       </section>
@@ -4469,7 +4507,9 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function syncPlanningControls(schedule = {}, slot = {}, currentPlacement = null, editable = false) {
     const host = document.getElementById('schedule-placeholder-controls');
     if (!host) return;
-    host.innerHTML = renderFundraisingWindowControls(schedule, slot, editable) + renderPlaceholderControls(currentPlacement, editable);
+    host.innerHTML = renderFundraisingWindowControls(schedule, slot, editable)
+      + renderPlaceholderControls(currentPlacement, editable)
+      + renderRegularScheduleControls(currentPlacement, editable);
   }
 
   function placementHasConfirmedImportedResult(placement = {}) {
