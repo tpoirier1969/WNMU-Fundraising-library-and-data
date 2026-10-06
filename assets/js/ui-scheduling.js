@@ -5414,7 +5414,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       '<button type="button" data-action="fundraising-window">Add fundraising window…</button>',
       '<button type="button" data-action="placeholder">Add / edit placeholder…</button>',
       '<button type="button" data-action="regular">Add / edit regular program…</button>',
-      '<button type="button" data-action="copy">Copy block</button>'
+      '<button type="button" data-action="copy">Copy block</button>',
       '<button type="button" data-action="paste">Paste copied block here</button>',
       '<button type="button" data-action="detail">Open details / edit</button>',
       '<button type="button" class="destructive" data-action="delete">Delete scheduled block</button>'
