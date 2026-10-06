@@ -54,3 +54,12 @@ test('regular and placeholder blocks survive scheduler copy paste', () => {
   assert.match(scheduling, /const regular = Boolean\(clip\.isRegularScheduleBlock/);
   assert.match(scheduling, /scheduleNote: utils\.normalizeText\(clip\.scheduleNote/);
 });
+
+test('regular schedule blocks are treated as protected time by fundraiser strategy', () => {
+  const strategy = fs.readFileSync('assets/js/programming-strategy-analysis.js', 'utf8');
+  assert.match(strategy, /function regularScheduleBlocks\(/);
+  assert.match(strategy, /placement\?\.placementType === 'regular'/);
+  assert.match(strategy, /const regularBlock = overlappingRegular\.find/);
+  assert.match(strategy, /const blocked = protectedFriday \|\| Boolean\(regularBlock\)/);
+  assert.match(strategy, /Regular schedule · \$\{regularBlock\.title\}/);
+});
