@@ -4102,29 +4102,45 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const hasImportedData = isStart && placementHasImportedAiring(placement, actualDateKey, actualMinutes);
         const hasManualData = isStart && !hasImportedData && placementHasManualResult(placement);
         const isPlaceholder = isPlaceholderPlacement(placement);
+        const isRegular = isRegularSchedulePlacement(placement);
         const breakMode = (isStart && !isPlaceholder && !placement?.isNonPledge)
           ? calendarPlacementBreakMode(schedule, placement)
           : '';
         const breakModeClass = breakMode ? `break-mode-${breakMode.replace(/_/g, '-')}` : '';
-        const klass = [placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '', placement?.isNonPledge ? 'non-pledge' : '', isPlaceholder ? 'placeholder' : '', breakModeClass, breakMode === BREAK_MODES.LIVE ? 'live-break' : '', placement?.transferredToStation ? 'transferred-to-station' : '', hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')].filter(Boolean).join(' ');
+        const readinessClass = isStart ? schedulePlacementReadinessClass(placement) : '';
+        const klass = [
+          placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '',
+          placement?.isNonPledge ? 'non-pledge' : '',
+          isPlaceholder ? 'placeholder' : '',
+          isRegular ? 'regular-schedule' : '',
+          breakModeClass,
+          readinessClass,
+          placement?.transferredToStation ? 'transferred-to-station' : '',
+          hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')
+        ].filter(Boolean).join(' ');
         const expectationBadge = isStart && !isPlaceholder ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
         const breakWarning = isStart && !isPlaceholder ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const manualResultBadge = hasManualData ? `<span class="schedule-placement-manual-result" title="Manual pledge result">${utils.escapeHtml(utils.formatMoney(placementManualResultDollars(placement)))}</span>` : '';
+        const scheduleNote = placementScheduleNote(placement);
+        const placementNoteHtml = isStart && scheduleNote && (isPlaceholder || isRegular)
+          ? `<span class="schedule-placement-note">${utils.escapeHtml(scheduleNote)}</span>`
+          : '';
         const subtitleBits = [];
         if (placement) {
           subtitleBits.push(`${utils.escapeHtml(String(placement.lengthMinutes))} min`);
           if (isPlaceholder) subtitleBits.push('placeholder');
-          if (placement.isNonPledge) subtitleBits.push('non-pledge');
+          if (isRegular) subtitleBits.push('REGULAR · NO PLEDGE');
+          else if (placement.isNonPledge) subtitleBits.push('non-pledge');
           if (breakMode) subtitleBits.push(utils.escapeHtml(breakModeLabel(breakMode)));
         }
-        const transferToggle = isStart && editable
+        const transferToggle = isStart && editable && placement && !placement.isNonPledge && !isPlaceholder
           ? `<label class="schedule-placement-transfer-toggle" data-placement-transfer-toggle title="Mark this title as entered in traffic/scheduling software">
               <input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}>
               <span class="schedule-placement-transfer-check" aria-hidden="true"></span>
             </label>`
           : '';
-        const breakModeBadge = isStart && breakMode && breakMode !== BREAK_MODES.LIVE
-          ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES'}</span>`
+        const breakModeBadge = isStart && breakMode
+          ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.LIVE ? 'LIVE' : (breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES')}</span>`
           : '';
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
