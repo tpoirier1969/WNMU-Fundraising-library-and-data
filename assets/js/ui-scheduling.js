@@ -2788,26 +2788,29 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
   function hasScheduleClipboard() {
-    return Boolean(state.scheduleClipboard?.programId || state.scheduleClipboard?.isPlaceholder);
+    return Boolean(state.scheduleClipboard?.programId || state.scheduleClipboard?.isPlaceholder || state.scheduleClipboard?.isRegular);
   }
 
   function copyPlacementToClipboard(placement) {
     if (!placement) return false;
     const placeholder = isPlaceholderPlacement(placement);
+    const regular = isRegularSchedulePlacement(placement);
     state.scheduleClipboard = {
-      programId: placeholder ? '' : placement.programId,
+      programId: (placeholder || regular) ? '' : placement.programId,
       programTitle: placeholder ? placeholderTitle(placement) : placement.programTitle,
       placeholderTitle: placeholder ? placeholderTitle(placement) : '',
+      scheduleNote: placementScheduleNote(placement),
       lengthMinutes: placeholderLengthMinutes(placement.lengthMinutes),
-      breakMode: placeholder ? '' : canonicalScheduleBreakMode(placement),
-      breakModeSource: placeholder ? '' : breakModeSourceValue(placement),
-      liveBreakFlag: placeholder ? false : hasLiveBreakFlag(placement),
-      isNonPledge: Boolean(!placeholder && placement.isNonPledge),
+      breakMode: (placeholder || regular) ? '' : canonicalScheduleBreakMode(placement),
+      breakModeSource: (placeholder || regular) ? '' : breakModeSourceValue(placement),
+      liveBreakFlag: (placeholder || regular) ? false : hasLiveBreakFlag(placement),
+      isNonPledge: Boolean(regular || (!placeholder && placement.isNonPledge)),
       isPlaceholder: placeholder,
-      placementType: placeholder ? 'placeholder' : '',
-      sourceName: placeholder ? '' : (placement.sourceName || ''),
-      sourceLabel: placeholder ? '' : (placement.sourceLabel || ''),
-      liveBreakNotes: placeholder ? '' : (placement.liveBreakNotes || '')
+      isRegular: regular,
+      placementType: placeholder ? 'placeholder' : (regular ? 'regular' : ''),
+      sourceName: (placeholder || regular) ? '' : (placement.sourceName || ''),
+      sourceLabel: regular ? 'Regular schedule' : (placeholder ? '' : (placement.sourceLabel || '')),
+      liveBreakNotes: (placeholder || regular) ? '' : (placement.liveBreakNotes || '')
     };
     return true;
   }
@@ -4707,7 +4710,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
 
     if (currentPlacement) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
-      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''}">${placeholder ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>` : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${placeholder ? ' · placeholder' : ''}</div></div>`;
+      const regular = isRegularSchedulePlacement(currentPlacement);
+      const note = placementScheduleNote(currentPlacement);
+      const titleHtml = placeholder
+        ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>`
+        : regular
+          ? `<strong>${utils.escapeHtml(currentPlacement.programTitle || 'Regular program')}</strong>`
+          : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' });
+      const typeLabel = placeholder ? 'placeholder' : (regular ? 'regular · not for pledge' : '');
+      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''}${regular ? ' regular' : ''}">${titleHtml}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${typeLabel ? ` · ${utils.escapeHtml(typeLabel)}` : ''}</div>${note ? `<div class="schedule-selected-note">${utils.escapeHtml(note)}</div>` : ''}</div>`;
       if (els.scheduleClearPlacementButton) {
         els.scheduleClearPlacementButton.disabled = !editable;
         els.scheduleClearPlacementButton.classList.toggle('hidden', !editable);
@@ -4731,6 +4742,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       const mode = explicitMode || defaultBreakModeForMinutes(slot.minutes);
       els.scheduleBreakModeSelect.value = (placeholder || nonPledge) ? BREAK_MODES.PHONES_STAFFED : mode;
       els.scheduleBreakModeSelect.disabled = !editable || placeholder || nonPledge || Boolean(currentPlacement && !currentSupportsMode);
+      els.scheduleBreakModeSelect.closest('.schedule-break-mode-row')?.classList.toggle('hidden', placeholder || nonPledge);
       if (currentPlacement && currentRow && !explicitMode && !detailCache?.loaded && !detailCache?.loading) {
         void ensureScheduledDetailsBatch([detailKey]).then(() => {
           if (!els.scheduleProgramModal?.classList.contains('hidden')) renderProgramPicker();
@@ -6793,6 +6805,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         event.preventDefault();
         event.stopPropagation();
         void removeFundraisingWindowFromSelectedSlot(true);
+        return;
+      }
+      const saveRegular = event.target.closest('#schedule-regular-save-button');
+      if (saveRegular) {
+        event.preventDefault();
+        event.stopPropagation();
+        void saveRegularScheduleToSelectedSlot(true);
         return;
       }
       const save = event.target.closest('#schedule-placeholder-save-button');
