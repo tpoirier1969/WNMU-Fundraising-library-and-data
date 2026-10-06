@@ -3733,6 +3733,19 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return '<span class="schedule-placement-break-needed">BREAK INFO NEEDED</span>';
   }
 
+  function schedulePlacementReadinessClass(placement = null) {
+    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return '';
+    const detailKey = scheduleDetailKeyForPlacement(placement);
+    const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
+    const breakReady = Boolean(cache?.loaded && !cache?.error && scheduleDetailHasBreakInfo(cache.detail || {}));
+    const entered = Boolean(placement?.transferredToStation);
+    if (entered && breakReady) return 'setup-entered setup-break-ready';
+    if (entered) return 'setup-entered setup-break-missing';
+    if (breakReady) return 'setup-break-ready';
+    if (cache?.loaded && !cache?.error) return 'setup-break-missing';
+    return 'setup-loading';
+  }
+
   function scheduleFundraiserDayKeys(schedule = {}) {
     return schedule?.startDate && schedule?.endDate ? utils.datesBetween(schedule.startDate, schedule.endDate) : [];
   }
