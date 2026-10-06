@@ -6680,14 +6680,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       if (saveWindow) {
         event.preventDefault();
         event.stopPropagation();
-        void saveFundraisingWindowToSelectedSlot(false);
+        void saveFundraisingWindowToSelectedSlot(true);
         return;
       }
       const removeWindow = event.target.closest('#schedule-fundraising-window-remove-button');
       if (removeWindow) {
         event.preventDefault();
         event.stopPropagation();
-        void removeFundraisingWindowFromSelectedSlot(false);
+        void removeFundraisingWindowFromSelectedSlot(true);
         return;
       }
       const save = event.target.closest('#schedule-placeholder-save-button');
