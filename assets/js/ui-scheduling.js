@@ -2689,6 +2689,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return utils.normalizeText(placement?.placeholderTitle || placement?.programTitle || placement?.title || 'Placeholder');
   }
 
+  function isRegularSchedulePlacement(placement = {}) {
+    return Boolean(placement?.isRegularScheduleBlock || placement?.placementType === 'regular');
+  }
+
+  function schedulePlacementNote(placement = {}) {
+    return utils.normalizeText(placement?.scheduleNote || placement?.placeholderNote || placement?.regularNote || placement?.note || '');
+  }
+
   function placeholderLengthMinutes(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || numeric <= 0) return 60;
@@ -4381,6 +4389,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const existingPlaceholder = isPlaceholderPlacement(currentPlacement);
     const titleValue = existingPlaceholder ? placeholderTitle(currentPlacement) : utils.normalizeText(state.scheduleProgramQuery || '');
     const lengthValue = existingPlaceholder ? placeholderLengthMinutes(currentPlacement.lengthMinutes) : 60;
+    const noteValue = existingPlaceholder ? schedulePlacementNote(currentPlacement) : '';
     const buttonText = existingPlaceholder ? 'Update placeholder' : 'Add placeholder';
     const findText = existingPlaceholder ? 'Find matching programs' : 'Search this title';
     return `
@@ -4398,9 +4407,45 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
             <span class="filter-label">Length</span>
             <select id="schedule-placeholder-length" ${editable ? '' : 'disabled'}>${placeholderLengthOptionsHtml(lengthValue)}</select>
           </label>
+          <label class="filter-field schedule-placeholder-note-field">
+            <span class="filter-label">Note <span class="filter-label-optional">(optional)</span></span>
+            <input id="schedule-placeholder-note" type="text" value="${utils.escapeHtml(noteValue)}" placeholder="Why is this placeholder here?" ${editable ? '' : 'disabled'}>
+          </label>
           <div class="schedule-placeholder-actions">
             <button type="button" class="secondary" id="schedule-placeholder-save-button" ${editable ? '' : 'disabled'}>${buttonText}</button>
             <button type="button" class="ghost" id="schedule-placeholder-find-button" ${editable ? '' : 'disabled'}>${findText}</button>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderRegularScheduleControls(currentPlacement = null, editable = false) {
+    const existingRegular = isRegularSchedulePlacement(currentPlacement);
+    const titleValue = existingRegular ? utils.normalizeText(currentPlacement?.programTitle || currentPlacement?.regularTitle || '') : '';
+    const lengthValue = existingRegular ? placeholderLengthMinutes(currentPlacement.lengthMinutes) : 60;
+    const noteValue = existingRegular ? schedulePlacementNote(currentPlacement) : '';
+    return `
+      <section class="schedule-regular-panel" aria-label="Regular program not for pledge">
+        <div class="schedule-regular-head">
+          <strong>Regular program · Not for pledge</strong>
+          <span>Use this for regular schedule programming that occupies fundraiser time but will not carry fundraising breaks or financial tracking.</span>
+        </div>
+        <div class="schedule-regular-grid">
+          <label class="filter-field search-grow">
+            <span class="filter-label">Program title</span>
+            <input id="schedule-regular-title" type="text" value="${utils.escapeHtml(titleValue)}" placeholder="Regular schedule title" ${editable ? '' : 'disabled'}>
+          </label>
+          <label class="filter-field">
+            <span class="filter-label">Length</span>
+            <select id="schedule-regular-length" ${editable ? '' : 'disabled'}>${placeholderLengthOptionsHtml(lengthValue)}</select>
+          </label>
+          <label class="filter-field schedule-regular-note-field">
+            <span class="filter-label">Note <span class="filter-label-optional">(optional)</span></span>
+            <input id="schedule-regular-note" type="text" value="${utils.escapeHtml(noteValue)}" placeholder="Optional scheduling note" ${editable ? '' : 'disabled'}>
+          </label>
+          <div class="schedule-regular-actions">
+            <button type="button" class="secondary" id="schedule-regular-save-button" ${editable ? '' : 'disabled'}>${existingRegular ? 'Update regular program' : 'Add regular program'}</button>
           </div>
         </div>
       </section>
@@ -4461,7 +4506,9 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function syncPlanningControls(schedule = {}, slot = {}, currentPlacement = null, editable = false) {
     const host = document.getElementById('schedule-placeholder-controls');
     if (!host) return;
-    host.innerHTML = renderFundraisingWindowControls(schedule, slot, editable) + renderPlaceholderControls(currentPlacement, editable);
+    host.innerHTML = renderFundraisingWindowControls(schedule, slot, editable)
+      + renderPlaceholderControls(currentPlacement, editable)
+      + renderRegularScheduleControls(currentPlacement, editable);
   }
 
   function placementHasConfirmedImportedResult(placement = {}) {
@@ -4659,7 +4706,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
 
     if (currentPlacement) {
       const placeholder = isPlaceholderPlacement(currentPlacement);
-      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''}">${placeholder ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>` : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' })}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${placeholder ? ' · placeholder' : ''}</div></div>`;
+      const regular = isRegularSchedulePlacement(currentPlacement);
+      const previewTitle = placeholder
+        ? `<strong>${utils.escapeHtml(placeholderTitle(currentPlacement))}</strong>`
+        : (regular
+          ? `<strong>${utils.escapeHtml(currentPlacement.programTitle || currentPlacement.regularTitle || 'Regular program')}</strong>`
+          : renderProgramTitleLink(currentPlacement.isNonPledge ? '' : currentPlacement.programId, currentPlacement.programTitle, { className: 'schedule-selected-title-link' }));
+      const previewNote = schedulePlacementNote(currentPlacement);
+      els.scheduleSelectedPreview.innerHTML = `<div class="schedule-selected-card ${placeholder ? 'placeholder' : ''} ${regular ? 'regular-program' : ''}">${previewTitle}<div>${utils.escapeHtml(String(currentPlacement.lengthMinutes))} min${placeholder ? ' · placeholder' : ''}${regular ? ' · regular / not for pledge' : ''}</div>${previewNote ? `<small>${utils.escapeHtml(previewNote)}</small>` : ''}</div>`;
       if (els.scheduleClearPlacementButton) {
         els.scheduleClearPlacementButton.disabled = !editable;
         els.scheduleClearPlacementButton.classList.toggle('hidden', !editable);
@@ -4909,6 +4963,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const slot = state.selectedScheduleSlot;
     if (!schedule || !slot) return false;
     const title = utils.normalizeText(document.getElementById('schedule-placeholder-title')?.value || state.scheduleProgramQuery || '');
+    const scheduleNote = utils.normalizeText(document.getElementById('schedule-placeholder-note')?.value || '');
     if (!title) {
       showScheduleModalWarning('Type a placeholder title first.', 'warn');
       document.getElementById('schedule-placeholder-title')?.focus?.();
@@ -4928,6 +4983,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       programId: '',
       programTitle: title,
       placeholderTitle: title,
+      scheduleNote,
+      placeholderNote: scheduleNote,
       lengthMinutes,
       dateKey: slot.dateKey,
       startMinutes: slot.minutes,
@@ -4953,7 +5010,61 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return true;
   }
 
-  function findProgramsForPlaceholder() {
+  async function saveRegularScheduleToSelectedSlot(closeAfter = true) {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to add regular schedule blocks.', 'bad'); return false; }
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    if (!schedule || !slot) return false;
+    const title = utils.normalizeText(document.getElementById('schedule-regular-title')?.value || '');
+    if (!title) {
+      showScheduleModalWarning('Type the regular program title first.', 'warn');
+      document.getElementById('schedule-regular-title')?.focus?.();
+      return false;
+    }
+    const lengthMinutes = placeholderLengthMinutes(document.getElementById('schedule-regular-length')?.value || 60);
+    const scheduleNote = utils.normalizeText(document.getElementById('schedule-regular-note')?.value || '');
+    const slotCount = Math.max(1, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES));
+    const existing = findPlacementForSlot(schedule, slot.key);
+    if (existing && !isRegularSchedulePlacement(existing)) {
+      showScheduleModalWarning('That slot already contains another scheduled block. Remove it first if you intend to replace it with regular programming.', 'bad');
+      return false;
+    }
+    const base = {
+      id: existing?.id || utils.makeId('regular'),
+      placementType: 'regular',
+      isRegularScheduleBlock: true,
+      isPlaceholder: false,
+      isNonPledge: true,
+      programId: '',
+      programTitle: title,
+      regularTitle: title,
+      placeholderTitle: '',
+      scheduleNote,
+      regularNote: scheduleNote,
+      lengthMinutes,
+      dateKey: slot.dateKey,
+      startMinutes: slot.minutes,
+      endMinutes: slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES),
+      startSlotKey: slot.key,
+      breakMode: '',
+      breakModeSource: '',
+      liveBreakFlag: false,
+      liveBreakNotes: '',
+      sourceName: '',
+      sourceLabel: '',
+      transferredToStation: false
+    };
+    if (existing) Object.assign(existing, base);
+    else schedule.placements.push(base);
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    setNotice(`Added regular program “${title}” at ${slotLabel(slot.dateKey, slot.minutes)} · not for pledge. ${state.scheduleSyncMessage}`);
+    if (closeAfter) closeScheduleModal();
+    return true;
+  }
+
+    function findProgramsForPlaceholder() {
     const title = utils.normalizeText(document.getElementById('schedule-placeholder-title')?.value || '');
     if (!title) {
       showScheduleModalWarning('Type a placeholder title first.', 'warn');
@@ -6688,6 +6799,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         event.preventDefault();
         event.stopPropagation();
         void removeFundraisingWindowFromSelectedSlot(true);
+        return;
+      }
+      const saveRegular = event.target.closest('#schedule-regular-save-button');
+      if (saveRegular) {
+        event.preventDefault();
+        event.stopPropagation();
+        void saveRegularScheduleToSelectedSlot(true);
         return;
       }
       const save = event.target.closest('#schedule-placeholder-save-button');
