@@ -5262,17 +5262,18 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const clip = state.scheduleClipboard;
     const slot = state.selectedScheduleSlot;
     const schedule = getActiveSchedule();
-    if (!(clip?.programId || clip?.isPlaceholder) || !slot || !schedule) {
+    if (!(clip?.programId || clip?.isPlaceholder || clip?.isRegular) || !slot || !schedule) {
       showScheduleModalWarning('Nothing is copied yet.', 'warn');
       return false;
     }
     const placeholder = Boolean(clip.isPlaceholder);
-    const row = placeholder ? null : getProgramRowById(clip.programId);
-    if (!placeholder && !row) {
+    const regular = Boolean(clip.isRegular || clip.placementType === 'regular');
+    const row = (placeholder || regular) ? null : getProgramRowById(clip.programId);
+    if (!placeholder && !regular && !row) {
       showScheduleModalWarning('The copied title could not be found in the current database.', 'bad');
       return false;
     }
-    if (!placeholder) {
+    if (!placeholder && !regular) {
       const rightsCheck = rightsCheckForDate(row, slot.dateKey);
       if (!rightsCheck.ok) {
         showScheduleModalWarning(rightsCheck.reason, 'bad');
@@ -5284,25 +5285,33 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       showScheduleModalWarning(`That slot already contains ${existing.programTitle}. Paste will not replace it. Remove the scheduled block first (open it and choose Remove from schedule, or use Admin right-click → Delete scheduled block).`, 'bad');
       return false;
     }
-    const lengthMinutes = placeholder ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
+    const lengthMinutes = (placeholder || regular)
+      ? placeholderLengthMinutes(clip.lengthMinutes)
+      : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     const copiedMode = normalizeBreakMode(clip.breakMode) || (clip.liveBreakFlag ? BREAK_MODES.LIVE : '');
     const copiedModeSource = utils.normalizeText(clip.breakModeSource || '');
-    const pastedIsNonPledge = Boolean(!placeholder && (clip.isNonPledge || row?.__external_source_name));
+    const pastedIsNonPledge = Boolean(regular || (!placeholder && (clip.isNonPledge || row?.__external_source_name)));
     const pastedMode = (placeholder || pastedIsNonPledge)
       ? ''
       : (copiedMode && copiedModeSource && copiedModeSource !== 'default'
         ? copiedMode
         : defaultBreakModeForMinutes(slot.minutes));
     const pastedModeSource = (placeholder || pastedIsNonPledge) ? '' : (copiedMode && copiedModeSource && copiedModeSource !== 'default' ? copiedModeSource : 'default');
+    const pastedTitle = placeholder
+      ? (clip.placeholderTitle || clip.programTitle || 'Placeholder')
+      : regular
+        ? (clip.programTitle || 'Regular program')
+        : derive.title(row);
     schedule.placements.push({
-      id: utils.makeId(placeholder ? 'placeholder' : 'placement'),
-      programId: placeholder ? '' : derive.programId(row),
-      programTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : derive.title(row),
-      placeholderTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : '',
-      placementType: placeholder ? 'placeholder' : '',
+      id: utils.makeId(placeholder ? 'placeholder' : (regular ? 'regular' : 'placement')),
+      programId: (placeholder || regular) ? '' : derive.programId(row),
+      programTitle: pastedTitle,
+      placeholderTitle: placeholder ? pastedTitle : '',
+      placementType: placeholder ? 'placeholder' : (regular ? 'regular' : ''),
       isPlaceholder: placeholder,
+      scheduleNote: utils.normalizeText(clip.scheduleNote || ''),
       dateKey: slot.dateKey,
       startMinutes: slot.minutes,
       endMinutes,
@@ -5313,13 +5322,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       liveBreakFlag: pastedMode === BREAK_MODES.LIVE,
       liveBreakNotes: pastedMode === BREAK_MODES.LIVE ? (clip.liveBreakNotes || '') : '',
       isNonPledge: pastedIsNonPledge,
-      sourceName: placeholder ? '' : (clip.sourceName || row?.__external_source_name || ''),
-      sourceLabel: placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')
+      sourceName: (placeholder || regular) ? '' : (clip.sourceName || row?.__external_source_name || ''),
+      sourceLabel: regular ? 'Regular schedule' : (placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')),
+      transferredToStation: false
     });
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
-    const pastedTitle = placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : derive.title(row);
     showScheduleModalWarning(`Pasted ${pastedTitle} into ${slotLabel(slot.dateKey, slot.minutes)}.`, 'ok');
     setNotice(`Pasted ${pastedTitle} into ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
     if (closeAfter) closeScheduleModal();
