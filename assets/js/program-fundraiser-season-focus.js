@@ -228,6 +228,17 @@
     let outlook = 'Situational option';
     let tone = 'neutral';
 
+    // "Unaired" is an evidence state, not a caution. Genuine hard stops and
+    // explicit editorial cautions are handled above; a fresh title should be
+    // described as untested/promising rather than punished for lacking history.
+    if (airings < 1) {
+      if (score >= 78) { outlook = 'High-priority candidate'; tone = 'strong'; }
+      else if (score >= 65) { outlook = 'Strong candidate'; tone = 'good'; }
+      else if (score >= 56) { outlook = 'Promising'; tone = 'good'; }
+      else { outlook = programmerRating === 'low_confidence' ? 'Low confidence · Untested' : 'Untested'; tone = 'neutral'; }
+      return { ...result, score, outlook, tone, confidence, cautions };
+    }
+
     if (score >= 78) {
       outlook = 'High-priority candidate';
       tone = 'strong';
