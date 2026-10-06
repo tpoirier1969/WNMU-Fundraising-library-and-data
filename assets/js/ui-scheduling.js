@@ -4963,6 +4963,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       return false;
     }
     const lengthMinutes = placeholderLengthMinutes(document.getElementById('schedule-placeholder-length')?.value || 60);
+    const scheduleNote = utils.normalizeText(document.getElementById('schedule-placeholder-note')?.value || '');
     const slotCount = Math.max(1, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES));
     const existing = findPlacementForSlot(schedule, slot.key);
     if (existing && !isPlaceholderPlacement(existing)) {
@@ -4976,6 +4977,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       programId: '',
       programTitle: title,
       placeholderTitle: title,
+      scheduleNote,
       lengthMinutes,
       dateKey: slot.dateKey,
       startMinutes: slot.minutes,
@@ -4997,6 +4999,61 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     renderScheduleGrid();
     renderProgramPicker();
     setNotice(`Added placeholder “${title}” at ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
+    if (closeAfter) closeScheduleModal();
+    return true;
+  }
+
+  async function saveRegularScheduleToSelectedSlot(closeAfter = true) {
+    if (!canScheduleEdit()) { showScheduleModalWarning('Viewer mode. Sign in as admin to add regular-schedule blocks.', 'bad'); return false; }
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot;
+    if (!schedule || !slot) return false;
+    const title = utils.normalizeText(document.getElementById('schedule-regular-title')?.value || '');
+    if (!title) {
+      showScheduleModalWarning('Type the regular-schedule program title first.', 'warn');
+      document.getElementById('schedule-regular-title')?.focus?.();
+      return false;
+    }
+    const lengthMinutes = placeholderLengthMinutes(document.getElementById('schedule-regular-length')?.value || 60);
+    const scheduleNote = utils.normalizeText(document.getElementById('schedule-regular-note')?.value || '');
+    const slotCount = Math.max(1, Math.ceil(lengthMinutes / constants.DEFAULT_SLOT_MINUTES));
+    const existing = findPlacementForSlot(schedule, slot.key);
+    if (existing && !isRegularSchedulePlacement(existing)) {
+      showScheduleModalWarning('That slot already contains another scheduled block. Remove it first if you intend to replace it with regular programming.', 'bad');
+      return false;
+    }
+    const base = {
+      id: existing?.id || utils.makeId('regular'),
+      placementType: 'regular',
+      isPlaceholder: false,
+      programId: '',
+      programTitle: title,
+      placeholderTitle: '',
+      scheduleNote,
+      lengthMinutes,
+      dateKey: slot.dateKey,
+      startMinutes: slot.minutes,
+      endMinutes: slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES),
+      startSlotKey: slot.key,
+      breakMode: '',
+      breakModeSource: '',
+      liveBreakFlag: false,
+      liveBreakNotes: '',
+      isNonPledge: true,
+      sourceName: '',
+      sourceLabel: 'Regular schedule',
+      transferredToStation: false,
+      manualResultRecorded: false,
+      manualBroadcastDollars: 0,
+      manualPledgeCount: 0,
+      manualResultUpdatedAt: ''
+    };
+    if (existing) Object.assign(existing, base);
+    else schedule.placements.push(base);
+    await persistSchedules(schedule);
+    renderScheduleGrid();
+    renderProgramPicker();
+    setNotice(`${existing ? 'Updated' : 'Added'} regular / not-for-pledge program “${title}” at ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
     if (closeAfter) closeScheduleModal();
     return true;
   }
