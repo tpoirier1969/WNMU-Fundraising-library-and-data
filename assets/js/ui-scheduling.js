@@ -5413,7 +5413,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     menu.innerHTML = [
       '<button type="button" data-action="fundraising-window">Add fundraising window…</button>',
       '<button type="button" data-action="placeholder">Add / edit placeholder…</button>',
-      '<button type="button" data-action="copy">Copy block</button>',
+      '<button type="button" data-action="regular">Add / edit regular program…</button>',
+      '<button type="button" data-action="copy">Copy block</button>'
       '<button type="button" data-action="paste">Paste copied block here</button>',
       '<button type="button" data-action="detail">Open details / edit</button>',
       '<button type="button" class="destructive" data-action="delete">Delete scheduled block</button>'
@@ -5429,6 +5430,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       state.selectedScheduleSlot = slot;
       if (action === 'fundraising-window') openScheduleModal(slot);
       if (action === 'placeholder') openScheduleModal(slot);
+      if (action === 'regular') openScheduleModal(slot);
       if (action === 'copy') copySelectedPlacement(false);
       if (action === 'paste') void pasteClipboardToSelectedSlot(false);
       if (action === 'detail') void openPlacementDetailFromContext(slot, true);
@@ -5458,13 +5460,16 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const menu = ensureScheduleContextMenu();
     const fundraisingWindowButton = menu.querySelector('[data-action="fundraising-window"]');
     const placeholderButton = menu.querySelector('[data-action="placeholder"]');
+    const regularButton = menu.querySelector('[data-action="regular"]');
     const copyButton = menu.querySelector('[data-action="copy"]');
     const pasteButton = menu.querySelector('[data-action="paste"]');
     const detailButton = menu.querySelector('[data-action="detail"]');
     const deleteButton = menu.querySelector('[data-action="delete"]');
     const isPlaceholder = isPlaceholderPlacement(placement);
+    const isRegular = isRegularSchedulePlacement(placement);
     if (fundraisingWindowButton) fundraisingWindowButton.textContent = fundraisingWindow ? 'Edit fundraising window…' : 'Add fundraising window…';
     if (placeholderButton) placeholderButton.textContent = isPlaceholder ? 'Edit / match placeholder…' : 'Add placeholder…';
+    if (regularButton) regularButton.textContent = isRegular ? 'Edit regular / no-pledge block…' : 'Add regular / no-pledge block…';
     if (copyButton) copyButton.disabled = !placement;
     if (pasteButton) pasteButton.disabled = !hasScheduleClipboard();
     if (detailButton) detailButton.disabled = !placement || Boolean(placement?.isNonPledge) || isPlaceholder;
