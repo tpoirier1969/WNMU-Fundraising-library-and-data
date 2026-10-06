@@ -2788,26 +2788,30 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   }
 
   function hasScheduleClipboard() {
-    return Boolean(state.scheduleClipboard?.programId || state.scheduleClipboard?.isPlaceholder);
+    return Boolean(state.scheduleClipboard?.programId || state.scheduleClipboard?.isPlaceholder || state.scheduleClipboard?.isRegularScheduleBlock);
   }
 
   function copyPlacementToClipboard(placement) {
     if (!placement) return false;
     const placeholder = isPlaceholderPlacement(placement);
+    const regular = isRegularSchedulePlacement(placement);
     state.scheduleClipboard = {
-      programId: placeholder ? '' : placement.programId,
+      programId: (placeholder || regular) ? '' : placement.programId,
       programTitle: placeholder ? placeholderTitle(placement) : placement.programTitle,
       placeholderTitle: placeholder ? placeholderTitle(placement) : '',
+      regularTitle: regular ? utils.normalizeText(placement.programTitle || placement.regularTitle || '') : '',
+      scheduleNote: schedulePlacementNote(placement),
       lengthMinutes: placeholderLengthMinutes(placement.lengthMinutes),
-      breakMode: placeholder ? '' : canonicalScheduleBreakMode(placement),
-      breakModeSource: placeholder ? '' : breakModeSourceValue(placement),
-      liveBreakFlag: placeholder ? false : hasLiveBreakFlag(placement),
-      isNonPledge: Boolean(!placeholder && placement.isNonPledge),
+      breakMode: (placeholder || regular) ? '' : canonicalScheduleBreakMode(placement),
+      breakModeSource: (placeholder || regular) ? '' : breakModeSourceValue(placement),
+      liveBreakFlag: (placeholder || regular) ? false : hasLiveBreakFlag(placement),
+      isNonPledge: Boolean(regular || (!placeholder && placement.isNonPledge)),
       isPlaceholder: placeholder,
-      placementType: placeholder ? 'placeholder' : '',
-      sourceName: placeholder ? '' : (placement.sourceName || ''),
-      sourceLabel: placeholder ? '' : (placement.sourceLabel || ''),
-      liveBreakNotes: placeholder ? '' : (placement.liveBreakNotes || '')
+      isRegularScheduleBlock: regular,
+      placementType: placeholder ? 'placeholder' : (regular ? 'regular' : ''),
+      sourceName: (placeholder || regular) ? '' : (placement.sourceName || ''),
+      sourceLabel: (placeholder || regular) ? '' : (placement.sourceLabel || ''),
+      liveBreakNotes: (placeholder || regular) ? '' : (placement.liveBreakNotes || '')
     };
     return true;
   }
@@ -5270,17 +5274,18 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const clip = state.scheduleClipboard;
     const slot = state.selectedScheduleSlot;
     const schedule = getActiveSchedule();
-    if (!(clip?.programId || clip?.isPlaceholder) || !slot || !schedule) {
+    if (!(clip?.programId || clip?.isPlaceholder || clip?.isRegularScheduleBlock) || !slot || !schedule) {
       showScheduleModalWarning('Nothing is copied yet.', 'warn');
       return false;
     }
     const placeholder = Boolean(clip.isPlaceholder);
-    const row = placeholder ? null : getProgramRowById(clip.programId);
-    if (!placeholder && !row) {
+    const regular = Boolean(clip.isRegularScheduleBlock || clip.placementType === 'regular');
+    const row = (placeholder || regular) ? null : getProgramRowById(clip.programId);
+    if (!placeholder && !regular && !row) {
       showScheduleModalWarning('The copied title could not be found in the current database.', 'bad');
       return false;
     }
-    if (!placeholder) {
+    if (!placeholder && !regular) {
       const rightsCheck = rightsCheckForDate(row, slot.dateKey);
       if (!rightsCheck.ok) {
         showScheduleModalWarning(rightsCheck.reason, 'bad');
@@ -5292,25 +5297,30 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       showScheduleModalWarning(`That slot already contains ${existing.programTitle}. Paste will not replace it. Remove the scheduled block first (open it and choose Remove from schedule, or use Admin right-click → Delete scheduled block).`, 'bad');
       return false;
     }
-    const lengthMinutes = placeholder ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
+    const lengthMinutes = (placeholder || regular) ? placeholderLengthMinutes(clip.lengthMinutes) : Number(derive.runtimeMinutes(row) || clip.lengthMinutes || 30);
     const slotCount = Math.max(1, Math.ceil(Number(lengthMinutes) / constants.DEFAULT_SLOT_MINUTES));
     const endMinutes = slot.minutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
     const copiedMode = normalizeBreakMode(clip.breakMode) || (clip.liveBreakFlag ? BREAK_MODES.LIVE : '');
     const copiedModeSource = utils.normalizeText(clip.breakModeSource || '');
-    const pastedIsNonPledge = Boolean(!placeholder && (clip.isNonPledge || row?.__external_source_name));
-    const pastedMode = (placeholder || pastedIsNonPledge)
+    const pastedIsNonPledge = Boolean(regular || (!placeholder && (clip.isNonPledge || row?.__external_source_name)));
+    const pastedMode = (placeholder || regular || pastedIsNonPledge)
       ? ''
       : (copiedMode && copiedModeSource && copiedModeSource !== 'default'
         ? copiedMode
         : defaultBreakModeForMinutes(slot.minutes));
-    const pastedModeSource = (placeholder || pastedIsNonPledge) ? '' : (copiedMode && copiedModeSource && copiedModeSource !== 'default' ? copiedModeSource : 'default');
+    const pastedModeSource = (placeholder || regular || pastedIsNonPledge) ? '' : (copiedMode && copiedModeSource && copiedModeSource !== 'default' ? copiedModeSource : 'default');
     schedule.placements.push({
-      id: utils.makeId(placeholder ? 'placeholder' : 'placement'),
-      programId: placeholder ? '' : derive.programId(row),
-      programTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : derive.title(row),
+      id: utils.makeId(placeholder ? 'placeholder' : (regular ? 'regular' : 'placement')),
+      programId: (placeholder || regular) ? '' : derive.programId(row),
+      programTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : (regular ? (clip.regularTitle || clip.programTitle || 'Regular program') : derive.title(row)),
       placeholderTitle: placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : '',
-      placementType: placeholder ? 'placeholder' : '',
+      regularTitle: regular ? (clip.regularTitle || clip.programTitle || 'Regular program') : '',
+      scheduleNote: utils.normalizeText(clip.scheduleNote || ''),
+      placeholderNote: placeholder ? utils.normalizeText(clip.scheduleNote || '') : '',
+      regularNote: regular ? utils.normalizeText(clip.scheduleNote || '') : '',
+      placementType: placeholder ? 'placeholder' : (regular ? 'regular' : ''),
       isPlaceholder: placeholder,
+      isRegularScheduleBlock: regular,
       dateKey: slot.dateKey,
       startMinutes: slot.minutes,
       endMinutes,
@@ -5321,13 +5331,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       liveBreakFlag: pastedMode === BREAK_MODES.LIVE,
       liveBreakNotes: pastedMode === BREAK_MODES.LIVE ? (clip.liveBreakNotes || '') : '',
       isNonPledge: pastedIsNonPledge,
-      sourceName: placeholder ? '' : (clip.sourceName || row?.__external_source_name || ''),
-      sourceLabel: placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')
+      sourceName: (placeholder || regular) ? '' : (clip.sourceName || row?.__external_source_name || ''),
+      sourceLabel: (placeholder || regular) ? '' : (clip.sourceLabel || row?.__external_source_label || '')
     });
     await persistSchedules(schedule);
     renderScheduleGrid();
     renderProgramPicker();
-    const pastedTitle = placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : derive.title(row);
+    const pastedTitle = placeholder ? (clip.placeholderTitle || clip.programTitle || 'Placeholder') : (regular ? (clip.regularTitle || clip.programTitle || 'Regular program') : derive.title(row));
     showScheduleModalWarning(`Pasted ${pastedTitle} into ${slotLabel(slot.dateKey, slot.minutes)}.`, 'ok');
     setNotice(`Pasted ${pastedTitle} into ${slotLabel(slot.dateKey, slot.minutes)}. ${state.scheduleSyncMessage}`);
     if (closeAfter) closeScheduleModal();
@@ -5503,19 +5513,24 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
     const detail = cache?.detail || null;
     const placeholder = isPlaceholderPlacement(item);
-    const baseRow = (item.isNonPledge || placeholder) ? {} : (getProgramRowById(item.programId || '') || {});
+    const regular = isRegularSchedulePlacement(item);
+    const baseRow = (item.isNonPledge || placeholder || regular) ? {} : (getProgramRowById(item.programId || '') || {});
     const displayRow = detail?.program ? utils.mergeRows(detail.program, baseRow) : baseRow;
     const runtime = placeholder ? { label: `${placeholderLengthMinutes(item.lengthMinutes)} min` } : scheduledRuntimeInfo(displayRow, cache, item.lengthMinutes);
     const markerBits = [];
     if (placeholder) markerBits.push('placeholder');
-    if (item.isNonPledge) markerBits.push('non-pledge marker');
+    if (regular) markerBits.push('regular schedule · not for pledge');
+    else if (item.isNonPledge) markerBits.push('non-pledge marker');
     const exportBreakMode = canonicalScheduleBreakMode(item);
     if (exportBreakMode) markerBits.push(breakModeLabel(exportBreakMode));
     if (item.transferredToStation) markerBits.push('entered in traffic');
     const nola = (item.isNonPledge || placeholder) ? '' : derive.nola(displayRow);
     const topic = (item.isNonPledge || placeholder) ? '' : derive.topicPrimary(displayRow);
     const distributor = (item.isNonPledge || placeholder) ? '' : derive.distributor(displayRow);
-    const description = placeholder ? 'Temporary placeholder. Swap this block for the real program when ready.' : (item.isNonPledge ? '' : derive.description(displayRow));
+    const note = schedulePlacementNote(item);
+    const description = placeholder
+      ? (note || 'Temporary placeholder. Swap this block for the real program when ready.')
+      : (regular ? (note || 'Regular schedule programming. No pledge breaks or financial tracking.') : (item.isNonPledge ? '' : derive.description(displayRow)));
     const premiums = (item.isNonPledge || placeholder) ? '' : derive.premiumSummary(displayRow);
     const metaBits = [
       runtime?.label || (Number.isFinite(Number(item.lengthMinutes)) ? `${item.lengthMinutes} min` : ''),
