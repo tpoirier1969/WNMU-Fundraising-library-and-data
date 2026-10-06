@@ -1776,7 +1776,29 @@ return result;}
         startMinutes: plannedStart,
         endMinutes: plannedStart + 30
       };
-      const exact = broadPool.map((base) => scoreProgramForSlot(base.program, exactSlot, context))
+      const exact = broadPool.map((base) => {
+        const rescored = scoreProgramForSlot(base.program, exactSlot, context);
+        if (!rescored) return null;
+        const windowScore = Number(base.score);
+        const exactStartScore = Number(rescored.score);
+        const exactStartEvidenceSufficient =
+          Number(rescored.dayHistory?.fundraisers || 0) >= 2
+          || Number(rescored.topicHistory?.fundraisers || 0) >= 2
+          || Number(rescored.exactTitleHistory?.fundraisers || 0) >= 2;
+        let effectiveScore = exactStartScore;
+        if (Number.isFinite(windowScore)) {
+          effectiveScore = exactStartEvidenceSufficient && Number.isFinite(exactStartScore)
+            ? Math.round((windowScore * 0.65) + (exactStartScore * 0.35))
+            : windowScore;
+        }
+        return {
+          ...rescored,
+          score: clamp(effectiveScore),
+          windowScore: Number.isFinite(windowScore) ? windowScore : null,
+          exactStartScore: Number.isFinite(exactStartScore) ? exactStartScore : null,
+          exactStartEvidenceSufficient
+        };
+      })
         .filter((item) =>
           item
           && recommendationAllowed(item, exactSlot)
