@@ -1538,6 +1538,7 @@ function compactStrategy(strategy = {}, schedule = {}, peerObservations = []) {
       recommendedMinutes: slot.recommendedMinutes,
       unusedMinutes: slot.unusedMinutes,
       recommendationThreshold: slot.recommendationThreshold,
+      allocationFallbackUsed: Boolean(slot.allocationFallbackUsed),
       evidenceRows: slot.evidenceRows,
       windowHistory: slot.windowHistory,
       experimentalEvidence: slot.experimentalEvidence,
