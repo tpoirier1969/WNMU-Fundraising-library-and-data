@@ -2009,7 +2009,8 @@ test('Day/Time report shows exact half-hour buckets, topic context, and season p
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
 
   assert.match(reportUi,/Half-hour program-start buckets/);
-  assert.match(reportUi,/strongest topics in that exact bucket/);
+  assert.match(reportUi,/top-performing topic signal/);
+  assert.match(reportUi,/how many distinct topics were tried/);
   assert.match(reportUi,/selected pledge season is used when available/);
   assert.match(reportUi,/all-history context/);
   assert.match(reportUi,/const dayCards=order\.map/);
