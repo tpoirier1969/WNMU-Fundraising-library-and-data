@@ -68,6 +68,8 @@
     premiumsList: document.getElementById('premiums-list'),
     detailPerformanceGraph: document.getElementById('detail-performance-graph'),
     detailGraphPill: document.getElementById('detail-graph-pill'),
+    detailDaypartPerformance: document.getElementById('detail-daypart-performance'),
+    detailDaypartPill: document.getElementById('detail-daypart-pill'),
     allFieldsList: document.getElementById('all-fields-list'),
     timingCountChip: document.getElementById('timing-count-chip'),
     airingCountChip: document.getElementById('airing-count-chip'),
