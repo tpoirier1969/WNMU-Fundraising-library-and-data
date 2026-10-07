@@ -3465,6 +3465,84 @@ button.primary {
   display: grid;
   gap: 10px;
 }
+.detail-daypart-performance {
+  display: grid;
+  gap: 10px;
+}
+.detail-daypart-summary {
+  display: grid;
+  gap: 7px;
+}
+.detail-daypart-summary p,
+.detail-daypart-footnote {
+  margin: 0;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.4;
+}
+.detail-daypart-fatigue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(18,62,107,.16);
+  border-radius: 10px;
+  background: rgba(18,62,107,.035);
+}
+.detail-daypart-fatigue strong {
+  color: #243b4b;
+}
+.detail-daypart-fatigue span {
+  color: #536878;
+}
+.detail-daypart-fatigue.fade,
+.detail-daypart-fatigue.fade-some {
+  border-color: rgba(139,82,42,.24);
+  background: rgba(139,82,42,.055);
+}
+.detail-daypart-fatigue.stronger {
+  border-color: rgba(40,111,76,.22);
+  background: rgba(40,111,76,.05);
+}
+.detail-daypart-table-wrap {
+  overflow-x: auto;
+}
+.detail-daypart-table {
+  min-width: 760px;
+}
+.detail-daypart-table td {
+  vertical-align: top;
+}
+.detail-daypart-range,
+.detail-daypart-evidence {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+.detail-daypart-evidence {
+  width: max-content;
+  padding: 1px 6px;
+  border: 1px solid rgba(18,62,107,.15);
+  border-radius: 999px;
+  background: rgba(18,62,107,.035);
+  font-weight: 750;
+}
+.detail-daypart-evidence.evidence-good {
+  border-color: rgba(40,111,76,.26);
+  background: rgba(40,111,76,.07);
+  color: #285f43;
+}
+.detail-daypart-evidence.evidence-thin {
+  border-color: rgba(139,82,42,.22);
+  background: rgba(139,82,42,.055);
+  color: #765033;
+}
+.detail-daypart-footnote {
+  padding-top: 2px;
+}
 .detail-graph-summary {
   font-size: 0.9rem;
   color: var(--muted);
