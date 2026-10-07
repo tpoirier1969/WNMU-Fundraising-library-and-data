@@ -62,6 +62,7 @@ window.PledgeLib = window.PledgeLib || {};
       { id: 'performance', label: 'Performance Analytics', live: true },
       { id: 'comparison', label: 'Fundraiser Comparison Lab', live: true }
     ],
+    WORKSPACE_STORAGE_KEY: 'wnmuPledgeActiveWorkspaceV1',
     SCHEDULE_STORAGE_KEY: 'wnmuPledgeSchedulesV2',
     IMPORT_MATCH_RULES_STORAGE_KEY: 'wnmuPledgeImportMatchRulesV1',
     IMPORT_REPORT_TOTALS_STORAGE_KEY: 'wnmuPledgeImportReportTotalsV1',
