@@ -532,7 +532,6 @@
       const observer = new MutationObserver(scheduleTransform);
       observer.observe(box, { childList: true, subtree: true });
     }
-    window.setInterval(scheduleTransform, 1500);
   }
 
   if (document.readyState === 'loading') {
