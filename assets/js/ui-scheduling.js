@@ -419,6 +419,17 @@
     return true;
   }
 
+  function closeScheduleAdvisorTopic() {
+    state.scheduleProgramTopicFilter = '';
+    if (els.scheduleProgramTopicSelect) els.scheduleProgramTopicSelect.value = '';
+    renderProgramPicker();
+    window.requestAnimationFrame(() => {
+      const advisor = document.querySelector('.schedule-advisor-panel');
+      if (advisor) advisor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return true;
+  }
+
   function bindScheduleAdvisorTopicButtons() {
     const host = document.getElementById('schedule-placeholder-controls');
     if (!host) return;
@@ -5181,11 +5192,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       if (state.scheduleFilterNewThisFundraiser) filterBits.push('new this fundraiser');
       const descriptor = filterBits.length ? filterBits.join(' + ') : 'this filter';
       els.scheduleProgramResults.innerHTML = hasTopic
-        ? `<div class="schedule-recommendation-results-head"><div><strong>Recommended programs for ${utils.escapeHtml(state.scheduleProgramTopicFilter || 'this topic')}</strong><span>No currently eligible library titles matched this topic and the active filters for ${utils.escapeHtml(slotLabel(slot.dateKey, slot.minutes))}.</span></div></div>`
+        ? `<div class="schedule-recommendation-results-head"><button type="button" class="ghost schedule-recommendation-back" data-schedule-advisor-back>← Back to Best Fit topics</button><div><strong>Recommended programs for ${utils.escapeHtml(state.scheduleProgramTopicFilter || 'this topic')}</strong><span>No currently eligible library titles matched this topic and the active filters for ${utils.escapeHtml(slotLabel(slot.dateKey, slot.minutes))}.</span></div></div>`
         : `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched ${utils.escapeHtml(descriptor)}.</div>`;
     } else {
       const resultsHeading = hasTopic
-        ? `<div class="schedule-recommendation-results-head"><div><strong>Recommended programs for ${utils.escapeHtml(state.scheduleProgramTopicFilter || 'this topic')}</strong><span>Ranked for ${utils.escapeHtml(slotLabel(slot.dateKey, slot.minutes))}. Click Schedule to place a title in this block.</span></div><span class="schedule-recommendation-count">${utils.escapeHtml(String(matches.length))} match${matches.length === 1 ? '' : 'es'}</span></div>`
+        ? `<div class="schedule-recommendation-results-head"><button type="button" class="ghost schedule-recommendation-back" data-schedule-advisor-back>← Back to Best Fit topics</button><div><strong>Recommended programs for ${utils.escapeHtml(state.scheduleProgramTopicFilter || 'this topic')}</strong><span>Ranked for ${utils.escapeHtml(slotLabel(slot.dateKey, slot.minutes))}. Click Schedule to place a title in this block.</span></div><span class="schedule-recommendation-count">${utils.escapeHtml(String(matches.length))} match${matches.length === 1 ? '' : 'es'}</span></div>`
         : '';
       els.scheduleProgramResults.innerHTML = resultsHeading + matches.map(({ row, rights, isNonPledge, fit, fitScore }) => {
         const runtimeLabel = lengthMetaLabel(row);
@@ -7402,6 +7413,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleManualResultSaveButton?.addEventListener('click', () => { void saveManualResultToSelectedPlacement(); });
     els.scheduleManualResultClearButton?.addEventListener('click', () => { void clearManualResultFromSelectedPlacement(); });
     els.scheduleProgramResults?.addEventListener('click', (event) => {
+      const back = event.target.closest('[data-schedule-advisor-back]');
+      if (back) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeScheduleAdvisorTopic();
+        return;
+      }
       const btn = event.target.closest('.schedule-program-assign-button');
       if (!btn) return;
       const rightsOk = btn.dataset.rightsOk !== 'false';
