@@ -92,7 +92,7 @@ test('regular schedule time inside a Fundraising Window is protected from pledge
   assert.match(reportSource, /not available for pledge recommendations/);
 });
 
-test('strategy worker and standalone report load v0.22.254 strategy assets', () => {
+test('regular-block strategy logic remains loaded through the current strategy worker', () => {
   assert.match(workerSource, /programming-strategy-analysis\.js\?v=0\.22\.254/);
-  assert.match(reportSource, /programming-strategy-worker\.js\?v=0\.22\.254/);
+  assert.match(reportSource, /programming-strategy-worker\.js\?v=0\.22\.256/);
 });
