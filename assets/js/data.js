@@ -1356,13 +1356,6 @@
     return JSON.stringify(Object.keys(payload).sort().map((key) => [key, payload[key]]));
   }
 
-  function extractMissingColumnName(message = '') {
-    const exact = String(message || '').match(/could not find the ['"]?([a-zA-Z0-9_]+)['"]? column/i);
-    if (exact?.[1]) return exact[1];
-    const generic = String(message || '').match(/column ['"]?([a-zA-Z0-9_]+)['"]? does not exist/i);
-    return generic?.[1] || '';
-  }
-
   function omitKeys(payload = {}, keys = []) {
     const next = { ...payload };
     keys.forEach((key) => { delete next[key]; });
