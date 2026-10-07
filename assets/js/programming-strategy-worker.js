@@ -1634,7 +1634,7 @@ self.onmessage = (event) => {
     const rawAirings = Array.isArray(payload.airings) ? payload.airings : [];
     const overrides = Array.isArray(payload.overrides) ? payload.overrides : [];
     const scheduleRows = Array.isArray(payload.scheduleRows) ? payload.scheduleRows : [];
-    const peerObservations = Array.isArray(payload.peerObservations) ? payload.peerObservations : [];
+    const peerObservationsRaw = Array.isArray(payload.peerObservations) ? payload.peerObservations : [];
     const peerScheduleContexts = Array.isArray(payload.peerScheduleContexts) ? payload.peerScheduleContexts : [];
     const schedule = payload.schedule || {};
     const now = payload.now ? new Date(payload.now) : new Date();
@@ -1647,9 +1647,18 @@ self.onmessage = (event) => {
         return Boolean(when && cutoff && when <= cutoff);
       })
       : overrides;
+    const peerObservations = payload.mode === 'backtest'
+      ? peerObservationsRaw.filter((row) => {
+        const sourceDate = text(row?.__source_date || row?.source_date || '').slice(0, 10);
+        return Boolean(sourceDate && cutoff && sourceDate <= cutoff);
+      })
+      : peerObservationsRaw;
     diagnostics.overrideRows = overrides.length;
     diagnostics.effectiveOverrideRows = effectiveOverrides.length;
     diagnostics.excludedPostCutoffOverrides = overrides.length - effectiveOverrides.length;
+    diagnostics.peerObservationRows = peerObservationsRaw.length;
+    diagnostics.effectivePeerObservationRows = peerObservations.length;
+    diagnostics.excludedPostCutoffPeerObservations = peerObservationsRaw.length - peerObservations.length;
     const historical = completedHistoricalAnalyses(scheduleRows, canonical, strategyLibrary, cutoff);
     const analyses = historical.analyses;
     const rows = strategyEvidenceRowsFromAnalyses(analyses);
