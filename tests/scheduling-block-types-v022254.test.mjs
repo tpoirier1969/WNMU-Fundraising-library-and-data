@@ -102,5 +102,5 @@ test('regular schedule time inside a Fundraising Window is protected from pledge
 
 test('regular-block strategy logic remains loaded through the current strategy worker', () => {
   assert.match(workerSource, /programming-strategy-analysis\.js\?v=0\.22\.263/);
-  assert.match(reportSource, /programming-strategy-worker\.js\?v=0\.22\.272/);
+  assert.match(reportSource, /programming-strategy-worker\.js\?v=0\.22\.273/);
 });
