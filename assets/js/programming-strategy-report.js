@@ -677,7 +677,8 @@ function fundraiserPlanSection(strategy={},outlook={},matrix={},hourly={},schedu
   return`<section class="sheet-section strategy-fundraiser-plan"><div class="strategy-section-head"><div><h2>Fundraiser plan</h2><p>${usingFundraisingWindows?'Uses the Fundraising Windows marked in Scheduling. Recommendations may use all, part, or none of each window depending on the strength of the available titles.':'Day, topic, timing and program direction in one compact planning view.'} The automated plan allocates each title across the whole fundraiser first, allows up to four appearances, and limits any one daypart to two appearances so repeat exposure is spread across genuinely different opportunities. Topic/time rows marked <b>Strong pocket</b> are at least 115% of the season baseline; other rows are relative leaders, not automatic recommendations.</p></div></div>
     <div class="strategy-topic-snapshot"><h3>Topic snapshot</h3><div>${topicSnapshot.length?topicSnapshot.map(item=>`<span><b>${esc(item.topic)}</b><strong class="strategy-rate">${Number.isFinite(item.averageRate)?`&#36;${Math.round(item.averageRate)}/hr`:'No seasonal history'}</strong><small>${Number(item.fundraiserSamples||0)} drive${Number(item.fundraiserSamples||0)===1?'':'s'} · ${Number(item.eligibleProgramCount||0)} eligible</small></span>`).join(''):'<p>No eligible seasonal topic history.</p>'}</div></div>
     <div class="strategy-plan-days">${days.map(day=>`<article class="strategy-plan-day tone-${dayTone(day.outlook)}">
-      <header><div><strong>${esc(day.label)}</strong><span>${esc(fmt(day.date,false))}</span></div><div><b>${esc(day.outlook)}</b>${Number.isFinite(day.averageRate)?`<span class="strategy-rate">Avg &#36;${Math.round(day.averageRate)}/pledge hr</span>`:''}</div></header>
+      <header><div><strong>${esc(day.label)}</strong><span>${esc(fmt(day.date,false))}</span></div></header>
+      <div class="strategy-plan-day-outlook"><b>${esc(day.outlook)}</b>${Number.isFinite(day.averageRate)?`<span class="strategy-rate">Avg &#36;${Math.round(day.averageRate)}/pledge hr</span>`:''}${day.samples?`<small>${day.samples} comparable historical day${day.samples===1?'':'s'}</small>`:''}</div>
       ${day.calendar.length?`<div class="strategy-day-calendar">${day.calendar.map(item=>`<span class="impact-${esc(item.impact||'context')}"><b>${esc(item.title)}</b>${item.time?` · ${esc(item.time)}`:''}</span>`).join('')}</div>`:''}
       <div class="strategy-plan-day-body"><p class="strategy-plan-action">${esc(daySchedulingAction(day,day.topicSignals))}</p>
         <div class="strategy-plan-signals">${day.topicSignals.length?day.topicSignals.map(item=>`<span class="${item.actionable?'strategy-topic-signal-strong':'strategy-topic-signal-relative'}"><b>${esc(item.daypart)} · ${esc(item.topic)}</b><strong class="strategy-rate">&#36;${Math.round(item.rate)}/hr</strong><small>${esc(item.signalLabel||'Relative leader')}</small></span>`).join(''):'<span class="strategy-no-history">No repeat multi-title topic/time signal.</span>'}</div>
@@ -699,7 +700,8 @@ function timeOfDayComparisonSection(hourly={}){
     const useSeason=Number(season.fundraiserSamples||0)>0&&Number.isFinite(Number(season.averageRate));
     const metric=useSeason?season:all;
     if(!Number(metric.fundraiserSamples||0)||!Number.isFinite(Number(metric.averageRate)))return;
-    const topics=(metric.topTopics||[]).slice(0,2).map(item=>item.topic).filter(Boolean);
+    const rankedTopics=(metric.topTopics||[]).map(item=>item.topic).filter(Boolean);
+    const topicCount=Math.max(Number(metric.topicCount||0),rankedTopics.length);
     if(!groups.has(row.weekday))groups.set(row.weekday,[]);
     const weekdayDaytime=['Monday','Tuesday','Wednesday','Thursday','Friday'].includes(row.weekday)
       && Number(row.startMinutes)<17*60;
@@ -707,18 +709,31 @@ function timeOfDayComparisonSection(hourly={}){
       startMinutes:row.startMinutes,
       rate:Number(metric.averageRate),
       fundraisers:Number(metric.fundraiserSamples||0),
-      topics,
+      topics:rankedTopics.slice(0,3),
+      topicCount,
       source:useSeason?(data.season||'Season'):'All history',
       printHidden:weekdayDaytime
     });
   });
+  const displayedRows=[...groups.values()].flat();
+  const maxRate=displayedRows.reduce((max,row)=>Math.max(max,Number(row.rate)||0),0);
+  const heat=(rate)=>{
+    const ratio=maxRate>0?Math.max(0,Math.min(1,Number(rate||0)/maxRate)):0;
+    const target=[250,128,114];
+    const rgb=target.map(value=>Math.round(255+((value-255)*ratio)));
+    return `rgb(${rgb.join(',')})`;
+  };
   const dayCards=order.map(day=>{
     const rows=groups.get(day)||[];
     if(!rows.length)return '';
-    const body=rows.map(row=>'<div class="strategy-half-hour-row'+(row.printHidden?' strategy-hourly-print-hide':'')+'"><b>'+clock(row.startMinutes)+'</b><strong class="strategy-rate">&#36;'+Math.round(row.rate)+'/hr</strong><span>'+esc(row.topics.length?row.topics.join(' · '):'Mixed / no repeat topic')+'</span><small>'+row.fundraisers+' drive'+(row.fundraisers===1?'':'s')+' · '+esc(row.source)+'</small></div>').join('');
+    const body=rows.map(row=>{
+      const topicText=row.topics.length?`Top: ${row.topics.join(' · ')}`:'No ranked topic signal';
+      const breadth=row.topicCount?`${row.topicCount} topic${row.topicCount===1?'':'s'} tried`:'Topic breadth unavailable';
+      return '<div class="strategy-half-hour-row'+(row.printHidden?' strategy-hourly-print-hide':'')+'" style="background:'+heat(row.rate)+'" title="'+esc('White = $0/hr; deepest salmon = highest displayed $/hr')+'"><b>'+clock(row.startMinutes)+'</b><strong class="strategy-rate">&#36;'+Math.round(row.rate)+'/hr</strong><span>'+esc(topicText)+'</span><small>'+row.fundraisers+' drive'+(row.fundraisers===1?'':'s')+' · '+esc(row.source)+' · '+esc(breadth)+'</small></div>';
+    }).join('');
     return '<article class="strategy-time-day-card"><h3>'+esc(day)+'</h3>'+body+'</article>';
   }).join('');
-  return '<section class="sheet-section strategy-time-of-day-section"><div class="strategy-section-head"><div><h2>Time-of-day comparisons</h2><p>Half-hour program-start buckets. Each row shows the fundraiser-balanced average and the strongest topics in that exact bucket. The selected pledge season is used when available; otherwise the row is clearly marked as all-history context.</p></div></div><div class="strategy-time-day-grid">'+(dayCards||'<p>No rate-valid half-hour history is available.</p>')+'</div></section>';
+  return '<section class="sheet-section strategy-time-of-day-section"><div class="strategy-section-head"><div><h2>Time-of-day comparisons</h2><p>Half-hour program-start buckets. Each row shows the fundraiser-balanced average. Topic text is explicitly the <b>top-performing topic signal</b>, not a list of every topic ever aired in that slot; the row also shows how many distinct topics were tried. Background shading runs from white at $0/hour to salmon at the highest displayed rate. The selected pledge season is used when available; otherwise the row is clearly marked as all-history context.</p></div></div><div class="strategy-time-heat-key"><span></span><small>$0/hr</small><span></span><small>highest displayed $/hr</small></div><div class="strategy-time-day-grid">'+(dayCards||'<p>No rate-valid half-hour history is available.</p>')+'</div></section>';
 }
 
 function peerPracticesCompactSection(rows=[]){
