@@ -858,6 +858,262 @@
 
 
 
+  function detailMedian(values = []) {
+    const sorted = (Array.isArray(values) ? values : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+    if (!sorted.length) return null;
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function detailAiringHasKnownMoney(row = {}) {
+    if (row?.__resolved_contribution_source && row.__resolved_contribution_source !== 'none') return true;
+    const moneyKeys = ['contribution_amount', 'total_contributions', 'total_dollars', 'dollars', 'contributed'];
+    return moneyKeys.some((key) => {
+      if (!Object.prototype.hasOwnProperty.call(row || {}, key)) return false;
+      const value = row?.[key];
+      if (value == null || String(value).trim() === '') return false;
+      return Number.isFinite(Number(value));
+    });
+  }
+
+  function detailAiringMinutes(program = {}, row = {}) {
+    const direct = Number(utils.firstNonEmpty(
+      row?.program_minutes,
+      row?.length_minutes,
+      row?.runtime_minutes,
+      row?.actual_runtime_minutes
+    ));
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const libraryMinutes = Number(derive.lengthBucket(program));
+    return Number.isFinite(libraryMinutes) && libraryMinutes > 0 ? libraryMinutes : null;
+  }
+
+  function detailLifecycleStage(index = 0, total = 0) {
+    if (!Number.isFinite(total) || total <= 0) return 'unknown';
+    const position = (Number(index) + 0.5) / total;
+    if (position <= (1 / 3)) return 'early';
+    if (position <= (2 / 3)) return 'middle';
+    return 'late';
+  }
+
+  function detailDaypartForDate(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+    let minutes = (date.getHours() * 60) + date.getMinutes();
+    if (minutes < (7 * 60)) minutes += 1440;
+    if (minutes < (12 * 60)) return { id:'morning', label:'Morning', range:'7 AM–noon', order:1 };
+    if (minutes < (17 * 60)) return { id:'afternoon', label:'Afternoon', range:'Noon–5 PM', order:2 };
+    if (minutes < (19 * 60)) return { id:'early-evening', label:'Early evening', range:'5–7 PM', order:3 };
+    if (minutes < (22 * 60)) return { id:'prime', label:'Prime', range:'7–10 PM', order:4 };
+    return { id:'late', label:'Late', range:'10 PM–7 AM', order:5 };
+  }
+
+  function detailLifecycleMixLabel(rows = []) {
+    const counts = { early:0, middle:0, late:0 };
+    (rows || []).forEach((row) => {
+      if (Object.prototype.hasOwnProperty.call(counts, row.lifecycleStage)) counts[row.lifecycleStage] += 1;
+    });
+    return `Early ${counts.early} · Mid ${counts.middle} · Late ${counts.late}`;
+  }
+
+  function detailAdjustedRead(indexValue = null, eligible = false) {
+    if (!eligible || !Number.isFinite(Number(indexValue))) return 'Too thin to separate slot from fatigue';
+    const value = Number(indexValue);
+    if (value >= 115) return "Stronger than this title's same-life-stage norm";
+    if (value <= 85) return "Weaker than this title's same-life-stage norm";
+    return "Near this title's same-life-stage norm";
+  }
+
+  function buildDaypartPerformance(program = {}, driveResults = [], exactAirings = []) {
+    const timeline = buildResolvedDetailAiringTimeline(driveResults, exactAirings);
+    const usable = timeline
+      .filter((row) => detailRecordHasExplicitTime(row))
+      .map((row) => {
+        const when = row.__detail_when instanceof Date ? row.__detail_when : detailRecordDate(row);
+        const minutes = detailAiringMinutes(program, row);
+        const amount = Number(utils.firstNonEmpty(row?.__resolved_contribution_amount, contributionAmount(row)));
+        const daypart = detailDaypartForDate(when);
+        return { row, when, minutes, amount, daypart };
+      })
+      .filter((entry) =>
+        entry.daypart
+        && entry.when instanceof Date
+        && !Number.isNaN(entry.when.getTime())
+        && detailAiringHasKnownMoney(entry.row)
+        && Number.isFinite(entry.amount)
+        && Number.isFinite(entry.minutes)
+        && entry.minutes > 0
+      )
+      .map((entry, index, rows) => ({
+        ...entry,
+        airingNumber: index + 1,
+        lifecycleStage: detailLifecycleStage(index, rows.length),
+        dollarsPerPledgeHour: entry.amount / (entry.minutes / 60)
+      }));
+
+    const stageBaselines = new Map();
+    ['early', 'middle', 'late'].forEach((stage) => {
+      const values = usable.filter((entry) => entry.lifecycleStage === stage).map((entry) => entry.dollarsPerPledgeHour);
+      stageBaselines.set(stage, { count: values.length, median: detailMedian(values) });
+    });
+
+    usable.forEach((entry) => {
+      const baseline = Number(stageBaselines.get(entry.lifecycleStage)?.median);
+      entry.lifecycleAdjustedIndex = Number.isFinite(baseline) && baseline > 0
+        ? (entry.dollarsPerPledgeHour / baseline) * 100
+        : null;
+    });
+
+    const byDaypart = new Map();
+    usable.forEach((entry) => {
+      const key = entry.daypart.id;
+      if (!byDaypart.has(key)) {
+        byDaypart.set(key, {
+          ...entry.daypart,
+          rows: [],
+          totalDollars: 0,
+          totalMinutes: 0
+        });
+      }
+      const bucket = byDaypart.get(key);
+      bucket.rows.push(entry);
+      bucket.totalDollars += entry.amount;
+      bucket.totalMinutes += entry.minutes;
+    });
+
+    const dayparts = [...byDaypart.values()]
+      .map((bucket) => {
+        const lifecycleStages = new Set(bucket.rows.map((entry) => entry.lifecycleStage).filter((stage) => stage && stage !== 'unknown'));
+        const adjustedValues = bucket.rows
+          .map((entry) => Number(entry.lifecycleAdjustedIndex))
+          .filter((value) => Number.isFinite(value));
+        const adjustedIndex = detailMedian(adjustedValues);
+        const adjustedEligible = usable.length >= 6
+          && bucket.rows.length >= 3
+          && lifecycleStages.size >= 2
+          && adjustedValues.length >= 3;
+        const evidence = bucket.rows.length >= 5 && lifecycleStages.size >= 2
+          ? 'Good'
+          : bucket.rows.length >= 3 && lifecycleStages.size >= 2
+            ? 'Usable'
+            : 'Thin';
+        return {
+          ...bucket,
+          airingCount: bucket.rows.length,
+          rawDollarsPerPledgeHour: bucket.totalMinutes > 0 ? bucket.totalDollars / (bucket.totalMinutes / 60) : null,
+          lifecycleStageCount: lifecycleStages.size,
+          lifecycleMix: detailLifecycleMixLabel(bucket.rows),
+          adjustedIndex,
+          adjustedEligible,
+          evidence,
+          adjustedRead: detailAdjustedRead(adjustedIndex, adjustedEligible)
+        };
+      })
+      .sort((a, b) => a.order - b.order);
+
+    const early = stageBaselines.get('early');
+    const late = stageBaselines.get('late');
+    let fatigue = {
+      eligible: false,
+      percentChange: null,
+      tone: 'thin',
+      label: usable.length < 6
+        ? 'Need at least 6 usable timed airings to estimate title fatigue.'
+        : 'Not enough early and late airings to estimate title fatigue.'
+    };
+    if (usable.length >= 6 && Number(early?.count || 0) >= 2 && Number(late?.count || 0) >= 2 && Number(early?.median || 0) > 0) {
+      const percentChange = ((Number(late.median) / Number(early.median)) - 1) * 100;
+      const abs = Math.abs(Math.round(percentChange));
+      let tone = 'stable';
+      let label = `Late-run airings are about ${abs}% ${percentChange < 0 ? 'below' : 'above'} early-run airings.`;
+      if (percentChange <= -20) {
+        tone = 'fade';
+        label = `Clear title fade: late-run airings are about ${abs}% below the early-run median.`;
+      } else if (percentChange <= -10) {
+        tone = 'fade-some';
+        label = `Some title fade: late-run airings are about ${abs}% below the early-run median.`;
+      } else if (percentChange >= 10) {
+        tone = 'stronger';
+        label = `Later airings are holding stronger: about ${abs}% above the early-run median.`;
+      } else {
+        label = 'No meaningful early-to-late fade is visible in the usable airing history.';
+      }
+      fatigue = { eligible:true, percentChange, tone, label };
+    }
+
+    return {
+      usable,
+      dayparts,
+      stageBaselines,
+      fatigue,
+      enoughForAdjustedAnalysis: usable.length >= 6
+    };
+  }
+
+  function renderDaypartPerformance(program = {}, driveResults = [], exactAirings = []) {
+    if (!els.detailDaypartPerformance || !els.detailDaypartPill) return;
+    const analysis = buildDaypartPerformance(program, driveResults, exactAirings);
+    const rows = analysis.dayparts || [];
+    const usableCount = analysis.usable?.length || 0;
+
+    if (usableCount < 3 || !rows.length) {
+      els.detailDaypartPill.textContent = usableCount ? `${usableCount} timed airing${usableCount === 1 ? '' : 's'}` : 'Needs timed airings';
+      els.detailDaypartPerformance.innerHTML = '<div class="detail-graph-empty">Needs at least 3 timed airings with trustworthy dollars and program length before time-of-day performance is shown.</div>';
+      return;
+    }
+
+    const adjustedCount = rows.filter((row) => row.adjustedEligible).length;
+    els.detailDaypartPill.textContent = adjustedCount
+      ? `${usableCount} airings · fatigue adjusted`
+      : `${usableCount} timed airings`;
+
+    const fatigueClass = `detail-daypart-fatigue ${utils.escapeHtml(analysis.fatigue?.tone || 'thin')}`;
+    const adjustedNote = analysis.enoughForAdjustedAnalysis
+      ? 'The adjusted index compares each airing with this title’s typical performance at the same early/middle/late point in its airing life. 100 = its life-stage norm.'
+      : 'Raw results are shown now. Fatigue-adjusted guidance begins at 6 usable timed airings and is still withheld for a daypart unless it has at least 3 airings across 2 lifecycle stages.';
+
+    els.detailDaypartPerformance.innerHTML = `
+      <div class="detail-daypart-summary">
+        <div class="${fatigueClass}"><strong>Title fatigue</strong><span>${utils.escapeHtml(analysis.fatigue?.label || 'Not enough history to estimate fatigue.')}</span></div>
+        <p>${utils.escapeHtml(adjustedNote)}</p>
+      </div>
+      <div class="detail-daypart-table-wrap">
+        <table class="segment-table detail-daypart-table">
+          <thead>
+            <tr>
+              <th>Time of day</th>
+              <th>Airings</th>
+              <th>Raw $ / pledge hr</th>
+              <th>Airing-life mix</th>
+              <th>Fatigue-adjusted index</th>
+              <th>Read</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => {
+              const adjusted = row.adjustedEligible && Number.isFinite(Number(row.adjustedIndex))
+                ? Math.round(Number(row.adjustedIndex))
+                : '—';
+              return `
+                <tr>
+                  <td><strong>${utils.escapeHtml(row.label)}</strong><span class="detail-daypart-range">${utils.escapeHtml(row.range)}</span></td>
+                  <td>${utils.escapeHtml(String(row.airingCount))}<span class="detail-daypart-evidence evidence-${utils.escapeHtml(row.evidence.toLowerCase())}">${utils.escapeHtml(row.evidence)}</span></td>
+                  <td>${utils.escapeHtml(utils.formatMoney(row.rawDollarsPerPledgeHour || 0))}</td>
+                  <td>${utils.escapeHtml(row.lifecycleMix)}</td>
+                  <td>${utils.escapeHtml(String(adjusted))}</td>
+                  <td>${utils.escapeHtml(row.adjustedRead)}</td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p class="detail-daypart-footnote">This is title-specific history, not proof that a time slot caused the result. The fatigue adjustment only controls for where an airing falls in this title’s own airing lifecycle.</p>
+    `;
+  }
+
+
   function renderPerformanceGraph(program, driveResults = [], exactAirings = []) {
     if (!els.detailPerformanceGraph || !els.detailGraphPill) return;
     maybeRefreshDetailBenchmarks();
@@ -1702,6 +1958,7 @@
     renderSectionLoading();
     renderPremiums(program);
     renderPerformanceGraph(program, [], []);
+    renderDaypartPerformance(program, [], []);
     renderAllFields(program);
   }
 
@@ -1716,6 +1973,7 @@
     renderDriveResults(driveResults, exactAirings);
     renderPremiums(program);
     renderPerformanceGraph(program, driveResults, exactAirings);
+    renderDaypartPerformance(program, driveResults, exactAirings);
     renderAllFields(program);
   }
 
