@@ -6493,90 +6493,27 @@ input.goal-difference-negative {
 
 
 /* Keep result badges, but never let imported/manual results repaint the mode hue. */
-.schedule-placement.break-mode-phones-staffed:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #9dc7e8, #78add5) !important;
-  color: #12344d !important;
-  border-color: rgba(28,94,143,.48) !important;
-}
-.schedule-placement.break-mode-phones-staffed.setup-break-ready:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #559bd0, #2f7eb8) !important;
-  color: #fff !important;
-}
-.schedule-placement.break-mode-phones-staffed.setup-entered:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #267bb7, #14598e) !important;
-  color: #fff !important;
-}
+.schedule-placement.break-mode-phones-staffed:is(.imported-data,.manual-data),
 .schedule-placement.repeat-run.break-mode-phones-staffed:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #dcebf7, #c6dfef) !important;
-  color: #24465e !important;
-}
-.schedule-placement.repeat-run.break-mode-phones-staffed.setup-break-ready:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #bedcf0, #99c5e3) !important;
-  color: #183b55 !important;
-}
-.schedule-placement.repeat-run.break-mode-phones-staffed.setup-entered:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #9fc8e5, #79afd5) !important;
-  color: #12344d !important;
-}
-
-.schedule-placement.break-mode-web-only:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #a4d8d3, #7cc8c0) !important;
-  color: #123c39 !important;
-  border-color: rgba(20,119,109,.45) !important;
-}
-.schedule-placement.break-mode-web-only.setup-break-ready:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #55b9ae, #2b998e) !important;
+  background: #4f93c7 !important;
   color: #fff !important;
+  border-color: rgba(28,94,143,.58) !important;
 }
-.schedule-placement.break-mode-web-only.setup-entered:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #228e84, #116b64) !important;
-  color: #fff !important;
-}
+.schedule-placement.break-mode-web-only:is(.imported-data,.manual-data),
 .schedule-placement.repeat-run.break-mode-web-only:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #d9efec, #c2e3df) !important;
-  color: #214844 !important;
+  background: #3b9f96 !important;
+  color: #fff !important;
+  border-color: rgba(20,119,109,.55) !important;
 }
-.schedule-placement.repeat-run.break-mode-web-only.setup-break-ready:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #bee3de, #9bd2cb) !important;
-  color: #17413d !important;
-}
-.schedule-placement.repeat-run.break-mode-web-only.setup-entered:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #99d3cc, #75beb5) !important;
-  color: #123c39 !important;
-}
-
 .schedule-placement.break-mode-live:is(.imported-data,.manual-data),
 .schedule-placement.live-break:is(.imported-data,.manual-data),
-.schedule-placement[data-live-break="true"]:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #c7b6e0, #a891cf) !important;
-  color: #33224d !important;
-  border: 1px solid rgba(92,61,140,.48) !important;
-  outline: none !important;
-}
-.schedule-placement.break-mode-live.setup-break-ready:is(.imported-data,.manual-data),
-.schedule-placement.live-break.setup-break-ready:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #9475c4, #7453ab) !important;
-  color: #fff !important;
-}
-.schedule-placement.break-mode-live.setup-entered:is(.imported-data,.manual-data),
-.schedule-placement.live-break.setup-entered:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #68469c, #4d327c) !important;
-  color: #fff !important;
-}
+.schedule-placement[data-live-break="true"]:is(.imported-data,.manual-data),
 .schedule-placement.repeat-run.break-mode-live:is(.imported-data,.manual-data),
 .schedule-placement.repeat-run.live-break:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #e7def1, #d7c8e8) !important;
-  color: #49365f !important;
-}
-.schedule-placement.repeat-run.break-mode-live.setup-break-ready:is(.imported-data,.manual-data),
-.schedule-placement.repeat-run.live-break.setup-break-ready:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #d4c4e6, #baa3d6) !important;
-  color: #3c2957 !important;
-}
-.schedule-placement.repeat-run.break-mode-live.setup-entered:is(.imported-data,.manual-data),
-.schedule-placement.repeat-run.live-break.setup-entered:is(.imported-data,.manual-data) {
-  background: linear-gradient(180deg, #bca5d8, #9f82c6) !important;
-  color: #2f2046 !important;
+  background: #7c5bab !important;
+  color: #fff !important;
+  border-color: rgba(92,61,140,.58) !important;
+  outline: none !important;
 }
 
 /* Placeholder editing should visually match its neutral calendar block. */
