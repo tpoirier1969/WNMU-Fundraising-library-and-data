@@ -33,7 +33,7 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(worker, /setUTCDate\(graceDate\.getUTCDate\(\) \+ 45\)/);
   assert.match(ui, /aggregateBacktests/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.270');
+  assert.equal(version.appVersion, '0.22.271');
 });
 
 
