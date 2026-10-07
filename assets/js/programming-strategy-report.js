@@ -494,7 +494,7 @@ function dayMapSection(strategy,hourly){
     if(slot.blocked){const label=slot.regularProgramTitle?`Regular schedule · ${slot.regularProgramTitle}`:'Protected regular programming';const note=slot.regularProgramNote?` · ${slot.regularProgramNote}`:'';return`<div class="strategy-window-divider is-blocked"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · ${esc(label)}</strong><span>Not pledge inventory${esc(note)}.</span></div>`;}
     const divider=`<div class="strategy-window-divider ${slot.experimental?'is-experimental':''}"><strong>${clock(slot.startMinutes)}–${clock(slot.endMinutes)} · ${esc(slot.label)}${slot.experimental?' · Test window':''}</strong><span>${slot.experimental?'See scheduling opportunities / tests above.':(slot.evidenceRows?`${slot.evidenceRows} exact-weekday comparable historical row${slot.evidenceRows===1?'':'s'}`:'No exact-weekday slot history')}</span></div>`;
     const timing=timingHistoryForWindow(timingIndex,slot);
-    const rows=slot.recommendations.slice(0,4).map(x=>`<div class="strategy-program-row"><span class="strategy-program-time">${clock(slot.startMinutes)}</span><span class="strategy-program-title"><strong>${esc(x.title)}${x.newTitle?'<span class="strategy-new-title">NEW</span>':''}</strong><small>${esc(x.topic)}${x.secondary?` · ${esc(x.secondary)}`:''}${x.programmer?.rating?` · Programmer: ${esc(x.programmer.label)}`:''}</small></span><span class="strategy-program-evidence"><b>${esc(x.confidence)}</b> · ${esc((x.newTitle&&x.reviewedNew?x.reasons.find(r=>/^New \/ unaired/i.test(r)):null)||x.reasons[0]||'No direct title history.')}${x.cautions.length?` <em>${esc(x.cautions[0])}</em>`:''}</span><span class="strategy-program-fit"><b>${Math.round(x.score)}</b><small>${esc(x.fit)}</small></span></div>`).join('');
+    const rows=slot.recommendations.slice(0,4).map(x=>`<div class="strategy-program-row"><span class="strategy-program-time">${clock(slot.startMinutes)}</span><span class="strategy-program-title"><strong>${esc(x.title)}${x.newTitle?'<span class="strategy-new-title">NEW</span>':''}</strong><small>${esc(x.topic)}${x.secondary?` · ${esc(x.secondary)}`:''}${x.programmer?.rating?` · Programmer: ${esc(x.programmer.label)}`:''}</small></span><span class="strategy-program-evidence"><b>${esc(x.confidence)}</b> · ${esc((x.newSeasonalFit?.active?x.reasons.find(r=>/^Newly available since/i.test(r)):null)||(x.newTitle&&x.reviewedNew?x.reasons.find(r=>/^New \/ unaired/i.test(r)):null)||x.reasons[0]||'No direct title history.')}${x.cautions.length?` <em>${esc(x.cautions[0])}</em>`:''}</span><span class="strategy-program-fit"><b>${Math.round(x.score)}</b><small>${esc(x.fit)}</small></span></div>`).join('');
     return divider+timing+(rows||'<div class="strategy-program-empty">No eligible Program Library title for this slot.</div>');
   }).join('')}</div></section>`).join('')}</div></section>`;
 }
@@ -766,11 +766,12 @@ function programOpportunitiesSection(strategy={}){
   const ensure=(item)=>{
     const key=keyFor(item);
     if(!key)return null;
-    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,drama:null,companionStatus:'',webOnlyRecommended:false});
+    if(!byKey.has(key))byKey.set(key,{title:item.title||'',topic:item.topic||'',score:null,badges:[],notes:[],newTitle:false,newSeasonalFit:null,drama:null,companionStatus:'',webOnlyRecommended:false});
     const row=byKey.get(key);
     if(!row.title&&item.title)row.title=item.title;
     if(!row.topic&&item.topic)row.topic=item.topic;
     if(item.newTitle===true)row.newTitle=true;
+    if(item.newSeasonalFit)row.newSeasonalFit=item.newSeasonalFit;
     if(item.drama)row.drama=item.drama;
     if(item.companionStatus)row.companionStatus=item.companionStatus;
     if(Number.isFinite(Number(item.score)))row.score=Math.max(Number.isFinite(row.score)?row.score:-Infinity,Number(item.score));
@@ -783,6 +784,11 @@ function programOpportunitiesSection(strategy={}){
       row.badges.push('Recommended');
       if(slot.webOnlyExperimental)row.webOnlyRecommended=true;
       if(item.newTitle)row.badges.push('New');
+      if(item.newSeasonalFit?.active){
+        row.badges.push('New seasonal fit');
+        const seasonalReason=(item.reasons||[]).find(reason=>/^Newly available since/i.test(reason));
+        if(seasonalReason)row.notes.push(seasonalReason);
+      }
       if(item.companionStatus==='dated'){
         row.badges.push('Dated companion');
         if(slot.webOnlyExperimental)row.badges.push('5–7 test only');
@@ -817,9 +823,11 @@ function programOpportunitiesSection(strategy={}){
       return recommended&&(row.newTitle||row.drama?.currentCycle===true);
     })
     .sort((a,b)=>{
+      const af=a.newSeasonalFit?.active?1:0;
+      const bf=b.newSeasonalFit?.active?1:0;
       const as=Number.isFinite(Number(a.score))?Number(a.score):-Infinity;
       const bs=Number.isFinite(Number(b.score))?Number(b.score):-Infinity;
-      return bs-as||a.title.localeCompare(b.title);
+      return bf-af||bs-as||a.title.localeCompare(b.title);
     })
     .slice(0,20);
   const html=rows.length?rows.map((item,index)=>{
@@ -828,7 +836,7 @@ function programOpportunitiesSection(strategy={}){
     const score=Number.isFinite(item.score)?'<small>Score '+Math.round(item.score)+'</small>':'';
     return '<article><div class="strategy-opportunity-rank">'+(index+1)+'</div><div class="strategy-opportunity-body"><div class="strategy-opportunity-title"><strong>'+esc(item.title)+'</strong><span>'+esc(item.topic)+'</span></div><div class="strategy-opportunity-badges">'+badgeHtml+'</div><p>'+note+'</p>'+score+'</div></article>';
   }).join(''):'<p>No program opportunity currently clears the filters.</p>';
-  return '<section class="sheet-section strategy-program-opportunities"><div class="strategy-section-head"><div><h2>Program opportunities</h2><p>Up to 20 current candidates, sorted by best-window score. Badges explain why a title is surfacing.</p></div></div><div class="strategy-program-opportunity-list">'+html+'</div></section>';
+  return '<section class="sheet-section strategy-program-opportunities"><div class="strategy-section-head"><div><h2>Program opportunities</h2><p>Up to 20 current candidates, with newly available titles in proven seasonal topics/styles first, then best-window score. Badges explain why a title is surfacing.</p></div></div><div class="strategy-program-opportunity-list">'+html+'</div></section>';
 }
 
 function compact(items,renderer,empty){return items?.length?`<div class="strategy-compact-list">${items.map(renderer).join('')}</div>`:`<p>${esc(empty)}</p>`;}
@@ -853,7 +861,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.262');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.263');
     }catch(error){
       reject(error);
       return;

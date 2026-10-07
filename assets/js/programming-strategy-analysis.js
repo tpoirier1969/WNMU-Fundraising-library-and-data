@@ -7,6 +7,7 @@
   const JEWISH_HOLIDAY_PATTERN = /\b(?:hanukkah|chanukah)\b/i;
   const MUSLIM_HOLIDAY_PATTERN = /\b(?:ramadan|eid(?:\s+al[- ](?:fitr|adha))?)\b/i;
   const NEW_YEAR_PATTERN = /\bnew year(?:'s|s)?\b/i;
+  const EASTER_PATTERN = /\b(?:easter|holy week|palm sunday|good friday|passion of christ)\b/i;
   const LOCAL_WORD_PATTERN = /\b(?:michigan|upper peninsula|yooper|marquette|negaunee|ishpeming|keweenaw|mackinac|lake superior|great lakes|pelkie)\b/i;
   const LOCAL_UP_PATTERN = /(?:^|\W)(?:UP|U\.P\.?)(?=\W|$)/;
   const FIXED_SCHEDULE_TITLE_PATTERN = /\b(?:pbs\s*newshour(?:\s+weekend)?|michigan\s+out\s+of\s+doors|high\s+school\s+bowl)\b/i;
@@ -225,6 +226,7 @@
     if (primary === 'holiday jewish' || JEWISH_HOLIDAY_PATTERN.test(value)) return 'Holiday - Jewish';
     if (primary === 'holiday muslim' || MUSLIM_HOLIDAY_PATTERN.test(value)) return 'Holiday - Muslim';
     if (primary === 'holiday new year' || NEW_YEAR_PATTERN.test(value)) return 'Holiday - New Year';
+    if (primary === 'holiday easter' || EASTER_PATTERN.test(value) || (primary === 'holiday' && secondary.includes('easter'))) return 'Holiday - Easter';
     if (primary === 'holiday christmas' || CHRISTMAS_PATTERN.test(value) || (primary === 'holiday' && secondary.includes('christmas'))) return 'Holiday - Christmas';
     if (primary === 'holiday general' || primary === 'holiday' || primary.startsWith('holiday ')) return 'Holiday - General';
     return HOLIDAY_PATTERN.test(value) ? 'Holiday - General' : '';
@@ -249,6 +251,26 @@
 
   function driveOverlaps(schedule = {}, predicate = () => false) {
     return dateRange(schedule).some((date) => predicate(date));
+  }
+
+  function easterSunday(yearValue) {
+    const year = Number(yearValue);
+    if (!Number.isInteger(year) || year < 1583) return null;
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
   }
 
   function holidaySeasonAdjustment(program = {}, schedule = {}) {
@@ -277,6 +299,18 @@
       });
       adjustment = inWindow ? 14 : -14;
       note = inWindow ? 'New Year seasonal window overlaps this fundraiser.' : 'New Year title is outside the late-December / early-January window.';
+    } else if (category === 'Holiday - Easter') {
+      inWindow = driveOverlaps(schedule, (date) => {
+        const easter = easterSunday(date.getFullYear());
+        if (!easter) return false;
+        const start = addDays(easter, -49);
+        const finish = addDays(easter, 7);
+        return Boolean(start && finish && date >= start && date <= finish);
+      });
+      adjustment = inWindow ? 12 : -16;
+      note = inWindow
+        ? 'Easter / Lent seasonal window fits this fundraiser.'
+        : 'Easter title is outside the Easter / Lent window; it is not treated as generic holiday programming.';
     } else if (category === 'Holiday - Jewish') {
       const isHanukkah = JEWISH_HOLIDAY_PATTERN.test(textValue) || lookupKey(programSecondary(program)).includes('hanukkah');
       if (isHanukkah) {
@@ -1208,6 +1242,100 @@
     return 0;
   }
 
+  function mapStatValue(mapLike, key) {
+    if (!mapLike || !key) return null;
+    if (typeof mapLike.get === 'function') return mapLike.get(key) || null;
+    return Object.prototype.hasOwnProperty.call(mapLike, key) ? mapLike[key] : null;
+  }
+
+  function metricNumber(value) {
+    if (value == null || text(value) === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function seasonalPerformanceSignal(program = {}, context = {}) {
+    const topic = programTopic(program);
+    const secondary = programSecondary(program);
+    const topicKey = lookupKey(topic);
+    let subtopicKey = lookupKey(secondary);
+    if (subtopicKey === 'unspecified') subtopicKey = 'unassigned';
+
+    const performanceStats = context.performanceStats || {};
+    const topicStats = mapStatValue(performanceStats.topic, topicKey);
+    const subtopicMap = mapStatValue(performanceStats.subtopicByTopic, topicKey);
+    const subtopicStats = subtopicKey ? mapStatValue(subtopicMap, subtopicKey) : null;
+
+    let chosen = null;
+    let source = 'topic';
+    let label = topic || 'Comparable topic';
+
+    if (subtopicStats) {
+      chosen = subtopicStats;
+      source = 'subtopic';
+      label = secondary ? `${topic} / ${secondary}` : topic;
+    } else if (topicStats) {
+      chosen = topicStats;
+    } else {
+      const seasonRows = (context.seasonRows || []).filter((row) => lookupKey(rowTopic(row)) === topicKey);
+      if (subtopicKey) {
+        const matchingSubtopic = seasonRows.filter((row) => {
+          let rowKey = lookupKey(rowSecondary(row));
+          if (rowKey === 'unspecified') rowKey = 'unassigned';
+          return rowKey === subtopicKey;
+        });
+        if (matchingSubtopic.length) {
+          const summary = rowSummary(matchingSubtopic);
+          chosen = { averageRate: summary.averageRate, fundraiserSamples: summary.fundraisers };
+          source = 'subtopic';
+          label = secondary ? `${topic} / ${secondary}` : topic;
+        }
+      }
+      if (!chosen && seasonRows.length) {
+        const summary = rowSummary(seasonRows);
+        chosen = { averageRate: summary.averageRate, fundraiserSamples: summary.fundraisers };
+      }
+    }
+
+    const averageRate = metricNumber(chosen?.averageRate);
+    const fundraiserSamples = Math.max(0, Number(chosen?.fundraiserSamples ?? chosen?.fundraisers ?? 0) || 0);
+    const baseline = metricNumber(context.baselineRate);
+    const ratio = averageRate != null && baseline != null && baseline > 0 ? averageRate / baseline : null;
+    const supported = fundraiserSamples >= 2 && averageRate != null && ratio != null;
+    return {
+      source,
+      label,
+      averageRate,
+      fundraiserSamples,
+      ratio,
+      supported,
+      positive: supported && ratio >= 1.10,
+      strong: supported && ratio >= 1.35,
+      negative: supported && ratio <= 0.90
+    };
+  }
+
+  function latestComparableSeasonFundraiserEnd(context = {}) {
+    const schedule = context.schedule || {};
+    const targetSeason = text(context.targetSeason || seasonForDate(scheduleStart(schedule)));
+    const targetStart = parseDate(scheduleStart(schedule));
+    const rows = (context.seasonRows && context.seasonRows.length) ? context.seasonRows : (context.evidenceRows || []);
+    let latest = null;
+    for (const row of rows) {
+      if (targetSeason && rowSeason(row) !== targetSeason) continue;
+      const finish = parseDate(first(
+        row.driveEndDate,
+        row.drive_end_date,
+        row.fundraiserEndDate,
+        row.fundraiser_end_date,
+        airingDate(row)
+      ));
+      if (!finish || (targetStart && finish >= targetStart)) continue;
+      if (!latest || finish > latest) latest = finish;
+    }
+    return latest;
+  }
+
   function seasonEvidence(program = {}, historyRows = [], schedule = {}) {
     const targetSeason = seasonForDate(scheduleStart(schedule));
     const same = historyRows.filter((row) => rowSeason(row) === targetSeason);
@@ -1237,6 +1365,37 @@
       if (holidayInfo.note) notes.push(holidayInfo.note);
     }
     return { targetSeason, holiday, holidayCategory: holidayInfo.category, holidayInWindow: holidayInfo.inWindow, holidayOutOfSeason: holidayInfo.outOfSeason, same: sameSummary, other: otherSummary, adjustment, notes };
+  }
+
+  function newSeasonalFitForProgram(program = {}, slot = {}, titleHistory = {}, season = {}, context = {}) {
+    const signal = seasonalPerformanceSignal(program, context);
+    const previousSeasonEnd = latestComparableSeasonFundraiserEnd(context);
+    const begin = parseDate(rightsStart(program));
+    const slotDate = parseDate(slot.date);
+    const newTitle = Number(titleHistory.rows || 0) === 0;
+    const newlyAvailable = Boolean(
+      newTitle
+      && begin
+      && previousSeasonEnd
+      && slotDate
+      && begin > previousSeasonEnd
+      && begin <= slotDate
+    );
+    const active = Boolean(newlyAvailable && signal.positive && !season.holidayOutOfSeason);
+    let adjustment = 0;
+    if (active) {
+      if (signal.source === 'subtopic') adjustment = signal.strong ? 14 : 10;
+      else adjustment = signal.strong ? 12 : 8;
+    }
+    return {
+      ...signal,
+      active,
+      adjustment,
+      newlyAvailable,
+      previousSeasonEnd: previousSeasonEnd ? dateKey(previousSeasonEnd) : '',
+      rightsStart: begin ? dateKey(begin) : rightsStart(program),
+      targetSeason: text(season.targetSeason || context.targetSeason || seasonForDate(scheduleStart(context.schedule || {})))
+    };
   }
 
   function postRatingAirings(program = {}, historyRows = [], override = null) {
@@ -1456,12 +1615,25 @@ if(companionStatus==='dated'){
 score+=programmer.adjustment;adjustments.push(['programmer',programmer.adjustment]);if(programmer.rating){reasons.push(`Programmer rating: ${programmer.label} (${programmer.adjustment>=0?'+':''}${programmer.adjustment}).`);if(programmer.rating==='low_confidence')cautions.push('Programmer rating is Low confidence; cap recommendation posture accordingly.');if(programmer.rating==='dont_air')cautions.push("Programmer rating says Don't air; strong negative input, not a rights exclusion.");}
 const newTitle=titleHistory.rows===0;
 const reviewedNew=newTitle&&['neutral','viable','promising','must_air'].includes(programmer.rating);
-if(drama.isDramaDoc&&newTitle){score+=8;adjustments.push(['newDramaDoc',8]);reasons.push('New / unaired Drama Doc receives first-run priority.');}
-if(reviewedNew){
+const newSeasonalFit=newSeasonalFitForProgram(program,slot,titleHistory,season,context);
+const newTitlePriorityEligible=!season.holidayOutOfSeason&&!newSeasonalFit.negative;
+if(newSeasonalFit.active){
+  const a=newSeasonalFit.adjustment;
+  score+=a;
+  adjustments.push(['newSeasonalFit',a]);
+  const rateText=Number.isFinite(newSeasonalFit.averageRate)?`, Avg ${Math.round(newSeasonalFit.averageRate)}/pledge hr`:'';
+  reasons.push(`Newly available since the last ${newSeasonalFit.targetSeason} fundraiser; ${newSeasonalFit.label} has positive ${newSeasonalFit.targetSeason} history across ${newSeasonalFit.fundraiserSamples} fundraiser${newSeasonalFit.fundraiserSamples===1?'':'s'}${rateText}. Give this title first-look priority.`);
+}
+if(drama.isDramaDoc&&newTitle&&newTitlePriorityEligible){score+=8;adjustments.push(['newDramaDoc',8]);reasons.push('New / unaired Drama Doc receives first-run priority.');}
+if(reviewedNew&&newTitlePriorityEligible){
   const a=5;
   score+=a;
   adjustments.push(['reviewedNewTitle',a]);
   reasons.push(`New / unaired title with programmer review: ${programmer.label}. Prioritize for a first WNMU pledge test.`);
+}else if(reviewedNew&&!newTitlePriorityEligible){
+  cautions.push(season.holidayOutOfSeason
+    ? 'New-title priority is withheld because this program is outside its seasonal window.'
+    : `New-title priority is withheld because ${newSeasonalFit.label} has weak ${newSeasonalFit.targetSeason} history.`);
 }
 const finish=parseDate(rightsEnd(program)),slotDate=parseDate(slot.date);if(finish&&slotDate){const d=daysBetween(slotDate,finish);if(d!=null&&d<=90){const a=titleHistory.rows?3:1;score+=a;adjustments.push(['rightsUrgency',a]);}}
 if(!slot.experimental&&exactTopic.rates.length===0)score=Math.min(score,64);else if(!slot.experimental&&exactTopic.rates.length===1)score=Math.min(score,70);if(programmer.rating==='low_confidence')score=Math.min(score,58);if(programmer.rating==='dont_air')score=Math.min(score,35);score=clamp(score);
@@ -1469,7 +1641,7 @@ let confidence='Low';if(exactTopic.rates.length>=4&&titleHistory.fundraisers>=3&
   fit = season.holidayCategory === 'Holiday - Christmas' ? 'Save for Christmas season' : 'Out of seasonal window';
   if (programmer.storedRating === 'must_air') cautions.push('Must Air is an editorial priority for a suitable placement; it does not override seasonal fit.');
 }
-const result={program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,companionStatus,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};
+const result={program,programId:programId(program),title:programTitle(program),topic,secondary:programSecondary(program),score,fit,confidence,reasons:[...new Set(reasons.filter(Boolean))],cautions:[...new Set(cautions.filter(Boolean))],adjustments,titleHistory,comparableHistory:exactTitle.rates.length?exactTitle:broadTitle,exactTitleHistory:exactTitle,topicHistory:exactTopic,broadTopicHistory:broadTopic,dayHistory,season,local,drama,programmer,companionStatus,premiumPresent:!!premiumSummary(program),newTitle,reviewedNew,newSeasonalFit,newTitlePriorityEligible,rights:{start:rightsStart(program),end:rightsEnd(program)},evidenceCount:titleHistory.rates.length+exactTopic.rates.length};
 context.scoreCache?.set(scoreKey,result);
 return result;}
   function rankProgramsForSlot(library = [], slot = {}, context = {}) {
@@ -1504,6 +1676,7 @@ return result;}
     const keyFor = (item) => text(item?.programId || lookupKey(item?.title || ''));
     const acceptable = (ranked || []).filter((item) =>
       recommendationAllowed(item, slot) &&
+      (!item.newTitle || item.newTitlePriorityEligible !== false) &&
       !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
       !item.season?.holidayOutOfSeason &&
       item.score >= 40
@@ -1564,12 +1737,15 @@ return result;}
     const acceptableNew = ranked.filter((item) =>
       recommendationAllowed(item, slot) &&
       item.newTitle &&
+      item.newTitlePriorityEligible !== false &&
       !['low_confidence', 'dont_air'].includes(item.programmer?.rating) &&
       !item.season?.holidayOutOfSeason &&
       item.score >= 40
     );
-    const reviewedNew = acceptableNew.filter((item) => item.reviewedNew);
-    const unreviewedNew = acceptableNew.filter((item) => !item.reviewedNew);
+    const seasonalNew = acceptableNew.filter((item) => item.newSeasonalFit?.active);
+    const seasonalNewIds = new Set(seasonalNew.map((item) => item.programId));
+    const reviewedNew = acceptableNew.filter((item) => item.reviewedNew && !seasonalNewIds.has(item.programId));
+    const unreviewedNew = acceptableNew.filter((item) => !item.reviewedNew && !seasonalNewIds.has(item.programId));
     const chosen = [];
     const seen = new Set();
     const add = (item) => {
@@ -1579,7 +1755,13 @@ return result;}
       return true;
     };
 
-    // Favor reviewed new titles first, then other credible unaired titles.
+    // Newly available titles in proven seasonal topics/styles get first look.
+    for (const item of seasonalNew) {
+      if (chosen.length >= Math.min(3, limit)) break;
+      add(item);
+    }
+
+    // Then favor reviewed new titles, followed by other credible unaired titles.
     for (const item of reviewedNew) {
       if (chosen.length >= Math.min(3, limit)) break;
       add(item);
@@ -1655,6 +1837,7 @@ return result;}
       const slotKey = planningSlotKey(slot);
       (ranked || []).forEach((item) => {
         if (!item || !recommendationAllowed(item, slot)) return;
+        if (item.newTitle && item.newTitlePriorityEligible === false) return;
         if (['low_confidence', 'dont_air'].includes(item.programmer?.rating)) return;
         if (item.season?.holidayOutOfSeason) return;
         if (Number(item.score || 0) < 40) return;
@@ -2318,7 +2501,11 @@ return result;}
         : { items: [], usedMinutes: 0, unusedMinutes: 0, threshold: null };
       let allocationFallbackUsed = false;
       if (slot.userDefined && !lineupPlan.items.length) {
-        const fallbackRanked = ranked.filter((item) => lineupCandidateWithinCaps(item, slot));
+        const fallbackRanked = ranked.filter((item) =>
+          lineupCandidateWithinCaps(item, slot)
+          && (!item.newTitle || item.newTitlePriorityEligible !== false)
+          && !item.season?.holidayOutOfSeason
+        );
         const fallbackPool = slot.webOnlyExperimental
           ? selectWebOnlyRecommendationsForSlot(fallbackRanked, staffedBestByProgram, slot, 60)
           : fallbackRanked;
@@ -2364,7 +2551,11 @@ return result;}
       const drama = cached.drama;
       const newTitle = cached.titleHistory.rows === 0;
       return { program, title: programTitle(program), programId: programId(program), topic: programTopic(program), season, drama, newTitle };
-    }).filter((item) => item.season.adjustment > 0 && recommendationAllowed(item))
+    }).filter((item) => {
+      if (!(item.season.adjustment > 0) || !recommendationAllowed(item)) return false;
+      if (!item.newTitle) return true;
+      return !seasonalPerformanceSignal(item.program, context).negative;
+    })
       .sort((a, b) => b.season.adjustment - a.season.adjustment || a.title.localeCompare(b.title)).slice(0, 10);
     const local = viable.filter(isLocal).map((program) => windows.filter((slot) => !slot.experimental && !slot.blocked)
       .map((slot) => scoreProgramForSlot(program, slot, context)).filter(Boolean)
@@ -2427,13 +2618,14 @@ return result;}
         'Topic performance is season-specific and its displayed average matches the Historical Analytics fundraiser-balanced average for that topic; Uncategorized / incidental pledge activity is excluded from programming rankings.',
         'Day/time performance uses the same reconciled history in half-hour program-start buckets from 6 AM through late evening; exact half-hour starts stay distinct.',
         'Time-window recommendation evidence uses starts inside the actual planning window rather than the former ±90-minute / broad-daypart approximation.',
-        'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority; Low confidence and Don\'t air do not.',
+        'New-title priority is conditional on fit. A title newly available since the previous comparable fundraiser gets extra first-look weight only when its target-season topic or stored subtopic has repeat positive WNMU evidence; weak or out-of-season categories do not get a novelty boost.',
+        'Programmer ratings are weighted inputs. For new / unaired titles, an explicit Neutral, Viable, Promising, or Must Air rating increases first-test priority only when seasonal fit is not negative; Low confidence and Don\'t air do not.',
         'Drama Doc repeat eligibility uses series/season references found in title or program notes when available; rights-start recency is only the fallback when the pledge record does not identify a season.',
         'Day-by-day recommendations favor new / unaired titles. Previously aired standbys are limited to one anchor only when at least two credible new titles are available, keeping old titles at about 25–33% of that slot list.',
         'The automated Fundraiser Plan allocates titles across the entire drive before rendering individual days. A title can appear at most four times, no more than twice in the same daypart, and repeat use is reserved for its strongest distinct-date opportunities rather than simply the first chronological windows.',
         'Scheduling-opportunity flags are shown once per weekly timeslot. Weak results dominated by one programming type are treated as a narrow test, not proof that the clock time itself is bad.',
         'The avoid/rest list is limited to discretionary pledge titles: fixed-schedule programs, Drama Docs, and titles whose own WNMU average is still at or above the relevant pledge baseline are excluded unless a programmer explicitly marked them Don\'t air or Low confidence.',
-        'Holiday scoring is category-aware: Christmas is seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
+        'Holiday scoring is category-aware: Christmas and Easter are seasonal, New Year is narrow, and Jewish/Muslim holidays use movable-calendar windows when a specific holiday is identifiable.',
         'Islamic-calendar holiday windows are planning approximations and may differ by local moon sighting.',
         'Friday 8–9 PM is protected regular programming and excluded from pledge recommendations.'
       ]
@@ -2492,6 +2684,8 @@ return result;}
     rowSummary,
     comparableRows,
     seasonEvidence,
+    seasonalPerformanceSignal,
+    newSeasonalFitForProgram,
     programmerEvidence,
     scoreProgramForSlot,
     rankProgramsForSlot,

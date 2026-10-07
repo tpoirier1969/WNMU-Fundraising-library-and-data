@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.254', 'programming-strategy-backtest.js?v=0.22.254');
+importScripts('one-sheet-analysis.js?v=0.22.186', 'programming-strategy-analysis.js?v=0.22.263', 'programming-strategy-backtest.js?v=0.22.254');
 
 const A = self.WNMUOneSheetAnalysis;
 const S = self.WNMUProgrammingStrategyAnalysis;
@@ -1517,7 +1517,9 @@ function compactRecommendation(item = {}) {
     programmer: item.programmer,
     companionStatus: item.companionStatus,
     newTitle: item.newTitle,
-    reviewedNew: item.reviewedNew
+    reviewedNew: item.reviewedNew,
+    newSeasonalFit: item.newSeasonalFit,
+    newTitlePriorityEligible: item.newTitlePriorityEligible
   };
 }
 

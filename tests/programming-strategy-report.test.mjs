@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.262'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.263'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -999,7 +999,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.doesNotMatch(reportUi, /WNMUOneSheetAnalysis/);
   assert.doesNotMatch(reportUi, /WNMUProgrammingStrategyAnalysis/);
 
-  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.254', 'programming-strategy-backtest\.js\?v=0\.22\.254'\)/);
+  assert.match(workerUi, /importScripts\('one-sheet-analysis\.js\?v=0\.22\.186', 'programming-strategy-analysis\.js\?v=0\.22\.263', 'programming-strategy-backtest\.js\?v=0\.22\.254'\)/);
   assert.match(workerUi, /A\.canonicalizeImportedAirings/);
   assert.match(workerUi, /A\.analyzeSchedule/);
   assert.match(workerUi, /buildDayOutlook/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.262/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.263/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -2545,4 +2545,111 @@ test('marked windows retry strongest eligible titles when drive-wide allocation 
   assert.match(source,/const fallbackRanked = ranked\.filter/);
   assert.match(source,/allocationFallbackUsed = true/);
   assert.match(source,/recordLineupUse\(item\)/);
+});
+
+
+test('newly available titles in proven seasonal styles get first-look priority without overriding seasonal fit', () => {
+  const target={id:'dec26-new-seasonal',title:'December 2026',startDate:'2026-12-05',endDate:'2026-12-13'};
+  const prime=S.planningWindows(target).find((entry)=>entry.label==='Prime'&&!entry.blocked);
+  assert.ok(prime);
+
+  const history=[
+    row({programId:'celtic-23',title:'Prior Celtic 2023',topic:'Music',secondary:'Celtic',dateKey:'2023-12-02',startMinutes:19*60,dollars:800,fundraiserId:'dec23',driveStartDate:'2023-12-01',driveEndDate:'2023-12-10'}),
+    row({programId:'celtic-24',title:'Prior Celtic 2024',topic:'Music',secondary:'Celtic',dateKey:'2024-12-07',startMinutes:19*60,dollars:800,fundraiserId:'dec24',driveStartDate:'2024-12-06',driveEndDate:'2024-12-15'}),
+    row({programId:'celtic-25',title:'Prior Celtic 2025',topic:'Music',secondary:'Celtic',dateKey:'2025-12-06',startMinutes:19*60,dollars:800,fundraiserId:'dec25',driveStartDate:'2025-12-05',driveEndDate:'2025-12-14'})
+  ];
+  const performanceStats={
+    topic:new Map([['music',{averageRate:650,fundraiserSamples:3}]]),
+    subtopicByTopic:new Map([['music',new Map([['celtic',{averageRate:800,fundraiserSamples:3}]])]])
+  };
+  const makeContext=()=>({
+    schedule:target,
+    evidenceRows:history,
+    seasonRows:history,
+    baselineRate:400,
+    targetSeason:'December',
+    seasonFundraiserCount:3,
+    performanceStats,
+    overrideByProgramId:new Map(),
+    programRowsCache:new Map(),
+    programEvidenceCache:new Map(),
+    slotEvidenceCache:new Map(),
+    seasonSlotEvidenceCache:new Map(),
+    seasonTopicSummaryCache:new Map(),
+    scoreCache:new Map()
+  });
+
+  const fresh=baseProgram({
+    id:'fresh-celtic',
+    title:'Fresh Celtic Special',
+    topic_primary:'Music',
+    topic_secondary:'Celtic',
+    rights_start:'2026-01-10'
+  });
+  const oldUnaired=baseProgram({
+    id:'old-unaired-celtic',
+    title:'Old Unaired Celtic',
+    topic_primary:'Music',
+    topic_secondary:'Celtic',
+    rights_start:'2025-01-10'
+  });
+
+  const freshScore=S.scoreProgramForSlot(fresh,prime,makeContext());
+  const oldScore=S.scoreProgramForSlot(oldUnaired,prime,makeContext());
+  assert.equal(freshScore.newSeasonalFit.active,true);
+  assert.equal(freshScore.newSeasonalFit.source,'subtopic');
+  assert.equal(freshScore.newSeasonalFit.previousSeasonEnd,'2025-12-14');
+  assert.ok(freshScore.newSeasonalFit.adjustment>=10);
+  assert.ok(freshScore.score>oldScore.score);
+
+  const genericReviewed={
+    ...freshScore,
+    programId:'generic-reviewed-new',
+    title:'Generic Reviewed New',
+    score:freshScore.score+10,
+    newSeasonalFit:{active:false},
+    newTitle:true,
+    newTitlePriorityEligible:true,
+    reviewedNew:true,
+    drama:{isDramaDoc:false},
+    companionStatus:'',
+    season:{holidayOutOfSeason:false},
+    programmer:{rating:'promising'}
+  };
+  const selected=S.selectRecommendationsForSlot([genericReviewed,freshScore],2,prime);
+  assert.equal(selected[0].programId,'fresh-celtic','seasonally proven newly available title should receive top billing');
+});
+
+test('Easter titles are explicitly out of season in December and novelty cannot override that', () => {
+  const target={id:'dec26-easter',title:'December 2026',startDate:'2026-12-05',endDate:'2026-12-13'};
+  const prime=S.planningWindows(target).find((entry)=>entry.label==='Prime'&&!entry.blocked);
+  const easter=baseProgram({
+    id:'easter-new',
+    title:'Easter Celebration',
+    topic_primary:'Holiday - Easter',
+    topic_secondary:'Easter',
+    rights_start:'2026-01-10'
+  });
+  const result=S.scoreProgramForSlot(easter,prime,{
+    schedule:target,
+    evidenceRows:[],
+    seasonRows:[],
+    baselineRate:400,
+    targetSeason:'December',
+    seasonFundraiserCount:0,
+    performanceStats:null,
+    overrideByProgramId:new Map(),
+    programRowsCache:new Map(),
+    programEvidenceCache:new Map(),
+    slotEvidenceCache:new Map(),
+    seasonSlotEvidenceCache:new Map(),
+    seasonTopicSummaryCache:new Map(),
+    scoreCache:new Map()
+  });
+  assert.equal(S.holidayCategory(easter),'Holiday - Easter');
+  assert.equal(result.season.holidayOutOfSeason,true);
+  assert.equal(result.newSeasonalFit.active,false);
+  assert.equal(result.newTitlePriorityEligible,false);
+  assert.equal(result.fit,'Out of seasonal window');
+  assert.ok(!S.selectRecommendationsForSlot([result],4,prime).length);
 });
