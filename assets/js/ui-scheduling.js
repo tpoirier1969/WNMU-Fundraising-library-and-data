@@ -645,6 +645,7 @@
   async function deleteScheduleRecord(scheduleId) {
     state.scheduleSlotRescueCache = {};
     state.schedules = state.schedules.filter((item) => item.id !== scheduleId);
+    scheduleUndoStacks.delete(utils.normalizeText(scheduleId) || '__schedule__');
     if (state.activeScheduleId === scheduleId) state.activeScheduleId = state.schedules[0]?.id || '';
     if (state.scheduleStoreMode === 'remote' && state.client) {
       try {
@@ -5324,9 +5325,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const schedule = getActiveSchedule();
     const placement = findPlacementById(schedule, placementId);
     const placeholder = isPlaceholderPlacement(placement);
-    const row = placeholder ? null : getProgramRowById(placement?.programId);
-    if (!schedule || !placement || (!placeholder && !row)) return;
-    if (!placeholder) {
+    const regular = isRegularSchedulePlacement(placement);
+    const row = (placeholder || regular) ? null : getProgramRowById(placement?.programId);
+    if (!schedule || !placement || (!placeholder && !regular && !row)) return;
+    if (!placeholder && !regular) {
       const rightsCheck = rightsCheckForDate(row, targetDateKey);
       if (!rightsCheck.ok) {
         setNotice(rightsCheck.reason, 'warn');
