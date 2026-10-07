@@ -163,6 +163,262 @@
     };
   }
 
+
+  function scheduleAdvisorKnownDollars(placement = {}) {
+    const importedKnown = Boolean(placement?.importedFromReport);
+    const manualKnown = placementHasManualResult(placement);
+    if (!(importedKnown || manualKnown)) return null;
+    const dollars = importedKnown
+      ? Number(placement?.importedBroadcastDollars || 0)
+      : placementManualResultDollars(placement);
+    return Number.isFinite(dollars) ? dollars : null;
+  }
+
+  function scheduleAdvisorDayOffset(schedule = {}, dateKey = '') {
+    const start = new Date(`${utils.normalizeText(schedule?.startDate || '')}T12:00:00`);
+    const date = new Date(`${utils.normalizeText(dateKey || '')}T12:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(date.getTime())) return null;
+    return Math.round((date.getTime() - start.getTime()) / 86400000);
+  }
+
+  function scheduleAdvisorOccurrenceLabel(schedule = {}, dateKey = '') {
+    const target = new Date(`${dateKey}T12:00:00`);
+    if (Number.isNaN(target.getTime())) return utils.formatDate(dateKey, dateKey);
+    const weekday = target.toLocaleDateString(undefined, { weekday: 'long' });
+    const dates = schedule?.startDate && dateKey && schedule.startDate <= dateKey
+      ? utils.datesBetween(schedule.startDate, dateKey)
+      : [dateKey];
+    const occurrence = Math.max(1, dates.filter((value) => {
+      const date = new Date(`${value}T12:00:00`);
+      return !Number.isNaN(date.getTime()) && date.getDay() === target.getDay();
+    }).length);
+    const ordinal = ['First', 'Second', 'Third', 'Fourth', 'Fifth'][occurrence - 1] || `#${occurrence}`;
+    return `${ordinal} ${weekday}`;
+  }
+
+  function scheduleAdvisorContextWeight(schedule = {}, placement = {}, targetSchedule = {}, slot = {}) {
+    const historicalDate = new Date(`${utils.normalizeText(placement?.dateKey || '')}T12:00:00`);
+    const targetDate = new Date(`${utils.normalizeText(slot?.dateKey || '')}T12:00:00`);
+    if (Number.isNaN(historicalDate.getTime()) || Number.isNaN(targetDate.getTime())) return 0.25;
+    let weight = schedulePledgeSeason(schedule) === schedulePledgeSeason(targetSchedule) ? 3 : 0.5;
+    if (historicalDate.getDay() === targetDate.getDay()) weight += 2;
+    const deltaMinutes = Math.abs(Number(placement?.startMinutes || 0) - Number(slot?.minutes || 0));
+    if (deltaMinutes <= 60) weight += 2.5;
+    else if (deltaMinutes <= 120) weight += 1.5;
+    else if (deltaMinutes <= 180) weight += 0.75;
+    const historicalOffset = scheduleAdvisorDayOffset(schedule, placement?.dateKey || '');
+    const targetOffset = scheduleAdvisorDayOffset(targetSchedule, slot?.dateKey || '');
+    if (Number.isFinite(historicalOffset) && Number.isFinite(targetOffset)) {
+      const deltaDays = Math.abs(historicalOffset - targetOffset);
+      if (deltaDays <= 1) weight += 1.5;
+      else if (deltaDays <= 3) weight += 0.75;
+    }
+    return weight;
+  }
+
+  function scheduleAdvisorHistoricalSchedules(targetSchedule = {}) {
+    const cutoff = utils.normalizeText(targetSchedule?.startDate || '');
+    return (state.schedules || []).filter((schedule) => {
+      if (!schedule || schedule.id === targetSchedule.id) return false;
+      const historicalEnd = utils.normalizeText(schedule.endDate || schedule.end_date || '');
+      return !(cutoff && historicalEnd && historicalEnd >= cutoff);
+    });
+  }
+
+  function scheduleAdvisorSeasonBaselineRate(schedule = {}) {
+    const season = schedulePledgeSeason(schedule);
+    const byDay = new Map();
+    scheduleAdvisorHistoricalSchedules(schedule)
+      .filter((historical) => schedulePledgeSeason(historical) === season)
+      .forEach((historical) => {
+        (historical.placements || []).forEach((placement) => {
+          if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return;
+          const dollars = scheduleAdvisorKnownDollars(placement);
+          const minutes = Number(placement?.lengthMinutes || 0);
+          const dateKey = utils.normalizeText(placement?.dateKey || '');
+          if (dollars === null || !(minutes > 0) || !dateKey) return;
+          const key = `${historical.id}|${dateKey}`;
+          const day = byDay.get(key) || { dollars: 0, minutes: 0 };
+          day.dollars += dollars;
+          day.minutes += minutes;
+          byDay.set(key, day);
+        });
+      });
+    const rates = [...byDay.values()]
+      .filter((day) => day.minutes > 0)
+      .map((day) => (day.dollars * 60) / day.minutes)
+      .filter(Number.isFinite);
+    return rates.length ? rates.reduce((sum, value) => sum + value, 0) / rates.length : 0;
+  }
+
+  function scheduleAdvisorDayStrength(schedule = {}, slot = {}) {
+    const day = historicalSeasonWeekdayRate(schedule, slot?.dateKey || '');
+    const baseline = scheduleAdvisorSeasonBaselineRate(schedule);
+    if (!day) return { label: 'Limited history', tone: 'limited', detail: 'No matching completed season/day history yet.', day: null, baseline };
+    const ratio = baseline > 0 ? day.averageRate / baseline : 1;
+    let label = 'Typical historical day';
+    let tone = 'typical';
+    if (ratio >= 1.18) { label = 'Strong historical day'; tone = 'strong'; }
+    else if (ratio >= 1.03) { label = 'Moderately good historical day'; tone = 'good'; }
+    else if (ratio < 0.82) { label = 'Historically softer day'; tone = 'soft'; }
+    else if (ratio < 0.95) { label = 'Slightly softer historical day'; tone = 'soft'; }
+    return {
+      label,
+      tone,
+      detail: `${utils.formatMoney(day.averageRate)}/broadcast hr · ${day.daySamples} matching day${day.daySamples === 1 ? '' : 's'}`,
+      day,
+      baseline
+    };
+  }
+
+  function scheduleAdvisorTopicStats(schedule = {}, slot = {}) {
+    const groups = new Map();
+    scheduleAdvisorHistoricalSchedules(schedule).forEach((historical) => {
+      (historical.placements || []).forEach((placement) => {
+        if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return;
+        const dollars = scheduleAdvisorKnownDollars(placement);
+        const minutes = Number(placement?.lengthMinutes || 0);
+        if (dollars === null || !(minutes > 0)) return;
+        const row = scheduleProgramRowForPlacement(placement);
+        const topic = utils.normalizeText(derive.topicPrimary(row || {}));
+        if (!topic) return;
+        const rate = (dollars * 60) / minutes;
+        if (!Number.isFinite(rate)) return;
+        const weight = scheduleAdvisorContextWeight(historical, placement, schedule, slot);
+        const key = utils.normalizeLookupKey(topic);
+        const group = groups.get(key) || { topic, weightedRate: 0, weight: 0, samples: 0, matchingSeason: 0, matchingWeekday: 0, closeTime: 0 };
+        group.weightedRate += rate * weight;
+        group.weight += weight;
+        group.samples += 1;
+        if (schedulePledgeSeason(historical) === schedulePledgeSeason(schedule)) group.matchingSeason += 1;
+        const historicalDate = new Date(`${placement.dateKey}T12:00:00`);
+        const targetDate = new Date(`${slot.dateKey}T12:00:00`);
+        if (!Number.isNaN(historicalDate.getTime()) && !Number.isNaN(targetDate.getTime()) && historicalDate.getDay() === targetDate.getDay()) group.matchingWeekday += 1;
+        if (Math.abs(Number(placement.startMinutes || 0) - Number(slot.minutes || 0)) <= 120) group.closeTime += 1;
+        groups.set(key, group);
+      });
+    });
+    return [...groups.values()]
+      .map((group) => {
+        const averageRate = group.weight > 0 ? group.weightedRate / group.weight : 0;
+        const confidence = Math.min(1, group.samples / 5);
+        return { ...group, averageRate, rankScore: averageRate * (0.72 + (0.28 * confidence)) };
+      })
+      .filter((group) => group.averageRate >= 0)
+      .sort((a, b) => (b.rankScore - a.rankScore) || (b.samples - a.samples) || utils.compareText(a.topic, b.topic))
+      .slice(0, 5);
+  }
+
+  function scheduleAdvisorProgramKey(row = {}) {
+    const direct = scheduleRowLookupId(row);
+    if (direct) return `id:${direct}`;
+    const identity = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
+    return identity ? `identity:${identity}` : `title:${utils.normalizeLookupKey(derive.title(row))}`;
+  }
+
+  function scheduleAdvisorPlacementMatchesRow(placement = {}, row = {}) {
+    const placementId = String(placement?.programId || '').trim();
+    const rowId = String(scheduleRowLookupId(row) || derive.programId(row) || '').trim();
+    if (placementId && rowId && placementId === rowId) return true;
+    const rowIdentity = utils.nolaIdentityKey(derive.nola(row), derive.title(row));
+    const placementRow = scheduleProgramRowForPlacement(placement);
+    if (placementRow && rowIdentity && utils.nolaIdentityKey(derive.nola(placementRow), derive.title(placementRow)) === rowIdentity) return true;
+    return utils.normalizeLookupKey(placement?.programTitle || '') === utils.normalizeLookupKey(derive.title(row));
+  }
+
+  function scheduleAdvisorCurrentFundraiserUses(row = {}, schedule = getActiveSchedule()) {
+    return (schedule?.placements || []).filter((placement) => {
+      if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return false;
+      return scheduleAdvisorPlacementMatchesRow(placement, row);
+    }).length;
+  }
+
+  function scheduleAdvisorProgramFit(row = {}, schedule = {}, slot = {}) {
+    const runtimeMinutes = Number(derive.runtimeMinutes(row) || derive.lengthBucket(row) || 60) || 60;
+    const avgPerFundraiser = Number(derive.avgPerFundraiser(row) || 0) || 0;
+    const baseRate = avgPerFundraiser > 0 ? (avgPerFundraiser * 60) / runtimeMinutes : 0;
+    let weightedRate = 0;
+    let totalWeight = 0;
+    let contextSamples = 0;
+    scheduleAdvisorHistoricalSchedules(schedule).forEach((historical) => {
+      (historical.placements || []).forEach((placement) => {
+        if (!scheduleAdvisorPlacementMatchesRow(placement, row)) return;
+        const dollars = scheduleAdvisorKnownDollars(placement);
+        const minutes = Number(placement?.lengthMinutes || runtimeMinutes);
+        if (dollars === null || !(minutes > 0)) return;
+        const rate = (dollars * 60) / minutes;
+        const weight = scheduleAdvisorContextWeight(historical, placement, schedule, slot);
+        weightedRate += rate * weight;
+        totalWeight += weight;
+        contextSamples += 1;
+      });
+    });
+    const contextualRate = totalWeight > 0 ? weightedRate / totalWeight : 0;
+    const blendedRate = contextualRate > 0
+      ? ((contextualRate * 0.72) + (baseRate * 0.28))
+      : baseRate;
+    const currentUses = scheduleAdvisorCurrentFundraiserUses(row, schedule);
+    const freshnessFactor = currentUses === 0 ? 1.06 : Math.max(0.55, 1 - (currentUses * 0.16));
+    const rawScore = Math.max(0, blendedRate * freshnessFactor) + Math.min(40, contextSamples * 5);
+    const reasons = [];
+    if (contextSamples) reasons.push(`${contextSamples} contextual result${contextSamples === 1 ? '' : 's'}`);
+    else if (baseRate > 0) reasons.push('overall title history');
+    else reasons.push('limited financial history');
+    if (currentUses === 0) reasons.push('not yet used this fundraiser');
+    else reasons.push(`${currentUses} use${currentUses === 1 ? '' : 's'} this fundraiser`);
+    return { rawScore, contextualRate, baseRate, contextSamples, currentUses, reason: reasons.join(' · ') };
+  }
+
+  function renderScheduleAdvisorPanel(schedule = {}, slot = {}, currentPlacement = null) {
+    const dayStrength = scheduleAdvisorDayStrength(schedule, slot);
+    const topics = scheduleAdvisorTopicStats(schedule, slot);
+    const occurrence = scheduleAdvisorOccurrenceLabel(schedule, slot?.dateKey || '');
+    const season = schedulePledgeSeason(schedule);
+    const timeLabel = utils.minutesToLabel(Number(slot?.minutes || 0));
+    const activeTopicKey = utils.normalizeLookupKey(state.scheduleProgramTopicFilter || '');
+    const topicHtml = topics.length
+      ? topics.map((topic) => {
+          const active = activeTopicKey && activeTopicKey === utils.normalizeLookupKey(topic.topic);
+          const confidence = topic.samples >= 6 ? 'good history' : (topic.samples >= 3 ? 'some history' : 'limited history');
+          return `<button type="button" class="schedule-advisor-topic ${active ? 'active' : ''}" data-schedule-advisor-topic="${utils.escapeHtml(topic.topic)}"><strong>${utils.escapeHtml(topic.topic)}</strong><span>${utils.escapeHtml(utils.formatMoney(topic.averageRate))}/hr · ${utils.escapeHtml(confidence)}</span></button>`;
+        }).join('')
+      : '<div class="schedule-hint">Not enough completed historical program results to rank topics for this slot yet.</div>';
+    return `
+      <section class="schedule-advisor-panel" aria-label="Best fit recommendations">
+        <div class="schedule-advisor-heading">
+          <div>
+            <strong>Best fit for this slot</strong>
+            <span>${utils.escapeHtml(occurrence)} · ${utils.escapeHtml(timeLabel)} · ${utils.escapeHtml(season)} pledge</span>
+          </div>
+          <div class="schedule-advisor-day ${utils.escapeHtml(dayStrength.tone)}">
+            <strong>${utils.escapeHtml(dayStrength.label)}</strong>
+            <span>${utils.escapeHtml(dayStrength.detail)}</span>
+          </div>
+        </div>
+        <div class="schedule-advisor-copy">Historical season, fundraiser position, weekday, and time-of-day are blended below. Click a topic to rank matching programs for this exact slot.</div>
+        <div class="schedule-advisor-topics">${topicHtml}</div>
+      </section>
+    `;
+  }
+
+  function ensureScheduleAdvisorFilterControl(editable = false) {
+    const row = document.querySelector('.schedule-picker-filters-row');
+    if (!row) return;
+    if (!document.getElementById('schedule-filter-new-fundraiser')) {
+      row.insertAdjacentHTML('afterbegin', `
+        <label class="schedule-inline-check" title="Only show titles that have not already been scheduled in this fundraiser.">
+          <input id="schedule-filter-new-fundraiser" type="checkbox">
+          <span>New this fundraiser</span>
+        </label>
+      `);
+    }
+    const checkbox = document.getElementById('schedule-filter-new-fundraiser');
+    if (checkbox) {
+      checkbox.checked = Boolean(state.scheduleFilterNewThisFundraiser);
+      checkbox.disabled = !editable;
+    }
+  }
+
   function defaultScheduleTitle(startDate, endDate) {
     if (!startDate || !endDate) return 'New fundraiser';
     return `Fundraiser ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}`;
@@ -3431,12 +3687,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function scheduleEntryPassesExtraFilters(row, slotDateKey, usingNonPledge = false) {
     if (!row) return false;
     const targetYear = scheduleSlotYear(slotDateKey) || scheduleSlotYear(getActiveSchedule()?.startDate || '') || new Date().getFullYear();
-    return filters.rowMatchesScheduleFilters(row, {
+    const baseMatch = filters.rowMatchesScheduleFilters(row, {
       unairedOnly: !usingNonPledge && state.scheduleFilterUnaired,
       rightsStartYear: state.scheduleFilterRightsStartYear ? targetYear : null,
       topEarner: !usingNonPledge && state.scheduleFilterTopEarner,
       topEarnerThreshold: 500
     });
+    if (!baseMatch) return false;
+    if (!usingNonPledge && state.scheduleFilterNewThisFundraiser && scheduleAdvisorCurrentFundraiserUses(row) > 0) return false;
+    return true;
   }
 
   function scheduleLookupEntries(usingNonPledge = false) {
@@ -3488,9 +3747,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const hasTopic = Boolean(topicKey);
     const hasSearch = searchTokens.length > 0 && text.length >= scheduleSearchMinChars();
     const usingNonPledge = Boolean(state.scheduleNonPledgeMode);
-    const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
+    const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner || state.scheduleFilterNewThisFundraiser);
     if (!hasTopic && !hasSearch && !hasExtraFilters) return [];
-    return scheduleLookupEntries(usingNonPledge)
+    const schedule = getActiveSchedule();
+    const slot = state.selectedScheduleSlot || { dateKey: slotDateKey, minutes: 0 };
+    const decorated = scheduleLookupEntries(usingNonPledge)
       .filter((entry) => {
         if (!hasTopic) return true;
         return entry.topicKey === topicKey;
@@ -3501,9 +3762,24 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         return searchTokens.every((token) => haystack.includes(token));
       })
       .filter((entry) => scheduleEntryPassesExtraFilters(entry.row, slotDateKey, usingNonPledge))
-      .map((entry) => ({ row: entry.row, rights: rightsCheckForDate(entry.row, slotDateKey), isNonPledge: usingNonPledge }))
+      .map((entry) => ({
+        row: entry.row,
+        rights: rightsCheckForDate(entry.row, slotDateKey),
+        isNonPledge: usingNonPledge,
+        fit: (!usingNonPledge && schedule && slot) ? scheduleAdvisorProgramFit(entry.row, schedule, slot) : null
+      }));
+    const rawValues = decorated.filter((entry) => entry.rights.ok && entry.fit).map((entry) => Number(entry.fit.rawScore || 0));
+    const maxRaw = rawValues.length ? Math.max(...rawValues) : 0;
+    const minRaw = rawValues.length ? Math.min(...rawValues) : 0;
+    decorated.forEach((entry) => {
+      if (!entry.fit) { entry.fitScore = null; return; }
+      if (maxRaw <= minRaw) entry.fitScore = entry.fit.rawScore > 0 ? 78 : 50;
+      else entry.fitScore = Math.round(52 + ((entry.fit.rawScore - minRaw) / (maxRaw - minRaw)) * 43);
+    });
+    return decorated
       .sort((a, b) => {
         if (a.rights.ok !== b.rights.ok) return a.rights.ok ? -1 : 1;
+        if (!usingNonPledge && Number(b.fit?.rawScore || 0) !== Number(a.fit?.rawScore || 0)) return Number(b.fit?.rawScore || 0) - Number(a.fit?.rawScore || 0);
         return utils.compareText(derive.title(a.row), derive.title(b.row));
       })
       .slice(0, hasTopic ? 120 : 60);
@@ -3516,6 +3792,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     state.scheduleFilterUnaired = false;
     state.scheduleFilterRightsStartYear = false;
     state.scheduleFilterTopEarner = false;
+    state.scheduleFilterNewThisFundraiser = false;
     showScheduleModalWarning('', '');
     const schedule = getActiveSchedule();
     const placement = slot && schedule ? findPlacementForSlot(schedule, slot.key) : null;
@@ -4683,7 +4960,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function syncPlanningControls(schedule = {}, slot = {}, currentPlacement = null, editable = false) {
     const host = document.getElementById('schedule-placeholder-controls');
     if (!host) return;
-    host.innerHTML = renderFundraisingWindowControls(schedule, slot, editable)
+    host.innerHTML = renderScheduleAdvisorPanel(schedule, slot, currentPlacement)
+      + renderFundraisingWindowControls(schedule, slot, editable)
       + renderPlaceholderControls(currentPlacement, editable)
       + renderRegularScheduleControls(currentPlacement, editable);
   }
@@ -4819,10 +5097,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       els.scheduleFilterTopEarner.checked = Boolean(state.scheduleFilterTopEarner);
       els.scheduleFilterTopEarner.disabled = !editable || usingNonPledge;
     }
+    ensureScheduleAdvisorFilterControl(editable);
     const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
     const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
     const hasSearch = utils.normalizeLookupKey(state.scheduleProgramQuery || '').length >= scheduleSearchMinChars();
-    const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner);
+    const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner || state.scheduleFilterNewThisFundraiser);
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     syncPlanningControls(schedule, slot, currentPlacement, editable);
@@ -4856,23 +5135,31 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       if (state.scheduleFilterUnaired) filterBits.push('unaired only');
       if (state.scheduleFilterRightsStartYear) filterBits.push(`rights start ${scheduleSlotYear(slot.dateKey) || 'this year'}`);
       if (state.scheduleFilterTopEarner) filterBits.push('top earner');
+      if (state.scheduleFilterNewThisFundraiser) filterBits.push('new this fundraiser');
       const descriptor = filterBits.length ? filterBits.join(' + ') : 'this filter';
       els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched ${utils.escapeHtml(descriptor)}.</div>`;
     } else {
-      els.scheduleProgramResults.innerHTML = matches.map(({ row, rights, isNonPledge }) => {
+      els.scheduleProgramResults.innerHTML = matches.map(({ row, rights, isNonPledge, fit, fitScore }) => {
         const runtimeLabel = lengthMetaLabel(row);
         const rightsBegin = derive.rightsBegin(row) ? utils.formatDate(derive.rightsBegin(row)) : '—';
         const rightsEnd = derive.rightsEnd(row) ? utils.formatDate(derive.rightsEnd(row)) : '—';
         const topicText = derive.topicPrimary(row) || 'No topic';
         const airDatesText = airDatesSummaryForScheduleRow(row);
         const programLookupId = scheduleRowLookupId(row);
+        const fitBadge = !isNonPledge && Number.isFinite(Number(fitScore))
+          ? `<span class="schedule-fit-score" title="Relative fit among the titles matching the current filters">Fit ${utils.escapeHtml(String(fitScore))}</span>`
+          : '';
+        const fitReason = !isNonPledge && fit?.reason
+          ? `<span class="schedule-program-fit-note">${utils.escapeHtml(fit.reason)}</span>`
+          : '';
         return `
           <article class="schedule-program-match ${rights.ok ? '' : 'blocked'} ${isNonPledge ? 'external' : ''}">
             <div class="schedule-program-match-main" data-program-open-id="${utils.escapeHtml(programLookupId)}" tabindex="0" role="button">
-              <strong class="schedule-match-title">${utils.escapeHtml(derive.title(row) || 'Untitled program')}</strong>
+              <div class="schedule-match-title-row"><strong class="schedule-match-title">${utils.escapeHtml(derive.title(row) || 'Untitled program')}</strong>${fitBadge}</div>
               <span class="schedule-program-match-meta">${utils.escapeHtml(runtimeLabel)} · ${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(topicText)}</span>
               <span class="schedule-program-rights">Rights: ${utils.escapeHtml(rightsBegin)} → ${utils.escapeHtml(rightsEnd)}</span>
               <span class="schedule-program-air-dates">${utils.escapeHtml(airDatesText)}</span>
+              ${fitReason}
               ${rights.ok ? '' : `<span class="schedule-program-warning">Not available on ${utils.escapeHtml(utils.formatDate(slot.dateKey))}</span>`}
             </div>
             <div class="schedule-program-match-actions">
@@ -4928,11 +5215,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (els.scheduleAssignmentNote) {
       if (!editable) {
         els.scheduleAssignmentNote.textContent = 'Viewer mode is read-only. Rights dates are shown so you can still review what fits this slot.';
-      } else if (state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner) {
+      } else if (state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner || state.scheduleFilterNewThisFundraiser) {
         const notes = [];
         if (state.scheduleFilterUnaired) notes.push('unaired only');
         if (state.scheduleFilterRightsStartYear) notes.push(`rights begin in ${scheduleSlotYear(slot.dateKey) || 'this year'}`);
         if (state.scheduleFilterTopEarner) notes.push('top earners only');
+        if (state.scheduleFilterNewThisFundraiser) notes.push('new this fundraiser');
         els.scheduleAssignmentNote.textContent = `Quick filters active: ${notes.join(' · ')}.`;
       } else {
         els.scheduleAssignmentNote.textContent = 'Selecting a program places a block sized to that title’s actual runtime when available. Rights are checked against the slot date.';
@@ -7018,6 +7306,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramPicker?.addEventListener('click', (event) => {
+      const advisorTopic = event.target.closest('[data-schedule-advisor-topic]');
+      if (advisorTopic) {
+        event.preventDefault();
+        event.stopPropagation();
+        state.scheduleProgramTopicFilter = advisorTopic.dataset.scheduleAdvisorTopic || '';
+        if (els.scheduleProgramTopicSelect) els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter;
+        renderProgramPicker();
+        return;
+      }
       const saveWindow = event.target.closest('#schedule-fundraising-window-save-button');
       if (saveWindow) {
         event.preventDefault();
@@ -7052,6 +7349,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         event.stopPropagation();
         findProgramsForPlaceholder();
       }
+    });
+    els.scheduleProgramPicker?.addEventListener('change', (event) => {
+      if (event.target?.id !== 'schedule-filter-new-fundraiser') return;
+      state.scheduleFilterNewThisFundraiser = Boolean(event.target.checked);
+      renderProgramPicker();
     });
     els.scheduleProgramTopicSelect?.addEventListener('change', (event) => { state.scheduleProgramTopicFilter = event.target.value || ''; renderProgramPicker(); });
     els.scheduleFilterUnaired?.addEventListener('change', (event) => { state.scheduleFilterUnaired = Boolean(event.target.checked); renderProgramPicker(); });
