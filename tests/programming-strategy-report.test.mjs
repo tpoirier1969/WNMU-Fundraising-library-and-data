@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.256'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.258'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.256/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.258/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -1623,6 +1623,7 @@ test('Sunday-morning peer practice attaches dated normal-slot context without ch
   const observations=[{
     station_code:'SOPT',
     station_name:'Southern Oregon Public Television',
+    observation_date:'2019-01-20',
     day_of_week:'Sunday',
     daypart:'Morning',
     topic_primary:'How-to',
@@ -1672,6 +1673,31 @@ test('Sunday-morning peer practice attaches dated normal-slot context without ch
   assert.equal(sunday.examples[0].scheduleContexts.length,1);
   assert.equal(sunday.examples[0].scheduleContexts[0].scheduleLabel,'Special Presentation');
   assert.match(sunday.examples[0].scheduleContexts[0].sourceSummary,/reserved as Special Presentation/);
+});
+
+test('dated peer normal-slot context requires an observation date inside the cited period', () => {
+  const { workerContext } = makeWorkerHarness();
+  assert.equal(typeof workerContext.peerScheduleContextMatches, 'function');
+  const context={
+    station_code:'SOPT',
+    station_name:'Southern Oregon Public Television',
+    context_period_start:'2019-01-01',
+    context_period_end:'2019-01-31',
+    day_of_week:'Sunday',
+    start_time_minutes:540,
+    end_time_minutes:720
+  };
+  const base={
+    station_code:'SOPT',
+    station_name:'Southern Oregon Public Television',
+    day_of_week:'Sunday',
+    daypart:'Morning'
+  };
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-01-01'},context),true);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-01-31'},context),true);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2018-12-31'},context),false);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-02-01'},context),false);
+  assert.equal(workerContext.peerScheduleContextMatches(base,context),false,'undated observations must not inherit dated schedule context');
 });
 
 test('strategy report restores topic, timing, peer, promotion, and ranked opportunity depth', () => {
