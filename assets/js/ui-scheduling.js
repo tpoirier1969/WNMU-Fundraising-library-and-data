@@ -4664,11 +4664,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           ? calendarPlacementBreakMode(schedule, placement)
           : '';
         const breakModeClass = breakMode ? `break-mode-${breakMode.replace(/_/g, '-')}` : '';
+        const needsBreakInfo = Boolean(isStart && placement && !placement.isNonPledge && !isPlaceholder && !isRegular && !placement.breakInfoComplete);
         const klass = [
           placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '',
           placement?.isNonPledge ? 'non-pledge' : '',
           isPlaceholder ? 'placeholder' : '',
           isRegular ? 'regular-schedule' : '',
+          needsBreakInfo ? 'break-info-missing' : '',
           breakModeClass,
           hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')
         ].filter(Boolean).join(' ');
