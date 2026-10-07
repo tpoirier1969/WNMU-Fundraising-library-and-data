@@ -10,6 +10,33 @@
   let scheduleResultObserver = null;
   let scheduleResultFrame = 0;
 
+
+  function isKnownWorkspaceId(id = '') {
+    return (constants.WORKSPACES || []).some((workspace) => workspace.id === id);
+  }
+
+  function readPersistedWorkspace() {
+    try {
+      const saved = window.localStorage?.getItem(constants.WORKSPACE_STORAGE_KEY || 'wnmuPledgeActiveWorkspaceV1') || '';
+      return isKnownWorkspaceId(saved) ? saved : '';
+    } catch (error) {
+      console.warn('Could not read saved workspace.', error);
+      return '';
+    }
+  }
+
+  function persistWorkspace(workspaceId = '') {
+    if (!isKnownWorkspaceId(workspaceId)) return;
+    try {
+      window.localStorage?.setItem(constants.WORKSPACE_STORAGE_KEY || 'wnmuPledgeActiveWorkspaceV1', workspaceId);
+    } catch (error) {
+      console.warn('Could not save workspace preference.', error);
+    }
+  }
+
+  const persistedWorkspace = readPersistedWorkspace();
+  if (persistedWorkspace) state.activeWorkspace = persistedWorkspace;
+
   function normalizeId(value = '') {
     return String(value || '').trim().toLowerCase();
   }
@@ -219,6 +246,7 @@
       return;
     }
     state.activeWorkspace = workspace.id;
+    persistWorkspace(workspace.id);
     App.auth?.updatePresenceWorkspace?.(workspace.id);
 
     els.workspaceButtons.forEach((button) => {
