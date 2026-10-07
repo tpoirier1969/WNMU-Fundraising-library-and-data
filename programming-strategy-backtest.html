@@ -12,7 +12,8 @@
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2"></script>
   <script defer src="config.js"></script>
   <script defer src="assets/js/standalone-navigation.js?v=0.22.200"></script>
-  <script defer src="assets/js/programming-strategy-backtest-ui.js?v=0.22.263"></script>
+  <script defer src="assets/js/programming-strategy-backtest.js?v=0.22.266"></script>
+  <script defer src="assets/js/programming-strategy-backtest-ui.js?v=0.22.266"></script>
 </head>
 <body>
   <div id="backtest-access-gate" class="report-access-gate hidden"></div>
@@ -36,6 +37,7 @@
         <div class="strategy-controls">
           <label class="report-field"><span>Historical fundraiser</span><select id="backtest-fundraiser"></select></label>
           <button id="backtest-run" class="report-button primary" type="button">Run backtest</button>
+          <button id="backtest-run-all" class="report-button" type="button">Run calibration audit</button>
         </div>
         <div id="backtest-status" class="strategy-status">Checking administrator access…</div>
       </div>

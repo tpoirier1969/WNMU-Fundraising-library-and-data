@@ -1,6 +1,7 @@
 (() => {
 'use strict';
 const cfg=globalThis.PLEDGE_MANAGER_CONFIG||{};
+const B=globalThis.WNMUStrategyBacktest;
 const state={client:null,schedules:[],scheduleRows:[],airings:[],library:[],overrides:[],peerObservations:[],worker:null,workerTimer:null,requestId:0,loaded:false};
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -88,14 +89,14 @@ function schedulePayload(row={}){
   return{};
 }
 function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);state.workerTimer=null;}if(state.worker){state.worker.terminate();state.worker=null;}}
-function runWorker(schedule){
+function runWorker(schedule,{progressLabel=''}={}){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.263');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.266');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
-      if(msg.type==='progress'){status(msg.message||'Running backtest…');return;}
+      if(msg.type==='progress'){status(progressLabel?`${progressLabel} · ${msg.message||'Running backtest…'}`:(msg.message||'Running backtest…'));return;}
       if(msg.type==='error'){stopWorker();reject(new Error(msg.message||'Backtest worker failed.'));return;}
       if(msg.type==='result'){stopWorker();resolve(msg);}
     };
@@ -181,10 +182,79 @@ async function run(){
   catch(error){console.error(error);status(error.message||String(error),'error');}
   finally{if(button)button.disabled=false;}
 }
+
+function calibrationSummaryRows(rows=[]){
+  if(!rows.length)return '<p class="backtest-empty">Not enough tested recommendations yet.</p>';
+  return `<table class="backtest-table"><thead><tr><th>Group</th><th class="num">Tests</th><th class="num">Above median</th><th class="num">Top quartile</th><th class="num">Median vs drive median</th></tr></thead><tbody>${rows.map(row=>`<tr><td><span class="backtest-title">${esc(row.label)}</span></td><td class="num">${row.tests}</td><td class="num">${esc(pct(row.aboveMedianRate))}</td><td class="num">${esc(pct(row.topQuartileRate))}</td><td class="num">${Number.isFinite(Number(row.medianNormalizedRate))?esc(Number(row.medianNormalizedRate).toFixed(2)+'×'):'—'}</td></tr>`).join('')}</tbody></table>`;
+}
+function topicTimeCalibrationRows(rows=[]){
+  const useful=rows.filter(row=>row.tests>=2);
+  if(!useful.length)return '<p class="backtest-empty">Not enough repeated topic/time tests yet.</p>';
+  return `<table class="backtest-table"><thead><tr><th>Topic</th><th class="num">Tests</th><th class="num">Comparable windows</th><th class="num">Beat window avg</th><th class="num">Actual / predicted</th></tr></thead><tbody>${useful.map(row=>`<tr><td><span class="backtest-title">${esc(row.label)}</span></td><td class="num">${row.tests}</td><td class="num">${row.comparableTests}</td><td class="num">${esc(pct(row.aboveWindowAverageRate))}</td><td class="num">${Number.isFinite(Number(row.medianPredictionRatio))?esc(Number(row.medianPredictionRatio).toFixed(2)+'×'):'—'}</td></tr>`).join('')}</tbody></table>`;
+}
+function driveCalibrationRows(rows=[]){
+  const useful=rows.filter(row=>row.windowTests>0);
+  if(!useful.length)return '<p class="backtest-empty">No fundraiser produced a testable recommended-window result.</p>';
+  return `<table class="backtest-table"><thead><tr><th>Fundraiser</th><th class="num">Window tests</th><th class="num">Above median</th><th class="num">Top quartile</th><th class="num">Top-actual coverage</th></tr></thead><tbody>${useful.map(row=>`<tr><td><span class="backtest-title">${esc(row.title)}</span><span class="backtest-sub">${esc(fmtDate(row.startDate))}</span></td><td class="num">${row.windowTests}</td><td class="num">${esc(pct(row.windowTests?row.aboveMedianHits/row.windowTests:null))}</td><td class="num">${esc(pct(row.windowTests?row.topQuartileHits/row.windowTests:null))}</td><td class="num">${esc(pct(row.topActualCoverage))}</td></tr>`).join('')}</tbody></table>`;
+}
+function renderCalibration(a={},errors=[]){
+  const out=$('#backtest-output');
+  const inversions=Array.isArray(a.scoreBandInversions)?a.scoreBandInversions:[];
+  const inversionHtml=inversions.length
+    ?`<div class="backtest-list">${inversions.map(x=>`<article><strong>Score-band inversion: ${esc(x.higherBand)} vs ${esc(x.lowerBand)}</strong><span class="backtest-sub">Higher band hit ${esc(pct(x.higherHitRate))} across ${x.higherTests} tests; lower band hit ${esc(pct(x.lowerHitRate))} across ${x.lowerTests}. This is a calibration warning, not an automatic weight change.</span></article>`).join('')}</div>`
+    :'<p class="backtest-empty">No score-band inversion cleared the minimum sample rule.</p>';
+  out.innerHTML=`<div class="backtest-sheet">
+    <section class="backtest-verdict"><div><h2>Multi-fundraiser calibration audit</h2><p>Historical runs are frozen before each fundraiser. Only recommendations WNMU actually tested in the recommended window count toward calibration.</p></div><div class="backtest-cutoff"><span class="backtest-badge good">${esc(a.readiness||'thin')} evidence</span><span class="backtest-badge">${a.usableDrives||0} usable drives</span></div></section>
+    <section class="backtest-metrics">
+      ${metric(a.runs||0,'historical fundraisers successfully frozen')}
+      ${metric(a.windowTests||0,'recommended-window tests')}
+      ${metric(pct(a.aboveMedianRate),'tests beating their fundraiser median')}
+      ${metric(pct(a.topQuartileRate),'tests reaching their fundraiser top quartile')}
+      ${metric(inversions.length,'score-band calibration warnings')}
+      ${metric(errors.length,'fundraisers skipped because the backtest errored')}
+    </section>
+    <section class="backtest-section"><h2>Score calibration</h2><p>Higher model scores should produce stronger hit rates. “Median vs drive median” normalizes each test to its own fundraiser so a rich December drive does not overpower a lean August drive.</p>${calibrationSummaryRows(a.scoreBands||[])}</section>
+    <section class="backtest-section"><h2>New vs repeat calibration</h2><p>This isolates whether novelty is earning its keep. Newly available seasonal fits, reviewed new titles, ordinary unaired titles, and established repeats are scored separately.</p>${calibrationSummaryRows(a.recommendationClasses||[])}</section>
+    <section class="backtest-section"><h2>Recommendation topics</h2><p>Topics with only one test are shown but should not drive weight changes.</p>${calibrationSummaryRows((a.recommendationTopics||[]).slice(0,20))}</section>
+    <section class="backtest-section"><h2>Recommended-window dayparts</h2>${calibrationSummaryRows(a.dayparts||[])}</section>
+    <section class="backtest-section"><h2>Topic + time calibration</h2><p>Actual / predicted below 1.00 suggests the historical topic/time rate tends to overpredict; above 1.00 suggests underprediction. Only repeated tested signals are shown.</p>${topicTimeCalibrationRows(a.topicTimeTopics||[])}</section>
+    <section class="backtest-section"><h2>Score-band warnings</h2>${inversionHtml}</section>
+    <section class="backtest-section"><h2>Fundraiser-by-fundraiser</h2>${driveCalibrationRows(a.drives||[])}</section>
+    ${errors.length?`<section class="backtest-section"><h2>Skipped runs</h2><div class="backtest-list">${errors.map(x=>`<article><strong>${esc(x.title)}</strong><span class="backtest-sub">${esc(x.error)}</span></article>`).join('')}</div></section>`:''}
+    <section class="backtest-section backtest-method"><h2>Calibration guardrails</h2><ul><li>No recommendation counts as a success or failure unless WNMU actually aired it in a recommended window.</li><li>Score bands need at least four tests on both sides before an inversion is flagged.</li><li>This report diagnoses weighting. It does not automatically rewrite Strategy scores.</li></ul></section>
+  </div>`;
+}
+async function runCalibration(){
+  if(!state.loaded){status('Historical data is still loading…');return;}
+  if(!B?.aggregateBacktests){status('Calibration module did not load. Refresh and try again.','error');return;}
+  const runButton=$('#backtest-run'),allButton=$('#backtest-run-all');
+  if(runButton)runButton.disabled=true;if(allButton)allButton.disabled=true;
+  const schedules=[...state.schedules].sort((a,b)=>a.startDate.localeCompare(b.startDate));
+  const backtests=[],errors=[];
+  try{
+    for(let index=0;index<schedules.length;index+=1){
+      const schedule=schedules[index],label=`Calibration ${index+1}/${schedules.length} · ${schedule.title}`;
+      try{
+        const result=await runWorker(schedule,{progressLabel:label});
+        if(result?.backtest)backtests.push(result.backtest);
+      }catch(error){
+        console.error('Calibration backtest failed',schedule,error);
+        errors.push({title:schedule.title,error:error?.message||String(error)});
+      }
+    }
+    const aggregate=B.aggregateBacktests(backtests);
+    renderCalibration(aggregate,errors);
+    status(`Calibration complete: ${aggregate.usableDrives} usable drives and ${aggregate.windowTests} recommended-window tests.`,errors.length?'warn':'success');
+  }finally{
+    if(runButton)runButton.disabled=false;if(allButton)allButton.disabled=false;
+  }
+}
+
 async function init(){
   try{
     if(!await requireAdmin())return;
     $('#backtest-run')?.addEventListener('click',()=>void run());
+    $('#backtest-run-all')?.addEventListener('click',()=>void runCalibration());
     $('#backtest-fundraiser')?.addEventListener('change',()=>{const out=$('#backtest-output');if(out)out.innerHTML='<section class="backtest-intro"><strong>Ready to rerun.</strong><p>The selected fundraiser will be hidden from the recommendation evidence and used only afterward for outcome comparison.</p></section>';});
     await loadSchedules();
     if(state.schedules.length)await loadData();

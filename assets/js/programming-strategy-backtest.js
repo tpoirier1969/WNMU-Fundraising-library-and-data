@@ -80,8 +80,13 @@
       for (const rec of selected) {
         const key = itemKey(rec);
         if (!key || key === 'title:') continue;
-        const score = num(rec.score), x = map.get(key) || { key, programId: txt(rec.programId ?? rec.program_id), title: txt(rec.title), topic: txt(rec.topic || 'Uncategorized') || 'Uncategorized', score, fit: txt(rec.fit), confidence: txt(rec.confidence), reasons: rec.reasons || [], cautions: rec.cautions || [], windows: 0, normalWindows: 0, experimentalWindows: 0, recommendedWindows: [] };
+        const score = num(rec.score), x = map.get(key) || { key, programId: txt(rec.programId ?? rec.program_id), title: txt(rec.title), topic: txt(rec.topic || 'Uncategorized') || 'Uncategorized', score, fit: txt(rec.fit), confidence: txt(rec.confidence), reasons: rec.reasons || [], cautions: rec.cautions || [], newTitle: !!rec.newTitle, reviewedNew: !!rec.reviewedNew, newSeasonalFitActive: !!rec.newSeasonalFit?.active, newSeasonalFitLabel: txt(rec.newSeasonalFit?.label), newTitlePriorityEligible: rec.newTitlePriorityEligible !== false, windows: 0, normalWindows: 0, experimentalWindows: 0, recommendedWindows: [] };
         if (score != null && (x.score == null || score > x.score)) Object.assign(x, { score, fit: txt(rec.fit), confidence: txt(rec.confidence), reasons: rec.reasons || x.reasons, cautions: rec.cautions || x.cautions });
+        x.newTitle = x.newTitle || !!rec.newTitle;
+        x.reviewedNew = x.reviewedNew || !!rec.reviewedNew;
+        x.newSeasonalFitActive = x.newSeasonalFitActive || !!rec.newSeasonalFit?.active;
+        x.newSeasonalFitLabel = x.newSeasonalFitLabel || txt(rec.newSeasonalFit?.label);
+        if (rec.newTitlePriorityEligible === false) x.newTitlePriorityEligible = false;
         x.windows += 1;
         slot.experimental ? x.experimentalWindows += 1 : x.normalWindows += 1;
         const plannedStart = num(rec.plannedStartMinutes);
@@ -116,11 +121,13 @@
     });
   }
 
-  function recommendationMatchedRows(rec = {}, rows = [], schedule = {}) {
+  function recommendationWindowMatchedRows(rec = {}, window = {}, rows = [], schedule = {}) {
     const titleKey = keyTitle(rec.title);
     const programId = txt(rec.programId ?? rec.program_id);
-    const windows = rec.recommendedWindows || [];
-    if (!windows.length) return [];
+    const wantedDate = txt(window.date);
+    const wantedStart = Number(window.startMinutes);
+    const wantedEnd = Number(window.endMinutes);
+    if (!wantedDate || !Number.isFinite(wantedStart) || !Number.isFinite(wantedEnd)) return [];
     return usableActualRows(rows, schedule).filter((row) => {
       const rowMatches = titleKey
         ? keyTitle(rowTitle(row)) === titleKey
@@ -128,15 +135,24 @@
       if (!rowMatches) return false;
       const date = rowDate(row);
       const start = num(row.startMinutes ?? row.start_minutes);
-      if (!date || start == null) return false;
-      return windows.some((slot) =>
-        txt(slot.date) === date
-        && Number.isFinite(Number(slot.startMinutes))
-        && Number.isFinite(Number(slot.endMinutes))
-        && start >= Number(slot.startMinutes)
-        && start < Number(slot.endMinutes)
-      );
+      return Boolean(date && start != null && date === wantedDate && start >= wantedStart && start < wantedEnd);
     });
+  }
+
+  function recommendationMatchedRows(rec = {}, rows = [], schedule = {}) {
+    const windows = rec.recommendedWindows || [];
+    if (!windows.length) return [];
+    const seen = new Set();
+    const matched = [];
+    windows.forEach((window) => {
+      recommendationWindowMatchedRows(rec, window, rows, schedule).forEach((row) => {
+        const key = txt(row.id ?? row.row_hash) || [rowDate(row), num(row.startMinutes ?? row.start_minutes), rowTitle(row)].join('|');
+        if (seen.has(key)) return;
+        seen.add(key);
+        matched.push(row);
+      });
+    });
+    return matched;
   }
 
   function rowAggregate(rows = []) {
@@ -325,6 +341,20 @@
       const actual = byKey.get(rec.key) || byTitle.get(keyTitle(rec.title)) || null;
       const matchedRows = recommendationMatchedRows(rec, actualRows, schedule);
       const matched = rowAggregate(matchedRows);
+      const matchedRecommendedWindows = (rec.recommendedWindows || []).map((window) => {
+        const rows = recommendationWindowMatchedRows(rec, window, actualRows, schedule);
+        const aggregate = rowAggregate(rows);
+        return {
+          ...window,
+          airings: aggregate.airings,
+          minutes: aggregate.minutes,
+          dollars: aggregate.dollars,
+          pledges: aggregate.pledges,
+          rate: aggregate.rate,
+          aboveMedian: aggregate.rate != null && medianRate != null ? aggregate.rate > medianRate : null,
+          topQuartile: aggregate.rate != null && topThreshold != null ? aggregate.rate > 0 && aggregate.rate >= topThreshold : null
+        };
+      }).filter((window) => window.airings > 0);
       return {
         ...rec,
         recommendationRank: i + 1,
@@ -342,7 +372,8 @@
         matchedWindowDollars: matched.dollars,
         matchedWindowPledges: matched.pledges,
         matchedWindowAboveMedian: matched.rate != null && medianRate != null ? matched.rate > medianRate : null,
-        matchedWindowTopQuartile: matched.rate != null && topThreshold != null ? matched.rate > 0 && matched.rate >= topThreshold : null
+        matchedWindowTopQuartile: matched.rate != null && topThreshold != null ? matched.rate > 0 && matched.rate >= topThreshold : null,
+        matchedRecommendedWindows
       };
     });
     const recKeys = new Set(recommendations.map((x) => x.key)), recTitles = new Set(recommendations.map((x) => keyTitle(x.title)));
@@ -394,5 +425,173 @@
     };
   }
 
-  globalThis.WNMUStrategyBacktest = Object.freeze({ rowInRecommendationInventory, actualTitleOutcomes, flattenRecommendations, recommendationMatchedRows, rowAggregate, topicTimeSignals, evaluateTopicTime, evaluate });
+
+  function recommendationClass(row = {}) {
+    if (row.newSeasonalFitActive) return 'New seasonal fit';
+    if (row.newTitle && row.reviewedNew) return 'Reviewed new';
+    if (row.newTitle) return 'New / unaired';
+    return 'Repeat / established';
+  }
+
+  function testSummary(rows = []) {
+    const tests = rows.filter((row) => Number.isFinite(Number(row.score)));
+    const normalized = tests.map((row) => Number(row.normalizedRate)).filter(Number.isFinite);
+    return {
+      tests: tests.length,
+      aboveMedianHits: tests.filter((row) => row.aboveMedian).length,
+      topQuartileHits: tests.filter((row) => row.topQuartile).length,
+      aboveMedianRate: tests.length ? tests.filter((row) => row.aboveMedian).length / tests.length : null,
+      topQuartileRate: tests.length ? tests.filter((row) => row.topQuartile).length / tests.length : null,
+      averageScore: tests.length ? tests.reduce((sum, row) => sum + Number(row.score), 0) / tests.length : null,
+      medianNormalizedRate: normalized.length ? median(normalized) : null
+    };
+  }
+
+  function groupedTestSummaries(rows = [], keyFn = () => '') {
+    const groups = new Map();
+    rows.forEach((row) => {
+      const key = txt(keyFn(row)) || 'Uncategorized';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+    return [...groups.entries()].map(([label, items]) => ({ label, ...testSummary(items) }))
+      .sort((a, b) => b.tests - a.tests || (b.aboveMedianRate ?? -1) - (a.aboveMedianRate ?? -1) || a.label.localeCompare(b.label));
+  }
+
+  function aggregateBacktests(backtests = []) {
+    const runs = (Array.isArray(backtests) ? backtests : []).filter((row) => row && row.targetScheduleFound !== false && row.leakageSafe !== false);
+    const windowTests = [];
+    const topicTimeTests = [];
+    const drives = [];
+
+    runs.forEach((backtest) => {
+      const medianRate = Number(backtest?.drive?.medianTitleRate);
+      const driveMedian = Number.isFinite(medianRate) && medianRate > 0 ? medianRate : null;
+      const recs = Array.isArray(backtest?.recommendationResults) ? backtest.recommendationResults : [];
+      recs.forEach((rec) => {
+        const score = Number(rec?.score);
+        const actualRate = Number(rec?.matchedWindowRate);
+        if (!rec?.observedInRecommendedWindow || !Number.isFinite(score) || !Number.isFinite(actualRate)) return;
+        windowTests.push({
+          ...rec,
+          score,
+          matchedWindowRate: actualRate,
+          normalizedRate: driveMedian ? actualRate / driveMedian : null,
+          aboveMedian: rec.matchedWindowAboveMedian === true,
+          topQuartile: rec.matchedWindowTopQuartile === true,
+          recommendationClass: recommendationClass(rec),
+          fundraiserTitle: txt(backtest?.schedule?.title),
+          fundraiserStart: txt(backtest?.schedule?.startDate)
+        });
+      });
+
+      const signals = Array.isArray(backtest?.topicTime?.signalResults) ? backtest.topicTime.signalResults : [];
+      signals.forEach((signal) => {
+        const predicted = Number(signal?.predictedRate), actual = Number(signal?.actualRate);
+        if (!signal?.tested || !Number.isFinite(actual)) return;
+        topicTimeTests.push({
+          ...signal,
+          predictedRate: Number.isFinite(predicted) ? predicted : null,
+          actualRate: actual,
+          predictionRatio: Number.isFinite(predicted) && predicted > 0 ? actual / predicted : null,
+          fundraiserTitle: txt(backtest?.schedule?.title),
+          fundraiserStart: txt(backtest?.schedule?.startDate)
+        });
+      });
+
+      drives.push({
+        title: txt(backtest?.schedule?.title),
+        startDate: txt(backtest?.schedule?.startDate),
+        endDate: txt(backtest?.schedule?.endDate),
+        titleCount: Number(backtest?.drive?.titleCount || 0),
+        windowTests: Number(backtest?.summary?.windowTestedRecommendations || 0),
+        aboveMedianHits: Number(backtest?.summary?.windowAboveMedianHits || 0),
+        topQuartileHits: Number(backtest?.summary?.windowTopQuartileHits || 0),
+        topActualCoverage: backtest?.summary?.topActualCoverage ?? null,
+        scoreRateCorrelation: backtest?.summary?.windowScoreRateCorrelation ?? null
+      });
+    });
+
+    const scoreBandDefs = [
+      { label: '80+', min: 80, max: Infinity },
+      { label: '70–79', min: 70, max: 80 },
+      { label: '60–69', min: 60, max: 70 },
+      { label: '50–59', min: 50, max: 60 },
+      { label: 'Under 50', min: -Infinity, max: 50 }
+    ];
+    const scoreBands = scoreBandDefs.map((band) => ({
+      label: band.label,
+      ...testSummary(windowTests.filter((row) => row.score >= band.min && row.score < band.max))
+    })).filter((row) => row.tests);
+
+    const scoreBandInversions = [];
+    for (let index = 0; index < scoreBands.length - 1; index += 1) {
+      const high = scoreBands[index], low = scoreBands[index + 1];
+      if (high.tests < 4 || low.tests < 4 || high.aboveMedianRate == null || low.aboveMedianRate == null) continue;
+      if (high.aboveMedianRate + 0.10 < low.aboveMedianRate) {
+        scoreBandInversions.push({
+          higherBand: high.label,
+          lowerBand: low.label,
+          higherHitRate: high.aboveMedianRate,
+          lowerHitRate: low.aboveMedianRate,
+          higherTests: high.tests,
+          lowerTests: low.tests
+        });
+      }
+    }
+
+    const topicTimeGroups = new Map();
+    topicTimeTests.forEach((row) => {
+      const key = txt(row.topic || 'Uncategorized') || 'Uncategorized';
+      if (!topicTimeGroups.has(key)) topicTimeGroups.set(key, []);
+      topicTimeGroups.get(key).push(row);
+    });
+    const topicTimeTopics = [...topicTimeGroups.entries()].map(([label, rows]) => {
+      const comparable = rows.filter((row) => row.comparableWindow);
+      const ratios = rows.map((row) => Number(row.predictionRatio)).filter(Number.isFinite);
+      return {
+        label,
+        tests: rows.length,
+        comparableTests: comparable.length,
+        aboveMedianHits: rows.filter((row) => row.aboveMedian).length,
+        topQuartileHits: rows.filter((row) => row.topQuartile).length,
+        topInWindowHits: comparable.filter((row) => row.topInWindow).length,
+        aboveWindowAverageHits: comparable.filter((row) => row.aboveWindowAverage).length,
+        aboveWindowAverageRate: comparable.length ? comparable.filter((row) => row.aboveWindowAverage).length / comparable.length : null,
+        medianPredictionRatio: ratios.length ? median(ratios) : null
+      };
+    }).sort((a, b) => b.tests - a.tests || a.label.localeCompare(b.label));
+
+    const usableDrives = drives.filter((row) => row.windowTests > 0);
+    const daypartRows = windowTests.flatMap((row) => (row.matchedRecommendedWindows || []).map((window) => ({
+      ...row,
+      matchedWindowRate: window.rate,
+      normalizedRate: Number.isFinite(Number(window.rate)) && Number.isFinite(Number(row.normalizedRate)) && Number(row.matchedWindowRate) > 0
+        ? Number(row.normalizedRate) * (Number(window.rate) / Number(row.matchedWindowRate))
+        : row.normalizedRate,
+      aboveMedian: window.aboveMedian === true,
+      topQuartile: window.topQuartile === true,
+      daypart: txt(window.label) || (String(window.startMinutes) + '-' + String(window.endMinutes))
+    })));
+
+    return {
+      runs: runs.length,
+      usableDrives: usableDrives.length,
+      windowTests: windowTests.length,
+      aboveMedianHits: windowTests.filter((row) => row.aboveMedian).length,
+      topQuartileHits: windowTests.filter((row) => row.topQuartile).length,
+      aboveMedianRate: windowTests.length ? windowTests.filter((row) => row.aboveMedian).length / windowTests.length : null,
+      topQuartileRate: windowTests.length ? windowTests.filter((row) => row.topQuartile).length / windowTests.length : null,
+      scoreBands,
+      scoreBandInversions,
+      recommendationClasses: groupedTestSummaries(windowTests, (row) => row.recommendationClass),
+      recommendationTopics: groupedTestSummaries(windowTests, (row) => row.topic),
+      dayparts: groupedTestSummaries(daypartRows, (row) => row.daypart),
+      topicTimeTopics,
+      drives: drives.sort((a, b) => a.startDate.localeCompare(b.startDate)),
+      readiness: windowTests.length >= 30 ? 'strong' : (windowTests.length >= 15 ? 'moderate' : 'thin')
+    };
+  }
+
+  globalThis.WNMUStrategyBacktest = Object.freeze({ rowInRecommendationInventory, actualTitleOutcomes, flattenRecommendations, recommendationWindowMatchedRows, recommendationMatchedRows, rowAggregate, topicTimeSignals, evaluateTopicTime, evaluate, recommendationClass, aggregateBacktests });
 })();

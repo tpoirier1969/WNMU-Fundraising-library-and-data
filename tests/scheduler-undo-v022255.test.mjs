@@ -44,7 +44,8 @@ test('core scheduling edits create undo checkpoints before mutation', () => {
   assert.match(scheduling, /recordScheduleUndo\(schedule, `move \$\{placement\.programTitle\}`\)/);
   assert.match(scheduling, /recordScheduleUndo\(schedule, `remove \$\{target\.programTitle\}`\)/);
   assert.match(scheduling, /recordScheduleUndo\(schedule, `change \$\{target\.programTitle\} break mode`\)/);
-  assert.match(scheduling, /recordScheduleUndo\(schedule, .*entered in traffic/);
+  assert.match(scheduling, /recordScheduleUndo\(schedule, .*as scheduled/);
+  assert.match(scheduling, /recordScheduleUndo\(schedule, .*break info complete/);
 });
 
 test('regular no-pledge blocks can be drag-moved without requiring a library row', () => {
