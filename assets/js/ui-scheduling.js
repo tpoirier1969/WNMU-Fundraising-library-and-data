@@ -85,6 +85,12 @@
     dragStartScrollTop: 0,
     raf: 0
   };
+  const scheduleModalDrag = {
+    active: false,
+    pointerId: null,
+    offsetX: 0,
+    offsetY: 0
+  };
 
   function getActiveSchedule() {
     return derive.scheduleById(state.activeScheduleId);
@@ -3854,12 +3860,81 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     state.scheduleNonPledgeMode = Boolean(placement?.isNonPledge && !isPlaceholderPlacement(placement));
   }
 
+  function scheduleModalCard() {
+    return els.scheduleProgramModal?.querySelector('.schedule-modal-card') || null;
+  }
+
+  function clampScheduleModalPosition(left, top, card = scheduleModalCard()) {
+    if (!card) return { left, top };
+    const rect = card.getBoundingClientRect();
+    const margin = 8;
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - Math.min(rect.height, window.innerHeight - (margin * 2)) - margin);
+    return {
+      left: Math.max(margin, Math.min(Number(left) || margin, maxLeft)),
+      top: Math.max(margin, Math.min(Number(top) || margin, maxTop))
+    };
+  }
+
+  function keepScheduleModalInViewport() {
+    const card = scheduleModalCard();
+    if (!card || !card.classList.contains('schedule-modal-dragged')) return;
+    const rect = card.getBoundingClientRect();
+    const next = clampScheduleModalPosition(rect.left, rect.top, card);
+    card.style.left = `${next.left}px`;
+    card.style.top = `${next.top}px`;
+  }
+
+  function startScheduleModalDrag(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    const header = event.currentTarget;
+    if (!header || event.target.closest('button, input, select, textarea, a, label')) return;
+    const card = scheduleModalCard();
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    card.classList.add('schedule-modal-dragged');
+    card.style.left = `${rect.left}px`;
+    card.style.top = `${rect.top}px`;
+    scheduleModalDrag.active = true;
+    scheduleModalDrag.pointerId = event.pointerId ?? null;
+    scheduleModalDrag.offsetX = event.clientX - rect.left;
+    scheduleModalDrag.offsetY = event.clientY - rect.top;
+    header.setPointerCapture?.(event.pointerId);
+    document.body.classList.add('schedule-modal-dragging');
+    event.preventDefault();
+  }
+
+  function handleScheduleModalDrag(event) {
+    if (!scheduleModalDrag.active) return;
+    if (scheduleModalDrag.pointerId !== null && event.pointerId !== undefined && event.pointerId !== scheduleModalDrag.pointerId) return;
+    const card = scheduleModalCard();
+    if (!card) return;
+    const next = clampScheduleModalPosition(
+      event.clientX - scheduleModalDrag.offsetX,
+      event.clientY - scheduleModalDrag.offsetY,
+      card
+    );
+    card.style.left = `${next.left}px`;
+    card.style.top = `${next.top}px`;
+    event.preventDefault();
+  }
+
+  function stopScheduleModalDrag(event = null) {
+    if (!scheduleModalDrag.active) return;
+    if (event && scheduleModalDrag.pointerId !== null && event.pointerId !== undefined && event.pointerId !== scheduleModalDrag.pointerId) return;
+    scheduleModalDrag.active = false;
+    scheduleModalDrag.pointerId = null;
+    document.body.classList.remove('schedule-modal-dragging');
+    keepScheduleModalInViewport();
+  }
+
   function openScheduleModal(slot) {
     ensureScheduleModalState(slot);
     renderProgramPicker();
     els.scheduleProgramModal?.classList.remove('hidden');
     els.scheduleProgramBackdrop?.classList.remove('hidden');
     document.body.classList.add('modal-open');
+    window.requestAnimationFrame(keepScheduleModalInViewport);
     window.setTimeout(() => { if (els.scheduleProgramSearch && !els.scheduleProgramSearch.disabled) { els.scheduleProgramSearch.focus(); els.scheduleProgramSearch.select?.(); } }, 0);
   }
 
@@ -7486,6 +7561,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleCopyPlacementButton?.addEventListener('click', () => { copySelectedPlacement(true); });
     els.schedulePastePlacementButton?.addEventListener('click', () => { void pasteClipboardToSelectedSlot(true); });
     els.scheduleProgramModal?.addEventListener('click', (event) => event.stopPropagation());
+    const scheduleModalHeader = els.scheduleProgramModal?.querySelector('.detail-header');
+    scheduleModalHeader?.addEventListener('pointerdown', startScheduleModalDrag);
+    window.addEventListener('pointermove', handleScheduleModalDrag, { passive: false });
+    window.addEventListener('pointerup', stopScheduleModalDrag);
+    window.addEventListener('pointercancel', stopScheduleModalDrag);
     els.scheduleProgramBackdrop?.addEventListener('click', closeScheduleModal);
     document.addEventListener('click', (event) => {
       const menu = document.getElementById('schedule-context-menu');
@@ -7494,6 +7574,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     window.addEventListener('scroll', hideScheduleContextMenu, true);
     window.addEventListener('resize', hideScheduleContextMenu);
     window.addEventListener('resize', queueScheduleInlineScrollbarSync);
+    window.addEventListener('resize', keepScheduleModalInViewport);
     window.addEventListener('mousemove', handleInlineScrollbarDrag);
     window.addEventListener('mouseup', stopInlineScrollbarDrag);
     els.scheduleProgramCloseButton?.addEventListener('click', closeScheduleModal);
