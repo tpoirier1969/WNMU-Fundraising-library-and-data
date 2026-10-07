@@ -6404,6 +6404,9 @@ input.goal-difference-negative {
   right:3px;
   top:2px;
   z-index:0;
+  display:flex;
+  align-items:center;
+  gap:3px;
   max-width:calc(100% - 6px);
   padding:1px 4px;
   border-radius:999px;
@@ -6415,8 +6418,15 @@ input.goal-difference-negative {
   line-height:1.05;
   white-space:nowrap;
   overflow:hidden;
-  text-overflow:ellipsis;
   pointer-events:none;
+}
+.schedule-fundraising-window-tag strong{flex:0 0 auto}
+.schedule-fundraising-window-note{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font-weight:700;
+  opacity:.92;
 }
 .schedule-slot.fundraising-window-slot .schedule-placement{
   z-index:2;
