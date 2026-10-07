@@ -572,7 +572,8 @@ function buildHalfHourRows(poolRows = [], dayMatcher = () => true) {
       startMinutes: slot,
       endMinutes: slot + 30,
       ...topicSummary.local,
-      topTopics: topicSummary.localTopics.slice(0, 3)
+      topicCount: topicSummary.topicCount,
+      topTopics: topicSummary.localTopics.slice(0, 4)
     });
   }
   return rows;
@@ -690,7 +691,7 @@ function summarizeTopicRows(rows = []) {
     .filter((item) => item.fundraiserSamples > 0 && Number.isFinite(item.averageRate))
     .sort((a, b) => b.averageRate - a.averageRate || b.fundraiserSamples - a.fundraiserSamples || b.airings - a.airings)
     .slice(0, 6);
-  return { local, localTopics };
+  return { local, localTopics, topicCount: topicGroups.size };
 }
 
 function localProductionSnapshot(rows = []) {
