@@ -2189,3 +2189,63 @@
   .strategy-window-note{font-size:5.4pt!important}
   .strategy-user-window{break-inside:avoid-page;page-break-inside:avoid}
 }
+
+/* v0.22.256 Fundraiser-plan day outlook row + Time-of-Day heat key */
+.strategy-plan-day-outlook{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  padding:4px 8px;
+  border-top:1px solid #e2eaee;
+  background:#fbfcfd;
+  color:#526d79;
+  font-size:.7rem;
+}
+.strategy-plan-day-outlook>b{
+  color:#315d70;
+  font-weight:850;
+}
+.strategy-plan-day-outlook .strategy-rate{
+  font-weight:850;
+}
+.strategy-plan-day-outlook small{
+  margin-left:auto;
+  color:#7b8c94;
+  font-size:.62rem;
+}
+.strategy-time-heat-key{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:5px;
+  margin:-2px 0 6px;
+  color:#73858d;
+  font-size:.62rem;
+}
+.strategy-time-heat-key>span{
+  width:34px;
+  height:8px;
+  border:1px solid #d7dde0;
+  border-radius:999px;
+  background:#fff;
+}
+.strategy-time-heat-key>span:nth-of-type(2){
+  border-color:#dd7065;
+  background:#fa8072;
+}
+.strategy-half-hour-row{
+  transition:background-color .15s ease;
+}
+@media(max-width:900px){
+  .strategy-plan-day-outlook{
+    align-items:flex-start;
+    flex-wrap:wrap;
+  }
+  .strategy-plan-day-outlook small{margin-left:0;width:100%}
+}
+@media print{
+  .strategy-plan-day-outlook{padding:2px 5px;font-size:5.5pt}
+  .strategy-plan-day-outlook small{font-size:4.8pt}
+  .strategy-time-heat-key{font-size:4.6pt;margin-bottom:3px}
+}
+
