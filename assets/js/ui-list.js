@@ -292,11 +292,16 @@
         ? `<div class="title-row-actions"><span class="sub">Archived by rights-end date — extend rights to restore.</span></div>`
         : '';
       const unarchiveButtonHtml = archiveStatusNote;
+      const scoreAssessment = App.programScorecard?.baseAssessment?.(row) || null;
+      const scoreValue = Number(scoreAssessment?.score);
+      const scoreHtml = Number.isFinite(scoreValue)
+        ? `<span class="program-list-score score-tone-${utils.escapeHtml(scoreAssessment?.tone || 'neutral')}" title="${utils.escapeHtml(`${scoreAssessment?.outlook || 'Programming score'} · ${scoreAssessment?.confidence || 'Unknown'} confidence`)}">Score ${Math.round(scoreValue)}</span>`
+        : '';
       return `
         <tr data-id="${utils.escapeHtml(programId)}" class="library-earnings-${utils.escapeHtml(tone)} ${String(programId) === String(state.selectedProgramId) ? 'selected' : ''}">
           <td class="title-cell" title="${utils.escapeHtml(`Title tint: ${toneLabel}`)}">
             <button type="button" class="title-open-button" data-open-id="${utils.escapeHtml(programId)}" aria-label="Open details for ${utils.escapeHtml(derive.title(row))}">
-              <strong>${utils.escapeHtml(derive.title(row))}</strong>
+              <div class="program-list-title-line"><strong>${utils.escapeHtml(derive.title(row))}</strong>${scoreHtml}</div>
               <div class="sub">${utils.escapeHtml(derive.nola(row) || 'No NOLA')} · ${utils.escapeHtml(derive.distributor(row) || 'No distributor')}</div>
               <div class="description-snippet">${utils.escapeHtml(derive.description(row) || '—')}</div>
             </button>
