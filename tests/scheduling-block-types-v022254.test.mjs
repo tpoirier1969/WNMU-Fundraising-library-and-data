@@ -32,17 +32,21 @@ test('placeholder and regular blocks preserve optional schedule notes', () => {
   assert.match(schedulingSource, /scheduleNote: utils\.normalizeText\(clip\.scheduleNote/);
 });
 
-test('calendar hue identifies break mode and intensity identifies readiness', () => {
+test('calendar color identifies break mode without readiness or repeat saturation shifts', () => {
   assert.match(schedulingSource, /function schedulePlacementReadinessClass/);
   assert.match(schedulingSource, /setup-break-ready/);
   assert.match(schedulingSource, /setup-entered/);
-  assert.match(css, /\.schedule-placement\.break-mode-phones-staffed/);
-  assert.match(css, /\.schedule-placement\.break-mode-web-only/);
-  assert.match(css, /\.schedule-placement\.break-mode-live/);
-  assert.match(css, /\.schedule-placement\.repeat-run\.break-mode-phones-staffed/);
-  assert.match(css, /\.schedule-placement\.repeat-run\.break-mode-web-only/);
-  assert.match(css, /\.schedule-placement\.repeat-run\.break-mode-live/);
+  assert.match(css, /Calendar color is determined only by break mode/);
+  assert.match(css, /\.schedule-placement\.break-mode-phones-staffed,[\s\S]*\.schedule-placement\.repeat-run\.break-mode-phones-staffed[\s\S]*background: #4f93c7/);
+  assert.match(css, /\.schedule-placement\.break-mode-web-only,[\s\S]*\.schedule-placement\.repeat-run\.break-mode-web-only[\s\S]*background: #3b9f96/);
+  assert.match(css, /\.schedule-placement\.break-mode-live,[\s\S]*\.schedule-placement\.repeat-run\.break-mode-live[\s\S]*background: #7c5bab/);
+  assert.doesNotMatch(css, /break-mode-(?:phones-staffed|web-only|live)\.setup-(?:break-ready|entered)/);
   assert.match(css, /Retire the old red LIVE pseudo-badge\/border/);
+});
+
+test('Fundraising Window labels stay behind scheduled program cards', () => {
+  assert.match(css, /\.schedule-fundraising-window-tag\{[\s\S]*z-index:0/);
+  assert.match(css, /\.schedule-slot\.fundraising-window-slot \.schedule-placement\{[\s\S]*z-index:2/);
 });
 
 test('regular blocks are yellow and placeholders are visually distinct neutral blocks', () => {
