@@ -861,7 +861,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.270');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.271');
     }catch(error){
       reject(error);
       return;
