@@ -6,6 +6,76 @@
   const DELETE_ACTIVE_SCHEDULE_OPTION = '__delete_active_schedule__';
   let scheduledDetailRerenderTimer = 0;
   const scheduleSaveQueues = new Map();
+  const scheduleUndoStacks = new Map();
+  const SCHEDULE_UNDO_LIMIT = 30;
+  let scheduleUndoInProgress = false;
+
+  function scheduleUndoKey(schedule = null) {
+    return utils.normalizeText(schedule?.id || state.activeScheduleId || '') || '__schedule__';
+  }
+
+  function updateScheduleUndoButton() {
+    if (!els.scheduleUndoButton) return;
+    const schedule = getActiveSchedule();
+    const stack = scheduleUndoStacks.get(scheduleUndoKey(schedule)) || [];
+    els.scheduleUndoButton.disabled = !canScheduleEdit() || !schedule || !stack.length || scheduleUndoInProgress;
+    els.scheduleUndoButton.title = stack.length
+      ? `Undo ${stack[stack.length - 1]?.label || 'last scheduling change'} (Ctrl+Z)`
+      : 'Nothing to undo';
+  }
+
+  function recordScheduleUndo(schedule, label = 'last scheduling change') {
+    if (!schedule || scheduleUndoInProgress) return false;
+    const key = scheduleUndoKey(schedule);
+    const stack = scheduleUndoStacks.get(key) || [];
+    stack.push({
+      label: utils.normalizeText(label) || 'last scheduling change',
+      snapshot: cloneScheduleForPersistence(schedule)
+    });
+    if (stack.length > SCHEDULE_UNDO_LIMIT) stack.splice(0, stack.length - SCHEDULE_UNDO_LIMIT);
+    scheduleUndoStacks.set(key, stack);
+    updateScheduleUndoButton();
+    return true;
+  }
+
+  async function undoScheduleEdit() {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to undo scheduling changes.', 'warn'); return false; }
+    const current = getActiveSchedule();
+    if (!current || scheduleUndoInProgress) return false;
+    const key = scheduleUndoKey(current);
+    const stack = scheduleUndoStacks.get(key) || [];
+    const entry = stack.pop();
+    if (!entry?.snapshot) {
+      updateScheduleUndoButton();
+      setNotice('Nothing to undo in this fundraiser.', 'warn');
+      return false;
+    }
+    scheduleUndoStacks.set(key, stack);
+    scheduleUndoInProgress = true;
+    updateScheduleUndoButton();
+    try {
+      const restored = normalizeScheduleWindow(cloneScheduleForPersistence(entry.snapshot));
+      const index = (state.schedules || []).findIndex((item) => utils.normalizeText(item?.id) === utils.normalizeText(restored?.id));
+      if (index >= 0) state.schedules[index] = restored;
+      else state.schedules.unshift(restored);
+      state.activeScheduleId = restored.id;
+      applyScheduleToView(restored);
+      closeScheduleModal();
+      await persistSchedules(restored);
+      renderAll();
+      setNotice(`Undid ${entry.label}. ${state.scheduleSyncMessage || ''}`.trim());
+      return true;
+    } catch (error) {
+      stack.push(entry);
+      scheduleUndoStacks.set(key, stack);
+      setNotice(`Undo failed. ${error?.message || ''}`.trim(), 'bad');
+      return false;
+    } finally {
+      scheduleUndoInProgress = false;
+      updateScheduleUndoButton();
+    }
+  }
+
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
   const scheduleInlineScrollbar = {
