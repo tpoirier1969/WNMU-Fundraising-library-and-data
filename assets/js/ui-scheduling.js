@@ -95,6 +95,73 @@
     return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   }
 
+  function schedulePledgeSeason(schedule = {}) {
+    const raw = utils.normalizeText(schedule?.startDate || schedule?.start_date || '');
+    const date = raw ? new Date(`${raw}T12:00:00`) : null;
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Special';
+    const month = date.getMonth() + 1;
+    if (month === 2 || month === 3) return 'March';
+    if (month === 5 || month === 6) return 'June';
+    if (month === 8 || month === 9) return 'August';
+    if (month === 11 || month === 12) return 'December';
+    return 'Special';
+  }
+
+  function historicalSeasonWeekdayRate(schedule = {}, dateKey = '') {
+    const targetDate = new Date(`${dateKey}T12:00:00`);
+    if (Number.isNaN(targetDate.getTime())) return null;
+    const targetWeekday = targetDate.getDay();
+    const targetSeason = schedulePledgeSeason(schedule);
+    const cutoff = utils.normalizeText(schedule?.startDate || '');
+    const byDay = new Map();
+    const fundraiserIds = new Set();
+
+    (state.schedules || []).forEach((historical) => {
+      if (!historical || historical.id === schedule.id) return;
+      if (schedulePledgeSeason(historical) !== targetSeason) return;
+      const historicalEnd = utils.normalizeText(historical.endDate || historical.end_date || '');
+      if (cutoff && historicalEnd && historicalEnd >= cutoff) return;
+      (historical.placements || []).forEach((placement) => {
+        if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return;
+        const historicalDateKey = utils.normalizeText(placement.dateKey || '');
+        if (!historicalDateKey) return;
+        const historicalDate = new Date(`${historicalDateKey}T12:00:00`);
+        if (Number.isNaN(historicalDate.getTime()) || historicalDate.getDay() !== targetWeekday) return;
+        // importedFromReport also covers authoritative report-day zero results where
+        // a scheduled title was omitted from an otherwise populated Allegiance day.
+        const importedKnown = Boolean(placement?.importedFromReport);
+        const manualKnown = placementHasManualResult(placement);
+        if (!(importedKnown || manualKnown)) return;
+        const minutes = Number(placement.lengthMinutes || 0);
+        if (!(minutes > 0)) return;
+        const dollars = importedKnown
+          ? Number(placement.importedBroadcastDollars || 0)
+          : placementManualResultDollars(placement);
+        if (!Number.isFinite(dollars)) return;
+        const key = `${historical.id}|${historicalDateKey}`;
+        const day = byDay.get(key) || { dollars: 0, minutes: 0, scheduleId: historical.id };
+        day.dollars += dollars;
+        day.minutes += minutes;
+        byDay.set(key, day);
+        fundraiserIds.add(historical.id);
+      });
+    });
+
+    const rates = [...byDay.values()]
+      .filter((day) => day.minutes > 0)
+      .map((day) => (day.dollars * 60) / day.minutes)
+      .filter(Number.isFinite);
+    if (!rates.length) return null;
+    const averageRate = rates.reduce((sum, value) => sum + value, 0) / rates.length;
+    return {
+      season: targetSeason,
+      weekday: targetDate.toLocaleDateString(undefined, { weekday: 'long' }),
+      averageRate,
+      daySamples: rates.length,
+      fundraiserSamples: fundraiserIds.size
+    };
+  }
+
   function defaultScheduleTitle(startDate, endDate) {
     if (!startDate || !endDate) return 'New fundraiser';
     return `Fundraiser ${utils.formatDate(startDate)} – ${utils.formatDate(endDate)}`;
@@ -4128,13 +4195,21 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       const label = utils.escapeHtml(formatScheduleDay(dateKey));
       const weekendClass = isWeekendDateKey(dateKey) ? 'weekend' : '';
       const money = dailyMoney.get(dateKey) || { broadcast: 0, onlineMail: 0, total: 0, hasImportedResults: false };
+      const historicalRate = money.hasImportedResults ? null : historicalSeasonWeekdayRate(schedule, dateKey);
       const moneyTitle = money.hasImportedResults
         ? `Imported broadcast ${utils.formatMoney(money.broadcast)} + prorated Online/Mail ${utils.formatMoney(money.onlineMail)}`
-        : 'No imported results for this date yet';
+        : historicalRate
+          ? `${historicalRate.season} ${historicalRate.weekday} historical average from ${historicalRate.daySamples} completed day${historicalRate.daySamples === 1 ? '' : 's'} across ${historicalRate.fundraiserSamples} fundraiser${historicalRate.fundraiserSamples === 1 ? '' : 's'}`
+          : 'No imported results for this date yet; no matching historical season/day rate is available.';
+      const dayMoneyHtml = money.hasImportedResults
+        ? `<span class="schedule-day-total reported" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span>`
+        : historicalRate
+          ? `<span class="schedule-day-historical-rate" title="${utils.escapeHtml(moneyTitle)}"><small>Historic ${utils.escapeHtml(historicalRate.season)} ${utils.escapeHtml(historicalRate.weekday)}</small><strong>${utils.escapeHtml(utils.formatMoney(historicalRate.averageRate))}/broadcast hr</strong><em>${historicalRate.daySamples} day${historicalRate.daySamples === 1 ? '' : 's'} · ${historicalRate.fundraiserSamples} drive${historicalRate.fundraiserSamples === 1 ? '' : 's'}</em></span>`
+          : '<span class="schedule-day-total unreported" title="No imported results or matching historical season/day rate">Actual TBD</span>';
       const fundraisingHours = scheduleFundraisingHoursLabel(dailyFundraisingMinutes.get(dateKey) || 0);
       const fundraisingWindowMinutes = fundraisingWindowMinutesByDate.get(dateKey) || 0;
       const fundraisingWindowHours = scheduleFundraisingHoursLabel(fundraisingWindowMinutes);
-      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span><span class="schedule-day-total ${money.hasImportedResults ? 'reported' : 'unreported'}" title="${utils.escapeHtml(moneyTitle)}">${utils.escapeHtml(utils.formatMoney(money.total))}</span><span class="schedule-day-hours" style="font-size:.68rem;color:#5f7383;font-weight:800;">${utils.escapeHtml(fundraisingHours)} fundraising${fundraisingWindowMinutes ? ` · ${utils.escapeHtml(fundraisingWindowHours)} window` : ''}</span></div>`);
+      header.push(`<div class="schedule-day-head sticky ${weekendClass}"><span class="schedule-day-date">${label}</span>${dayMoneyHtml}<span class="schedule-day-hours" style="font-size:.68rem;color:#5f7383;font-weight:800;">${utils.escapeHtml(fundraisingHours)} fundraising${fundraisingWindowMinutes ? ` · ${utils.escapeHtml(fundraisingWindowHours)} window` : ''}</span></div>`);
       footer.push(`<div class="schedule-day-head schedule-day-foot ${weekendClass}"><span>${label}</span></div>`);
     });
 

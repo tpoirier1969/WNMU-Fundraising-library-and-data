@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.254'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.256'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.254/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.256/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -2009,7 +2009,8 @@ test('Day/Time report shows exact half-hour buckets, topic context, and season p
   const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
 
   assert.match(reportUi,/Half-hour program-start buckets/);
-  assert.match(reportUi,/strongest topics in that exact bucket/);
+  assert.match(reportUi,/top-performing topic signal/);
+  assert.match(reportUi,/how many distinct topics were tried/);
   assert.match(reportUi,/selected pledge season is used when available/);
   assert.match(reportUi,/all-history context/);
   assert.match(reportUi,/const dayCards=order\.map/);
