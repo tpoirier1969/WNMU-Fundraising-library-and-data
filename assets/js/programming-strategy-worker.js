@@ -1171,7 +1171,12 @@ function peerScheduleContextMatches(observation = {}, context = {}) {
     const observationDate = isoDay(observation.observation_date);
     if (!observationDate) return false;
     if (contextPeriodStart && observationDate < contextPeriodStart) return false;
-    if (contextPeriodEnd && observationDate > contextPeriodEnd) return false;
+    if (contextPeriodEnd) {
+      const graceDate = new Date(`${contextPeriodEnd}T12:00:00Z`);
+      graceDate.setUTCDate(graceDate.getUTCDate() + 45);
+      const graceEnd = graceDate.toISOString().slice(0, 10);
+      if (observationDate > graceEnd) return false;
+    }
   }
 
   const contextStart = nullableNumber(context.start_time_minutes);

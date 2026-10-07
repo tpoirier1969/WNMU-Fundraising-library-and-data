@@ -10,13 +10,13 @@ test('historical backtest page is linked and uses the current strategy worker', 
   const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
   assert.doesNotThrow(() => new vm.Script(ui, { filename:'programming-strategy-backtest-ui.js' }));
-  assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.267/);
+  assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.268/);
   assert.match(page, /Fundraiser Strategy Backtest/);
   assert.match(page, /programming-strategy-backtest\.js\?v=0\.22\.266/);
   assert.match(page, /id="backtest-run-all"/);
   assert.match(strategyPage, /href="programming-strategy-backtest\.html">Historical backtest/);
-  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.267/);
-  assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.267/);
+  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.268/);
+  assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.268/);
   assert.match(ui, /mode:'backtest'/);
   assert.match(ui, /source_id,evidence_scope,season,observation_date/);
   assert.match(ui, /pledge_peer_evidence_sources/);
@@ -30,9 +30,10 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(worker, /results_incomplete/);
   assert.match(worker, /positiveEligible/);
   assert.match(worker, /Contextual \/ undated/);
+  assert.match(worker, /setUTCDate\(graceDate\.getUTCDate\(\) \+ 45\)/);
   assert.match(ui, /aggregateBacktests/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.267');
+  assert.equal(version.appVersion, '0.22.268');
 });
 
 
