@@ -8,6 +8,7 @@
   const scheduleSaveQueues = new Map();
   const scheduleUndoStacks = new Map();
   const SCHEDULE_UNDO_LIMIT = 30;
+  const SCHEDULE_STALE_DEFAULT_DAYS = 21;
   let scheduleUndoInProgress = false;
 
   function scheduleUndoKey(schedule = null) {
@@ -574,8 +575,30 @@
   }
 
   function closestScheduleToToday(items = [], todayKey = utils.dateKeyFromDate(new Date())) {
-    return [...(Array.isArray(items) ? items : [])]
-      .filter((item) => getScheduleDateSpanInfo(item).ok)
+    const valid = [...(Array.isArray(items) ? items : [])]
+      .filter((item) => getScheduleDateSpanInfo(item).ok);
+    if (!valid.length) return null;
+
+    const current = valid.find((item) => {
+      const start = utils.normalizeText(item.startDate);
+      const end = utils.normalizeText(item.endDate || start);
+      return start && end && todayKey >= start && todayKey <= end;
+    });
+    if (current) return current;
+
+    const upcoming = valid
+      .filter((item) => utils.normalizeText(item.startDate) > todayKey)
+      .sort((a, b) => utils.normalizeText(a.startDate).localeCompare(utils.normalizeText(b.startDate)))[0] || null;
+    const latestPast = valid
+      .filter((item) => utils.normalizeText(item.endDate || item.startDate) < todayKey)
+      .sort((a, b) => utils.normalizeText(b.endDate || b.startDate).localeCompare(utils.normalizeText(a.endDate || a.startDate)))[0] || null;
+
+    if (upcoming && latestPast) {
+      const daysSincePast = daysBetweenDateKeys(utils.normalizeText(latestPast.endDate || latestPast.startDate), todayKey);
+      if (Number.isFinite(daysSincePast) && daysSincePast > SCHEDULE_STALE_DEFAULT_DAYS) return upcoming;
+    }
+
+    return valid
       .sort((a, b) => {
         const aDistance = scheduleDistanceFromToday(a, todayKey);
         const bDistance = scheduleDistanceFromToday(b, todayKey);
