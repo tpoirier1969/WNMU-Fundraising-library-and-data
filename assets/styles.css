@@ -6830,3 +6830,28 @@ input.goal-difference-negative {
   0%{box-shadow:0 0 0 0 rgba(47,111,152,.32)}
   100%{box-shadow:0 0 0 12px rgba(47,111,152,0)}
 }
+
+
+/* Draggable schedule modal */
+#schedule-program-backdrop{
+  background:rgba(9,29,48,.10);
+}
+#schedule-program-modal .schedule-modal-card.schedule-modal-dragged{
+  position:fixed;
+  margin:0;
+}
+#schedule-program-modal .detail-header{
+  cursor:move;
+  user-select:none;
+}
+#schedule-program-modal .detail-header button,
+#schedule-program-modal .detail-header a,
+#schedule-program-modal .detail-header input,
+#schedule-program-modal .detail-header select{
+  cursor:pointer;
+}
+body.schedule-modal-dragging,
+body.schedule-modal-dragging *{
+  cursor:grabbing !important;
+  user-select:none !important;
+}
