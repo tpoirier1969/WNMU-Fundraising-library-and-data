@@ -252,7 +252,7 @@
     openProgramFromQuery();
     openWorkspaceFromQuery();
 
-    void App.schedulingUi?.warmup?.({ defer: true, renderHidden: true }).catch((error) => {
+    void App.schedulingUi?.warmup?.({ defer: true, renderHidden: false }).catch((error) => {
       console.warn('Background fundraiser warmup failed.', error);
     });
 
