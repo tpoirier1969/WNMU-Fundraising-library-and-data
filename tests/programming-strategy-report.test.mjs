@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.263'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.269'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1675,7 +1675,7 @@ test('Sunday-morning peer practice attaches dated normal-slot context without ch
   assert.match(sunday.examples[0].scheduleContexts[0].sourceSummary,/reserved as Special Presentation/);
 });
 
-test('dated peer normal-slot context requires an observation date inside the cited period', () => {
+test('dated peer normal-slot context accepts a conservative pre-drive grace period but never future context', () => {
   const { workerContext } = makeWorkerHarness();
   assert.equal(typeof workerContext.peerScheduleContextMatches, 'function');
   const context={
@@ -1696,7 +1696,9 @@ test('dated peer normal-slot context requires an observation date inside the cit
   assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-01-01'},context),true);
   assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-01-31'},context),true);
   assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2018-12-31'},context),false);
-  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-02-01'},context),false);
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-02-01'},context),true,'the immediately following fundraiser may inherit recent pre-drive normal-schedule context');
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-03-17'},context),true,'45-day post-context grace should remain eligible');
+  assert.equal(workerContext.peerScheduleContextMatches({...base,observation_date:'2019-03-18'},context),false,'context older than 45 days must not be projected forward');
   assert.equal(workerContext.peerScheduleContextMatches(base,context),false,'undated observations must not inherit dated schedule context');
 });
 

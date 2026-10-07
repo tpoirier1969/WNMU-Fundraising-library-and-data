@@ -753,15 +753,26 @@ function peerEvidenceStatus(item = {}) {
     || flags.long_running
     || /long-running|for roughly \d+ years|for about \d+ years|works consistently|established/.test(summary)
   );
+  const explicitlyPlanned = Boolean(
+    flags.planned
+    || flags.proposed
+    || flags.hypothetical
+    || /\bplanned\b|\bproposal\b|\bproposed\b|\bhypothetical\b|\bconsidering\b/.test(summary)
+  );
   const incomplete = Boolean(
     flags.results_incomplete
     || flags.preliminary
     || /no final results|results? (?:were )?not yet available|preliminary/.test(summary)
   );
+  if (explicitlyPlanned) return { key: 'planned', label: 'Planned / hypothetical', weight: 0.25, positiveEligible: false };
   if (incomplete) return { key: 'incomplete', label: 'Incomplete result', weight: 0.45, positiveEligible: false };
   if (established) return { key: 'established', label: 'Established recurring practice', weight: 0.95, positiveEligible: true };
-  if (confirmedByCuration || hasObservedMetric || item.observation_date) return { key: 'confirmed', label: 'Confirmed / observed', weight: 1, positiveEligible: true };
-  return { key: 'contextual', label: 'Contextual / undated', weight: 0.7, positiveEligible: false };
+  if (confirmedByCuration || hasObservedMetric || item.observation_date || item.__source_date || item.source_date) {
+    return { key: 'confirmed', label: 'Confirmed / observed', weight: 1, positiveEligible: true };
+  }
+  const strength = Number(item.evidence_strength || 0);
+  if (strength >= 4) return { key: 'legacy', label: 'Legacy curated / undated', weight: 0.8, positiveEligible: true };
+  return { key: 'contextual', label: 'Contextual / undated', weight: 0.65, positiveEligible: false };
 }
 
 function peerWindowSummary(schedule = {}, observations = [], weekday = '', startMinutes = 0, endMinutes = 0) {
