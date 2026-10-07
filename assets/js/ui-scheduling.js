@@ -4554,6 +4554,24 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     `;
   }
 
+  function schedulePlacementUseKey(placement = {}) {
+    if (!placement || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return '';
+    const directId = String(placement.programId || '').trim();
+    if (directId) return `id:${directId}`;
+    const titleKey = utils.normalizeLookupKey(placement.programTitle || placement.title || '');
+    return titleKey ? `title:${titleKey}` : '';
+  }
+
+  function schedulePlacementUseCounts(schedule = {}) {
+    const counts = new Map();
+    (schedule?.placements || []).forEach((placement) => {
+      const key = schedulePlacementUseKey(placement);
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return counts;
+  }
+
   function renderScheduleGrid() {
     const schedule = getActiveSchedule();
     if (!schedule) {
@@ -4601,6 +4619,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const times = [];
     for (let minutes = visibleStartMin; minutes < visibleEndMin; minutes += constants.DEFAULT_SLOT_MINUTES) times.push(minutes);
     const placements = annotatePlacements(schedule).map((placement) => toDisplayPlacement(placement, visibleStartMin));
+    const fundraiserUseCounts = schedulePlacementUseCounts(schedule);
     const fundraisingWindows = normalizedFundraisingWindows(schedule);
     const fundraisingWindowMinutesByDate = new Map();
     fundraisingWindows.forEach((window) => {
@@ -4745,10 +4764,20 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const breakModeBadge = isStart && breakMode
           ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.LIVE ? 'LIVE' : (breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES')}</span>`
           : '';
+        const useKey = isStart ? schedulePlacementUseKey(placement) : '';
+        const fundraiserUseCount = useKey ? Number(fundraiserUseCounts.get(useKey) || 0) : 0;
+        const fundraiserUseHtml = isStart && !isPlaceholder && !isRegular && fundraiserUseCount
+          ? ` <span class="schedule-placement-use-count" title="Scheduled ${fundraiserUseCount} time${fundraiserUseCount === 1 ? '' : 's'} in this fundraiser">(${fundraiserUseCount})</span>`
+          : '';
+        const placementTitleHtml = isPlaceholder
+          ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>`
+          : (isRegular
+            ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>`
+            : `${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}${fundraiserUseHtml}`);
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
             ${fundraisingWindowMark?.isStart ? `<span class="schedule-fundraising-window-tag"><strong>${utils.escapeHtml(fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority))}</strong>${fundraisingWindowMark.window.note ? `<span class="schedule-fundraising-window-note">${utils.escapeHtml(fundraisingWindowMark.window.note)}</span>` : ''}</span>` : ''}
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${workflowChecks}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : (isRegular ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle }))}<span>${subtitleBits.join(' · ')}</span>${placementNoteHtml}${manualResultBadge}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${workflowChecks}${breakModeBadge}${placementTitleHtml}<span>${subtitleBits.join(' · ')}</span>${placementNoteHtml}${manualResultBadge}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
