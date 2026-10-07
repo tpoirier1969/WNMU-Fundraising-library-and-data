@@ -6,6 +6,76 @@
   const DELETE_ACTIVE_SCHEDULE_OPTION = '__delete_active_schedule__';
   let scheduledDetailRerenderTimer = 0;
   const scheduleSaveQueues = new Map();
+  const scheduleUndoStacks = new Map();
+  const SCHEDULE_UNDO_LIMIT = 30;
+  let scheduleUndoInProgress = false;
+
+  function scheduleUndoKey(schedule = null) {
+    return utils.normalizeText(schedule?.id || state.activeScheduleId || '') || '__schedule__';
+  }
+
+  function updateScheduleUndoButton() {
+    if (!els.scheduleUndoButton) return;
+    const schedule = getActiveSchedule();
+    const stack = scheduleUndoStacks.get(scheduleUndoKey(schedule)) || [];
+    els.scheduleUndoButton.disabled = !canScheduleEdit() || !schedule || !stack.length || scheduleUndoInProgress;
+    els.scheduleUndoButton.title = stack.length
+      ? `Undo ${stack[stack.length - 1]?.label || 'last scheduling change'} (Ctrl+Z)`
+      : 'Nothing to undo';
+  }
+
+  function recordScheduleUndo(schedule, label = 'last scheduling change') {
+    if (!schedule || scheduleUndoInProgress) return false;
+    const key = scheduleUndoKey(schedule);
+    const stack = scheduleUndoStacks.get(key) || [];
+    stack.push({
+      label: utils.normalizeText(label) || 'last scheduling change',
+      snapshot: cloneScheduleForPersistence(schedule)
+    });
+    if (stack.length > SCHEDULE_UNDO_LIMIT) stack.splice(0, stack.length - SCHEDULE_UNDO_LIMIT);
+    scheduleUndoStacks.set(key, stack);
+    updateScheduleUndoButton();
+    return true;
+  }
+
+  async function undoScheduleEdit() {
+    if (!canScheduleEdit()) { setNotice('Sign in as admin to undo scheduling changes.', 'warn'); return false; }
+    const current = getActiveSchedule();
+    if (!current || scheduleUndoInProgress) return false;
+    const key = scheduleUndoKey(current);
+    const stack = scheduleUndoStacks.get(key) || [];
+    const entry = stack.pop();
+    if (!entry?.snapshot) {
+      updateScheduleUndoButton();
+      setNotice('Nothing to undo in this fundraiser.', 'warn');
+      return false;
+    }
+    scheduleUndoStacks.set(key, stack);
+    scheduleUndoInProgress = true;
+    updateScheduleUndoButton();
+    try {
+      const restored = normalizeScheduleWindow(cloneScheduleForPersistence(entry.snapshot));
+      const index = (state.schedules || []).findIndex((item) => utils.normalizeText(item?.id) === utils.normalizeText(restored?.id));
+      if (index >= 0) state.schedules[index] = restored;
+      else state.schedules.unshift(restored);
+      state.activeScheduleId = restored.id;
+      applyScheduleToView(restored);
+      closeScheduleModal();
+      await persistSchedules(restored);
+      renderAll();
+      setNotice(`Undid ${entry.label}. ${state.scheduleSyncMessage || ''}`.trim());
+      return true;
+    } catch (error) {
+      stack.push(entry);
+      scheduleUndoStacks.set(key, stack);
+      setNotice(`Undo failed. ${error?.message || ''}`.trim(), 'bad');
+      return false;
+    } finally {
+      scheduleUndoInProgress = false;
+      updateScheduleUndoButton();
+    }
+  }
+
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
   const scheduleInlineScrollbar = {
@@ -414,6 +484,7 @@
       if (!state.scheduleSyncMessage) state.scheduleSyncMessage = 'Fundraisers are saved only in this browser.';
     }
     state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
+    scheduleUndoStacks.clear();
     state.schedulingReady = true;
     ensureCurrentScheduleApplied();
     renderScheduleList();
@@ -574,6 +645,7 @@
   async function deleteScheduleRecord(scheduleId) {
     state.scheduleSlotRescueCache = {};
     state.schedules = state.schedules.filter((item) => item.id !== scheduleId);
+    scheduleUndoStacks.delete(utils.normalizeText(scheduleId) || '__schedule__');
     if (state.activeScheduleId === scheduleId) state.activeScheduleId = state.schedules[0]?.id || '';
     if (state.scheduleStoreMode === 'remote' && state.client) {
       try {
@@ -3247,6 +3319,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       showScheduleModalWarning(`That imported airing is already scheduled as ${existingHashPlacement.programTitle}. It was not moved or duplicated.`, 'warn');
       return false;
     }
+    recordScheduleUndo(schedule, `place imported airing ${placement.programTitle}`);
     schedule.placements.push(placement);
     state.scheduleSlotRescueCache = {};
     await persistSchedules(schedule);
@@ -4607,6 +4680,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       els.scheduleManualResultPledges?.focus?.();
       return false;
     }
+    recordScheduleUndo(schedule, `save manual result for ${placement.programTitle}`);
     placement.manualResultRecorded = true;
     placement.manualBroadcastDollars = Math.round(dollars * 100) / 100;
     placement.manualPledgeCount = Math.trunc(pledges);
@@ -4628,6 +4702,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const slot = state.selectedScheduleSlot;
     const placement = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
     if (!placement || !placementHasManualResult(placement)) return false;
+    recordScheduleUndo(schedule, `clear manual result for ${placement.programTitle}`);
     placement.manualResultRecorded = false;
     placement.manualBroadcastDollars = 0;
     placement.manualPledgeCount = 0;
@@ -4836,6 +4911,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const dateRangeChanged = schedule.startDate !== startDate || schedule.endDate !== endDate;
     const windowChanged = Number(schedule.dayStartMinutes) !== nextDayStartMinutes || Number(schedule.dayEndMinutes) !== nextDayEndMinutes;
     const moneyChanged = Number(schedule.onlineDollars || 0) !== nextOnlineDollars || Number(schedule.mailDollars || 0) !== nextMailDollars || Number(schedule.goalDollars || 0) !== nextGoalDollars;
+    if (titleChanged || dateRangeChanged || windowChanged || moneyChanged) recordScheduleUndo(schedule, 'edit fundraiser settings');
     schedule.title = title;
     schedule.startDate = startDate;
     schedule.endDate = endDate;
@@ -4932,6 +5008,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (!schedule) return;
     const placement = findPlacementById(schedule, placementId);
     if (!placement) return;
+    if (Boolean(placement.transferredToStation) === Boolean(checked)) return;
+    recordScheduleUndo(schedule, `${checked ? 'mark' : 'unmark'} ${placement.programTitle} as entered in traffic`);
     placement.transferredToStation = checked;
     void persistSchedules(schedule);
     renderScheduleGrid();
@@ -4964,6 +5042,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       showScheduleModalWarning('That fundraising window overlaps another fundraising window on the same date. Adjust or remove the other window first.', 'warn');
       return false;
     }
+    recordScheduleUndo(schedule, `${existing ? 'update' : 'add'} fundraising window`);
     schedule.fundraisingWindows = normalizedFundraisingWindows(schedule).filter((window) => window.id !== candidate.id);
     schedule.fundraisingWindows.push(candidate);
     schedule.fundraisingWindows.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMinutes - b.startMinutes);
@@ -4982,6 +5061,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const slot = state.selectedScheduleSlot;
     const existing = schedule && slot ? fundraisingWindowForSlot(schedule, slot.key) : null;
     if (!schedule || !existing) return false;
+    recordScheduleUndo(schedule, 'remove fundraising window');
     schedule.fundraisingWindows = normalizedFundraisingWindows(schedule).filter((window) => window.id !== existing.id);
     schedule.meta = { ...(schedule.meta || {}), fundraisingWindowPlanning: true };
     await persistSchedules(schedule);
@@ -5033,6 +5113,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       sourceLabel: '',
       transferredToStation: existing?.transferredToStation || false
     };
+    recordScheduleUndo(schedule, `${existing ? 'update' : 'add'} placeholder ${title}`);
     if (existing) Object.assign(existing, base);
     else schedule.placements.push(base);
     state.scheduleProgramQuery = title;
@@ -5089,6 +5170,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       manualPledgeCount: 0,
       manualResultUpdatedAt: ''
     };
+    recordScheduleUndo(schedule, `${existing ? 'update' : 'add'} regular program ${title}`);
     if (existing) Object.assign(existing, base);
     else schedule.placements.push(base);
     await persistSchedules(schedule);
@@ -5172,6 +5254,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       sourceLabel: row?.__external_source_label || '',
       transferredToStation: existing?.transferredToStation || false
     };
+    recordScheduleUndo(schedule, `schedule ${derive.title(row)}`);
     if (existing) Object.assign(existing, base);
     else schedule.placements.push(base);
     await persistSchedules(schedule);
@@ -5204,6 +5287,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const row = scheduleProgramRowForPlacement(target);
     if (!row || !(await resolveScheduleRowSupportsBreakMode(row))) return;
     const mode = normalizeBreakMode(els.scheduleBreakModeSelect?.value) || defaultBreakModeForMinutes(target.startMinutes);
+    if (canonicalScheduleBreakMode(target) === mode) return;
+    recordScheduleUndo(schedule, `change ${target.programTitle} break mode`);
     target.breakMode = mode;
     target.breakModeSource = 'manual';
     target.liveBreakFlag = mode === BREAK_MODES.LIVE;
@@ -5240,9 +5325,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const schedule = getActiveSchedule();
     const placement = findPlacementById(schedule, placementId);
     const placeholder = isPlaceholderPlacement(placement);
-    const row = placeholder ? null : getProgramRowById(placement?.programId);
-    if (!schedule || !placement || (!placeholder && !row)) return;
-    if (!placeholder) {
+    const regular = isRegularSchedulePlacement(placement);
+    const row = (placeholder || regular) ? null : getProgramRowById(placement?.programId);
+    if (!schedule || !placement || (!placeholder && !regular && !row)) return;
+    if (!placeholder && !regular) {
       const rightsCheck = rightsCheckForDate(row, targetDateKey);
       if (!rightsCheck.ok) {
         setNotice(rightsCheck.reason, 'warn');
@@ -5256,6 +5342,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       setNotice(`Cannot move ${placement.programTitle} onto ${occupiedTarget.programTitle}. Delete the existing target block first with Admin right-click → Delete scheduled block.`, 'warn');
       return;
     }
+    if (placement.dateKey === targetDateKey && Number(placement.startMinutes) === Number(targetMinutes)) return;
+    recordScheduleUndo(schedule, `move ${placement.programTitle}`);
     placement.dateKey = targetDateKey;
     placement.startMinutes = targetMinutes;
     placement.endMinutes = targetMinutes + (slotCount * constants.DEFAULT_SLOT_MINUTES);
@@ -5333,6 +5421,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       : regular
         ? (clip.programTitle || 'Regular program')
         : derive.title(row);
+    recordScheduleUndo(schedule, `paste ${pastedTitle}`);
     schedule.placements.push({
       id: utils.makeId(placeholder ? 'placeholder' : (regular ? 'regular' : 'placement')),
       programId: (placeholder || regular) ? '' : derive.programId(row),
@@ -5378,6 +5467,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const schedule = getActiveSchedule();
     const target = schedule && slot ? findPlacementForSlot(schedule, slot.key) : null;
     if (!schedule || !target) return false;
+    recordScheduleUndo(schedule, `remove ${target.programTitle}`);
     schedule.placements = schedule.placements.filter((item) => item.id !== target.id);
     await persistSchedules(schedule);
     renderScheduleGrid();
@@ -6914,6 +7004,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       void rescueImportedRowToSelectedSlot(place.dataset.rescuePlace);
     });
     els.scheduleClearPlacementButton?.addEventListener('click', () => { void clearSelectedPlacement(); });
+    els.scheduleUndoButton?.addEventListener('click', () => { void undoScheduleEdit(); });
     els.scheduleZoomInButton?.addEventListener('click', () => adjustZoom(0.15));
     els.scheduleZoomOutButton?.addEventListener('click', () => adjustZoom(-0.15));
     els.scheduleStartEarlierButton?.addEventListener('click', () => adjustRange('start', -1));
@@ -6967,11 +7058,17 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         if (!els.driveComparisonModal?.classList.contains('hidden')) closeDriveComparison();
         if (!els.fundraiserGraphModal?.classList.contains('hidden')) closeFundraiserGraph();
       }
-      if (els.scheduleProgramModal?.classList.contains('hidden')) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (!mod) return;
       const activeTag = document.activeElement?.tagName || '';
-      const inField = /INPUT|TEXTAREA|SELECT/.test(activeTag);
+      const activeEditable = Boolean(document.activeElement?.isContentEditable);
+      const inField = /INPUT|TEXTAREA|SELECT/.test(activeTag) || activeEditable;
+      if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'z' && state.activeWorkspace === 'scheduling' && !inField) {
+        event.preventDefault();
+        void undoScheduleEdit();
+        return;
+      }
+      if (els.scheduleProgramModal?.classList.contains('hidden')) return;
+      if (!mod) return;
       if (event.key.toLowerCase() === 'c' && !inField) {
         event.preventDefault();
         copySelectedPlacement();
@@ -7009,6 +7106,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     renderScheduleForm();
     renderScheduleGrid();
     renderHomeDriveSummary();
+    updateScheduleUndoButton();
   }
 
   App.schedulingUi = {

@@ -124,6 +124,7 @@
     fundraiserGraphSummary: document.getElementById('fundraiser-graph-summary'),
     fundraiserGraphChart: document.getElementById('fundraiser-graph-chart'),
     fundraiserGraphTable: document.getElementById('fundraiser-graph-table'),
+    scheduleUndoButton: document.getElementById('schedule-undo-button'),
     scheduleZoomOutButton: document.getElementById('schedule-zoom-out-button'),
     scheduleZoomInButton: document.getElementById('schedule-zoom-in-button'),
     scheduleZoomValue: document.getElementById('schedule-zoom-value'),
