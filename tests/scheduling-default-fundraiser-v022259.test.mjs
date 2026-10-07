@@ -8,8 +8,9 @@ const source = fs.readFileSync(new URL('../assets/js/ui-scheduling.js', import.m
 function extractFunction(name) {
   const start = source.indexOf(`function ${name}(`);
   assert.ok(start >= 0, `${name} should exist`);
-  let brace = source.indexOf('{', start);
-  assert.ok(brace >= 0);
+  const bodyMarker = source.indexOf(') {', start);
+  assert.ok(bodyMarker >= 0);
+  const brace = bodyMarker + 2;
   let depth = 0;
   for (let i = brace; i < source.length; i += 1) {
     if (source[i] === '{') depth += 1;
