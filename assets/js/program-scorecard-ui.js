@@ -246,9 +246,11 @@
   }
 
   function scheduleListRefresh() {
+    if (App.state?.activeWorkspace !== 'library') return;
     if (listRefreshFrame) return;
     listRefreshFrame = window.requestAnimationFrame(() => {
       listRefreshFrame = 0;
+      if (App.state?.activeWorkspace !== 'library') return;
       if (App.state?.sortField === 'programming_outlook') applyOutlookOrder();
       else decorateListRows();
     });
