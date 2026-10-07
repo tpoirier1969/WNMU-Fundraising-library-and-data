@@ -870,11 +870,13 @@
   }
 
   function sortSchedulesNewestFirst(items = []) {
-    return [...items].sort((a, b) => {
+    const source = [...items];
+    const preferenceScores = new Map(source.map((item) => [item, scheduleSameRangePreferenceScore(item)]));
+    return source.sort((a, b) => {
       const aRange = `${utils.normalizeText(a.startDate) || ''}|${utils.normalizeText(a.endDate) || ''}`;
       const bRange = `${utils.normalizeText(b.startDate) || ''}|${utils.normalizeText(b.endDate) || ''}`;
       if (aRange && aRange === bRange) {
-        const preferenceDelta = scheduleSameRangePreferenceScore(b) - scheduleSameRangePreferenceScore(a);
+        const preferenceDelta = Number(preferenceScores.get(b) || 0) - Number(preferenceScores.get(a) || 0);
         if (preferenceDelta !== 0) return preferenceDelta;
       }
       const aKey = `${utils.normalizeText(a.endDate) || ''}|${utils.normalizeText(a.startDate) || ''}|${utils.normalizeText(a.createdAt) || ''}`;
@@ -884,24 +886,51 @@
   }
 
   async function loadSchedules() {
-    let loaded = [];
+    const cachedRows = utils.storageGet(constants.SCHEDULE_STORAGE_KEY, []);
+    const cachedSchedules = sortSchedulesNewestFirst(
+      (Array.isArray(cachedRows) ? cachedRows : []).map((schedule) => normalizeScheduleWindow(schedule))
+    );
+
+    if (cachedSchedules.length) {
+      state.schedules = cachedSchedules;
+      ensureCurrentScheduleApplied();
+      state.scheduleSyncMessage = state.client
+        ? 'Showing cached fundraisers while current Supabase data loads…'
+        : 'Fundraisers are saved only in this browser.';
+      renderScheduleList();
+      renderHomeDriveSummary();
+      await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+
+    let loaded = cachedSchedules;
+    let remoteLoaded = false;
     if (state.client) {
       await App.data.probeScheduleStore();
       if (state.scheduleStoreMode === 'remote') {
         try {
-          loaded = await App.data.fetchSchedulesRemote();
+          const remoteRows = await App.data.fetchSchedulesRemote();
+          loaded = sortSchedulesNewestFirst((Array.isArray(remoteRows) ? remoteRows : []).map((schedule) => normalizeScheduleWindow(schedule)));
+          remoteLoaded = true;
+          state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
         } catch (error) {
           console.warn('Remote schedule load failed.', error);
           state.scheduleStoreMode = 'local';
-          state.scheduleSyncMessage = `Remote fundraiser sync failed. Using this browser only. ${error.message || ''}`.trim();
+          state.scheduleSyncMessage = cachedSchedules.length
+            ? `Remote fundraiser sync failed. Showing the cached browser copy. ${error.message || ''}`.trim()
+            : `Remote fundraiser sync failed. Using this browser only. ${error.message || ''}`.trim();
         }
       }
     }
-    if (state.scheduleStoreMode !== 'remote') {
-      loaded = utils.storageGet(constants.SCHEDULE_STORAGE_KEY, []);
+
+    if (state.scheduleStoreMode !== 'remote' && !cachedSchedules.length) {
+      loaded = sortSchedulesNewestFirst(
+        (Array.isArray(cachedRows) ? cachedRows : []).map((schedule) => normalizeScheduleWindow(schedule))
+      );
       if (!state.scheduleSyncMessage) state.scheduleSyncMessage = 'Fundraisers are saved only in this browser.';
     }
-    state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
+
+    state.schedules = Array.isArray(loaded) ? loaded : [];
+    if (remoteLoaded) utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
     scheduleUndoStacks.clear();
     state.schedulingReady = true;
     ensureCurrentScheduleApplied();
@@ -1019,7 +1048,10 @@
       else await warmup({ defer: false, renderHidden: false });
     }
     ensureCurrentScheduleApplied();
+    renderScheduleList();
+    renderScheduleForm();
     renderHomeDriveSummary();
+    await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
     renderAll();
 
     if (!state.performance?.ready && !state.scheduleExpectationLoading && App.performanceUi?.refreshData) {
@@ -1055,6 +1087,7 @@
       if (state.scheduleStoreMode === 'remote' && state.client) {
         try {
           await App.data.upsertScheduleRemote(snapshot);
+          utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
           state.scheduleSyncMessage = 'Fundraisers sync through Supabase.';
           return true;
         } catch (error) {
@@ -3996,22 +4029,39 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function renderScheduleList() {
     const orderedSchedules = sortSchedulesNewestFirst(state.schedules || []);
     const selected = state.activeScheduleId || '';
+    const rangeCounts = new Map();
+    const metrics = new Map();
+
+    orderedSchedules.forEach((schedule) => {
+      const rangeKey = `${utils.normalizeText(schedule.startDate)}|${utils.normalizeText(schedule.endDate)}`;
+      if (rangeKey !== '|') rangeCounts.set(rangeKey, (rangeCounts.get(rangeKey) || 0) + 1);
+      metrics.set(schedule.id, {
+        spanInfo: getScheduleDateSpanInfo(schedule),
+        placementCount: Array.isArray(schedule.placements) ? schedule.placements.length : 0,
+        totalRaised: scheduleGrandTotal(schedule),
+        rangeKey
+      });
+    });
+
     const deleteOptionHtml = canScheduleEdit() && selected
       ? [
           '<option value="" disabled>──────────</option>',
           `<option value="${DELETE_ACTIVE_SCHEDULE_OPTION}">DELETE CURRENT FUNDRAISER…</option>`
         ]
       : [];
+
     const scheduleOptionsHtml = ['<option value="">Select fundraiser…</option>'].concat(deleteOptionHtml, orderedSchedules.map((schedule) => {
-      const spanInfo = getScheduleDateSpanInfo(schedule);
-      const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
-      const totalRaised = scheduleGrandTotal(schedule);
-      const sameRangeCount = sameDateRangeSchedules(schedule.startDate, schedule.endDate).length;
+      const info = metrics.get(schedule.id) || {};
+      const spanInfo = info.spanInfo || getScheduleDateSpanInfo(schedule);
+      const placementCount = Number(info.placementCount || 0);
+      const totalRaised = Number(info.totalRaised || 0);
+      const sameRangeCount = Number(rangeCounts.get(info.rangeKey) || 0);
       const selectedAttr = schedule.id === selected ? ' selected' : '';
       const invalidSuffix = spanInfo.ok ? '' : ' · INVALID DATE RANGE';
       const duplicateSuffix = sameRangeCount > 1 ? ' · DUPLICATE DATES' : '';
       return `<option value="${utils.escapeHtml(schedule.id)}"${selectedAttr}>${utils.escapeHtml(`${schedule.title} · ${utils.formatDate(schedule.startDate)} – ${utils.formatDate(schedule.endDate)} · ${placementCount} blocks · ${utils.formatMoney(totalRaised)}${invalidSuffix}${duplicateSuffix}`)}</option>`;
     })).join('');
+
     if (els.scheduleDesktopSelect) {
       els.scheduleDesktopSelect.innerHTML = scheduleOptionsHtml;
       els.scheduleDesktopSelect.value = selected;
@@ -4020,23 +4070,27 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       els.scheduleMobileSelect.innerHTML = scheduleOptionsHtml;
       els.scheduleMobileSelect.value = selected;
     }
+
     if (!els.scheduleList) {
       if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || (orderedSchedules.length ? `${orderedSchedules.length} fundraiser calendars ready.` : '0 fundraiser calendars yet.');
       if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || (orderedSchedules.length ? `${orderedSchedules.length} fundraiser calendars ready.` : '0 fundraiser calendars yet.');
       return;
     }
+
     if (!orderedSchedules.length) {
       els.scheduleList.innerHTML = '<div class="schedule-list-empty">No fundraiser calendars yet. Build one below.</div>';
       if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || '0 fundraiser calendars yet.';
       if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || '0 fundraiser calendars yet.';
       return;
     }
+
     els.scheduleList.innerHTML = orderedSchedules.map((schedule) => {
-      const spanInfo = getScheduleDateSpanInfo(schedule);
+      const info = metrics.get(schedule.id) || {};
+      const spanInfo = info.spanInfo || getScheduleDateSpanInfo(schedule);
       const active = schedule.id === state.activeScheduleId;
-      const placementCount = Array.isArray(schedule.placements) ? schedule.placements.length : 0;
-      const totalRaised = scheduleGrandTotal(schedule);
-      const sameRangeCount = sameDateRangeSchedules(schedule.startDate, schedule.endDate).length;
+      const placementCount = Number(info.placementCount || 0);
+      const totalRaised = Number(info.totalRaised || 0);
+      const sameRangeCount = Number(rangeCounts.get(info.rangeKey) || 0);
       const duplicateSuffix = sameRangeCount > 1 ? ' · DUPLICATE DATES' : '';
       return `
         <div class="schedule-list-item ${active ? 'active' : ''}${spanInfo.ok ? '' : ' invalid'}">
@@ -4048,6 +4102,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         </div>
       `;
     }).join('');
+
     if (els.scheduleSummary) els.scheduleSummary.textContent = state.scheduleSyncMessage || `${orderedSchedules.length} fundraiser calendars ready.`;
     if (els.scheduleMobileSummary) els.scheduleMobileSummary.textContent = state.scheduleSyncMessage || `${orderedSchedules.length} fundraiser calendars ready.`;
   }
