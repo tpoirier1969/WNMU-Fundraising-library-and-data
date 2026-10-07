@@ -401,6 +401,38 @@
     `;
   }
 
+
+  function openScheduleAdvisorTopic(topic = '') {
+    const nextTopic = utils.normalizeText(topic || '');
+    if (!nextTopic) return false;
+    state.scheduleProgramTopicFilter = nextTopic;
+    if (els.scheduleProgramTopicSelect) els.scheduleProgramTopicSelect.value = nextTopic;
+    renderProgramPicker();
+    window.requestAnimationFrame(() => {
+      const results = els.scheduleProgramResults || document.getElementById('schedule-program-results');
+      if (results) {
+        results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        results.classList.add('schedule-results-highlight');
+        window.setTimeout(() => results.classList.remove('schedule-results-highlight'), 900);
+      }
+    });
+    return true;
+  }
+
+  function bindScheduleAdvisorTopicButtons() {
+    const host = document.getElementById('schedule-placeholder-controls');
+    if (!host) return;
+    host.querySelectorAll('[data-schedule-advisor-topic]').forEach((button) => {
+      if (button.dataset.advisorBound === 'true') return;
+      button.dataset.advisorBound = 'true';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openScheduleAdvisorTopic(button.dataset.scheduleAdvisorTopic || '');
+      });
+    });
+  }
+
   function ensureScheduleAdvisorFilterControl(editable = false) {
     const row = document.querySelector('.schedule-picker-filters-row');
     if (!row) return;
@@ -3762,12 +3794,22 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         return searchTokens.every((token) => haystack.includes(token));
       })
       .filter((entry) => scheduleEntryPassesExtraFilters(entry.row, slotDateKey, usingNonPledge))
-      .map((entry) => ({
-        row: entry.row,
-        rights: rightsCheckForDate(entry.row, slotDateKey),
-        isNonPledge: usingNonPledge,
-        fit: (!usingNonPledge && schedule && slot) ? scheduleAdvisorProgramFit(entry.row, schedule, slot) : null
-      }));
+      .map((entry) => {
+        let fit = null;
+        if (!usingNonPledge && schedule && slot) {
+          try {
+            fit = scheduleAdvisorProgramFit(entry.row, schedule, slot);
+          } catch (error) {
+            console.warn('Best Fit scoring skipped one title.', derive.title(entry.row), error);
+          }
+        }
+        return {
+          row: entry.row,
+          rights: rightsCheckForDate(entry.row, slotDateKey),
+          isNonPledge: usingNonPledge,
+          fit
+        };
+      });
     const rawValues = decorated.filter((entry) => entry.rights.ok && entry.fit).map((entry) => Number(entry.fit.rawScore || 0));
     const maxRaw = rawValues.length ? Math.max(...rawValues) : 0;
     const minRaw = rawValues.length ? Math.min(...rawValues) : 0;
@@ -5105,6 +5147,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
     syncPlanningControls(schedule, slot, currentPlacement, editable);
+    bindScheduleAdvisorTopicButtons();
     renderManualResultControls(currentPlacement, editable);
     renderScheduleSlotRescue(schedule, slot, currentPlacement, editable);
 
@@ -5137,9 +5180,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       if (state.scheduleFilterTopEarner) filterBits.push('top earner');
       if (state.scheduleFilterNewThisFundraiser) filterBits.push('new this fundraiser');
       const descriptor = filterBits.length ? filterBits.join(' + ') : 'this filter';
-      els.scheduleProgramResults.innerHTML = `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched ${utils.escapeHtml(descriptor)}.</div>`;
+      els.scheduleProgramResults.innerHTML = hasTopic
+        ? `<div class="schedule-recommendation-results-head"><div><strong>Recommended programs for ${utils.escapeHtml(state.scheduleProgramTopicFilter || 'this topic')}</strong><span>No currently eligible library titles matched this topic and the active filters for ${utils.escapeHtml(slotLabel(slot.dateKey, slot.minutes))}.</span></div></div>`
+        : `<div class="schedule-hint">No ${usingNonPledge ? 'Program Library' : 'database'} titles matched ${utils.escapeHtml(descriptor)}.</div>`;
     } else {
-      els.scheduleProgramResults.innerHTML = matches.map(({ row, rights, isNonPledge, fit, fitScore }) => {
+      const resultsHeading = hasTopic
+        ? `<div class="schedule-recommendation-results-head"><div><strong>Recommended programs for ${utils.escapeHtml(state.scheduleProgramTopicFilter || 'this topic')}</strong><span>Ranked for ${utils.escapeHtml(slotLabel(slot.dateKey, slot.minutes))}. Click Schedule to place a title in this block.</span></div><span class="schedule-recommendation-count">${utils.escapeHtml(String(matches.length))} match${matches.length === 1 ? '' : 'es'}</span></div>`
+        : '';
+      els.scheduleProgramResults.innerHTML = resultsHeading + matches.map(({ row, rights, isNonPledge, fit, fitScore }) => {
         const runtimeLabel = lengthMetaLabel(row);
         const rightsBegin = derive.rightsBegin(row) ? utils.formatDate(derive.rightsBegin(row)) : '—';
         const rightsEnd = derive.rightsEnd(row) ? utils.formatDate(derive.rightsEnd(row)) : '—';
@@ -7306,15 +7354,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     });
     els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
     els.scheduleProgramPicker?.addEventListener('click', (event) => {
-      const advisorTopic = event.target.closest('[data-schedule-advisor-topic]');
-      if (advisorTopic) {
-        event.preventDefault();
-        event.stopPropagation();
-        state.scheduleProgramTopicFilter = advisorTopic.dataset.scheduleAdvisorTopic || '';
-        if (els.scheduleProgramTopicSelect) els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter;
-        renderProgramPicker();
-        return;
-      }
       const saveWindow = event.target.closest('#schedule-fundraising-window-save-button');
       if (saveWindow) {
         event.preventDefault();
