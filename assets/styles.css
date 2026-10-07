@@ -6655,3 +6655,38 @@ input.goal-difference-negative {
   font-size: .82rem;
   font-style: italic;
 }
+
+/* v0.22.256 Program List programming-score badge */
+.program-list-title-line{
+  display:flex;
+  align-items:baseline;
+  gap:7px;
+  min-width:0;
+}
+.program-list-title-line>strong{
+  flex:1 1 auto;
+  min-width:0;
+}
+.program-list-score{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:48px;
+  padding:1px 6px;
+  border-radius:999px;
+  border:1px solid #c7d5dc;
+  background:#eef3f5;
+  color:#39535f;
+  font-size:.66rem;
+  font-weight:850;
+  line-height:1.35;
+  white-space:nowrap;
+  text-decoration:none!important;
+}
+.program-list-score.score-tone-strong{background:#d7eee1;border-color:#9bc8aa;color:#215c35}
+.program-list-score.score-tone-good{background:#e3f2e8;border-color:#b9d8c2;color:#326543}
+.program-list-score.score-tone-warn{background:#f7e7cf;border-color:#e1bc84;color:#755018}
+.program-list-score.score-tone-caution{background:#f7edda;border-color:#e2c797;color:#705622}
+.program-list-score.score-tone-bad{background:#f5dadd;border-color:#dda8af;color:#7b2c38}
+
