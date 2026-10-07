@@ -2076,7 +2076,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
             liveBreakFlag: hasLiveBreakFlag(existing),
             liveBreakNotes: hasLiveBreakFlag(existing) ? (existing.liveBreakNotes || '') : '',
             isNonPledge: Boolean(existing.isNonPledge),
-            breakInfoComplete: Boolean(existing.breakInfoComplete),
             transferredToStation: Boolean(existing.transferredToStation),
             importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
             importedFundraiserKey: wantedImportedKey || existingImportedKey,
@@ -4260,19 +4259,15 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           ? calendarPlacementBreakMode(schedule, placement)
           : '';
         const breakModeClass = breakMode ? `break-mode-${breakMode.replace(/_/g, '-')}` : '';
-        const readinessClass = isStart ? schedulePlacementReadinessClass(placement) : '';
         const klass = [
           placement ? (placement.isFirstRun ? 'first-run' : 'repeat-run') : '',
           placement?.isNonPledge ? 'non-pledge' : '',
           isPlaceholder ? 'placeholder' : '',
           isRegular ? 'regular-schedule' : '',
           breakModeClass,
-          readinessClass,
-          placement?.transferredToStation ? 'transferred-to-station' : '',
           hasImportedData ? 'imported-data' : (hasManualData ? 'manual-data' : '')
         ].filter(Boolean).join(' ');
         const expectationBadge = isStart && !isPlaceholder ? scheduleExpectationBadgeHtml(placement, actualDateKey, actualMinutes) : '';
-        const breakWarning = isStart && !isPlaceholder ? scheduleCalendarBreakInfoNeededHtml(placement) : '';
         const manualResultBadge = hasManualData ? `<span class="schedule-placement-manual-result" title="Manual pledge result">${utils.escapeHtml(utils.formatMoney(placementManualResultDollars(placement)))}</span>` : '';
         const scheduleNote = placementScheduleNote(placement);
         const placementNoteHtml = isStart && scheduleNote && (isPlaceholder || isRegular)
@@ -4286,18 +4281,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           else if (placement.isNonPledge) subtitleBits.push('non-pledge');
           if (breakMode) subtitleBits.push(utils.escapeHtml(breakModeLabel(breakMode)));
         }
-        const statusToggles = isStart && editable && placement && !placement.isNonPledge && !isPlaceholder
-          ? `<span class="schedule-placement-status-toggles" data-placement-status-toggles>
-              <label class="schedule-placement-status-toggle" title="Mark break information complete">
-                <input type="checkbox" data-grid-break-info-placement-id="${utils.escapeHtml(placement.id)}" ${placement.breakInfoComplete ? 'checked' : ''}>
-                <span class="schedule-placement-status-check" aria-hidden="true"></span>
-                <span class="schedule-placement-status-label">Break info</span>
-              </label>
-              <label class="schedule-placement-status-toggle" title="Mark scheduling / traffic entry complete">
-                <input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}>
-                <span class="schedule-placement-status-check" aria-hidden="true"></span>
-                <span class="schedule-placement-status-label">Schd</span>
-              </label>
+        const workflowChecks = isStart && editable && placement && !placement.isNonPledge && !isPlaceholder
+          ? `<span class="schedule-placement-status-toggles" data-placement-transfer-toggle>
+              <label class="schedule-placement-status-toggle"><input type="checkbox" data-grid-break-info-placement-id="${utils.escapeHtml(placement.id)}" ${placement.breakInfoComplete ? 'checked' : ''}><span class="schedule-placement-status-check"></span><span class="schedule-placement-status-label">Break info</span></label>
+              <label class="schedule-placement-status-toggle"><input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}><span class="schedule-placement-status-check"></span><span class="schedule-placement-status-label">Schd</span></label>
             </span>`
           : '';
         const breakModeBadge = isStart && breakMode
@@ -4306,7 +4293,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
             ${fundraisingWindowMark?.isStart ? `<span class="schedule-fundraising-window-tag">${utils.escapeHtml(fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority))}</span>` : ''}
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${statusToggles}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : (isRegular ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle }))}<span>${subtitleBits.join(' · ')}</span>${placementNoteHtml}${manualResultBadge}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${workflowChecks}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : (isRegular ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle }))}<span>${subtitleBits.join(' · ')}</span>${placementNoteHtml}${manualResultBadge}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -4534,16 +4521,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           <div class="scheduled-occurrence-row">
             <span class="scheduled-occurrence-slot">${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${canonicalScheduleBreakMode(item) ? ` · ${utils.escapeHtml(breakModeLabel(canonicalScheduleBreakMode(item)))}` : ''}</span>
             <span class="scheduled-occurrence-statuses">
-              <label class="schedule-placement-status-toggle schedule-detail-status-toggle">
-                <input type="checkbox" data-break-info-placement-id="${utils.escapeHtml(item.id)}" ${item.breakInfoComplete ? 'checked' : ''}>
-                <span class="schedule-placement-status-check" aria-hidden="true"></span>
-                <span>Break info</span>
-              </label>
-              <label class="schedule-placement-status-toggle schedule-detail-status-toggle">
-                <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
-                <span class="schedule-placement-status-check" aria-hidden="true"></span>
-                <span>Schd</span>
-              </label>
+              <label class="schedule-placement-status-toggle schedule-detail-status-toggle"><input type="checkbox" data-break-info-placement-id="${utils.escapeHtml(item.id)}" ${item.breakInfoComplete ? 'checked' : ''}><span class="schedule-placement-status-check"></span><span>Break info</span></label>
+              <label class="schedule-placement-status-toggle schedule-detail-status-toggle"><input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}><span class="schedule-placement-status-check"></span><span>Schd</span></label>
             </span>
             ${slotFitHtml}
           </div>
@@ -5097,10 +5076,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
 
   function toggleBreakInfoComplete(placementId, checked) {
     const schedule = getActiveSchedule();
-    if (!schedule) return;
-    const placement = findPlacementById(schedule, placementId);
-    if (!placement) return;
-    if (Boolean(placement.breakInfoComplete) === Boolean(checked)) return;
+    const placement = schedule && findPlacementById(schedule, placementId);
+    if (!placement || Boolean(placement.breakInfoComplete) === Boolean(checked)) return;
     recordScheduleUndo(schedule, `${checked ? 'mark' : 'unmark'} ${placement.programTitle} break info complete`);
     placement.breakInfoComplete = checked;
     void persistSchedules(schedule);
@@ -5216,7 +5193,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       isNonPledge: false,
       sourceName: '',
       sourceLabel: '',
-      breakInfoComplete: existing?.breakInfoComplete || false,
       transferredToStation: existing?.transferredToStation || false
     };
     recordScheduleUndo(schedule, `${existing ? 'update' : 'add'} placeholder ${title}`);
@@ -5270,7 +5246,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       isNonPledge: true,
       sourceName: '',
       sourceLabel: 'Regular schedule',
-      breakInfoComplete: false,
       transferredToStation: false,
       manualResultRecorded: false,
       manualBroadcastDollars: 0,
@@ -5748,8 +5723,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     else if (item.isNonPledge) markerBits.push('non-pledge marker');
     const exportBreakMode = canonicalScheduleBreakMode(item);
     if (exportBreakMode) markerBits.push(breakModeLabel(exportBreakMode));
-    if (item.breakInfoComplete) markerBits.push('break info complete');
-    if (item.transferredToStation) markerBits.push('schd complete');
+    if (item.breakInfoComplete) markerBits.push('break info');
+    if (item.transferredToStation) markerBits.push('schd');
     const nola = (item.isNonPledge || placeholder) ? '' : derive.nola(displayRow);
     const topic = (item.isNonPledge || placeholder) ? '' : derive.topicPrimary(displayRow);
     const distributor = (item.isNonPledge || placeholder) ? '' : derive.distributor(displayRow);
@@ -7009,16 +6984,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       void movePlacement(placementId, slot.dataset.dateKey, Number(slot.dataset.minutes || 0));
     });
     els.scheduleGrid?.addEventListener('change', (event) => {
-      const breakInfoCheckbox = event.target.closest('[data-grid-break-info-placement-id]');
-      if (breakInfoCheckbox) {
-        event.stopPropagation();
-        toggleBreakInfoComplete(breakInfoCheckbox.dataset.gridBreakInfoPlacementId, breakInfoCheckbox.checked);
-        return;
-      }
-      const scheduleCheckbox = event.target.closest('[data-grid-transfer-placement-id]');
-      if (!scheduleCheckbox) return;
+      const breakBox = event.target.closest('[data-grid-break-info-placement-id]');
+      if (breakBox) { event.stopPropagation(); toggleBreakInfoComplete(breakBox.dataset.gridBreakInfoPlacementId, breakBox.checked); return; }
+      const checkbox = event.target.closest('[data-grid-transfer-placement-id]');
+      if (!checkbox) return;
       event.stopPropagation();
-      toggleTransferred(scheduleCheckbox.dataset.gridTransferPlacementId, scheduleCheckbox.checked);
+      toggleTransferred(checkbox.dataset.gridTransferPlacementId, checkbox.checked);
     });
     els.scheduleGrid?.addEventListener('scroll', queueScheduleInlineScrollbarSync, { passive: true });
     els.scheduleGrid?.addEventListener('mousedown', (event) => {
@@ -7147,14 +7118,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       toggle.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
     });
     els.scheduleProgramDetails?.addEventListener('change', (event) => {
-      const breakInfoCheckbox = event.target.closest('[data-break-info-placement-id]');
-      if (breakInfoCheckbox) {
-        toggleBreakInfoComplete(breakInfoCheckbox.dataset.breakInfoPlacementId, breakInfoCheckbox.checked);
-        return;
-      }
-      const scheduleCheckbox = event.target.closest('[data-transfer-placement-id]');
-      if (!scheduleCheckbox) return;
-      toggleTransferred(scheduleCheckbox.dataset.transferPlacementId, scheduleCheckbox.checked);
+      const breakBox = event.target.closest('[data-break-info-placement-id]');
+      if (breakBox) { toggleBreakInfoComplete(breakBox.dataset.breakInfoPlacementId, breakBox.checked); return; }
+      const checkbox = event.target.closest('[data-transfer-placement-id]');
+      if (!checkbox) return;
+      toggleTransferred(checkbox.dataset.transferPlacementId, checkbox.checked);
     });
     els.scheduleCopyPlacementButton?.addEventListener('click', () => { copySelectedPlacement(true); });
     els.schedulePastePlacementButton?.addEventListener('click', () => { void pasteClipboardToSelectedSlot(true); });
