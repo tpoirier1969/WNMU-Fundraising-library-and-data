@@ -548,11 +548,8 @@
     const start = text(schedule.startDate || '');
     const end = text(schedule.endDate || '');
     if (!(start && end)) return [];
-    const exact = airingRecords.filter((record) =>
-      text(record.row?.drive_start_date || '').slice(0, 10) === start
-      && text(record.row?.drive_end_date || '').slice(0, 10) === end
-    );
-    if (exact.length) return exact;
+    // Saved fundraiser schedules are canonical. Include every imported airing whose actual
+    // air date falls inside the fundraiser, even when that airing raised $0 / 0 pledges.
     return airingRecords.filter((record) => {
       const key = text(record.dateKey || '');
       return Boolean(key && key >= start && key <= end);

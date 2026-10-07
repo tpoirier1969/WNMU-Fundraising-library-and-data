@@ -1924,7 +1924,11 @@
     summary.airings.updatedDuplicates = updateRows.length;
 
     for (const entry of updateRows) {
-      const response = await updateImportedAiringById(entry.id, entry.row);
+      // The natural airing identity is stable across corrected fundraiser boundaries.
+      // Preserve the existing row_hash so saved schedule placements do not lose their source link.
+      const updateRow = { ...entry.row };
+      delete updateRow.row_hash;
+      const response = await updateImportedAiringById(entry.id, updateRow);
       if (response.error) throw response.error;
       summary.airings.written += 1;
       summary.airings.mode = 'update-existing-natural-key';

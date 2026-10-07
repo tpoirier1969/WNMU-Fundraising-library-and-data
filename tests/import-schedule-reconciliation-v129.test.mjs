@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const analytics = fs.readFileSync(new URL('../assets/js/ui-analytics.js', import.meta.url), 'utf8');
 const imports = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const scheduling = fs.readFileSync(new URL('../assets/js/ui-scheduling.js', import.meta.url), 'utf8');
+const data = fs.readFileSync(new URL('../assets/js/data.js', import.meta.url), 'utf8');
 
 assert.match(analytics, /function schedulePlacementDedupeKey\(placement = \{\}\)/);
 assert.match(analytics, /function dedupeSchedulePlacementsForAnalytics\(placements = \[\]\)/);
@@ -12,6 +13,11 @@ assert.match(analytics, /duplicatePlacementsSuppressed/);
 assert.match(analytics, /exact duplicate saved placement\(s\) were suppressed from schedule-derived analytics/);
 
 assert.match(imports, /Results Import never creates, merges, repairs, or changes fundraiser schedules/);
+assert.match(imports, /const clusters = clusterDateKeys\(dateKeys\);/);
+assert.doesNotMatch(imports, /clusterDateKeys\(activityDates\.length \? activityDates : dateKeys\)/);
+assert.match(analytics, /Saved fundraiser schedules are canonical/);
+assert.doesNotMatch(analytics, /const exact = airingRecords\.filter/);
+assert.match(data, /delete updateRow\.row_hash/);
 
 assert.match(scheduling, /if \(existingAtSlot && scheduledPlacementMatchesImported\(existingAtSlot, placement\)\)/);
 assert.match(scheduling, /existingAtSlot\.importedBroadcastDollars = Number\(placement\.importedBroadcastDollars \|\| 0\) \|\| 0/);

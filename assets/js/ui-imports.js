@@ -1402,8 +1402,9 @@
   function assignDriveRangesForFile(rows = [], summary = null) {
     const datedRows = rows.filter(Boolean);
     const dateKeys = datedRows.map((row) => activityDateForRow(row)).filter(Boolean);
-    const activityDates = datedRows.filter((row) => rowHasFundraisingActivity(row)).map((row) => activityDateForRow(row)).filter(Boolean);
-    const clusters = clusterDateKeys(activityDates.length ? activityDates : dateKeys);
+    // Fundraiser boundaries are the report's full airing-date cluster, including $0 / 0-pledge rows.
+    // Dollars identify performance, not whether a program belongs to the fundraiser.
+    const clusters = clusterDateKeys(dateKeys);
     const fallbackStart = dateKeys.slice().sort()[0] || '';
     const fallbackEnd = dateKeys.slice().sort().slice(-1)[0] || fallbackStart;
     const resolvedClusters = clusters.length ? clusters : [{ startDate: fallbackStart, endDate: fallbackEnd, dates: [fallbackStart].filter(Boolean) }];
