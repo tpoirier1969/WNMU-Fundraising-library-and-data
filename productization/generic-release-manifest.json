@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "sourceApplicationVersion": "0.22.141",
+  "releaseMode": "copy-only",
+  "copy": [
+    "index.html",
+    "app-shell.html",
+    "reports.html",
+    "pledge-performance-lab.html",
+    "version.json",
+    "apple-touch-icon.png",
+    "icon-192.png",
+    "icon-512.png",
+    "assets/js/*.js",
+    "assets/*.css",
+    "assets/pledge-badge.png",
+    "assets/pledge-icon-32.png",
+    "assets/pledge-icon-64.png",
+    "assets/pledge-icon-192.png",
+    "assets/pledge-icon-512.png"
+  ],
+  "neverCopy": [
+    "config.js",
+    "WNMU-TV-logo-head2019.png",
+    "assets/WNMU-TV-logo-head2019.png",
+    "trace40/**",
+    "WNMU-Pledge-Program-Library-v0.18.0-import-fix/**",
+    "**/*.bak",
+    "README.txt",
+    "supabase-setup.sql",
+    "manifest.webmanifest",
+    "INSTALL-CHANGED-FILES-*.txt",
+    "README-v*.txt",
+    "README_v*.md",
+    "docs/NOTES_*.md"
+  ],
+  "generatedForRelease": [
+    "config.example.js",
+    "station-config.example.json"
+  ],
+  "requiredReleaseChecks": [
+    "no-live-config",
+    "no-concrete-supabase-project-url",
+    "no-wnmu-branding-or-storage-identifiers",
+    "no-production-data-or-database-dumps",
+    "no-unrelated-project-files",
+    "no-backup-files",
+    "database-installer-built-from-productization-migrations-only"
+  ]
+}
