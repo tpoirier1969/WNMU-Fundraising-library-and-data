@@ -25,6 +25,17 @@
     }
   }
 
+  function persistWorkspaceInUrl(workspaceId = '') {
+    if (!isKnownWorkspaceId(workspaceId)) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('workspace', workspaceId);
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch (error) {
+      console.warn('Could not save workspace in the URL.', error);
+    }
+  }
+
   function persistWorkspace(workspaceId = '') {
     if (!isKnownWorkspaceId(workspaceId)) return;
     try {
@@ -247,6 +258,7 @@
     }
     state.activeWorkspace = workspace.id;
     persistWorkspace(workspace.id);
+    persistWorkspaceInUrl(workspace.id);
     App.auth?.updatePresenceWorkspace?.(workspace.id);
 
     els.workspaceButtons.forEach((button) => {
