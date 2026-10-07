@@ -733,6 +733,37 @@ function localProductionSnapshot(rows = []) {
   };
 }
 
+function peerEvidenceStatus(item = {}) {
+  const flags = item.context_flags && typeof item.context_flags === 'object' ? item.context_flags : {};
+  const note = text(item.normalization_note || '').toLowerCase();
+  const summary = text(item.summary || item.assessment_raw || '').toLowerCase();
+  const hasObservedMetric = [
+    item.actual_dollars,
+    item.goal_dollars,
+    item.pledge_count,
+    item.donor_count,
+    item.comparison_pct,
+    item.station_rating
+  ].some((value) => nullableNumber(value) != null);
+  const confirmedByCuration = /only confirmed|planned ideas?.*excluded|future .*excluded|planned .*excluded/.test(note);
+  const established = Boolean(
+    flags.recurring_year_round
+    || flags.cultivated_audience
+    || flags.six_year_strategy
+    || flags.long_running
+    || /long-running|for roughly \d+ years|for about \d+ years|works consistently|established/.test(summary)
+  );
+  const incomplete = Boolean(
+    flags.results_incomplete
+    || flags.preliminary
+    || /no final results|results? (?:were )?not yet available|preliminary/.test(summary)
+  );
+  if (incomplete) return { key: 'incomplete', label: 'Incomplete result', weight: 0.45, positiveEligible: false };
+  if (established) return { key: 'established', label: 'Established recurring practice', weight: 0.95, positiveEligible: true };
+  if (confirmedByCuration || hasObservedMetric || item.observation_date) return { key: 'confirmed', label: 'Confirmed / observed', weight: 1, positiveEligible: true };
+  return { key: 'contextual', label: 'Contextual / undated', weight: 0.7, positiveEligible: false };
+}
+
 function peerWindowSummary(schedule = {}, observations = [], weekday = '', startMinutes = 0, endMinutes = 0) {
   const targetSeason = S.seasonForDate(schedule.startDate);
   const matched = [];
@@ -740,6 +771,7 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
   for (const item of observations || []) {
     if (text(item.day_of_week).toLowerCase() !== text(weekday).toLowerCase()) continue;
     const strength = Number(item.evidence_strength || 0);
+    const evidenceStatus = peerEvidenceStatus(item);
     if (strength < 3) continue;
 
     const itemStart = nullableNumber(item.start_time_minutes);
@@ -768,7 +800,8 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
     const seasonNeutral = !season;
     const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0)
       + specificity
-      + Math.min(5, strength) / 10;
+      + Math.min(5, strength) / 10
+      + evidenceStatus.weight;
 
     matched.push({
       station,
@@ -783,7 +816,10 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
       startMinutes: Number.isFinite(itemStart) ? itemStart : null,
       endMinutes: Number.isFinite(itemEnd) ? itemEnd : null,
       actualDollars: nullableNumber(item.actual_dollars),
-      pledgeCount: nullableNumber(item.pledge_count)
+      pledgeCount: nullableNumber(item.pledge_count),
+      evidenceStatus: evidenceStatus.key,
+      evidenceStatusLabel: evidenceStatus.label,
+      positiveEligible: evidenceStatus.positiveEligible
     });
   }
 
@@ -792,12 +828,12 @@ function peerWindowSummary(schedule = {}, observations = [], weekday = '', start
     if (!bestByStation.has(item.stationKey)) bestByStation.set(item.stationKey, item);
   }
   const independent = [...bestByStation.values()];
-  const positive = independent.filter((item) => item.signal > 0);
-  const negative = independent.filter((item) => item.signal < 0);
-  const neutral = independent.filter((item) => item.signal === 0);
+  const positive = independent.filter((item) => item.signal > 0 && item.positiveEligible);
+  const negative = independent.filter((item) => item.signal < 0 && item.evidenceStatus !== 'incomplete');
+  const neutral = independent.filter((item) => item.signal === 0 || (item.signal > 0 && !item.positiveEligible) || item.evidenceStatus === 'incomplete');
 
   const topicStations = new Map();
-  for (const item of matched.filter((entry) => entry.signal > 0)) {
+  for (const item of matched.filter((entry) => entry.signal > 0 && entry.positiveEligible)) {
     const topic = text(item.topic);
     if (!topic) continue;
     if (!topicStations.has(topic)) topicStations.set(topic, new Set());
@@ -949,10 +985,11 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
 
     const signal = Number(item.assessment_signal);
     const strength = Number(item.evidence_strength || 0);
+    const evidenceStatus = peerEvidenceStatus(item);
     const season = text(item.season);
     const sameSeason = season && season === targetSeason;
     const seasonNeutral = !season;
-    const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0) + timeSpecificity + Math.min(5, strength) / 10;
+    const relevance = (sameSeason ? 4 : seasonNeutral ? 2 : 0) + timeSpecificity + Math.min(5, strength) / 10 + evidenceStatus.weight;
 
     const sourceLabel = text(item.station_name || item.station_code || 'Other station');
     matched.push({
@@ -971,7 +1008,10 @@ function peerEvidenceForWindow(schedule = {}, observations = [], weekday = '', s
       actualDollars: nullableNumber(item.actual_dollars),
       goalDollars: nullableNumber(item.goal_dollars),
       pledgeCount: nullableNumber(item.pledge_count),
-      contextFlags: item.context_flags && typeof item.context_flags === 'object' ? item.context_flags : {}
+      contextFlags: item.context_flags && typeof item.context_flags === 'object' ? item.context_flags : {},
+      evidenceStatus: evidenceStatus.key,
+      evidenceStatusLabel: evidenceStatus.label,
+      positiveEligible: evidenceStatus.positiveEligible
     });
   }
 
@@ -1101,7 +1141,10 @@ function buildSlotTimingEvidence(schedule = {}, peerObservations = [], slot = {}
 }
 
 function positivePeerObservation(item = {}) {
-  return Number(item.assessment_signal) > 0 && Number(item.evidence_strength || 0) >= 4;
+  const status = peerEvidenceStatus(item);
+  return status.positiveEligible
+    && Number(item.assessment_signal) > 0
+    && Number(item.evidence_strength || 0) >= 4;
 }
 
 function flagOn(item = {}, ...keys) {
