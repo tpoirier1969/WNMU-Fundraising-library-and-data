@@ -6672,3 +6672,117 @@ input.goal-difference-negative {
   white-space:nowrap;
 }
 
+
+
+/* Schedule Best Fit advisor */
+.schedule-advisor-panel{
+  margin:0 0 1rem;
+  padding:1rem 1.05rem;
+  border:1px solid rgba(39,88,124,.24);
+  border-radius:14px;
+  background:linear-gradient(180deg,rgba(240,248,252,.96),rgba(250,252,253,.98));
+  box-shadow:0 8px 24px rgba(31,63,85,.06);
+}
+.schedule-advisor-heading{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  margin-bottom:.55rem;
+}
+.schedule-advisor-heading>div:first-child{
+  display:grid;
+  gap:.2rem;
+}
+.schedule-advisor-heading>div:first-child>strong{
+  font-size:1.02rem;
+}
+.schedule-advisor-heading>div:first-child>span,
+.schedule-advisor-copy{
+  color:var(--muted,#5f6b75);
+  font-size:.86rem;
+}
+.schedule-advisor-day{
+  display:grid;
+  gap:.15rem;
+  min-width:220px;
+  padding:.55rem .7rem;
+  border-radius:10px;
+  background:rgba(255,255,255,.82);
+  border:1px solid rgba(0,0,0,.08);
+  text-align:right;
+}
+.schedule-advisor-day>strong{font-size:.87rem}
+.schedule-advisor-day>span{font-size:.75rem;color:var(--muted,#66727c)}
+.schedule-advisor-day.strong,
+.schedule-advisor-day.good{border-color:rgba(35,115,76,.32)}
+.schedule-advisor-day.soft{border-color:rgba(160,105,32,.34)}
+.schedule-advisor-topics{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:.5rem;
+  margin-top:.75rem;
+}
+.schedule-advisor-topic{
+  display:grid;
+  gap:.18rem;
+  min-width:0;
+  padding:.62rem .7rem;
+  border:1px solid rgba(39,88,124,.22);
+  border-radius:10px;
+  background:#fff;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.schedule-advisor-topic:hover,
+.schedule-advisor-topic:focus-visible{
+  border-color:rgba(39,88,124,.55);
+  box-shadow:0 4px 14px rgba(31,63,85,.09);
+}
+.schedule-advisor-topic.active{
+  border-color:#2f6f98;
+  box-shadow:inset 0 0 0 1px #2f6f98;
+  background:rgba(232,244,251,.95);
+}
+.schedule-advisor-topic strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:.88rem;
+}
+.schedule-advisor-topic span{
+  color:var(--muted,#66727c);
+  font-size:.72rem;
+  line-height:1.25;
+}
+.schedule-match-title-row{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:.65rem;
+}
+.schedule-fit-score{
+  flex:0 0 auto;
+  padding:.18rem .46rem;
+  border-radius:999px;
+  background:rgba(47,111,152,.11);
+  border:1px solid rgba(47,111,152,.22);
+  font-size:.72rem;
+  font-weight:700;
+  color:#245b7d;
+}
+.schedule-program-fit-note{
+  display:block;
+  margin-top:.18rem;
+  color:var(--muted,#66727c);
+  font-size:.75rem;
+}
+@media (max-width:980px){
+  .schedule-advisor-topics{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:680px){
+  .schedule-advisor-heading{display:grid}
+  .schedule-advisor-day{min-width:0;text-align:left}
+  .schedule-advisor-topics{grid-template-columns:1fr}
+}
