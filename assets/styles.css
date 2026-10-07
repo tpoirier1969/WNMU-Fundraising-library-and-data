@@ -6690,3 +6690,29 @@ input.goal-difference-negative {
 .program-list-score.score-tone-caution{background:#f7edda;border-color:#e2c797;color:#705622}
 .program-list-score.score-tone-bad{background:#f5dadd;border-color:#dda8af;color:#7b2c38}
 
+/* v0.22.256 pre-results historical season/day context in Pledge Scheduling */
+.schedule-day-historical-rate{
+  display:grid;
+  gap:0;
+  justify-items:center;
+  line-height:1.08;
+  color:#385a6c;
+}
+.schedule-day-historical-rate small{
+  font-size:.55rem;
+  font-weight:750;
+  color:#72858f;
+}
+.schedule-day-historical-rate strong{
+  font-size:.74rem;
+  font-weight:900;
+  color:#315d70;
+  white-space:nowrap;
+}
+.schedule-day-historical-rate em{
+  font-size:.5rem;
+  font-style:normal;
+  color:#82939b;
+  white-space:nowrap;
+}
+
