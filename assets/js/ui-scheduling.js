@@ -79,6 +79,9 @@
 
   let cachedProgramLookupRows = null;
   let cachedProgramLookup = null;
+  let cachedScheduleLookup = { pledge: null, nonPledge: null };
+  let cachedScheduleAdvisorEvidence = { key: '', value: null };
+  let scheduleProgramSearchTimer = 0;
   const scheduleInlineScrollbar = {
     dragActive: false,
     dragStartY: 0,
@@ -277,33 +280,85 @@
     };
   }
 
-  function scheduleAdvisorTopicStats(schedule = {}, slot = {}) {
-    const groups = new Map();
+  function scheduleAdvisorEvidenceKey(schedule = {}, slot = {}) {
+    const scheduleBits = (state.schedules || []).map((item) => {
+      let resultHash = 0;
+      (item?.placements || []).forEach((placement) => {
+        const dollars = scheduleAdvisorKnownDollars(placement);
+        resultHash += Math.round((Number(dollars) || 0) * 100);
+        resultHash += Number(placement?.startMinutes || 0);
+        resultHash += Number(placement?.lengthMinutes || 0);
+      });
+      return `${item?.id || ''}:${item?.placements?.length || 0}:${resultHash}`;
+    }).join('|');
+    return `${schedule?.id || ''}|${slot?.dateKey || ''}|${Number(slot?.minutes || 0)}|${scheduleBits}`;
+  }
+
+  function buildScheduleAdvisorEvidence(schedule = {}, slot = {}) {
+    const programStats = new Map();
+    const currentUses = new Map();
+    const topicGroups = new Map();
+    const targetDate = new Date(`${slot?.dateKey || ''}T12:00:00`);
+    const targetSeason = schedulePledgeSeason(schedule);
+
     scheduleAdvisorHistoricalSchedules(schedule).forEach((historical) => {
+      const historicalSeason = schedulePledgeSeason(historical);
       (historical.placements || []).forEach((placement) => {
         if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return;
         const dollars = scheduleAdvisorKnownDollars(placement);
         const minutes = Number(placement?.lengthMinutes || 0);
         if (dollars === null || !(minutes > 0)) return;
         const row = scheduleProgramRowForPlacement(placement);
-        const topic = utils.normalizeText(derive.topicPrimary(row || {}));
-        if (!topic) return;
+        if (!row) return;
         const rate = (dollars * 60) / minutes;
         if (!Number.isFinite(rate)) return;
         const weight = scheduleAdvisorContextWeight(historical, placement, schedule, slot);
-        const key = utils.normalizeLookupKey(topic);
-        const group = groups.get(key) || { topic, weightedRate: 0, weight: 0, samples: 0, matchingSeason: 0, matchingWeekday: 0, closeTime: 0 };
+        const programKey = scheduleAdvisorProgramKey(row);
+        if (programKey) {
+          const stats = programStats.get(programKey) || { weightedRate: 0, weight: 0, samples: 0 };
+          stats.weightedRate += rate * weight;
+          stats.weight += weight;
+          stats.samples += 1;
+          programStats.set(programKey, stats);
+        }
+
+        const topic = utils.normalizeText(derive.topicPrimary(row));
+        if (!topic) return;
+        const topicKey = utils.normalizeLookupKey(topic);
+        const group = topicGroups.get(topicKey) || { topic, weightedRate: 0, weight: 0, samples: 0, matchingSeason: 0, matchingWeekday: 0, closeTime: 0 };
         group.weightedRate += rate * weight;
         group.weight += weight;
         group.samples += 1;
-        if (schedulePledgeSeason(historical) === schedulePledgeSeason(schedule)) group.matchingSeason += 1;
+        if (historicalSeason === targetSeason) group.matchingSeason += 1;
         const historicalDate = new Date(`${placement.dateKey}T12:00:00`);
-        const targetDate = new Date(`${slot.dateKey}T12:00:00`);
         if (!Number.isNaN(historicalDate.getTime()) && !Number.isNaN(targetDate.getTime()) && historicalDate.getDay() === targetDate.getDay()) group.matchingWeekday += 1;
         if (Math.abs(Number(placement.startMinutes || 0) - Number(slot.minutes || 0)) <= 120) group.closeTime += 1;
-        groups.set(key, group);
+        topicGroups.set(topicKey, group);
       });
     });
+
+    (schedule?.placements || []).forEach((placement) => {
+      if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return;
+      const row = scheduleProgramRowForPlacement(placement);
+      if (!row) return;
+      const key = scheduleAdvisorProgramKey(row);
+      if (!key) return;
+      currentUses.set(key, (currentUses.get(key) || 0) + 1);
+    });
+
+    return { programStats, currentUses, topicGroups };
+  }
+
+  function scheduleAdvisorEvidence(schedule = {}, slot = {}) {
+    const key = scheduleAdvisorEvidenceKey(schedule, slot);
+    if (cachedScheduleAdvisorEvidence.key === key && cachedScheduleAdvisorEvidence.value) return cachedScheduleAdvisorEvidence.value;
+    const value = buildScheduleAdvisorEvidence(schedule, slot);
+    cachedScheduleAdvisorEvidence = { key, value };
+    return value;
+  }
+
+  function scheduleAdvisorTopicStats(schedule = {}, slot = {}, evidence = null) {
+    const groups = evidence?.topicGroups || scheduleAdvisorEvidence(schedule, slot).topicGroups;
     return [...groups.values()]
       .map((group) => {
         const averageRate = group.weight > 0 ? group.weightedRate / group.weight : 0;
@@ -332,38 +387,27 @@
     return utils.normalizeLookupKey(placement?.programTitle || '') === utils.normalizeLookupKey(derive.title(row));
   }
 
-  function scheduleAdvisorCurrentFundraiserUses(row = {}, schedule = getActiveSchedule()) {
+  function scheduleAdvisorCurrentFundraiserUses(row = {}, schedule = getActiveSchedule(), evidence = null) {
+    const key = scheduleAdvisorProgramKey(row);
+    if (key && evidence?.currentUses) return Number(evidence.currentUses.get(key) || 0);
     return (schedule?.placements || []).filter((placement) => {
       if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement) || isRegularSchedulePlacement(placement)) return false;
       return scheduleAdvisorPlacementMatchesRow(placement, row);
     }).length;
   }
 
-  function scheduleAdvisorProgramFit(row = {}, schedule = {}, slot = {}) {
+  function scheduleAdvisorProgramFit(row = {}, schedule = {}, slot = {}, evidence = null) {
     const runtimeMinutes = Number(derive.runtimeMinutes(row) || derive.lengthBucket(row) || 60) || 60;
     const avgPerFundraiser = Number(derive.avgPerFundraiser(row) || 0) || 0;
     const baseRate = avgPerFundraiser > 0 ? (avgPerFundraiser * 60) / runtimeMinutes : 0;
-    let weightedRate = 0;
-    let totalWeight = 0;
-    let contextSamples = 0;
-    scheduleAdvisorHistoricalSchedules(schedule).forEach((historical) => {
-      (historical.placements || []).forEach((placement) => {
-        if (!scheduleAdvisorPlacementMatchesRow(placement, row)) return;
-        const dollars = scheduleAdvisorKnownDollars(placement);
-        const minutes = Number(placement?.lengthMinutes || runtimeMinutes);
-        if (dollars === null || !(minutes > 0)) return;
-        const rate = (dollars * 60) / minutes;
-        const weight = scheduleAdvisorContextWeight(historical, placement, schedule, slot);
-        weightedRate += rate * weight;
-        totalWeight += weight;
-        contextSamples += 1;
-      });
-    });
-    const contextualRate = totalWeight > 0 ? weightedRate / totalWeight : 0;
+    const evidenceIndex = evidence || scheduleAdvisorEvidence(schedule, slot);
+    const stats = evidenceIndex.programStats.get(scheduleAdvisorProgramKey(row)) || null;
+    const contextualRate = stats?.weight > 0 ? stats.weightedRate / stats.weight : 0;
+    const contextSamples = Number(stats?.samples || 0);
     const blendedRate = contextualRate > 0
       ? ((contextualRate * 0.72) + (baseRate * 0.28))
       : baseRate;
-    const currentUses = scheduleAdvisorCurrentFundraiserUses(row, schedule);
+    const currentUses = scheduleAdvisorCurrentFundraiserUses(row, schedule, evidenceIndex);
     const freshnessFactor = currentUses === 0 ? 1.06 : Math.max(0.55, 1 - (currentUses * 0.16));
     const rawScore = Math.max(0, blendedRate * freshnessFactor) + Math.min(40, contextSamples * 5);
     const reasons = [];
@@ -375,9 +419,9 @@
     return { rawScore, contextualRate, baseRate, contextSamples, currentUses, reason: reasons.join(' · ') };
   }
 
-  function renderScheduleAdvisorPanel(schedule = {}, slot = {}, currentPlacement = null) {
+  function renderScheduleAdvisorPanel(schedule = {}, slot = {}, currentPlacement = null, evidence = null) {
     const dayStrength = scheduleAdvisorDayStrength(schedule, slot);
-    const topics = scheduleAdvisorTopicStats(schedule, slot);
+    const topics = scheduleAdvisorTopicStats(schedule, slot, evidence);
     const occurrence = scheduleAdvisorOccurrenceLabel(schedule, slot?.dateKey || '');
     const season = schedulePledgeSeason(schedule);
     const timeLabel = utils.minutesToLabel(Number(slot?.minutes || 0));
@@ -2181,21 +2225,29 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function getProgramLookupCache() {
     const rawRows = Array.isArray(state.rawRows) ? state.rawRows : [];
     const baseRows = Array.isArray(state.baseRows) ? state.baseRows : [];
-    const cacheKeySource = `${rawRows.length}|${baseRows.length}|${rawRows === cachedProgramLookupRows?.raw ? 'same' : 'raw'}|${baseRows === cachedProgramLookupRows?.base ? 'same' : 'base'}`;
-    if (cachedProgramLookup && cachedProgramLookupRows && cachedProgramLookupRows.key === cacheKeySource && cachedProgramLookupRows.raw === rawRows && cachedProgramLookupRows.base === baseRows) return cachedProgramLookup;
+    const nonPledgeRows = Array.isArray(state.nonPledgeRows) ? state.nonPledgeRows : [];
+    const cacheKeySource = `${rawRows.length}|${baseRows.length}|${nonPledgeRows.length}`;
+    if (cachedProgramLookup && cachedProgramLookupRows
+      && cachedProgramLookupRows.key === cacheKeySource
+      && cachedProgramLookupRows.raw === rawRows
+      && cachedProgramLookupRows.base === baseRows
+      && cachedProgramLookupRows.nonPledge === nonPledgeRows) return cachedProgramLookup;
     const byProgramId = new Map();
+    const byLookupId = new Map();
     const byNola = new Map();
     const byTitle = new Map();
-    [...rawRows, ...baseRows].forEach((item) => {
+    [...rawRows, ...baseRows, ...nonPledgeRows].forEach((item) => {
       const programId = String(derive.programId(item) || '').trim();
       if (programId && !byProgramId.has(programId)) byProgramId.set(programId, item);
+      const lookupId = scheduleRowLookupId(item);
+      if (lookupId && !byLookupId.has(lookupId)) byLookupId.set(lookupId, item);
       const nolaKey = utils.normalizeLookupKey(derive.nola(item));
       if (nolaKey && !byNola.has(nolaKey)) byNola.set(nolaKey, item);
       const titleKey = utils.normalizeLookupKey(derive.title(item));
       if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, item);
     });
-    cachedProgramLookupRows = { raw: rawRows, base: baseRows, key: cacheKeySource };
-    cachedProgramLookup = { byProgramId, byNola, byTitle };
+    cachedProgramLookupRows = { raw: rawRows, base: baseRows, nonPledge: nonPledgeRows, key: cacheKeySource };
+    cachedProgramLookup = { byProgramId, byLookupId, byNola, byTitle };
     return cachedProgramLookup;
   }
 
@@ -3006,8 +3058,9 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
 
   function getProgramRowById(programId) {
     const key = String(programId || '').trim();
-    return [...(state.rawRows || []), ...(state.nonPledgeRows || [])]
-      .find((row) => String(derive.programId(row) || '').trim() === key || scheduleRowLookupId(row) === key) || null;
+    if (!key) return null;
+    const lookup = getProgramLookupCache();
+    return lookup.byProgramId.get(key) || lookup.byLookupId.get(key) || null;
   }
 
   function isWeekendDateKey(dateKey) {
@@ -3733,7 +3786,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return filters.rowHasAired(row);
   }
 
-  function scheduleEntryPassesExtraFilters(row, slotDateKey, usingNonPledge = false) {
+  function scheduleEntryPassesExtraFilters(row, slotDateKey, usingNonPledge = false, evidence = null) {
     if (!row) return false;
     const targetYear = scheduleSlotYear(slotDateKey) || scheduleSlotYear(getActiveSchedule()?.startDate || '') || new Date().getFullYear();
     const baseMatch = filters.rowMatchesScheduleFilters(row, {
@@ -3743,15 +3796,18 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       topEarnerThreshold: 500
     });
     if (!baseMatch) return false;
-    if (!usingNonPledge && state.scheduleFilterNewThisFundraiser && scheduleAdvisorCurrentFundraiserUses(row) > 0) return false;
+    if (!usingNonPledge && state.scheduleFilterNewThisFundraiser && scheduleAdvisorCurrentFundraiserUses(row, getActiveSchedule(), evidence) > 0) return false;
     return true;
   }
 
   function scheduleLookupEntries(usingNonPledge = false) {
     const sourceRows = usingNonPledge ? (state.nonPledgeRows || []) : (state.rawRows || []);
+    const bucket = usingNonPledge ? 'nonPledge' : 'pledge';
+    const cached = cachedScheduleLookup[bucket];
+    if (cached?.source === sourceRows) return cached.entries;
     const collapsedRows = filters.collapseRows(sourceRows || [], { statusPreference: usingNonPledge ? 'all' : 'active' });
     const seen = new Set();
-    return (collapsedRows || [])
+    const entries = (collapsedRows || [])
       .filter((row) => usingNonPledge || derive.isActive(row))
       .map((row, index) => {
         const title = utils.normalizeText(derive.title(row));
@@ -3763,16 +3819,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const programId = scheduleRowLookupId(row);
         const identityKey = utils.nolaIdentityKey(nola, title) || '';
         const dedupeKey = programId || identityKey || `${titleKey}|${nolaKey}|${topicKey}|${index}`;
-        return {
-          row,
-          title,
-          nola,
-          topic,
-          titleKey,
-          nolaKey,
-          topicKey,
-          dedupeKey
-        };
+        return { row, title, nola, topic, titleKey, nolaKey, topicKey, dedupeKey };
       })
       .filter((entry) => entry.titleKey || entry.nolaKey)
       .filter((entry) => {
@@ -3780,6 +3827,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         seen.add(entry.dedupeKey);
         return true;
       });
+    cachedScheduleLookup[bucket] = { source: sourceRows, entries };
+    return entries;
   }
 
   function populateScheduleTopicSelect() {
@@ -3789,7 +3838,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     els.scheduleProgramTopicSelect.value = state.scheduleProgramTopicFilter || '';
   }
 
-  function scheduleProgramMatches(query, topicFilter, slotDateKey) {
+  function scheduleProgramMatches(query, topicFilter, slotDateKey, advisorEvidence = null) {
     const text = utils.normalizeLookupKey(query || '');
     const searchTokens = text ? text.split(/\s+/).filter(Boolean) : [];
     const topicKey = utils.normalizeLookupKey(topicFilter || '');
@@ -3810,12 +3859,12 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const haystack = `${entry.titleKey} ${entry.nolaKey}`.trim();
         return searchTokens.every((token) => haystack.includes(token));
       })
-      .filter((entry) => scheduleEntryPassesExtraFilters(entry.row, slotDateKey, usingNonPledge))
+      .filter((entry) => scheduleEntryPassesExtraFilters(entry.row, slotDateKey, usingNonPledge, advisorEvidence))
       .map((entry) => {
         let fit = null;
         if (!usingNonPledge && schedule && slot) {
           try {
-            fit = scheduleAdvisorProgramFit(entry.row, schedule, slot);
+            fit = scheduleAdvisorProgramFit(entry.row, schedule, slot, advisorEvidence);
           } catch (error) {
             console.warn('Best Fit scoring skipped one title.', derive.title(entry.row), error);
           }
@@ -4284,8 +4333,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (directRow) return directRow;
     const titleKey = utils.normalizeLookupKey(placement.programTitle || placement.title || '');
     if (!titleKey) return null;
-    return [...(state.rawRows || []), ...(state.nonPledgeRows || [])]
-      .find((row) => utils.normalizeLookupKey(derive.title(row)) === titleKey) || null;
+    return getProgramLookupCache().byTitle.get(titleKey) || null;
   }
 
   function scheduleDetailKeyForPlacement(placement = {}) {
@@ -5087,10 +5135,10 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     `;
   }
 
-  function syncPlanningControls(schedule = {}, slot = {}, currentPlacement = null, editable = false) {
+  function syncPlanningControls(schedule = {}, slot = {}, currentPlacement = null, editable = false, advisorEvidence = null) {
     const host = document.getElementById('schedule-placeholder-controls');
     if (!host) return;
-    host.innerHTML = renderScheduleAdvisorPanel(schedule, slot, currentPlacement)
+    host.innerHTML = renderScheduleAdvisorPanel(schedule, slot, currentPlacement, advisorEvidence)
       + renderFundraisingWindowControls(schedule, slot, editable)
       + renderPlaceholderControls(currentPlacement, editable)
       + renderRegularScheduleControls(currentPlacement, editable);
@@ -5228,13 +5276,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       els.scheduleFilterTopEarner.disabled = !editable || usingNonPledge;
     }
     ensureScheduleAdvisorFilterControl(editable);
-    const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey);
+    const advisorEvidence = scheduleAdvisorEvidence(schedule, slot);
+    const matches = scheduleProgramMatches(state.scheduleProgramQuery || '', state.scheduleProgramTopicFilter || '', slot.dateKey, advisorEvidence);
     const hasTopic = Boolean(utils.normalizeLookupKey(state.scheduleProgramTopicFilter || ''));
     const hasSearch = utils.normalizeLookupKey(state.scheduleProgramQuery || '').length >= scheduleSearchMinChars();
     const hasExtraFilters = Boolean(state.scheduleFilterUnaired || state.scheduleFilterRightsStartYear || state.scheduleFilterTopEarner || state.scheduleFilterNewThisFundraiser);
     const sourceCount = scheduleLookupEntries(usingNonPledge).length;
     const currentPlacement = findPlacementForSlot(schedule, slot.key);
-    syncPlanningControls(schedule, slot, currentPlacement, editable);
+    syncPlanningControls(schedule, slot, currentPlacement, editable, advisorEvidence);
     bindScheduleAdvisorTopicButtons();
     renderManualResultControls(currentPlacement, editable);
     renderScheduleSlotRescue(schedule, slot, currentPlacement, editable);
@@ -7440,7 +7489,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       els.scheduleGrid.scrollTop = (clickY / maxThumbTravel) * scrollRange;
       queueScheduleInlineScrollbarSync();
     });
-    els.scheduleProgramSearch?.addEventListener('input', (event) => { state.scheduleProgramQuery = event.target.value || ''; renderProgramPicker(); });
+    els.scheduleProgramSearch?.addEventListener('input', (event) => {
+      state.scheduleProgramQuery = event.target.value || '';
+      window.clearTimeout(scheduleProgramSearchTimer);
+      scheduleProgramSearchTimer = window.setTimeout(renderProgramPicker, 120);
+    });
     els.scheduleProgramPicker?.addEventListener('click', (event) => {
       const saveWindow = event.target.closest('#schedule-fundraising-window-save-button');
       if (saveWindow) {
