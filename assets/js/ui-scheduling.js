@@ -484,6 +484,7 @@
       if (!state.scheduleSyncMessage) state.scheduleSyncMessage = 'Fundraisers are saved only in this browser.';
     }
     state.schedules = sortSchedulesNewestFirst((Array.isArray(loaded) ? loaded : []).map((schedule) => normalizeScheduleWindow(schedule)));
+    scheduleUndoStacks.clear();
     state.schedulingReady = true;
     ensureCurrentScheduleApplied();
     renderScheduleList();
@@ -6984,6 +6985,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       void rescueImportedRowToSelectedSlot(place.dataset.rescuePlace);
     });
     els.scheduleClearPlacementButton?.addEventListener('click', () => { void clearSelectedPlacement(); });
+    els.scheduleUndoButton?.addEventListener('click', () => { void undoScheduleEdit(); });
     els.scheduleZoomInButton?.addEventListener('click', () => adjustZoom(0.15));
     els.scheduleZoomOutButton?.addEventListener('click', () => adjustZoom(-0.15));
     els.scheduleStartEarlierButton?.addEventListener('click', () => adjustRange('start', -1));
@@ -7037,11 +7039,17 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         if (!els.driveComparisonModal?.classList.contains('hidden')) closeDriveComparison();
         if (!els.fundraiserGraphModal?.classList.contains('hidden')) closeFundraiserGraph();
       }
-      if (els.scheduleProgramModal?.classList.contains('hidden')) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (!mod) return;
       const activeTag = document.activeElement?.tagName || '';
-      const inField = /INPUT|TEXTAREA|SELECT/.test(activeTag);
+      const activeEditable = Boolean(document.activeElement?.isContentEditable);
+      const inField = /INPUT|TEXTAREA|SELECT/.test(activeTag) || activeEditable;
+      if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'z' && state.activeWorkspace === 'scheduling' && !inField) {
+        event.preventDefault();
+        void undoScheduleEdit();
+        return;
+      }
+      if (els.scheduleProgramModal?.classList.contains('hidden')) return;
+      if (!mod) return;
       if (event.key.toLowerCase() === 'c' && !inField) {
         event.preventDefault();
         copySelectedPlacement();
@@ -7079,6 +7087,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     renderScheduleForm();
     renderScheduleGrid();
     renderHomeDriveSummary();
+    updateScheduleUndoButton();
   }
 
   App.schedulingUi = {
