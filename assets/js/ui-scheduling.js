@@ -127,7 +127,9 @@
         if (!historicalDateKey) return;
         const historicalDate = new Date(`${historicalDateKey}T12:00:00`);
         if (Number.isNaN(historicalDate.getTime()) || historicalDate.getDay() !== targetWeekday) return;
-        const importedKnown = Boolean(placement?.importedFromReport && utils.normalizeText(placement?.sourceAiringHash || ''));
+        // importedFromReport also covers authoritative report-day zero results where
+        // a scheduled title was omitted from an otherwise populated Allegiance day.
+        const importedKnown = Boolean(placement?.importedFromReport);
         const manualKnown = placementHasManualResult(placement);
         if (!(importedKnown || manualKnown)) return;
         const minutes = Number(placement.lengthMinutes || 0);
