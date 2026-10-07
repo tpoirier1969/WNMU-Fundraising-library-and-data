@@ -167,7 +167,7 @@
     });
     els.logoutButton?.addEventListener('click', async () => {
       if (!state.client) return;
-      await state.client.auth.signOut();
+      await state.client.auth.signOut({ scope: 'local' });
       state.session = null;
       state.userEmail = null;
       state.isAdmin = false;

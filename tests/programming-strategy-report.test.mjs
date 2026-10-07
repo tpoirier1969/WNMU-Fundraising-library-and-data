@@ -1006,7 +1006,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(workerUi, /peerEvidenceForWindow/);
   assert.match(workerUi, /peerObservations/);
 
-  assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2"><\/script>/);
+  assert.match(page, /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.117\.2"><\/script>/);
   assert.match(page, /version\.json\?_=/);
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
