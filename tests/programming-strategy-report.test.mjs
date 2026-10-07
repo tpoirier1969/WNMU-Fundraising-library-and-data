@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.258'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.262'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.258/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.262/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -2222,6 +2222,66 @@ test('historical backtest freezes recommendations before the target fundraiser a
   assert.ok(workerMessages.some((message) => message.type === 'progress' && message.stage === 'backtest'));
 });
 
+
+test('historical backtests exclude peer evidence that was not available before the cutoff', () => {
+  const { workerContext, workerMessages } = makeWorkerHarness();
+  const target={id:'dec25-peer-cutoff',title:'December 2025',startDate:'2025-12-05',endDate:'2025-12-14'};
+
+  workerContext.onmessage({
+    data:{
+      requestId:204,
+      mode:'backtest',
+      schedule:target,
+      library:[],
+      airings:[],
+      scheduleRows:[],
+      overrides:[],
+      peerObservations:[
+        {
+          id:1,
+          station_code:'OLD',
+          station_name:'Old Evidence Station',
+          assessment_signal:2,
+          evidence_strength:4,
+          context_flags:{challenge_grant:true},
+          summary:'Known before the target drive',
+          __source_date:'2025-11-20'
+        },
+        {
+          id:2,
+          station_code:'FUTURE',
+          station_name:'Future Evidence Station',
+          assessment_signal:2,
+          evidence_strength:5,
+          context_flags:{challenge_grant:true},
+          summary:'Published after the target drive',
+          __source_date:'2026-03-01'
+        },
+        {
+          id:3,
+          station_code:'UNKNOWN',
+          station_name:'Undated Source Station',
+          assessment_signal:2,
+          evidence_strength:5,
+          context_flags:{challenge_grant:true},
+          summary:'No source date available'
+        }
+      ],
+      now:'2026-09-24T12:00:00Z'
+    }
+  });
+
+  const result=workerMessages.find((message)=>message.type==='result');
+  assert.ok(result);
+  assert.equal(result.strategy.cutoff,'2025-12-04');
+  assert.equal(result.diagnostics.peerObservationRows,3);
+  assert.equal(result.diagnostics.effectivePeerObservationRows,1);
+  assert.equal(result.diagnostics.excludedPostCutoffPeerObservations,2);
+  const challenge=(result.peerPractices||[]).find((item)=>item.id==='challenge-grants');
+  assert.ok(challenge);
+  assert.equal(challenge.stationCount,1);
+  assert.equal(challenge.examples[0].station,'Old Evidence Station');
+});
 
 test('strategy recommendation ranking collapses duplicate Program Library rows with the same title', () => {
   const slot = S.planningWindows(schedule).find((entry) => entry.label === 'Prime' && !entry.blocked);

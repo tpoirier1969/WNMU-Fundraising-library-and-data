@@ -63,13 +63,20 @@ async function loadData(){
   status('Loading Program Library and historical pledge results…');
   const airingSelect=['id','program_id','pledge_program_id','manual_match_program_id','title','program_title','imported_program_title','matched_library_title','nola_code','air_date','air_time','aired_at','dollars','pledge_count','program_minutes','fundraiser_label','drive_start_date','drive_end_date','station','row_hash','source_file_name','import_batch_id','raw_payload','updated_at','created_at'].join(',');
   const programSelect=['id','title','program_notes','length_bucket_minutes','nola_code','topic_primary','topic_secondary','rights_start','rights_end','drama_cycle_status','companion_program_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'].join(',');
-  const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
-  const[airings,library,overrides,peerObservations]=await Promise.all([
+  const peerSelect='id,source_id,evidence_scope,season,observation_date,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
+  const peerSourceSelect='id,source_date';
+  const[airings,library,overrides,peerObservationsRaw,peerSources]=await Promise.all([
     fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
     fetchAll('pledge_programs_v2',programSelect,{orders:['id']}),
     fetchAll('pledge_program_editorial_overrides','program_id,rating,rated_at,updated_at',{orders:['program_id']}),
-    fetchOptional('pledge_peer_evidence_observations',peerSelect,{orders:['id']})
+    fetchOptional('pledge_peer_evidence_observations',peerSelect,{orders:['id']}),
+    fetchOptional('pledge_peer_evidence_sources',peerSourceSelect,{orders:['id']})
   ]);
+  const peerSourceDateById=new Map((peerSources||[]).map((row)=>[String(row?.id||''),String(row?.source_date||'').slice(0,10)]));
+  const peerObservations=(peerObservationsRaw||[]).map((row)=>({
+    ...row,
+    __source_date:peerSourceDateById.get(String(row?.source_id||''))||''
+  }));
   Object.assign(state,{airings,library,overrides,peerObservations,loaded:true});
   status('Historical data loaded. Choose a fundraiser and run the backtest.');
 }
@@ -84,7 +91,7 @@ function stopWorker(){if(state.workerTimer){clearTimeout(state.workerTimer);stat
 function runWorker(schedule){
   stopWorker();const requestId=++state.requestId;
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.258');state.worker=worker;
+    const worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.262');state.worker=worker;
     state.workerTimer=setTimeout(()=>{stopWorker();reject(new Error('Backtest exceeded 90 seconds and was stopped.'));},90000);
     worker.onmessage=(event)=>{
       const msg=event.data||{};if(msg.requestId!==requestId)return;
