@@ -10,15 +10,18 @@ test('historical backtest page is linked and uses the current strategy worker', 
   const version = JSON.parse(fs.readFileSync(new URL('../version.json', import.meta.url), 'utf8'));
 
   assert.doesNotThrow(() => new vm.Script(ui, { filename:'programming-strategy-backtest-ui.js' }));
-  assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.258/);
+  assert.match(page, /programming-strategy-backtest-ui\.js\?v=0\.22\.262/);
   assert.match(page, /Fundraiser Strategy Backtest/);
   assert.match(strategyPage, /href="programming-strategy-backtest\.html">Historical backtest/);
-  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.258/);
-  assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.258/);
+  assert.match(strategyPage, /programming-strategy-report\.js\?v=0\.22\.262/);
+  assert.match(ui, /programming-strategy-worker\.js\?v=0\.22\.262/);
   assert.match(ui, /mode:'backtest'/);
+  assert.match(ui, /source_id,evidence_scope,season,observation_date/);
+  assert.match(ui, /pledge_peer_evidence_sources/);
+  assert.match(ui, /__source_date:peerSourceDateById/);
   assert.match(ui, /drama_cycle_status/);
   assert.match(ui, /fundraisingWindows:Array\.isArray\(saved\.fundraisingWindows\)/);
   assert.match(ui, /Topic \+ time answer sheet/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.261');
+  assert.equal(version.appVersion, '0.22.262');
 });
