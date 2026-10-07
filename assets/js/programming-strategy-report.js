@@ -93,7 +93,7 @@ async function loadAnalysisData(){
     'rights_start','rights_end','drama_cycle_status','companion_program_status','rights_notes','distributor','premium_summary','actual_runtime_seconds'
   ].join(',');
   const overrideSelect='program_id,rating,rated_at,updated_at';
-  const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
+  const peerSelect='id,evidence_scope,season,station_code,station_name,program_title_raw,program_title_normalized,matched_program_id,topic_primary,topic_secondary,observation_date,day_of_week,start_time_minutes,end_time_minutes,daypart,assessment_raw,station_rating,assessment_signal,actual_dollars,goal_dollars,pledge_count,context_flags,evidence_strength,summary';
   const peerContextSelect='id,station_code,station_name,context_period_start,context_period_end,day_of_week,start_time_minutes,end_time_minutes,schedule_label,schedule_pattern,representative_programs,source_kind,source_reference,source_summary,evidence_strength,notes';
   const[airings,library,overrides,peerObservations,peerScheduleContexts]=await Promise.all([
     fetchAll('pledge_program_airings_v2',airingSelect,{orders:['id']}),
@@ -853,7 +853,7 @@ function runStrategyWorker(schedule){
   return new Promise((resolve,reject)=>{
     let worker;
     try{
-      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.256');
+      worker=new Worker('assets/js/programming-strategy-worker.js?v=0.22.258');
     }catch(error){
       reject(error);
       return;
