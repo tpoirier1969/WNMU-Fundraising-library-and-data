@@ -1197,6 +1197,35 @@ button.primary {
 }
 .scheduled-occurrence-list { display:grid; gap:6px; }
 .scheduled-occurrence-row { display:flex; gap:10px; align-items:flex-start; color: var(--text); }
+.scheduled-occurrence-slot { flex: 1 1 180px; min-width: 0; }
+.scheduled-occurrence-statuses {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.schedule-detail-status-toggle {
+  color: var(--text);
+  font-size: .74rem;
+  font-weight: 800;
+}
+.schedule-detail-status-toggle .schedule-placement-status-check {
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-color: #9aacb7;
+  box-shadow: none;
+}
+.schedule-detail-status-toggle .schedule-placement-status-check::after {
+  width: 7px;
+  height: 3px;
+  top: 3px;
+  left: 3px;
+}
+.schedule-detail-status-toggle input:focus-visible + .schedule-placement-status-check {
+  outline-color: #2b6f9f;
+}
 .scheduled-break-list { margin: 4px 0 10px 16px; padding: 0; display:grid; gap:4px; }
 .sort-header-button { white-space: nowrap; }
 @media (max-width: 980px) {
@@ -2268,59 +2297,72 @@ button.primary {
 }
 .schedule-placement strong { font-size: clamp(.48rem, .54vw, .62rem); line-height: 1.06; font-weight: 600; letter-spacing: .01em; }
 .schedule-placement span { font-size: clamp(.40rem, .44vw, .52rem); line-height: 1.05; font-weight: 500; letter-spacing: .005em; opacity: .94; }
-.schedule-placement.transferred-to-station {
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), 0 2px 6px rgba(0,0,0,.16);
-}
-.schedule-placement-transfer-toggle {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 13px;
-  height: 13px;
+.schedule-placement-status-toggles {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-self: end;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
   z-index: 4;
-  cursor: pointer;
 }
-.schedule-placement-transfer-toggle input {
+.schedule-placement-status-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  color: inherit;
+  font-size: clamp(.36rem, .40vw, .48rem);
+  font-weight: 750;
+  line-height: 1;
+}
+.schedule-placement-status-toggle input {
   position: absolute;
-  inset: 0;
-  margin: 0;
+  inline-size: 1px;
+  block-size: 1px;
   opacity: 0;
-  cursor: pointer;
-}
-.schedule-placement-transfer-check {
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.55);
-  box-shadow: 0 1px 2px rgba(0,0,0,.18);
   pointer-events: none;
 }
-.schedule-placement-transfer-check::after {
+.schedule-placement-status-check {
+  position: relative;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.68);
+  box-shadow: 0 1px 2px rgba(0,0,0,.16);
+  opacity: 1 !important;
+}
+.schedule-placement-status-check::after {
   content: '';
   position: absolute;
-  width: 6px;
-  height: 3px;
+  width: 5px;
+  height: 2px;
   border-left: 2px solid transparent;
   border-bottom: 2px solid transparent;
   transform: rotate(-45deg);
-  top: 4px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
 }
-.schedule-placement-transfer-toggle input:checked + .schedule-placement-transfer-check {
-  background: rgba(16,185,129,.96);
-  border-color: rgba(255,255,255,.72);
+.schedule-placement-status-toggle input:checked + .schedule-placement-status-check {
+  background: #facc15;
+  border-color: #a16207;
 }
-.schedule-placement-transfer-toggle input:checked + .schedule-placement-transfer-check::after {
-  border-left-color: #fff;
-  border-bottom-color: #fff;
+.schedule-placement-status-toggle input:checked + .schedule-placement-status-check::after {
+  border-left-color: #241a00;
+  border-bottom-color: #241a00;
 }
-.schedule-placement-transfer-toggle input:focus-visible + .schedule-placement-transfer-check {
-  outline: 2px solid rgba(255,255,255,.85);
+.schedule-placement-status-toggle input:focus-visible + .schedule-placement-status-check {
+  outline: 2px solid rgba(255,255,255,.95);
   outline-offset: 1px;
+}
+.schedule-placement-status-label {
+  opacity: .96 !important;
 }
 .schedule-placement-expectation {
   position: absolute;
@@ -4602,21 +4644,6 @@ body.schedule-inline-scrollbar-dragging * {
 }
 
 /* v0.21.52 scheduling detail + Slot Fit tracking */
-.scheduled-break-needed {
-  display: inline-flex;
-  width: fit-content;
-  margin-top: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #fff3c4;
-  border: 1px solid #d89400;
-  color: #6f3e00;
-  font-weight: 900;
-  letter-spacing: .08em;
-  font-size: .76rem;
-  text-transform: uppercase;
-}
-
 .scheduled-slot-fit-tracker {
   display: block;
   margin-top: 4px;
@@ -4675,27 +4702,6 @@ body.schedule-inline-scrollbar-dragging * {
   font-size: .88rem;
 }
 
-
-/* v0.21.52 calendar-level break warning */
-.schedule-placement-break-needed {
-  display: inline-flex;
-  width: fit-content;
-  max-width: calc(100% - 8px);
-  margin-top: 2px;
-  padding: 2px 5px;
-  border-radius: 999px;
-  background: #fff3c4;
-  border: 1px solid rgba(216,148,0,.95);
-  color: #6f3e00;
-  font-weight: 950;
-  letter-spacing: .06em;
-  font-size: clamp(.38rem, .42vw, .50rem) !important;
-  line-height: 1.05;
-  text-transform: uppercase;
-  opacity: 1 !important;
-  text-shadow: none;
-  box-shadow: 0 1px 2px rgba(0,0,0,.16);
-}
 
 /* v0.21.55 daily rundown button + compact schedule detail cards */
 .workspace-action-tab.daily-rundown-tab {

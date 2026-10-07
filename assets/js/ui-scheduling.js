@@ -419,6 +419,7 @@
       manualBroadcastDollars: Number.isFinite(Number(placement?.manualBroadcastDollars)) ? Number(placement.manualBroadcastDollars) : 0,
       manualPledgeCount: Number.isFinite(Number(placement?.manualPledgeCount)) ? Math.max(0, Math.trunc(Number(placement.manualPledgeCount))) : 0,
       manualResultUpdatedAt: utils.normalizeText(placement?.manualResultUpdatedAt || ''),
+      breakInfoComplete: normalizePlacementBoolean(placement?.breakInfoComplete, Boolean(placement?.breakInfoComplete)),
       transferredToStation: normalizePlacementBoolean(placement?.transferredToStation, Boolean(placement?.transferredToStation))
     }));
     next.fundraisingWindows = normalizedFundraisingWindows(next);
@@ -1982,6 +1983,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       isNonPledge: false,
       sourceName: row.source_file_name || '',
       sourceLabel: sourceRow ? 'Imported report' : 'Imported report (title-only)',
+      breakInfoComplete: false,
       transferredToStation: false,
       importedFromReport: true,
       manualResultRecorded: false,
@@ -2044,6 +2046,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           liveBreakFlag: hasLiveBreakFlag(existing),
           liveBreakNotes: hasLiveBreakFlag(existing) ? (existing.liveBreakNotes || '') : '',
           isNonPledge: Boolean(existing.isNonPledge),
+          breakInfoComplete: Boolean(existing.breakInfoComplete),
           transferredToStation: Boolean(existing.transferredToStation),
           importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
           importedFundraiserKey: utils.normalizeText(groupKey || placement.importedFundraiserKey || ''),
@@ -2073,6 +2076,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
             liveBreakFlag: hasLiveBreakFlag(existing),
             liveBreakNotes: hasLiveBreakFlag(existing) ? (existing.liveBreakNotes || '') : '',
             isNonPledge: Boolean(existing.isNonPledge),
+            breakInfoComplete: Boolean(existing.breakInfoComplete),
             transferredToStation: Boolean(existing.transferredToStation),
             importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
             importedFundraiserKey: wantedImportedKey || existingImportedKey,
@@ -2299,6 +2303,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
                 ? (existingPlacement.liveBreakNotes || '')
                 : (hasLiveBreakFlag(placement) ? (placement.liveBreakNotes || '') : ''),
               isNonPledge: Boolean(existingPlacement.isNonPledge),
+              breakInfoComplete: Boolean(existingPlacement.breakInfoComplete),
               transferredToStation: Boolean(existingPlacement.transferredToStation),
               importedBroadcastDollars: Number(placement.importedBroadcastDollars || 0) || 0,
               sourceAiringHash: placement.sourceAiringHash || existingPlacement.sourceAiringHash || ''
@@ -3886,29 +3891,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     return String(scheduleRowLookupId(row) || directId || '').trim();
   }
 
-  function scheduleCalendarBreakInfoNeededHtml(placement = null) {
-    if (!placement || placement.isNonPledge) return '';
-    const detailKey = scheduleDetailKeyForPlacement(placement);
-    if (!detailKey) return '';
-    const cache = state.scheduleDetailCache?.[detailKey];
-    if (!cache?.loaded || cache?.error) return '';
-    if (scheduleDetailHasBreakInfo(cache.detail || {})) return '';
-    return '<span class="schedule-placement-break-needed">BREAK INFO NEEDED</span>';
-  }
-
-  function schedulePlacementReadinessClass(placement = null) {
-    if (!placement || placement.isNonPledge || isPlaceholderPlacement(placement)) return '';
-    const detailKey = scheduleDetailKeyForPlacement(placement);
-    const cache = detailKey ? state.scheduleDetailCache?.[detailKey] : null;
-    const breakReady = Boolean(cache?.loaded && !cache?.error && scheduleDetailHasBreakInfo(cache.detail || {}));
-    const entered = Boolean(placement?.transferredToStation);
-    if (entered && breakReady) return 'setup-entered setup-break-ready';
-    if (entered) return 'setup-entered setup-break-missing';
-    if (breakReady) return 'setup-break-ready';
-    if (cache?.loaded && !cache?.error) return 'setup-break-missing';
-    return 'setup-loading';
-  }
-
   function scheduleFundraiserDayKeys(schedule = {}) {
     return schedule?.startDate && schedule?.endDate ? utils.datesBetween(schedule.startDate, schedule.endDate) : [];
   }
@@ -4304,11 +4286,19 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
           else if (placement.isNonPledge) subtitleBits.push('non-pledge');
           if (breakMode) subtitleBits.push(utils.escapeHtml(breakModeLabel(breakMode)));
         }
-        const transferToggle = isStart && editable && placement && !placement.isNonPledge && !isPlaceholder
-          ? `<label class="schedule-placement-transfer-toggle" data-placement-transfer-toggle title="Mark this title as entered in traffic/scheduling software">
-              <input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}>
-              <span class="schedule-placement-transfer-check" aria-hidden="true"></span>
-            </label>`
+        const statusToggles = isStart && editable && placement && !placement.isNonPledge && !isPlaceholder
+          ? `<span class="schedule-placement-status-toggles" data-placement-status-toggles>
+              <label class="schedule-placement-status-toggle" title="Mark break information complete">
+                <input type="checkbox" data-grid-break-info-placement-id="${utils.escapeHtml(placement.id)}" ${placement.breakInfoComplete ? 'checked' : ''}>
+                <span class="schedule-placement-status-check" aria-hidden="true"></span>
+                <span class="schedule-placement-status-label">Break info</span>
+              </label>
+              <label class="schedule-placement-status-toggle" title="Mark scheduling / traffic entry complete">
+                <input type="checkbox" data-grid-transfer-placement-id="${utils.escapeHtml(placement.id)}" ${placement.transferredToStation ? 'checked' : ''}>
+                <span class="schedule-placement-status-check" aria-hidden="true"></span>
+                <span class="schedule-placement-status-label">Schd</span>
+              </label>
+            </span>`
           : '';
         const breakModeBadge = isStart && breakMode
           ? `<span class="schedule-break-mode-calendar-badge ${utils.escapeHtml(breakModeClass)}" title="${utils.escapeHtml(breakModeLabel(breakMode))}">${breakMode === BREAK_MODES.LIVE ? 'LIVE' : (breakMode === BREAK_MODES.WEB_ONLY ? 'WEB' : 'PHONES')}</span>`
@@ -4316,7 +4306,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
             ${fundraisingWindowMark?.isStart ? `<span class="schedule-fundraising-window-tag">${utils.escapeHtml(fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority))}</span>` : ''}
-            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${transferToggle}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : (isRegular ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle }))}<span>${subtitleBits.join(' · ')}</span>${placementNoteHtml}${manualResultBadge}${breakWarning}${expectationBadge}</span>` : ''}
+            ${isStart ? `<span title="${utils.escapeHtml(placement.programTitle)}" draggable="${editable ? 'true' : 'false'}" class="schedule-placement ${klass} ${editable ? '' : 'locked'}" data-placement-id="${utils.escapeHtml(placement.id)}" data-date-key="${utils.escapeHtml(placement.dateKey)}" data-minutes="${placement.startMinutes}" data-live-break="${breakMode === BREAK_MODES.LIVE ? 'true' : 'false'}" data-break-mode="${utils.escapeHtml(breakMode)}" style="${style}">${statusToggles}${breakModeBadge}${isPlaceholder ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>` : (isRegular ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>` : renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle }))}<span>${subtitleBits.join(' · ')}</span>${placementNoteHtml}${manualResultBadge}${expectationBadge}</span>` : ''}
           </button>
         `);
       });
@@ -4350,11 +4340,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     const rows = normalizeScheduledTimingRows(detail?.timings || []);
     return rows.some((entry) => (Number.isFinite(entry.breakSeconds) && entry.breakSeconds > 0)
       || (Number.isFinite(entry.localCutInSeconds) && entry.localCutInSeconds > 0));
-  }
-
-  function breakInfoNeededHtml(cache = null) {
-    if (!cache?.loaded || cache?.error) return '';
-    return scheduleDetailHasBreakInfo(cache.detail || {}) ? '' : '<div class="scheduled-break-needed">BREAK INFO NEEDED</div>';
   }
 
   function signedMoney(value) {
@@ -4524,7 +4509,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       const cache = state.scheduleDetailCache[detailKeyByGroup.get(programId) || ''];
       const detail = cache?.detail || null;
       const displayRow = detail?.program ? utils.mergeRows(detail.program, row) : row;
-      const breakNeeded = breakInfoNeededHtml(cache);
       const runtimeInfo = scheduledRuntimeInfo(displayRow, cache, occurrences[0]?.lengthMinutes);
       const runtimeLabel = runtimeInfo.label;
       const metaBits = [runtimeLabel, derive.nola(displayRow) || 'No NOLA', derive.topicPrimary(displayRow) || 'No topic'];
@@ -4547,11 +4531,22 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         .map((item) => {
           const slotFitHtml = slotFitOccurrenceHtml(item);
           return `
-          <label class="scheduled-occurrence-row">
-            <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
-            <span>${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${canonicalScheduleBreakMode(item) ? ` · ${utils.escapeHtml(breakModeLabel(canonicalScheduleBreakMode(item)))}` : ''}</span>
+          <div class="scheduled-occurrence-row">
+            <span class="scheduled-occurrence-slot">${utils.escapeHtml(slotLabel(item.dateKey, item.startMinutes))}${canonicalScheduleBreakMode(item) ? ` · ${utils.escapeHtml(breakModeLabel(canonicalScheduleBreakMode(item)))}` : ''}</span>
+            <span class="scheduled-occurrence-statuses">
+              <label class="schedule-placement-status-toggle schedule-detail-status-toggle">
+                <input type="checkbox" data-break-info-placement-id="${utils.escapeHtml(item.id)}" ${item.breakInfoComplete ? 'checked' : ''}>
+                <span class="schedule-placement-status-check" aria-hidden="true"></span>
+                <span>Break info</span>
+              </label>
+              <label class="schedule-placement-status-toggle schedule-detail-status-toggle">
+                <input type="checkbox" data-transfer-placement-id="${utils.escapeHtml(item.id)}" ${item.transferredToStation ? 'checked' : ''}>
+                <span class="schedule-placement-status-check" aria-hidden="true"></span>
+                <span>Schd</span>
+              </label>
+            </span>
             ${slotFitHtml}
-          </label>
+          </div>
         `;
         }).join('');
       let breakHtml = '<div class="scheduled-program-note">Loading…</div>';
@@ -4563,7 +4558,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
             <div class="scheduled-program-title-wrap">
               ${renderProgramTitleLink(programId, derive.title(displayRow) || occurrences[0].programTitle, { className: 'schedule-card-title-link' })}
               <div class="scheduled-program-meta-inline">${metaBits.map((bit) => `<span>${utils.escapeHtml(bit)}</span>`).join('<span class="meta-dot">•</span>')}</div>
-              ${breakNeeded}
             </div>
             <button type="button" class="ghost scheduled-program-expand-button" data-scheduled-card-toggle aria-expanded="false">Details</button>
           </div>
@@ -5101,13 +5095,26 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     setNotice(`Built blank fundraiser calendar ${schedule.title}. ${state.scheduleSyncMessage}`);
   }
 
+  function toggleBreakInfoComplete(placementId, checked) {
+    const schedule = getActiveSchedule();
+    if (!schedule) return;
+    const placement = findPlacementById(schedule, placementId);
+    if (!placement) return;
+    if (Boolean(placement.breakInfoComplete) === Boolean(checked)) return;
+    recordScheduleUndo(schedule, `${checked ? 'mark' : 'unmark'} ${placement.programTitle} break info complete`);
+    placement.breakInfoComplete = checked;
+    void persistSchedules(schedule);
+    renderScheduleGrid();
+    renderScheduledProgramDetails();
+  }
+
   function toggleTransferred(placementId, checked) {
     const schedule = getActiveSchedule();
     if (!schedule) return;
     const placement = findPlacementById(schedule, placementId);
     if (!placement) return;
     if (Boolean(placement.transferredToStation) === Boolean(checked)) return;
-    recordScheduleUndo(schedule, `${checked ? 'mark' : 'unmark'} ${placement.programTitle} as entered in traffic`);
+    recordScheduleUndo(schedule, `${checked ? 'mark' : 'unmark'} ${placement.programTitle} as scheduled`);
     placement.transferredToStation = checked;
     void persistSchedules(schedule);
     renderScheduleGrid();
@@ -5209,6 +5216,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       isNonPledge: false,
       sourceName: '',
       sourceLabel: '',
+      breakInfoComplete: existing?.breakInfoComplete || false,
       transferredToStation: existing?.transferredToStation || false
     };
     recordScheduleUndo(schedule, `${existing ? 'update' : 'add'} placeholder ${title}`);
@@ -5262,6 +5270,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       isNonPledge: true,
       sourceName: '',
       sourceLabel: 'Regular schedule',
+      breakInfoComplete: false,
       transferredToStation: false,
       manualResultRecorded: false,
       manualBroadcastDollars: 0,
@@ -5350,6 +5359,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       placeholderTitle: '',
       sourceName: row?.__external_source_name || '',
       sourceLabel: row?.__external_source_label || '',
+      breakInfoComplete: existing?.breakInfoComplete || false,
       transferredToStation: existing?.transferredToStation || false
     };
     recordScheduleUndo(schedule, `schedule ${derive.title(row)}`);
@@ -5540,6 +5550,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       isNonPledge: pastedIsNonPledge,
       sourceName: (placeholder || regular) ? '' : (clip.sourceName || row?.__external_source_name || ''),
       sourceLabel: regular ? 'Regular schedule' : (placeholder ? '' : (clip.sourceLabel || row?.__external_source_label || '')),
+      breakInfoComplete: false,
       transferredToStation: false
     });
     await persistSchedules(schedule);
@@ -5693,7 +5704,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
   function scheduleExportTimingHtml(timings = []) {
     const rows = timingRowsWithCutTimes(timings);
     if (!rows.length) {
-      return '<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">No break timing rows are available yet.</div>';
+      return '<div class="export-muted">No break timing rows are available yet.</div>';
     }
     return `
       <table class="export-timing-table">
@@ -5737,7 +5748,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     else if (item.isNonPledge) markerBits.push('non-pledge marker');
     const exportBreakMode = canonicalScheduleBreakMode(item);
     if (exportBreakMode) markerBits.push(breakModeLabel(exportBreakMode));
-    if (item.transferredToStation) markerBits.push('entered in traffic');
+    if (item.breakInfoComplete) markerBits.push('break info complete');
+    if (item.transferredToStation) markerBits.push('schd complete');
     const nola = (item.isNonPledge || placeholder) ? '' : derive.nola(displayRow);
     const topic = (item.isNonPledge || placeholder) ? '' : derive.topicPrimary(displayRow);
     const distributor = (item.isNonPledge || placeholder) ? '' : derive.distributor(displayRow);
@@ -5758,16 +5770,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     let timingHtml = '';
     if (!item.isNonPledge && !placeholder && item.programId) {
       if (cache?.loaded && !cache?.error) {
-        const missingBreakInfo = !scheduleDetailHasBreakInfo(cache.detail || {});
         timingHtml = `
-          ${missingBreakInfo ? '<div class="export-warning">BREAK INFO NEEDED</div>' : ''}
           <div class="export-subsection-title">Break detail</div>
           ${scheduleExportTimingHtml(cache.detail?.timings || [])}
         `;
       } else if (cache?.error) {
-        timingHtml = `<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">Break timing detail could not load: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
+        timingHtml = `<div class="export-muted">Break timing detail could not load: ${utils.escapeHtml(cache.error.message || 'load failed')}</div>`;
       } else {
-        timingHtml = '<div class="export-warning">BREAK INFO NEEDED</div><div class="export-muted">Break timing detail did not finish loading before export.</div>';
+        timingHtml = '<div class="export-muted">Break timing detail did not finish loading before export.</div>';
       }
     }
 
@@ -6070,7 +6080,8 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (placement.isNonPledge) meta.push('non-pledge');
     const printBreakMode = (!isPlaceholder && !placement.isNonPledge) ? calendarPlacementBreakMode(getActiveSchedule(), placement) : '';
     if (printBreakMode) meta.push(breakModeLabel(printBreakMode));
-    if (placement.transferredToStation) meta.push('entered');
+    if (placement.breakInfoComplete) meta.push('break info');
+    if (placement.transferredToStation) meta.push('schd');
     if (placementStart < visibleStartMin) meta.unshift('continues');
     const classes = [
       'print-placement',
@@ -6078,7 +6089,6 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       placement.isNonPledge ? 'non-pledge' : '',
       printBreakMode === BREAK_MODES.LIVE ? 'live-break' : '',
       printBreakMode ? `break-mode-${printBreakMode.replace(/_/g, '-')}` : '',
-      placement.transferredToStation ? 'transferred' : '',
       rowSpan === 1 ? 'one-slot' : '',
       rowSpan === 2 ? 'two-slot' : ''
     ].filter(Boolean).join(' ');
@@ -6999,10 +7009,16 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       void movePlacement(placementId, slot.dataset.dateKey, Number(slot.dataset.minutes || 0));
     });
     els.scheduleGrid?.addEventListener('change', (event) => {
-      const checkbox = event.target.closest('[data-grid-transfer-placement-id]');
-      if (!checkbox) return;
+      const breakInfoCheckbox = event.target.closest('[data-grid-break-info-placement-id]');
+      if (breakInfoCheckbox) {
+        event.stopPropagation();
+        toggleBreakInfoComplete(breakInfoCheckbox.dataset.gridBreakInfoPlacementId, breakInfoCheckbox.checked);
+        return;
+      }
+      const scheduleCheckbox = event.target.closest('[data-grid-transfer-placement-id]');
+      if (!scheduleCheckbox) return;
       event.stopPropagation();
-      toggleTransferred(checkbox.dataset.gridTransferPlacementId, checkbox.checked);
+      toggleTransferred(scheduleCheckbox.dataset.gridTransferPlacementId, scheduleCheckbox.checked);
     });
     els.scheduleGrid?.addEventListener('scroll', queueScheduleInlineScrollbarSync, { passive: true });
     els.scheduleGrid?.addEventListener('mousedown', (event) => {
@@ -7131,9 +7147,14 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       toggle.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
     });
     els.scheduleProgramDetails?.addEventListener('change', (event) => {
-      const checkbox = event.target.closest('[data-transfer-placement-id]');
-      if (!checkbox) return;
-      toggleTransferred(checkbox.dataset.transferPlacementId, checkbox.checked);
+      const breakInfoCheckbox = event.target.closest('[data-break-info-placement-id]');
+      if (breakInfoCheckbox) {
+        toggleBreakInfoComplete(breakInfoCheckbox.dataset.breakInfoPlacementId, breakInfoCheckbox.checked);
+        return;
+      }
+      const scheduleCheckbox = event.target.closest('[data-transfer-placement-id]');
+      if (!scheduleCheckbox) return;
+      toggleTransferred(scheduleCheckbox.dataset.transferPlacementId, scheduleCheckbox.checked);
     });
     els.scheduleCopyPlacementButton?.addEventListener('click', () => { copySelectedPlacement(true); });
     els.schedulePastePlacementButton?.addEventListener('click', () => { void pasteClipboardToSelectedSlot(true); });

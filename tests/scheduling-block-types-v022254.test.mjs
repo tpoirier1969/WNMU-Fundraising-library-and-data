@@ -32,15 +32,19 @@ test('placeholder and regular blocks preserve optional schedule notes', () => {
   assert.match(schedulingSource, /scheduleNote: utils\.normalizeText\(clip\.scheduleNote/);
 });
 
-test('calendar color identifies break mode without readiness or repeat saturation shifts', () => {
-  assert.match(schedulingSource, /function schedulePlacementReadinessClass/);
-  assert.match(schedulingSource, /setup-break-ready/);
-  assert.match(schedulingSource, /setup-entered/);
+test('calendar color identifies break mode without workflow-status styling', () => {
+  assert.doesNotMatch(schedulingSource, /function schedulePlacementReadinessClass/);
+  assert.doesNotMatch(schedulingSource, /setup-break-ready|setup-entered|setup-break-missing/);
+  assert.doesNotMatch(schedulingSource, /transferred-to-station/);
+  assert.match(schedulingSource, /Break info/);
+  assert.match(schedulingSource, /Schd/);
+  assert.match(schedulingSource, /breakInfoComplete/);
+  assert.doesNotMatch(schedulingSource, /BREAK INFO NEEDED/);
+  assert.match(css, /schedule-placement-status-toggle input:checked \+ \.schedule-placement-status-check[\s\S]*background: #facc15/);
   assert.match(css, /Calendar color is determined only by break mode/);
   assert.match(css, /\.schedule-placement\.break-mode-phones-staffed,[\s\S]*\.schedule-placement\.repeat-run\.break-mode-phones-staffed[\s\S]*background: #4f93c7/);
   assert.match(css, /\.schedule-placement\.break-mode-web-only,[\s\S]*\.schedule-placement\.repeat-run\.break-mode-web-only[\s\S]*background: #3b9f96/);
   assert.match(css, /\.schedule-placement\.break-mode-live,[\s\S]*\.schedule-placement\.repeat-run\.break-mode-live[\s\S]*background: #7c5bab/);
-  assert.doesNotMatch(css, /break-mode-(?:phones-staffed|web-only|live)\.setup-(?:break-ready|entered)/);
   assert.match(css, /Retire the old red LIVE pseudo-badge\/border/);
 });
 

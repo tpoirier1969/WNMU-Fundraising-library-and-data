@@ -23,5 +23,5 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(ui, /fundraisingWindows:Array\.isArray\(saved\.fundraisingWindows\)/);
   assert.match(ui, /Topic \+ time answer sheet/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.264');
+  assert.equal(version.appVersion, '0.22.265');
 });
