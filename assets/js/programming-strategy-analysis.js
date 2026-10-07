@@ -751,12 +751,80 @@
     return result.sort((a, b) => a.date.localeCompare(b.date) || a.startMinutes - b.startMinutes || Number(a.blocked) - Number(b.blocked));
   }
 
+  function regularScheduleBlocks(schedule = {}) {
+    return (Array.isArray(schedule?.placements) ? schedule.placements : [])
+      .filter((placement) => placement?.placementType === 'regular' && Boolean(placement?.isNonPledge))
+      .map((placement, index) => {
+        const startMinutes = number(placement?.startMinutes, NaN);
+        const rawEnd = number(placement?.endMinutes, NaN);
+        const lengthMinutes = number(placement?.lengthMinutes, 0);
+        const endMinutes = Number.isFinite(rawEnd) && rawEnd > startMinutes ? rawEnd : startMinutes + Math.max(0, lengthMinutes);
+        return {
+          id: text(placement?.id) || `regular-${index + 1}`,
+          date: text(placement?.dateKey),
+          startMinutes,
+          endMinutes,
+          title: text(placement?.programTitle) || 'Regular program',
+          note: text(first(placement?.scheduleNote, placement?.schedule_note, placement?.planningNote, placement?.planning_note, ''))
+        };
+      })
+      .filter((block) => block.date && Number.isFinite(block.startMinutes) && Number.isFinite(block.endMinutes) && block.endMinutes > block.startMinutes);
+  }
+
+  function splitPlanningWindowsAroundRegularSchedule(windows = [], schedule = {}) {
+    const blocks = regularScheduleBlocks(schedule);
+    if (!blocks.length) return windows;
+    const result = [];
+    (windows || []).forEach((window) => {
+      if (!window || window.blocked) {
+        if (window) result.push(window);
+        return;
+      }
+      const overlaps = blocks.filter((block) =>
+        block.date === window.date
+        && Math.max(Number(block.startMinutes), Number(window.startMinutes)) < Math.min(Number(block.endMinutes), Number(window.endMinutes))
+      );
+      if (!overlaps.length) {
+        result.push(window);
+        return;
+      }
+      const cuts = new Set([Number(window.startMinutes), Number(window.endMinutes)]);
+      overlaps.forEach((block) => {
+        cuts.add(Math.max(Number(window.startMinutes), Number(block.startMinutes)));
+        cuts.add(Math.min(Number(window.endMinutes), Number(block.endMinutes)));
+      });
+      const points = [...cuts].sort((a, b) => a - b);
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const startMinutes = points[index];
+        const endMinutes = points[index + 1];
+        if (!(endMinutes > startMinutes)) continue;
+        const block = overlaps.find((item) => startMinutes >= Number(item.startMinutes) && endMinutes <= Number(item.endMinutes)) || null;
+        result.push({
+          ...window,
+          id: `${window.id}-regular-split-${index + 1}`,
+          startMinutes,
+          endMinutes,
+          blocked: Boolean(block),
+          label: block ? `Regular schedule · ${block.title}` : window.label,
+          confidenceClass: block ? 'blocked' : window.confidenceClass,
+          experimental: block ? false : window.experimental,
+          webOnlyExperimental: block ? false : window.webOnlyExperimental,
+          fundraisingMode: block ? 'regular' : window.fundraisingMode,
+          regularProgramTitle: block?.title || '',
+          regularProgramNote: block?.note || '',
+          blockedReason: block ? 'regular_schedule' : (window.blockedReason || '')
+        });
+      }
+    });
+    return result.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || Number(a.startMinutes || 0) - Number(b.startMinutes || 0));
+  }
+
   function planningWindows(schedule = {}) {
     const custom = customPlanningWindows(schedule);
     const windowDriven = custom.length > 0
       || schedule?.meta?.fundraisingWindowPlanning === true
       || schedule?.fundraisingWindowPlanning === true;
-    if (windowDriven) return custom;
+    if (windowDriven) return splitPlanningWindowsAroundRegularSchedule(custom, schedule);
 
     const windows = [];
     const experimentalDates = new Set();
@@ -793,7 +861,7 @@
         windows.push({ ...base, id: `${base.date}-1900`, label: 'Prime', startMinutes: 19 * 60, endMinutes: day === 0 ? 22 * 60 : 22 * 60 + 30, confidenceClass: 'normal', experimental: false, blocked: false });
       }
     });
-    return windows;
+    return splitPlanningWindowsAroundRegularSchedule(windows, schedule);
   }
 
   function programMatchesRow(program = {}, row = {}) {

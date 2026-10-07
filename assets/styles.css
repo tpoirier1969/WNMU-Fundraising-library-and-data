@@ -6342,3 +6342,316 @@ input.goal-difference-negative {
   .schedule-fundraising-window-grid{grid-template-columns:1fr}
   .schedule-fundraising-window-actions{grid-column:auto}
 }
+
+
+/* v0.22.254 scheduling block types and pledge-mode readiness colors */
+
+/* Placeholder means undecided, not regular programming. Keep it neutral. */
+.schedule-placement.placeholder {
+  background: linear-gradient(180deg, #eef1f4, #d9dfe5) !important;
+  color: #26343f !important;
+  border: 1px dashed rgba(61,78,91,.48) !important;
+  outline: none !important;
+  box-shadow: 0 4px 10px rgba(50,65,76,.12) !important;
+}
+.schedule-placement.placeholder strong { color: #1f2d37 !important; }
+.schedule-selected-card.placeholder {
+  background: #f4f6f8;
+  border: 1px dashed rgba(61,78,91,.35);
+}
+
+/* Regular schedule / no-pledge is deliberately yellow and never uses pledge readiness colors. */
+.schedule-placement.non-pledge.regular-schedule {
+  background: linear-gradient(180deg, #ffe97a, #f2c94c) !important;
+  color: #17130a !important;
+  border: 2px solid #bd9418 !important;
+  outline: none !important;
+  box-shadow: 0 4px 10px rgba(132,99,4,.18) !important;
+}
+.schedule-placement.non-pledge.regular-schedule strong,
+.schedule-placement.non-pledge.regular-schedule span {
+  color: #17130a !important;
+}
+.schedule-selected-card.regular {
+  background: #fff6bf;
+  border: 1px solid #d4ad2d;
+  color: #241d08;
+}
+
+/* Hue = break mode. Intensity = setup/readiness. */
+.schedule-placement.break-mode-phones-staffed {
+  background: linear-gradient(180deg, #9dc7e8, #78add5) !important;
+  color: #12344d !important;
+  border: 1px solid rgba(28,94,143,.48) !important;
+  outline: none !important;
+}
+.schedule-placement.break-mode-phones-staffed.setup-break-ready {
+  background: linear-gradient(180deg, #559bd0, #2f7eb8) !important;
+  color: #fff !important;
+}
+.schedule-placement.break-mode-phones-staffed.setup-entered {
+  background: linear-gradient(180deg, #267bb7, #14598e) !important;
+  color: #fff !important;
+}
+
+.schedule-placement.break-mode-web-only {
+  background: linear-gradient(180deg, #a4d8d3, #7cc8c0) !important;
+  color: #123c39 !important;
+  border: 1px solid rgba(20,119,109,.45) !important;
+  outline: none !important;
+}
+.schedule-placement.break-mode-web-only.setup-break-ready {
+  background: linear-gradient(180deg, #55b9ae, #2b998e) !important;
+  color: #fff !important;
+}
+.schedule-placement.break-mode-web-only.setup-entered {
+  background: linear-gradient(180deg, #228e84, #116b64) !important;
+  color: #fff !important;
+}
+
+.schedule-placement.break-mode-live,
+.schedule-placement.live-break,
+.schedule-placement[data-live-break="true"] {
+  background: linear-gradient(180deg, #c7b6e0, #a891cf) !important;
+  color: #33224d !important;
+  border: 1px solid rgba(92,61,140,.48) !important;
+  outline: none !important;
+  box-shadow: 0 4px 10px rgba(72,45,112,.16) !important;
+}
+.schedule-placement.break-mode-live.setup-break-ready,
+.schedule-placement.live-break.setup-break-ready,
+.schedule-placement[data-live-break="true"].setup-break-ready {
+  background: linear-gradient(180deg, #9475c4, #7453ab) !important;
+  color: #fff !important;
+}
+.schedule-placement.break-mode-live.setup-entered,
+.schedule-placement.live-break.setup-entered,
+.schedule-placement[data-live-break="true"].setup-entered {
+  background: linear-gradient(180deg, #68469c, #4d327c) !important;
+  color: #fff !important;
+}
+
+/* Repeats remain lighter within every hue family, even when fully ready. */
+.schedule-placement.repeat-run.break-mode-phones-staffed {
+  background: linear-gradient(180deg, #dcebf7, #c6dfef) !important;
+  color: #24465e !important;
+}
+.schedule-placement.repeat-run.break-mode-phones-staffed.setup-break-ready {
+  background: linear-gradient(180deg, #bedcf0, #99c5e3) !important;
+  color: #183b55 !important;
+}
+.schedule-placement.repeat-run.break-mode-phones-staffed.setup-entered {
+  background: linear-gradient(180deg, #9fc8e5, #79afd5) !important;
+  color: #12344d !important;
+}
+
+.schedule-placement.repeat-run.break-mode-web-only {
+  background: linear-gradient(180deg, #d9efec, #c2e3df) !important;
+  color: #214844 !important;
+}
+.schedule-placement.repeat-run.break-mode-web-only.setup-break-ready {
+  background: linear-gradient(180deg, #bee3de, #9bd2cb) !important;
+  color: #17413d !important;
+}
+.schedule-placement.repeat-run.break-mode-web-only.setup-entered {
+  background: linear-gradient(180deg, #99d3cc, #75beb5) !important;
+  color: #123c39 !important;
+}
+
+.schedule-placement.repeat-run.break-mode-live,
+.schedule-placement.repeat-run.live-break,
+.schedule-placement.repeat-run[data-live-break="true"] {
+  background: linear-gradient(180deg, #e7def1, #d7c8e8) !important;
+  color: #49365f !important;
+}
+.schedule-placement.repeat-run.break-mode-live.setup-break-ready,
+.schedule-placement.repeat-run.live-break.setup-break-ready,
+.schedule-placement.repeat-run[data-live-break="true"].setup-break-ready {
+  background: linear-gradient(180deg, #d4c4e6, #baa3d6) !important;
+  color: #3c2957 !important;
+}
+.schedule-placement.repeat-run.break-mode-live.setup-entered,
+.schedule-placement.repeat-run.live-break.setup-entered,
+.schedule-placement.repeat-run[data-live-break="true"].setup-entered {
+  background: linear-gradient(180deg, #bca5d8, #9f82c6) !important;
+  color: #2f2046 !important;
+}
+
+/* Financial-result state must not replace the mode hue. */
+.schedule-placement.imported-data.break-mode-phones-staffed,
+.schedule-placement.manual-data.break-mode-phones-staffed,
+.schedule-placement.imported-data.break-mode-web-only,
+.schedule-placement.manual-data.break-mode-web-only,
+.schedule-placement.imported-data.break-mode-live,
+.schedule-placement.manual-data.break-mode-live {
+  border-width: 2px !important;
+}
+
+/* The mode badge remains textual as an accessibility backstop to color. */
+.schedule-placement .schedule-break-mode-calendar-badge {
+  background: rgba(255,255,255,.90) !important;
+  border: 1px solid rgba(255,255,255,.78) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,.16) !important;
+}
+.schedule-placement .schedule-break-mode-calendar-badge.break-mode-phones-staffed { color: #14598e !important; }
+.schedule-placement .schedule-break-mode-calendar-badge.break-mode-web-only { color: #116b64 !important; }
+.schedule-placement .schedule-break-mode-calendar-badge.break-mode-live { color: #5f3e91 !important; }
+
+/* Retire the old red LIVE pseudo-badge/border. LIVE now belongs to the purple hue family. */
+.schedule-placement.live-break::before,
+.schedule-placement[data-live-break="true"]::before {
+  content: none !important;
+  display: none !important;
+}
+
+.schedule-placement-note {
+  display: block;
+  margin-top: 2px;
+  font-size: clamp(.38rem,.42vw,.50rem) !important;
+  line-height: 1.05 !important;
+  font-style: italic;
+  font-weight: 650 !important;
+  opacity: .92 !important;
+}
+
+.schedule-placeholder-grid,
+.schedule-regular-grid {
+  grid-template-columns: minmax(180px,1.15fr) minmax(105px,135px) minmax(180px,1fr) auto;
+}
+.schedule-note-field { min-width: 0; }
+.schedule-regular-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #dfbd45;
+  border-radius: 14px;
+  background: #fff9dc;
+}
+.schedule-regular-head {
+  display: grid;
+  gap: 2px;
+}
+.schedule-regular-head strong { color: #4c3c06; }
+.schedule-regular-head span {
+  color: #685b2b;
+  font-size: .9rem;
+  line-height: 1.35;
+}
+.schedule-regular-grid {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+}
+.schedule-regular-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .schedule-placeholder-grid,
+  .schedule-regular-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Keep result badges, but never let imported/manual results repaint the mode hue. */
+.schedule-placement.break-mode-phones-staffed:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #9dc7e8, #78add5) !important;
+  color: #12344d !important;
+  border-color: rgba(28,94,143,.48) !important;
+}
+.schedule-placement.break-mode-phones-staffed.setup-break-ready:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #559bd0, #2f7eb8) !important;
+  color: #fff !important;
+}
+.schedule-placement.break-mode-phones-staffed.setup-entered:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #267bb7, #14598e) !important;
+  color: #fff !important;
+}
+.schedule-placement.repeat-run.break-mode-phones-staffed:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #dcebf7, #c6dfef) !important;
+  color: #24465e !important;
+}
+.schedule-placement.repeat-run.break-mode-phones-staffed.setup-break-ready:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #bedcf0, #99c5e3) !important;
+  color: #183b55 !important;
+}
+.schedule-placement.repeat-run.break-mode-phones-staffed.setup-entered:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #9fc8e5, #79afd5) !important;
+  color: #12344d !important;
+}
+
+.schedule-placement.break-mode-web-only:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #a4d8d3, #7cc8c0) !important;
+  color: #123c39 !important;
+  border-color: rgba(20,119,109,.45) !important;
+}
+.schedule-placement.break-mode-web-only.setup-break-ready:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #55b9ae, #2b998e) !important;
+  color: #fff !important;
+}
+.schedule-placement.break-mode-web-only.setup-entered:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #228e84, #116b64) !important;
+  color: #fff !important;
+}
+.schedule-placement.repeat-run.break-mode-web-only:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #d9efec, #c2e3df) !important;
+  color: #214844 !important;
+}
+.schedule-placement.repeat-run.break-mode-web-only.setup-break-ready:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #bee3de, #9bd2cb) !important;
+  color: #17413d !important;
+}
+.schedule-placement.repeat-run.break-mode-web-only.setup-entered:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #99d3cc, #75beb5) !important;
+  color: #123c39 !important;
+}
+
+.schedule-placement.break-mode-live:is(.imported-data,.manual-data),
+.schedule-placement.live-break:is(.imported-data,.manual-data),
+.schedule-placement[data-live-break="true"]:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #c7b6e0, #a891cf) !important;
+  color: #33224d !important;
+  border: 1px solid rgba(92,61,140,.48) !important;
+  outline: none !important;
+}
+.schedule-placement.break-mode-live.setup-break-ready:is(.imported-data,.manual-data),
+.schedule-placement.live-break.setup-break-ready:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #9475c4, #7453ab) !important;
+  color: #fff !important;
+}
+.schedule-placement.break-mode-live.setup-entered:is(.imported-data,.manual-data),
+.schedule-placement.live-break.setup-entered:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #68469c, #4d327c) !important;
+  color: #fff !important;
+}
+.schedule-placement.repeat-run.break-mode-live:is(.imported-data,.manual-data),
+.schedule-placement.repeat-run.live-break:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #e7def1, #d7c8e8) !important;
+  color: #49365f !important;
+}
+.schedule-placement.repeat-run.break-mode-live.setup-break-ready:is(.imported-data,.manual-data),
+.schedule-placement.repeat-run.live-break.setup-break-ready:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #d4c4e6, #baa3d6) !important;
+  color: #3c2957 !important;
+}
+.schedule-placement.repeat-run.break-mode-live.setup-entered:is(.imported-data,.manual-data),
+.schedule-placement.repeat-run.live-break.setup-entered:is(.imported-data,.manual-data) {
+  background: linear-gradient(180deg, #bca5d8, #9f82c6) !important;
+  color: #2f2046 !important;
+}
+
+/* Placeholder editing should visually match its neutral calendar block. */
+.schedule-placeholder-panel {
+  border-color: rgba(92,108,120,.34) !important;
+  background: #f6f8fa !important;
+}
+.schedule-selected-note {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .82rem;
+  font-style: italic;
+}
