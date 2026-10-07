@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.273'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.274'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.273/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.274/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -1793,7 +1793,7 @@ test('strategy enhancement layer only adds structural controls to the concise re
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.273/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.274/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
