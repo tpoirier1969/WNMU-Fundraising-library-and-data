@@ -991,7 +991,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   const page = fs.readFileSync(new URL('../programming-strategy.html', import.meta.url), 'utf8');
   const workerUi = fs.readFileSync(new URL('../assets/js/programming-strategy-worker.js', import.meta.url), 'utf8');
 
-  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.269'\)/);
+  assert.match(reportUi, /new Worker\('assets\/js\/programming-strategy-worker\.js\?v=0\.22\.270'\)/);
   assert.match(reportUi, /Scoring eligible titles against WNMU history|Starting strategy analysis/);
   assert.doesNotMatch(reportUi, /\.lte\('air_date',cutoff\)/);
   assert.match(reportUi, /const airingSelect=\[/);
@@ -1011,7 +1011,7 @@ test('strategy report keeps heavy analysis off the browser UI thread and trims S
   assert.match(page, /cache:'no-store'/);
   assert.match(page, /searchParams\.get\('v'\)/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.269/);
+  assert.match(page, /programming-strategy-report\.js\?v=0\.22\.270/);
   assert.doesNotMatch(page, /one-sheet-analysis\.js/);
   assert.doesNotMatch(page, /<script defer src="assets\/js\/programming-strategy-analysis\.js/);
 });
@@ -1673,6 +1673,7 @@ test('Sunday-morning peer practice attaches dated normal-slot context without ch
   assert.equal(sunday.examples[0].scheduleContexts.length,1);
   assert.equal(sunday.examples[0].scheduleContexts[0].scheduleLabel,'Special Presentation');
   assert.match(sunday.examples[0].scheduleContexts[0].sourceSummary,/reserved as Special Presentation/);
+  assert.equal(sunday.examples[0].scheduleContexts[0].relationship.key,'context-known');
 });
 
 test('dated peer normal-slot context accepts a conservative pre-drive grace period but never future context', () => {
@@ -1792,7 +1793,7 @@ test('strategy enhancement layer only adds structural controls to the concise re
   const styles = fs.readFileSync(new URL('../assets/programming-strategy-report.css', import.meta.url), 'utf8');
 
   assert.doesNotThrow(() => new vm.Script(enhancements, { filename: 'programming-strategy-enhancements.js' }));
-  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.224/);
+  assert.match(page, /programming-strategy-enhancements\.js\?v=0\.22\.270/);
   assert.match(reportUi, /WNMUStrategyEnhancements\?\.decorate\?\.\(out,result\)/);
   assert.match(enhancements, /splitCompoundSections/);
   assert.match(enhancements, /enableCollapsibleSections/);
@@ -2125,6 +2126,13 @@ test('peer-practice evidence preserves missing financials as missing rather than
   assert.equal(local.examples[0].goalDollars,null);
   assert.equal(local.examples[0].pledgeCount,null);
   assert.match(local.examples[0].summary,/5\+\+\+/);
+});
+
+test('peer-practice renderer shows normal-slot audience context when available', () => {
+  const enhancements = fs.readFileSync(new URL('../assets/js/programming-strategy-enhancements.js', import.meta.url), 'utf8');
+  assert.match(enhancements,/Normal slot:/);
+  assert.match(enhancements,/strategy-peer-slot-context/);
+  assert.match(enhancements,/relationship\.label/);
 });
 
 test('peer-practice renderer does not coerce missing financials into $0 or 0 pledges', () => {

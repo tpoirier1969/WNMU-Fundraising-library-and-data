@@ -1216,6 +1216,35 @@ function peerScheduleContextMatches(observation = {}, context = {}) {
   return !bounds || Math.max(bounds[0], contextStart) < Math.min(bounds[1], contextEnd);
 }
 
+function peerScheduleContextRelationship(context = {}) {
+  const textBlob = [
+    context.schedule_label,
+    context.schedule_pattern,
+    context.source_summary,
+    context.notes
+  ].map((value) => text(value).toLowerCase()).filter(Boolean).join(' ');
+
+  if (/materially changed|displaced|replaced|not simply monetizing|not simply|not be credited|not harvesting|cold-start|cold start/.test(textBlob)) {
+    return {
+      key: 'schedule-change',
+      label: 'Successful schedule change',
+      note: 'This pledge result changed the normal slot pattern rather than simply fundraising around an established audience habit.'
+    };
+  }
+  if (/established .*audience|existing themed|regular .*block|normal .*block|audience habit|loyal audience|fundraising around|leaving the regular|leaving .* intact|already expects/.test(textBlob)) {
+    return {
+      key: 'audience-aligned',
+      label: 'Audience-aligned pledge',
+      note: 'This pledge result appears to build on an audience already accustomed to similar programming in this slot.'
+    };
+  }
+  return {
+    key: 'context-known',
+    label: 'Normal schedule known',
+    note: 'Normal-slot context is available, but the evidence does not clearly show whether pledge aligned with or displaced the existing audience habit.'
+  };
+}
+
 function peerScheduleContextsForObservation(observation = {}, contexts = []) {
   return (contexts || [])
     .filter((context) => peerScheduleContextMatches(observation, context))
@@ -1238,7 +1267,8 @@ function peerScheduleContextsForObservation(observation = {}, contexts = []) {
       sourceReference: text(context.source_reference),
       sourceSummary: text(context.source_summary),
       evidenceStrength: Number(context.evidence_strength || 0),
-      notes: text(context.notes)
+      notes: text(context.notes),
+      relationship: peerScheduleContextRelationship(context)
     }));
 }
 

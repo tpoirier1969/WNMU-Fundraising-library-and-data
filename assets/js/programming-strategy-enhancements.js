@@ -182,7 +182,19 @@
         if (example.actualDollars != null && Number.isFinite(Number(example.actualDollars))) html += ' · ' + esc(money(example.actualDollars));
         if (example.goalDollars != null && Number.isFinite(Number(example.goalDollars))) html += ' on ' + esc(money(example.goalDollars)) + ' goal';
         if (example.pledgeCount != null && Number.isFinite(Number(example.pledgeCount))) html += ' · ' + Number(example.pledgeCount) + ' pledge' + (Number(example.pledgeCount) === 1 ? '' : 's');
-        html += '</span></div>';
+        html += '</span>';
+        const normalContext = Array.isArray(example.scheduleContexts) && example.scheduleContexts.length ? example.scheduleContexts[0] : null;
+        if (normalContext) {
+          const relationship = normalContext.relationship || {};
+          const period = normalContext.periodStart && normalContext.periodEnd
+            ? ' · ' + esc(normalContext.periodStart) + ' to ' + esc(normalContext.periodEnd)
+            : '';
+          html += '<span class="strategy-peer-slot-context"><b>Normal slot:</b> ' + esc(normalContext.scheduleLabel || normalContext.schedulePattern || 'Context available') + period;
+          if (relationship.label) html += ' · <b>' + esc(relationship.label) + '</b>';
+          if (relationship.note) html += '<small>' + esc(relationship.note) + '</small>';
+          html += '</span>';
+        }
+        html += '</div>';
       });
 
       html += '</div>';
