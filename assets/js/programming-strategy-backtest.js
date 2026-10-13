@@ -596,7 +596,7 @@
         : row.normalizedRate,
       aboveMedian: window.aboveMedian === true,
       topQuartile: window.topQuartile === true,
-      daypart: txt(window.label) || (String(window.startMinutes) + '-' + String(window.endMinutes))
+      daypart: daypartForMinutes(window.startMinutes)
     })));
 
     return {
