@@ -85,3 +85,22 @@ test('Program Library scorecard work sleeps outside the Library workspace', () =
 test('legacy drive summary transformer no longer polls every 1.5 seconds', () => {
   assert.doesNotMatch(appInit, /setInterval\(scheduleTransform, 1500\)/);
 });
+
+
+test('remembered Scheduling retries fundraiser loading after Supabase becomes available', () => {
+  assert.match(scheduling, /let schedulesLoadedWithClient = false/);
+  assert.match(scheduling, /const loadHadClient = Boolean\(state\.client\)/);
+  assert.match(scheduling, /schedulesLoadedWithClient = loadHadClient/);
+  assert.match(scheduling, /const needsClientReload = Boolean\(state\.client && !schedulesLoadedWithClient\)/);
+});
+
+test('remembered Scheduling loads fundraiser picker before the full Program Library refresh', () => {
+  const authIndex = appInit.indexOf('await App.auth.initAuthRole()');
+  const schedulingWarmupIndex = appInit.indexOf("warmup?.({ defer: false, renderHidden: false })", authIndex);
+  const libraryRefreshIndex = appInit.indexOf("await App.libraryLoader.refreshAll({ workspace: 'library' })", authIndex);
+  const schedulingEnsureIndex = appInit.indexOf('await App.schedulingUi?.ensureReady?.()', libraryRefreshIndex);
+  assert.ok(authIndex >= 0);
+  assert.ok(schedulingWarmupIndex > authIndex, 'Scheduling should warm up after auth');
+  assert.ok(libraryRefreshIndex > schedulingWarmupIndex, 'Fundraiser picker should load before Program Library refresh');
+  assert.ok(schedulingEnsureIndex > libraryRefreshIndex, 'Full Scheduling render should run after Program Library refresh');
+});
