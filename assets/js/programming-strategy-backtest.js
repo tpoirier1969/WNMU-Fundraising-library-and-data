@@ -34,6 +34,29 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
+  function seasonForDate(value) {
+    const s = txt(value).slice(0, 10);
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : null;
+    if (!d || Number.isNaN(d.getTime())) return 'Special';
+    const month = d.getMonth() + 1;
+    if (month === 2 || month === 3) return 'March';
+    if (month === 5 || month === 6) return 'June';
+    if (month === 8 || month === 9) return 'August';
+    if (month === 11 || month === 12) return 'December';
+    return 'Special';
+  }
+
+  function daypartForMinutes(minutes) {
+    const value = Number(minutes);
+    if (!Number.isFinite(value)) return 'Unknown';
+    const normalized = ((value % 1440) + 1440) % 1440;
+    if (normalized >= 19 * 60 && normalized < 23 * 60) return 'Prime';
+    if (normalized >= 17 * 60 && normalized < 19 * 60) return 'Early evening';
+    if (normalized >= 12 * 60 && normalized < 17 * 60) return 'Afternoon';
+    if (normalized >= 7 * 60 && normalized < 12 * 60) return 'Morning';
+    return 'Overnight';
+  }
+
   function rowInRecommendationInventory(row = {}, strategy = {}) {
     const windows = (strategy.windows || []).filter((slot) =>
       txt(slot.date)
@@ -481,7 +504,8 @@
           topQuartile: rec.matchedWindowTopQuartile === true,
           recommendationClass: recommendationClass(rec),
           fundraiserTitle: txt(backtest?.schedule?.title),
-          fundraiserStart: txt(backtest?.schedule?.startDate)
+          fundraiserStart: txt(backtest?.schedule?.startDate),
+          fundraiserSeason: seasonForDate(backtest?.schedule?.startDate)
         });
       });
 
@@ -508,7 +532,8 @@
         aboveMedianHits: Number(backtest?.summary?.windowAboveMedianHits || 0),
         topQuartileHits: Number(backtest?.summary?.windowTopQuartileHits || 0),
         topActualCoverage: backtest?.summary?.topActualCoverage ?? null,
-        scoreRateCorrelation: backtest?.summary?.windowScoreRateCorrelation ?? null
+        scoreRateCorrelation: backtest?.summary?.windowScoreRateCorrelation ?? null,
+        season: seasonForDate(backtest?.schedule?.startDate)
       });
     });
 

@@ -33,7 +33,7 @@ test('historical backtest page is linked and uses the current strategy worker', 
   assert.match(worker, /setUTCDate\(graceDate\.getUTCDate\(\) \+ 45\)/);
   assert.match(ui, /aggregateBacktests/);
   assert.match(ui, /Not aired · untestable/);
-  assert.equal(version.appVersion, '0.22.277');
+  assert.equal(version.appVersion, '0.22.278');
 });
 
 
@@ -60,8 +60,8 @@ test('multi-fundraiser calibration aggregates only tested recommended windows', 
       newTitle:!!flags.newTitle,
       reviewedNew:!!flags.reviewedNew,
       newSeasonalFitActive:!!flags.newSeasonalFitActive,
-      recommendedWindows:[{label:'Prime'}],
-      matchedRecommendedWindows:[{label:'Prime',airings:1,rate,aboveMedian:rate>medianRate,topQuartile:false}]
+      recommendedWindows:[{label:'Custom window',startMinutes:19*60,endMinutes:20*60}],
+      matchedRecommendedWindows:[{label:'Custom window',startMinutes:19*60,endMinutes:20*60,airings:1,rate,aboveMedian:rate>medianRate,topQuartile:false}]
     }],
     topicTime:{signalResults:[]}
   });
@@ -78,4 +78,7 @@ test('multi-fundraiser calibration aggregates only tested recommended windows', 
   assert.equal(out.dayparts.length,1);
   assert.equal(out.dayparts[0].label,'Prime');
   assert.equal(out.dayparts[0].tests,2);
+  assert.equal(out.seasons.length,1);
+  assert.equal(out.seasons[0].label,'Special');
+  assert.equal(out.readiness,'thin');
 });
