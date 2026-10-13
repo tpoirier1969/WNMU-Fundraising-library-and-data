@@ -3502,7 +3502,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     if (state.scheduleAiringHistoryLoading || state.scheduleAiringHistoryLoaded) return;
     state.scheduleAiringHistoryLoading = true;
     try {
-      const rows = await App.data.fetchImportedAirings();
+      const rows = await ensureScheduleImportedAiringsLoaded();
       state.scheduleAiringHistoryMap = buildScheduleAiringHistoryMap(rows || []);
       state.scheduleImportedSlotMap = buildScheduleImportedSlotMap(rows || []);
       state.scheduleImportedHashSet = buildScheduleImportedHashSet(rows || []);
@@ -3551,9 +3551,11 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
       try {
         const rows = await App.data.fetchImportedAirings();
         state.scheduleImportedAiringsCache = Array.isArray(rows) ? rows : [];
+        state.scheduleImportedAiringsLoadedAt = Date.now();
       } catch (error) {
         console.warn('Could not load imported airings for slot rescue.', error);
         state.scheduleImportedAiringsCache = [];
+        state.scheduleImportedAiringsLoadedAt = 0;
       } finally {
         state.scheduleImportedAiringsPromise = null;
       }
@@ -7756,6 +7758,7 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
     state.scheduleImportedSlotMap = new Set();
     state.scheduleImportedAiringsCache = null;
     state.scheduleImportedAiringsPromise = null;
+    state.scheduleImportedAiringsLoadedAt = 0;
     importedScheduleTotalsHydration.clear();
     (state.schedules || []).forEach((schedule) => {
       if (schedule) {
