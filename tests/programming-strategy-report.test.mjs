@@ -2663,3 +2663,84 @@ test('Easter titles are explicitly out of season in December and novelty cannot 
   assert.equal(result.fit,'Out of seasonal window');
   assert.ok(!S.selectRecommendationsForSlot([result],4,prime).length);
 });
+
+
+test('peer plans and forecasts remain context but cannot become positive or negative performance evidence', () => {
+  const { workerContext } = makeWorkerHarness();
+  const plannedPositive={
+    station_code:'WTVS',
+    station_name:'Detroit PBS',
+    observation_date:'2026-10-07',
+    season:'December',
+    day_of_week:'Saturday',
+    daypart:'Prime',
+    assessment_signal:2,
+    evidence_strength:5,
+    summary:'Planning on Carpenters and Brit Floyd for the December fundraiser.'
+  };
+  const plannedNegative={
+    station_code:'WDCQ',
+    station_name:'Delta College Public Media',
+    observation_date:'2026-10-07',
+    season:'December',
+    day_of_week:'Saturday',
+    daypart:'Prime',
+    assessment_signal:-1,
+    evidence_strength:5,
+    summary:'Not hopeful about the December pledge programs.'
+  };
+  const confirmed={
+    station_code:'WKAR',
+    station_name:'WKAR',
+    observation_date:'2026-04-15',
+    season:'December',
+    day_of_week:'Saturday',
+    daypart:'Prime',
+    assessment_signal:2,
+    evidence_strength:4,
+    summary:'Reported result: the program did well.'
+  };
+
+  assert.equal(workerContext.peerEvidenceStatus(plannedPositive).key,'planned');
+  assert.equal(workerContext.peerEvidenceStatus(plannedPositive).outcomeEligible,false);
+  assert.equal(workerContext.peerEvidenceStatus(plannedNegative).key,'planned');
+  assert.equal(workerContext.peerEvidenceStatus(plannedNegative).outcomeEligible,false);
+  assert.equal(workerContext.peerEvidenceStatus(confirmed).outcomeEligible,true);
+
+  const evidence=workerContext.buildSlotTimingEvidence(
+    {startDate:'2026-12-05',endDate:'2026-12-13'},
+    [plannedPositive,plannedNegative,confirmed],
+    {weekday:'Saturday',startMinutes:19*60,endMinutes:22*60,windowHistory:{rates:[],fundraisers:0}}
+  );
+  assert.equal(evidence.positivePeers,1,'only the confirmed positive result may count');
+  assert.equal(evidence.negativePeers,0,'a negative forecast must not become negative performance evidence');
+  const contextual=evidence.peerEvidence.filter((item)=>item.evidenceStatus==='planned');
+  assert.ok(contextual.length>=1);
+  assert.ok(contextual.every((item)=>item.signal===0),'planned peer signals must be neutralized for decisions');
+});
+
+test('future peer tactics cannot create Strategy practice gaps until a station reports an observed result', () => {
+  const { workerContext } = makeWorkerHarness();
+  const planned=[{
+    station_code:'WKAR',
+    station_name:'WKAR',
+    observation_date:'2026-10-07',
+    season:'December',
+    evidence_scope:'strategy',
+    assessment_signal:2,
+    evidence_strength:5,
+    summary:'Creating three local pledge programs for December.',
+    context_flags:{local:true,planned:true}
+  }];
+  const plannedRows=workerContext.buildPeerPracticeGaps({},planned,[]);
+  assert.equal(plannedRows.some((item)=>item.id==='local-programming'),false);
+
+  const observed=[{
+    ...planned[0],
+    observation_date:'2027-01-10',
+    summary:'Reported result: the local pledge special did well.',
+    context_flags:{local:true,reported_result:true}
+  }];
+  const observedRows=workerContext.buildPeerPracticeGaps({},observed,[]);
+  assert.equal(observedRows.some((item)=>item.id==='local-programming'),true);
+});
