@@ -4830,11 +4830,13 @@ function findExistingScheduleForImportedGroup(group = {}, groupFileKeys = groupI
         const fundraiserUseHtml = isStart && !isPlaceholder && !isRegular && fundraiserUseCount
           ? ` <span class="schedule-placement-use-count" title="Scheduled ${fundraiserUseCount} time${fundraiserUseCount === 1 ? '' : 's'} in this fundraiser">(${fundraiserUseCount})</span>`
           : '';
-        const placementTitleHtml = isPlaceholder
-          ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>`
-          : (isRegular
-            ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>`
-            : `${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}${fundraiserUseHtml}`);
+        const placementTitleHtml = !isStart || !placement
+          ? ''
+          : isPlaceholder
+            ? `<strong>${utils.escapeHtml(placeholderTitle(placement))}</strong>`
+            : isRegular
+              ? `<strong>${utils.escapeHtml(placement.programTitle || 'Regular program')}</strong>`
+              : `${renderProgramTitleLink(placement.isNonPledge ? '' : placement.programId, placement.programTitle, { nested: true, className: 'schedule-placement-title-link', titleAttr: placement.programTitle })}${fundraiserUseHtml}`;
         body.push(`
           <button type="button" class="schedule-slot ${isWeekendDateKey(displayDateKey) ? 'weekend' : ''}${guideClass}${rowHighlightClass}${fundraisingWindowClass} ${state.selectedScheduleSlot?.key === slotKey ? 'selected' : ''} ${editable ? '' : 'viewer-only'}" data-slot-key="${utils.escapeHtml(slotKey)}" data-date-key="${utils.escapeHtml(actualDateKey)}" data-display-date-key="${utils.escapeHtml(displayDateKey)}" data-minutes="${actualMinutes}" data-display-minutes="${minutes}"${fundraisingWindowTitle ? ` title="${utils.escapeHtml(fundraisingWindowTitle)}"` : ''}>
             ${fundraisingWindowMark?.isStart ? `<span class="schedule-fundraising-window-tag"><strong>${utils.escapeHtml(fundraisingWindowPriorityLabel(fundraisingWindowMark.window.priority))}</strong>${fundraisingWindowMark.window.note ? `<span class="schedule-fundraising-window-note">${utils.escapeHtml(fundraisingWindowMark.window.note)}</span>` : ''}</span>` : ''}
