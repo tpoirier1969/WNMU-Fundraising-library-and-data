@@ -15,7 +15,7 @@ function clock(m){m=Number(m);if(!Number.isFinite(m))return'—';m=((m%1440)+144
 function pct(v){const n=Number(v);return Number.isFinite(n)?`${Math.round(n*100)}%`:'—';}
 function corr(v){const n=Number(v);return Number.isFinite(n)?n.toFixed(2):'Not enough tested titles';}
 function status(msg,tone=''){const node=$('#backtest-status');if(node){node.textContent=msg||'';node.className=`strategy-status${tone?` ${tone}`:''}`;}}
-function makeClient(){if(!globalThis.supabase?.createClient)throw new Error('Supabase library did not load.');if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY)throw new Error('Supabase configuration is missing.');return globalThis.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);}
+function makeClient(){if(!globalThis.supabase?.createClient)throw new Error('Supabase library did not load.');if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY)throw new Error('Supabase configuration is missing.');return globalThis.supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:false,detectSessionInUrl:false,storage:globalThis.localStorage}});}
 async function requireAdmin(){
   state.client=makeClient();
   const{data,error}=await state.client.auth.getSession();

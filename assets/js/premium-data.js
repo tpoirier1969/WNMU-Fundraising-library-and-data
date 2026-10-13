@@ -44,7 +44,14 @@
   function makeClient() {
     if (!window.supabase?.createClient) throw new Error('Supabase library did not load.');
     if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) throw new Error('Supabase configuration is missing.');
-    return window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    return window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storage: window.localStorage
+      }
+    });
   }
 
   async function requireAdmin({ gateId, appId, roleId } = {}) {

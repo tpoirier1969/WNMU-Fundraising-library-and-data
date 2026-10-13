@@ -31,3 +31,19 @@ test('browser auth still persists and auto-refreshes sessions', () => {
   assert.match(source, /autoRefreshToken:\s*true/);
   assert.match(source, /authOptions\.storage = window\.localStorage/);
 });
+
+
+test('standalone admin reports read the persisted session but do not rotate the shared refresh token', () => {
+  const sources = [
+    fs.readFileSync('assets/js/premium-data.js', 'utf8'),
+    fs.readFileSync('assets/js/one-sheet-reports.js', 'utf8'),
+    fs.readFileSync('assets/js/programming-strategy-report.js', 'utf8'),
+    fs.readFileSync('assets/js/programming-strategy-backtest-ui.js', 'utf8')
+  ];
+  for (const source of sources) {
+    assert.match(source, /persistSession:\s*true/);
+    assert.match(source, /autoRefreshToken:\s*false/);
+    assert.match(source, /detectSessionInUrl:\s*false/);
+    assert.match(source, /localStorage/);
+  }
+});
