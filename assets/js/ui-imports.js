@@ -3249,6 +3249,10 @@
   }
 
   async function ensureReady() {
+    if (!state.client) {
+      renderAll();
+      return false;
+    }
     if (!imp().ready) {
       await loadRememberedAliasRules();
       imp().reportTotalsByFile = utils.storageGet(IMPORT_REPORT_TOTALS_STORAGE_KEY, {});
@@ -3258,6 +3262,7 @@
       imp().ready = true;
     }
     renderAll();
+    return true;
   }
 
   function normalizeDroppedFiles(fileList) {
