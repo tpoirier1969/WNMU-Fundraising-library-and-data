@@ -82,6 +82,7 @@
   let cachedScheduleLookup = { pledge: null, nonPledge: null };
   let cachedScheduleAdvisorEvidence = { key: '', value: null };
   let scheduleProgramSearchTimer = 0;
+  let schedulesLoadedWithClient = false;
   const scheduleInlineScrollbar = {
     dragActive: false,
     dragStartY: 0,
@@ -886,6 +887,7 @@
   }
 
   async function loadSchedules() {
+    const loadHadClient = Boolean(state.client);
     const cachedRows = utils.storageGet(constants.SCHEDULE_STORAGE_KEY, []);
     const cachedSchedules = sortSchedulesNewestFirst(
       (Array.isArray(cachedRows) ? cachedRows : []).map((schedule) => normalizeScheduleWindow(schedule))
@@ -931,6 +933,7 @@
 
     state.schedules = Array.isArray(loaded) ? loaded : [];
     if (remoteLoaded) utils.storageSet(constants.SCHEDULE_STORAGE_KEY, state.schedules);
+    schedulesLoadedWithClient = loadHadClient;
     scheduleUndoStacks.clear();
     state.schedulingReady = true;
     ensureCurrentScheduleApplied();
@@ -1020,7 +1023,8 @@
   async function warmup(options = {}) {
     const defer = options.defer !== false;
     const renderHidden = options.renderHidden !== false;
-    if (state.schedulingReady) {
+    const needsClientReload = Boolean(state.client && !schedulesLoadedWithClient);
+    if (state.schedulingReady && !needsClientReload) {
       ensureCurrentScheduleApplied();
       renderHomeDriveSummary();
       if (renderHidden) renderAll();
@@ -1030,7 +1034,8 @@
 
     state.schedulingWarmupPromise = (async () => {
       await scheduleWarmupDelay(defer);
-      if (!state.schedulingReady) await loadSchedules();
+      const shouldLoad = !state.schedulingReady || Boolean(state.client && !schedulesLoadedWithClient);
+      if (shouldLoad) await loadSchedules();
       ensureCurrentScheduleApplied();
       renderHomeDriveSummary();
       if (renderHidden) renderAll();
@@ -1043,7 +1048,8 @@
   }
 
   async function ensureReady() {
-    if (!state.schedulingReady) {
+    const needsClientReload = Boolean(state.client && !schedulesLoadedWithClient);
+    if (!state.schedulingReady || needsClientReload) {
       if (state.schedulingWarmupPromise) await state.schedulingWarmupPromise;
       else await warmup({ defer: false, renderHidden: false });
     }
