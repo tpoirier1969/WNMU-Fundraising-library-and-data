@@ -248,13 +248,23 @@
     await App.auth.initAuthRole();
     App.auth.bindAuthListener();
 
+    // If Scheduling is the remembered workspace, load its fundraiser picker as soon as
+    // Supabase/auth are ready. Do not make the user wait for the full Program Library load.
+    if (state.activeWorkspace === 'scheduling') {
+      await App.schedulingUi?.warmup?.({ defer: false, renderHidden: false });
+    }
+
     await App.libraryLoader.refreshAll({ workspace: 'library' });
     openProgramFromQuery();
     openWorkspaceFromQuery();
 
-    void App.schedulingUi?.warmup?.({ defer: true, renderHidden: false }).catch((error) => {
-      console.warn('Background fundraiser warmup failed.', error);
-    });
+    if (state.activeWorkspace === 'scheduling') {
+      await App.schedulingUi?.ensureReady?.();
+    } else {
+      void App.schedulingUi?.warmup?.({ defer: true, renderHidden: false }).catch((error) => {
+        console.warn('Background fundraiser warmup failed.', error);
+      });
+    }
 
     startVersionChecks();
   }
