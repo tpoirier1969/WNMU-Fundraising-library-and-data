@@ -3,7 +3,7 @@
   const { state, constants, utils, derive } = App;
   const { els, setNotice } = App.dom;
 
-  const RESULT_CACHE_MS = 5000;
+  const RESULT_CACHE_MS = 30000;
   let scheduleResultRows = [];
   let scheduleResultRowsLoadedAt = 0;
   let scheduleResultRowsPromise = null;
@@ -207,13 +207,43 @@
 
   async function loadScheduleResults(force = false) {
     const now = Date.now();
-    if (!force && scheduleResultRowsLoadedAt && (now - scheduleResultRowsLoadedAt) < RESULT_CACHE_MS) return scheduleResultRows;
     if (scheduleResultRowsPromise) return scheduleResultRowsPromise;
+
+    if (state.scheduleImportedAiringsPromise) {
+      scheduleResultRowsPromise = Promise.resolve(state.scheduleImportedAiringsPromise)
+        .then((rows) => {
+          scheduleResultRows = Array.isArray(rows) ? rows : [];
+          scheduleResultRowsLoadedAt = Number(state.scheduleImportedAiringsLoadedAt || Date.now());
+          return scheduleResultRows;
+        })
+        .catch((error) => {
+          console.warn('Schedule broadcast result stamps could not reuse imported results.', error);
+          return scheduleResultRows;
+        })
+        .finally(() => {
+          scheduleResultRowsPromise = null;
+        });
+      return scheduleResultRowsPromise;
+    }
+
+    const sharedLoadedAt = Number(state.scheduleImportedAiringsLoadedAt || 0);
+    if (Array.isArray(state.scheduleImportedAiringsCache)
+      && sharedLoadedAt
+      && (now - sharedLoadedAt) < RESULT_CACHE_MS) {
+      scheduleResultRows = state.scheduleImportedAiringsCache;
+      scheduleResultRowsLoadedAt = sharedLoadedAt;
+      return scheduleResultRows;
+    }
+
+    if (!force && scheduleResultRowsLoadedAt && (now - scheduleResultRowsLoadedAt) < RESULT_CACHE_MS) return scheduleResultRows;
+
     scheduleResultRowsPromise = Promise.resolve()
       .then(() => App.data?.fetchImportedAirings?.())
       .then((rows) => {
         scheduleResultRows = Array.isArray(rows) ? rows : [];
         scheduleResultRowsLoadedAt = Date.now();
+        state.scheduleImportedAiringsCache = scheduleResultRows;
+        state.scheduleImportedAiringsLoadedAt = scheduleResultRowsLoadedAt;
         return scheduleResultRows;
       })
       .catch((error) => {
