@@ -6866,9 +6866,3 @@ body.schedule-modal-dragging *{
   user-select:none !important;
 }
 
-
-/* Missing pledge break information */
-.schedule-placement.break-info-missing{
-  outline:1px solid rgba(190,28,28,.9);
-  outline-offset:-1px;
-}

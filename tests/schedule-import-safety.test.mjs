@@ -306,6 +306,17 @@ test('Scheduling break modes are limited to pledge-break packages or substantial
   assert.equal(hooks.scheduleDetailBreakSeconds({ timings:[{ break_seconds:500 },{ break_seconds:450 }] }), 950);
 });
 
+test('Scheduling workflow checkboxes are independent and only checked boxes get yellow styling', () => {
+  assert.match(source, /data-grid-break-info-placement-id=/);
+  assert.match(source, />Break info<\/span>/);
+  assert.match(source, /data-grid-transfer-placement-id=/);
+  assert.match(source, />Schd<\/span>/);
+  assert.doesNotMatch(source, /break-info-missing/);
+  const styles=fs.readFileSync(new URL('../assets/styles.css',import.meta.url),'utf8');
+  assert.match(styles,/schedule-placement-status-toggle input:checked \+ \.schedule-placement-status-check\s*\{[\s\S]*background:\s*#facc15/);
+  assert.doesNotMatch(styles,/\.schedule-placement\.break-info-missing/);
+});
+
 test('Scheduling break warning treats zero-second timing rows as missing break information', () => {
   resetState();
   assert.equal(hooks.scheduleDetailHasBreakInfo({ timings: [] }), false);
