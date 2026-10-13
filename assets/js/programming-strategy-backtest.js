@@ -612,6 +612,7 @@
       recommendationClasses: groupedTestSummaries(windowTests, (row) => row.recommendationClass),
       recommendationTopics: groupedTestSummaries(windowTests, (row) => row.topic),
       dayparts: groupedTestSummaries(daypartRows, (row) => row.daypart),
+      seasons: groupedTestSummaries(windowTests, (row) => row.fundraiserSeason),
       topicTimeTopics,
       drives: drives.sort((a, b) => a.startDate.localeCompare(b.startDate)),
       readiness: windowTests.length >= 30 ? 'strong' : (windowTests.length >= 15 ? 'moderate' : 'thin')
