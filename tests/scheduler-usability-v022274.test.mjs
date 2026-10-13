@@ -6,6 +6,7 @@ const scheduling = fs.readFileSync(new URL('../assets/js/ui-scheduling.js', impo
 const workspace = fs.readFileSync(new URL('../assets/js/ui-workspace.js', import.meta.url), 'utf8');
 const appInit = fs.readFileSync(new URL('../assets/js/app-init.js', import.meta.url), 'utf8');
 const scorecardUi = fs.readFileSync(new URL('../assets/js/program-scorecard-ui.js', import.meta.url), 'utf8');
+const importsUi = fs.readFileSync(new URL('../assets/js/ui-imports.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../assets/styles.css', import.meta.url), 'utf8');
 
 test('workspace persists in both browser storage and URL', () => {
@@ -103,4 +104,25 @@ test('remembered Scheduling loads fundraiser picker before the full Program Libr
   assert.ok(schedulingWarmupIndex > authIndex, 'Scheduling should warm up after auth');
   assert.ok(libraryRefreshIndex > schedulingWarmupIndex, 'Fundraiser picker should load before Program Library refresh');
   assert.ok(schedulingEnsureIndex > libraryRefreshIndex, 'Full Scheduling render should run after Program Library refresh');
+});
+
+
+test('remembered Imports stays unready until Supabase exists', () => {
+  const start = importsUi.indexOf('async function ensureReady()');
+  const end = importsUi.indexOf('\n  function normalizeDroppedFiles', start);
+  const body = importsUi.slice(start, end);
+  assert.match(body, /if \(!state\.client\) \{/);
+  assert.match(body, /return false/);
+  const readyIndex = body.indexOf('imp().ready = true');
+  const clientGuardIndex = body.indexOf('if (!state.client)');
+  assert.ok(clientGuardIndex >= 0 && readyIndex > clientGuardIndex);
+});
+
+test('Scheduler consumers share imported-airings work instead of duplicate full-table fetches', () => {
+  assert.match(scheduling, /const rows = await ensureScheduleImportedAiringsLoaded\(\)/);
+  assert.match(scheduling, /state\.scheduleImportedAiringsLoadedAt = Date\.now\(\)/);
+  assert.match(workspace, /const RESULT_CACHE_MS = 30000/);
+  assert.match(workspace, /if \(state\.scheduleImportedAiringsPromise\)/);
+  assert.match(workspace, /state\.scheduleImportedAiringsCache/);
+  assert.match(workspace, /state\.scheduleImportedAiringsLoadedAt/);
 });
