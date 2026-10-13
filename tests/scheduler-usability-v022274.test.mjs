@@ -61,9 +61,12 @@ test('fundraising window note is visible on the calendar', () => {
   assert.match(css, /\.schedule-fundraising-window-note\s*\{/);
 });
 
-test('missing break information gets a subtle red outline', () => {
-  assert.match(scheduling, /needsBreakInfo \? 'break-info-missing' : ''/);
-  assert.match(css, /\.schedule-placement\.break-info-missing\s*\{[\s\S]*outline:1px solid rgba\(190,28,28,\.9\)/);
+test('workflow checkboxes do not alter scheduler block styling', () => {
+  assert.doesNotMatch(scheduling, /break-info-missing/);
+  assert.doesNotMatch(css, /\.schedule-placement\.break-info-missing/);
+  assert.match(scheduling, /data-grid-break-info-placement-id=/);
+  assert.match(scheduling, /data-grid-transfer-placement-id=/);
+  assert.match(css, /schedule-placement-status-toggle input:checked \+ \.schedule-placement-status-check\s*\{[\s\S]*background:\s*#facc15/);
 });
 
 test('calendar shows current fundraiser use count after scheduled titles', () => {
