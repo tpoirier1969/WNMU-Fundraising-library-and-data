@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "station": {
+    "displayName": "Example Public Media",
+    "shortName": "Example PBS",
+    "callLetters": "WXYZ",
+    "timezone": "America/New_York",
+    "fiscalYearStart": {
+      "month": 7,
+      "day": 1
+    },
+    "logoPath": "assets/station-logo.png"
+  },
+  "application": {
+    "name": "Pledge Program Library",
+    "storageNamespace": "wxyzPledge",
+    "enabledModules": [
+      "program-library",
+      "pledge-scheduling",
+      "imports",
+      "performance-analytics",
+      "fundraiser-comparison"
+    ],
+    "scheduler": {
+      "defaultDayStartHour": 7,
+      "defaultDayEndHour": 31,
+      "defaultSlotMinutes": 30
+    }
+  },
+  "database": {
+    "provider": "supabase",
+    "tables": {
+      "programs": "pledge_programs_v2",
+      "programLibrarySummary": "pledge_program_library_summary_v2",
+      "timings": "pledge_program_timings_v2",
+      "driveResults": "pledge_program_drive_rollups_v2",
+      "airings": "pledge_program_airings_v2",
+      "fundraiserSchedules": "pledge_fundraiser_schedules"
+    },
+    "nonPledgeProgramSources": [
+      {
+        "name": "program_library_summary_v2",
+        "label": "Program Library summary"
+      }
+    ]
+  },
+  "authentication": {
+    "provider": "github",
+    "adminEmails": [
+      "admin@example.org"
+    ]
+  },
+  "hosting": {
+    "basePath": "./"
+  },
+  "distribution": {
+    "includeDemoData": false
+  }
+}
