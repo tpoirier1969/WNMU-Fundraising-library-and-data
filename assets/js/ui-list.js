@@ -135,7 +135,10 @@
   }
 
   function premiumSummaryHtml(value) {
-    return `<div class="premium-lines">${premiumLines(value).map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('')}</div>`;
+    const formatter = window.PledgePremiumFormatting;
+    const summary = formatter?.compact(value) || premiumLines(value).join(' · ');
+    const tooltip = utils.normalizeText(value).slice(0, 500);
+    return `<div class="premium-summary-compact" title="${utils.escapeHtml(tooltip)}">${utils.escapeHtml(summary)}</div>`;
   }
 
   function airDatesHtml(row) {
