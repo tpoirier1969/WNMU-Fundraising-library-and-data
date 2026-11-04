@@ -1306,17 +1306,8 @@
   }
 
   function premiumSummaryHtml(value) {
-    const text = utils.normalizeText(value);
-    if (!text) return '<div class="premium-line">—</div>';
-    const lines = text
-      .replace(/\r/g, '')
-      .replace(/\s*;\s*/g, '\n')
-      .replace(/\s+(?=\$)/g, '\n')
-      .split(/\n+/)
-      .map((part) => utils.normalizeText(part))
-      .filter(Boolean);
-    const finalLines = lines.length ? lines : [text];
-    return finalLines.map((line) => `<div class="premium-line">${utils.escapeHtml(line)}</div>`).join('');
+    return window.PledgePremiumFormatting?.fullHtml(value)
+      || `<div class="premium-line">${utils.escapeHtml(utils.normalizeText(value) || '—')}</div>`;
   }
 
   function historicalPerformanceFingerprint(program = {}, driveResults = [], exactAirings = []) {
@@ -1904,11 +1895,12 @@
   }
 
   function renderPremiums(program) {
-    const lines = (App.listUi?.premiumLines ? App.listUi.premiumLines(derive.premiumSummary(program)) : [derive.premiumSummary(program)])
-      .filter((line) => line && line !== '—');
-    els.premiumCountChip.textContent = `${lines.length || 0}`;
-    els.premiumsList.innerHTML = lines.length
-      ? lines.map((line) => `<article class="premium-card">${utils.escapeHtml(line)}</article>`).join('')
+    const summary = derive.premiumSummary(program);
+    const formatter = window.PledgePremiumFormatting;
+    const formatted = formatter?.fullHtml(summary) || '';
+    els.premiumCountChip.textContent = `${formatter?.count(summary) || 0}`;
+    els.premiumsList.innerHTML = formatted
+      ? `<article class="premium-card">${formatted}</article>`
       : '<div class="premium-card">No premium summary is available for this title.</div>';
   }
 
