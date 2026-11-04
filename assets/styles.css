@@ -3254,6 +3254,14 @@ button.primary {
 .detail-editor-subblock {
   margin-top: 14px;
 }
+.strategy-editor-subblock > summary {
+  cursor: pointer;
+  color: var(--heading);
+  font-weight: 700;
+}
+.strategy-editor-subblock > .detail-form-row {
+  margin-top: 12px;
+}
 .schedule-program-match {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
