@@ -20,6 +20,20 @@ test('Program Library exposes and saves companion program status', () => {
   assert.match(migration,/companion_program_status/);
 });
 
+test('strategy classifications stay optional and outside core Add Program fields', () => {
+  const shell=fs.readFileSync(new URL('../app-shell.html',import.meta.url),'utf8');
+  const coreStart=shell.indexOf('class="detail-form-row detail-form-row-compact"');
+  const coreEnd=shell.indexOf('class="detail-form-row detail-form-row-single"',coreStart);
+  assert.ok(coreStart>=0&&coreEnd>coreStart);
+  assert.doesNotMatch(shell.slice(coreStart,coreEnd),/name="(?:drama_cycle_status|companion_program_status)"/);
+  const strategy=shell.match(/<details class="detail-block detail-editor-subblock strategy-editor-subblock">([\s\S]*?)<\/details>/);
+  assert.ok(strategy,'separate collapsed strategy section must exist');
+  assert.match(strategy[1],/<summary>Programming Strategy<\/summary>/);
+  assert.match(strategy[1],/name="drama_cycle_status"/);
+  assert.match(strategy[1],/name="companion_program_status"/);
+  assert.doesNotMatch(shell,/<\/label>\\n\s*<label/,'literal newline escape must not appear between labels');
+});
+
 test('dated companion rule applies to any topic and only opens in the 5-7 Web-only experiment', () => {
   const source=fs.readFileSync(new URL('../assets/js/programming-strategy-analysis.js',import.meta.url),'utf8');
   const context={console,Date,Map,Set,Math,Number,String,Object,Array,RegExp,Intl};
